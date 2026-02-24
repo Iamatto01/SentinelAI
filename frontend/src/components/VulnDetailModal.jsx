@@ -137,6 +137,26 @@ export default function VulnDetailModal({ open, vuln, onClose, onStatusChange, r
             ))}
           </div>
 
+          {/* Evidence / Proof */}
+          {vuln.evidence && vuln.evidence.data && (
+            <div>
+              <h4 className="text-sm font-medium text-gray-300 mb-2">Evidence / Proof</h4>
+              <div className="p-4 bg-black/40 rounded-lg border border-white/10">
+                {vuln.evidence.label && (
+                  <div className="flex items-center space-x-2 mb-2">
+                    <span className="text-xs font-medium px-2 py-0.5 bg-white/10 rounded">
+                      {vuln.evidence.type === 'headers' ? '\u{1F4E1}' : vuln.evidence.type === 'certificate' ? '\u{1F512}' : vuln.evidence.type === 'dns' ? '\u{1F310}' : vuln.evidence.type === 'http' ? '\u{1F4C4}' : vuln.evidence.type === 'techstack' ? '\u{1F9E9}' : '\u{1F50D}'}{' '}{vuln.evidence.label}
+                    </span>
+                  </div>
+                )}
+                {vuln.evidence.note && (
+                  <p className="text-xs text-gray-400 mb-2">{vuln.evidence.note}</p>
+                )}
+                <pre className="text-xs font-mono text-gray-200 whitespace-pre-wrap break-all max-h-48 overflow-y-auto leading-relaxed">{vuln.evidence.data}</pre>
+              </div>
+            </div>
+          )}
+
           {/* Status Change */}
           {!readOnly && (
           <div className="border-t border-white/10 pt-4">

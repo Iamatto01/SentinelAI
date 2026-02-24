@@ -75,6 +75,7 @@ function makeFinding(opts, targetUrl) {
     module: 'HTTP Headers Analysis',
     aiConfidence: opts.aiConfidence || 0.95,
     aiReasoning: opts.aiReasoning || 'Confirmed from HTTP response analysis',
+    evidence: opts.evidence || {},
   };
 }
 
@@ -141,6 +142,7 @@ export async function scanHeaders(targetUrl, onFinding, onLog) {
   }
 
   const headers = response.headers;
+  const rawHeaders = Object.entries(headers).map(([k, v]) => `${k}: ${v}`).join('\n');
 
   onLog?.('info', `Received HTTP ${response.statusCode} - analysing ${Object.keys(headers).length} response headers`);
 
@@ -148,7 +150,15 @@ export async function scanHeaders(targetUrl, onFinding, onLog) {
   onLog?.('info', 'Checking security headers (HSTS, CSP, X-Frame-Options, X-Content-Type-Options, Referrer-Policy, Permissions-Policy)');
   for (const check of SECURITY_HEADERS) {
     if (!headers[check.header]) {
-      const f = makeFinding(check, targetUrl);
+      const f = makeFinding({
+        ...check,
+        evidence: {
+          type: 'headers',
+          label: 'HTTP Response Headers',
+          data: rawHeaders,
+          note: `Header "${check.header}" is missing from the response`,
+        },
+      }, targetUrl);
       findings.push(f);
       onFinding?.(f);
     }
@@ -165,6 +175,7 @@ export async function scanHeaders(targetUrl, onFinding, onLog) {
       description: `The Server header reveals: "${headers['server']}". This information helps attackers identify the server software and version.`,
       remediation: 'Remove or genericize the Server header to hide version information.',
       aiReasoning: `Server header value: ${headers['server']}`,
+      evidence: { type: 'headers', label: 'Server Header', data: `Server: ${headers['server']}` },
     }, targetUrl);
     findings.push(f);
     onFinding?.(f);
@@ -180,6 +191,7 @@ export async function scanHeaders(targetUrl, onFinding, onLog) {
       description: `The X-Powered-By header reveals: "${headers['x-powered-by']}". This exposes the underlying technology stack.`,
       remediation: 'Remove the X-Powered-By header from server responses.',
       aiReasoning: `X-Powered-By value: ${headers['x-powered-by']}`,
+      evidence: { type: 'headers', label: 'X-Powered-By Header', data: `X-Powered-By: ${headers['x-powered-by']}` },
     }, targetUrl);
     findings.push(f);
     onFinding?.(f);
@@ -206,6 +218,7 @@ export async function scanHeaders(targetUrl, onFinding, onLog) {
           description: `Cookie "${cookieName}" is missing the following security flags: ${issues.join(', ')}. This may expose the cookie to theft or misuse.`,
           remediation: `Set the cookie with: ${issues.map(i => `${i}`).join('; ')} flags.`,
           aiReasoning: `Cookie header: ${cookie.substring(0, 100)}`,
+          evidence: { type: 'headers', label: 'Set-Cookie Header', data: `Set-Cookie: ${cookie}` },
         }, targetUrl);
         findings.push(f);
         onFinding?.(f);
@@ -227,6 +240,7 @@ export async function scanHeaders(targetUrl, onFinding, onLog) {
         description: 'The server responds with Access-Control-Allow-Origin: *, allowing any website to make cross-origin requests. This may lead to data theft.',
         remediation: 'Restrict Access-Control-Allow-Origin to specific trusted domains instead of using a wildcard.',
         aiReasoning: 'ACAO header set to wildcard (*)',
+        evidence: { type: 'headers', label: 'CORS Response Headers', data: Object.entries(optRes.headers).filter(([k]) => k.startsWith('access-control')).map(([k, v]) => `${k}: ${v}`).join('\n') || 'Access-Control-Allow-Origin: *' },
       }, targetUrl);
       findings.push(f);
       onFinding?.(f);
@@ -244,6 +258,7 @@ export async function scanHeaders(targetUrl, onFinding, onLog) {
         description: `The server allows the following potentially dangerous HTTP methods: ${dangerous.join(', ')}. These may be exploited for unauthorized data modification or information disclosure.`,
         remediation: 'Disable unnecessary HTTP methods (PUT, DELETE, TRACE) on the web server.',
         aiReasoning: `Allow header: ${allow}`,
+        evidence: { type: 'headers', label: 'Allow Header', data: `Allow: ${allow}` },
       }, targetUrl);
       findings.push(f);
       onFinding?.(f);

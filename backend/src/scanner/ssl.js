@@ -18,6 +18,7 @@ function makeFinding(opts, targetUrl) {
     module: 'SSL/TLS Analysis',
     aiConfidence: opts.aiConfidence || 0.95,
     aiReasoning: opts.aiReasoning || 'Confirmed from TLS handshake analysis',
+    evidence: opts.evidence || {},
   };
 }
 
@@ -122,6 +123,19 @@ export async function scanSsl(targetUrl, onFinding, onLog) {
 
   const { cert, protocol, cipher, authorized } = tlsInfo;
 
+  // Build certificate evidence summary
+  const certEvidence = [
+    `Protocol: ${protocol || 'unknown'}`,
+    `Cipher: ${cipher?.name || 'unknown'}`,
+    `Authorized: ${authorized}`,
+    cert?.subject ? `Subject: CN=${cert.subject.CN || ''}, O=${cert.subject.O || ''}` : '',
+    cert?.issuer ? `Issuer: CN=${cert.issuer.CN || ''}, O=${cert.issuer.O || ''}` : '',
+    cert?.valid_from ? `Valid From: ${cert.valid_from}` : '',
+    cert?.valid_to ? `Valid To: ${cert.valid_to}` : '',
+    cert?.serialNumber ? `Serial: ${cert.serialNumber}` : '',
+    cert?.fingerprint256 ? `SHA-256: ${cert.fingerprint256}` : '',
+  ].filter(Boolean).join('\n');
+
   onLog?.('info', `TLS handshake successful - protocol: ${protocol || 'unknown'}, cipher: ${cipher?.name || 'unknown'}, cert authorised: ${authorized}`);
 
   // Self-signed or untrusted certificate
@@ -140,6 +154,7 @@ export async function scanSsl(targetUrl, onFinding, onLog) {
         : `The certificate issued by "${issuer}" is not trusted by the system certificate store.`,
       remediation: 'Obtain a certificate from a trusted Certificate Authority (e.g., Let\'s Encrypt).',
       aiReasoning: `Certificate authorized: false, issuer: ${issuer}, subject: ${subject}`,
+      evidence: { type: 'certificate', label: 'TLS Certificate Details', data: certEvidence },
     }, targetUrl);
     findings.push(f);
     onFinding?.(f);
@@ -161,6 +176,7 @@ export async function scanSsl(targetUrl, onFinding, onLog) {
         remediation: 'Renew the TLS certificate immediately.',
         aiConfidence: 1.0,
         aiReasoning: `Certificate valid_to: ${cert.valid_to}`,
+        evidence: { type: 'certificate', label: 'TLS Certificate Details', data: certEvidence },
       }, targetUrl);
       findings.push(f);
       onFinding?.(f);
@@ -173,6 +189,7 @@ export async function scanSsl(targetUrl, onFinding, onLog) {
         description: `The certificate expires on ${cert.valid_to} (${daysLeft} days remaining). Plan for renewal to avoid service disruption.`,
         remediation: 'Renew the TLS certificate before expiry. Consider using auto-renewal with Let\'s Encrypt.',
         aiReasoning: `Certificate expires in ${daysLeft} days`,
+        evidence: { type: 'certificate', label: 'TLS Certificate Details', data: certEvidence },
       }, targetUrl);
       findings.push(f);
       onFinding?.(f);
@@ -193,6 +210,7 @@ export async function scanSsl(targetUrl, onFinding, onLog) {
         description: `The server negotiated ${protocol}, which is deprecated and vulnerable to known attacks (BEAST, POODLE).`,
         remediation: 'Disable TLSv1.0, TLSv1.1, and SSLv3. Only allow TLSv1.2 and TLSv1.3.',
         aiReasoning: `Negotiated protocol: ${protocol}`,
+        evidence: { type: 'certificate', label: 'TLS Protocol Info', data: `Protocol: ${protocol}\nCipher: ${cipher?.name || 'unknown'}` },
       }, targetUrl);
       findings.push(f);
       onFinding?.(f);
@@ -213,6 +231,7 @@ export async function scanSsl(targetUrl, onFinding, onLog) {
         description: `The server uses a weak cipher suite "${cipher.name}" which contains: ${matched.join(', ')}. These are cryptographically weak.`,
         remediation: 'Configure the server to use only strong cipher suites (AES-GCM, ChaCha20-Poly1305).',
         aiReasoning: `Cipher: ${cipher.name}, version: ${cipher.version}`,
+        evidence: { type: 'certificate', label: 'Cipher Suite', data: `Cipher: ${cipher.name}\nVersion: ${cipher.version}\nWeak components: ${matched.join(', ')}` },
       }, targetUrl);
       findings.push(f);
       onFinding?.(f);

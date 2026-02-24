@@ -61,6 +61,7 @@ sqlite.exec(`
     remediation TEXT,
     cweId TEXT,
     cveIds TEXT DEFAULT '[]',
+    evidence TEXT DEFAULT '{}',
     discovered TEXT
   );
 
@@ -82,6 +83,11 @@ sqlite.exec(`
     details TEXT
   );
 `)
+
+// Migration: add evidence column if missing (for existing databases)
+try {
+  sqlite.exec(`ALTER TABLE vulnerabilities ADD COLUMN evidence TEXT DEFAULT '{}'`)
+} catch (_) { /* column already exists */ }
 
 // ── Prepared statements ──────────────────────────────────────────────────────
 
@@ -120,8 +126,8 @@ const stmts = {
   getVulnsByScan: sqlite.prepare('SELECT * FROM vulnerabilities WHERE scanId = ?'),
   getVuln: sqlite.prepare('SELECT * FROM vulnerabilities WHERE id = ?'),
   insertVuln: sqlite.prepare(`
-    INSERT INTO vulnerabilities (id, scanId, title, severity, cvss, asset, module, status, description, aiReasoning, aiConfidence, remediation, cweId, cveIds, discovered)
-    VALUES (@id, @scanId, @title, @severity, @cvss, @asset, @module, @status, @description, @aiReasoning, @aiConfidence, @remediation, @cweId, @cveIds, @discovered)
+    INSERT INTO vulnerabilities (id, scanId, title, severity, cvss, asset, module, status, description, aiReasoning, aiConfidence, remediation, cweId, cveIds, evidence, discovered)
+    VALUES (@id, @scanId, @title, @severity, @cvss, @asset, @module, @status, @description, @aiReasoning, @aiConfidence, @remediation, @cweId, @cveIds, @evidence, @discovered)
   `),
   updateVulnStatus: sqlite.prepare('UPDATE vulnerabilities SET status = ? WHERE id = ?'),
 
@@ -170,11 +176,19 @@ function serializeScan(s) {
 
 function parseVuln(row) {
   if (!row) return null
-  return { ...row, cveIds: JSON.parse(row.cveIds || '[]') }
+  return {
+    ...row,
+    cveIds: JSON.parse(row.cveIds || '[]'),
+    evidence: JSON.parse(row.evidence || '{}'),
+  }
 }
 
 function serializeVuln(v) {
-  return { ...v, cveIds: JSON.stringify(v.cveIds || []) }
+  return {
+    ...v,
+    cveIds: JSON.stringify(v.cveIds || []),
+    evidence: JSON.stringify(v.evidence || {}),
+  }
 }
 
 // ── Exports ──────────────────────────────────────────────────────────────────

@@ -3,19 +3,25 @@ import { scanSsl } from './ssl.js';
 import { scanPaths } from './paths.js';
 import { scanNmap } from './nmap.js';
 import { scanNuclei } from './nuclei.js';
+import { scanDns } from './dns.js';
+import { scanCors } from './cors.js';
+import { scanTech } from './tech.js';
 
 const MODULE_CONFIG = {
   headers: { name: 'HTTP Headers Analysis', weight: 10, fn: scanHeaders },
   ssl: { name: 'SSL/TLS Analysis', weight: 10, fn: scanSsl },
-  paths: { name: 'Exposed Paths Check', weight: 20, fn: scanPaths },
-  nmap: { name: 'Port Scanning (nmap)', weight: 30, fn: scanNmap },
-  nuclei: { name: 'Vulnerability Scan (nuclei)', weight: 30, fn: scanNuclei },
+  paths: { name: 'Exposed Paths Check', weight: 15, fn: scanPaths },
+  dns: { name: 'DNS Reconnaissance', weight: 10, fn: scanDns },
+  cors: { name: 'CORS Misconfiguration', weight: 10, fn: scanCors },
+  tech: { name: 'Technology Detection', weight: 5, fn: scanTech },
+  nmap: { name: 'Port Scanning (nmap)', weight: 20, fn: scanNmap },
+  nuclei: { name: 'Vulnerability Scan (nuclei)', weight: 20, fn: scanNuclei },
 };
 
 const TEMPLATE_PRESETS = {
-  quick: { headers: true, ssl: true, paths: false, nmap: false, nuclei: false },
-  standard: { headers: true, ssl: true, paths: true, nmap: false, nuclei: false },
-  full: { headers: true, ssl: true, paths: true, nmap: true, nuclei: true },
+  quick: { headers: true, ssl: true, paths: false, dns: false, cors: false, tech: false, nmap: false, nuclei: false },
+  standard: { headers: true, ssl: true, paths: true, dns: true, cors: true, tech: true, nmap: false, nuclei: false },
+  full: { headers: true, ssl: true, paths: true, dns: true, cors: true, tech: true, nmap: true, nuclei: true },
 };
 
 export function buildModules(selected) {

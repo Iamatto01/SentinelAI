@@ -41,6 +41,7 @@ function makeFinding(opts, targetUrl) {
     module: 'Exposed Paths Check',
     aiConfidence: opts.aiConfidence || 0.92,
     aiReasoning: opts.aiReasoning || 'Path returned accessible HTTP status',
+    evidence: opts.evidence || {},
   };
 }
 
@@ -110,6 +111,7 @@ export async function scanPaths(targetUrl, onFinding, onLog) {
         remediation: 'Review whether this file should be publicly accessible.',
         aiConfidence: 0.99,
         aiReasoning: `HTTP ${result.statusCode} returned for ${p.path}`,
+        evidence: { type: 'http', label: `HTTP Response — ${p.path}`, data: `GET ${p.path} → HTTP ${result.statusCode}\n\n${(result.body || '').substring(0, 500)}` },
       }, baseUrl);
       findings.push(f);
       onFinding?.(f);
@@ -124,6 +126,7 @@ export async function scanPaths(targetUrl, onFinding, onLog) {
         remediation: `Restrict access to ${p.path} by configuring the web server to deny requests, or remove the file if not needed.`,
         aiConfidence: result.statusCode === 200 ? 0.97 : 0.75,
         aiReasoning: `HTTP ${result.statusCode} returned for ${p.path}`,
+        evidence: { type: 'http', label: `HTTP Response — ${p.path}`, data: `GET ${p.path} → HTTP ${result.statusCode}\n\n${(result.body || '').substring(0, 500)}` },
       }, baseUrl);
       findings.push(f);
       onFinding?.(f);
