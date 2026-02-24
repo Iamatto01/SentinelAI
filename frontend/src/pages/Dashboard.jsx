@@ -29,6 +29,7 @@ export default function Dashboard() {
   const [showScanModal, setShowScanModal] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
   const [selectedVuln, setSelectedVuln] = useState(null);
+  const [showNotifications, setShowNotifications] = useState(false);
   const navigate = useNavigate();
   const toast = useToast();
 
@@ -85,15 +86,50 @@ export default function Dashboard() {
       subtitle="Real-time penetration testing orchestration"
       actions={
         <>
-          <button className="relative p-2 glassmorphism rounded-lg hover:bg-white/10 transition-all">
-            <span className="text-lg">&#x1F514;</span>
-            {vulns.length > 0 && (
-              <span className="notification-badge absolute -top-1 -right-1 w-5 h-5 rounded-full text-xs flex items-center justify-center">
-                {vulns.length}
-              </span>
+          <div className="relative">
+            <button
+              className="relative p-2 glassmorphism rounded-lg hover:bg-white/10 transition-all"
+              onClick={() => setShowNotifications(!showNotifications)}
+            >
+              <span className="text-lg">&#x1F514;</span>
+              {vulns.filter((v) => (v.status || 'open') === 'open').length > 0 && (
+                <span className="notification-badge absolute -top-1 -right-1 w-5 h-5 rounded-full text-xs flex items-center justify-center">
+                  {vulns.filter((v) => (v.status || 'open') === 'open').length}
+                </span>
+              )}
+            </button>
+            {showNotifications && (
+              <div className="absolute right-0 mt-2 w-80 glassmorphism rounded-lg border border-white/10 shadow-xl z-50 overflow-hidden">
+                <div className="p-3 border-b border-white/10 flex items-center justify-between">
+                  <span className="text-sm font-semibold">Notifications</span>
+                  <button className="text-xs text-gray-400 hover:text-white" onClick={() => { setShowNotifications(false); navigate('/vulnerabilities'); }}>View All</button>
+                </div>
+                <div className="max-h-72 overflow-y-auto">
+                  {vulns.filter((v) => (v.status || 'open') === 'open').length === 0 ? (
+                    <div className="p-4 text-sm text-gray-400 text-center">No open findings</div>
+                  ) : (
+                    vulns.filter((v) => (v.status || 'open') === 'open').slice(0, 8).map((v) => (
+                      <div
+                        key={v.id}
+                        className="p-3 border-b border-white/5 hover:bg-white/5 cursor-pointer"
+                        onClick={() => { setShowNotifications(false); setSelectedVuln(v); }}
+                      >
+                        <div className="flex items-center space-x-2">
+                          <span className={`${severityBadge(v.severity)} px-1.5 py-0.5 rounded text-[10px]`}>{(v.severity || 'info').toUpperCase()}</span>
+                          <span className="text-sm truncate">{v.title || 'Untitled'}</span>
+                        </div>
+                        <p className="text-xs text-gray-400 mt-1 truncate">{v.asset || 'Unknown asset'}</p>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
             )}
-          </button>
-          <button className="p-2 glassmorphism rounded-lg hover:bg-white/10 transition-all">
+          </div>
+          <button
+            className="p-2 glassmorphism rounded-lg hover:bg-white/10 transition-all"
+            onClick={() => navigate('/settings')}
+          >
             <span className="text-lg">&#x2699;&#xFE0F;</span>
           </button>
         </>
