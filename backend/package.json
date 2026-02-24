@@ -1,0 +1,17 @@
+{
+  "name": "pentest-suite-server",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "node src/index.js",
+    "start": "node src/index.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^12.6.2",
+    "cors": "^2.8.5",
+    "express": "^4.19.2",
+    "pdfkit": "^0.17.2",
+    "socket.io": "^4.8.1"
+  }
+}
