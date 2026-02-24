@@ -8,7 +8,7 @@
     "start": "node src/index.js"
   },
   "dependencies": {
-    "better-sqlite3": "^12.6.2",
+    "@libsql/client": "^0.17.0",
     "cors": "^2.8.5",
     "express": "^4.19.2",
     "pdfkit": "^0.17.2",

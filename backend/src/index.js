@@ -25,8 +25,6 @@ const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN || '*'
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 
-seedIfEmpty()
-
 const app = express()
 app.use(express.json({ limit: '1mb' }))
 app.use(
@@ -469,7 +467,15 @@ app.get('*', (req, res) => {
 
 // ── Start ─────────────────────────────────────────────────────────────────────
 
-httpServer.listen(PORT, '0.0.0.0', () => {
-  console.log(`[backend] listening on http://0.0.0.0:${PORT}`)
-  console.log(`[backend] allow origin: ${CLIENT_ORIGIN}`)
+async function start() {
+  await seedIfEmpty()
+  httpServer.listen(PORT, '0.0.0.0', () => {
+    console.log(`[backend] listening on http://0.0.0.0:${PORT}`)
+    console.log(`[backend] allow origin: ${CLIENT_ORIGIN}`)
+  })
+}
+
+start().catch((err) => {
+  console.error('[backend] Failed to start:', err)
+  process.exit(1)
 })

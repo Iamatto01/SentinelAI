@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import {
+  initDatabase,
   dbHasProjects,
   dbGetAllProjects, dbInsertProject, dbUpdateProject, dbDeleteProject,
   dbGetAllScans, dbInsertScan, dbUpdateScan,
@@ -32,29 +33,31 @@ export const db = {
   },
 }
 
-// ── Load from SQLite on startup ─────────────────────────────────────────────
+// ── Load from database on startup ───────────────────────────────────────────
 
-function loadFromSqlite() {
-  db.projects = dbGetAllProjects()
-  db.scans = dbGetAllScans()
-  db.auditLogs = dbGetAuditLogs(500)
+async function loadFromDb() {
+  db.projects = await dbGetAllProjects()
+  db.scans = await dbGetAllScans()
+  db.auditLogs = await dbGetAuditLogs(500)
 
   db.vulnerabilitiesByScanId.clear()
   for (const scan of db.scans) {
-    db.vulnerabilitiesByScanId.set(scan.id, dbGetVulnsByScan(scan.id))
+    db.vulnerabilitiesByScanId.set(scan.id, await dbGetVulnsByScan(scan.id))
   }
 
   db.scanLogsByScanId.clear()
   for (const scan of db.scans) {
-    db.scanLogsByScanId.set(scan.id, dbGetLogsByScan(scan.id))
+    db.scanLogsByScanId.set(scan.id, await dbGetLogsByScan(scan.id))
   }
 }
 
 // ── Seed data ───────────────────────────────────────────────────────────────
 
-export function seedIfEmpty() {
-  if (dbHasProjects()) {
-    loadFromSqlite()
+export async function seedIfEmpty() {
+  await initDatabase()
+
+  if (await dbHasProjects()) {
+    await loadFromDb()
     return
   }
 
@@ -96,40 +99,40 @@ export function seedIfEmpty() {
   ]
 
   for (const p of seeds) {
-    dbInsertProject(p)
+    await dbInsertProject(p)
   }
 
-  loadFromSqlite()
+  await loadFromDb()
 }
 
-// ── CRUD helpers (update both in-memory + SQLite) ───────────────────────────
+// ── CRUD helpers (update in-memory immediately, fire-and-forget to DB) ──────
 
 // Projects
 export function addProject(project) {
   db.projects.unshift(project)
-  dbInsertProject(project)
+  dbInsertProject(project).catch((e) => console.error('dbInsertProject error:', e.message))
 }
 
 export function saveProject(project) {
-  dbUpdateProject(project)
+  dbUpdateProject(project).catch((e) => console.error('dbUpdateProject error:', e.message))
 }
 
 export function removeProject(id) {
   const idx = db.projects.findIndex((p) => p.id === id)
   if (idx === -1) return null
   const [removed] = db.projects.splice(idx, 1)
-  dbDeleteProject(id)
+  dbDeleteProject(id).catch((e) => console.error('dbDeleteProject error:', e.message))
   return removed
 }
 
 // Scans
 export function addScan(scan) {
   db.scans.unshift(scan)
-  dbInsertScan(scan)
+  dbInsertScan(scan).catch((e) => console.error('dbInsertScan error:', e.message))
 }
 
 export function saveScan(scan) {
-  dbUpdateScan(scan)
+  dbUpdateScan(scan).catch((e) => console.error('dbUpdateScan error:', e.message))
 }
 
 // Vulnerabilities
@@ -143,7 +146,7 @@ export function addVuln(scanId, vuln) {
   const vulns = db.vulnerabilitiesByScanId.get(scanId) || []
   vulns.push(vuln)
   db.vulnerabilitiesByScanId.set(scanId, vulns)
-  dbInsertVuln({ ...vuln, scanId })
+  dbInsertVuln({ ...vuln, scanId }).catch((e) => console.error('dbInsertVuln error:', e.message))
 }
 
 export function saveVulnStatus(vulnId, status) {
@@ -154,7 +157,7 @@ export function saveVulnStatus(vulnId, status) {
       break
     }
   }
-  dbUpdateVulnStatus(vulnId, status)
+  dbUpdateVulnStatus(vulnId, status).catch((e) => console.error('dbUpdateVulnStatus error:', e.message))
 }
 
 // Scan logs
@@ -168,7 +171,7 @@ export function initLogs(scanId) {
 export function addLog(scanId, entry) {
   const logs = initLogs(scanId)
   logs.push(entry)
-  dbInsertLog({ scanId, ...entry })
+  dbInsertLog({ scanId, ...entry }).catch((e) => console.error('dbInsertLog error:', e.message))
   return entry
 }
 
@@ -183,5 +186,5 @@ export function addAudit({ user, action, resource, details }) {
     details,
   }
   db.auditLogs.unshift(entry)
-  dbInsertAudit(entry)
+  dbInsertAudit(entry).catch((e) => console.error('dbInsertAudit error:', e.message))
 }

@@ -1,27 +1,27 @@
 import { scanHeaders } from './headers.js';
 import { scanSsl } from './ssl.js';
 import { scanPaths } from './paths.js';
-import { scanNmap } from './nmap.js';
-import { scanNuclei } from './nuclei.js';
 import { scanDns } from './dns.js';
 import { scanCors } from './cors.js';
 import { scanTech } from './tech.js';
+import { scanSubdomains } from './subdomains.js';
+import { scanInfo } from './info.js';
 
 const MODULE_CONFIG = {
-  headers: { name: 'HTTP Headers Analysis', weight: 10, fn: scanHeaders },
-  ssl: { name: 'SSL/TLS Analysis', weight: 10, fn: scanSsl },
+  headers: { name: 'HTTP Headers Analysis', weight: 12, fn: scanHeaders },
+  ssl: { name: 'SSL/TLS Analysis', weight: 12, fn: scanSsl },
   paths: { name: 'Exposed Paths Check', weight: 15, fn: scanPaths },
-  dns: { name: 'DNS Reconnaissance', weight: 10, fn: scanDns },
-  cors: { name: 'CORS Misconfiguration', weight: 10, fn: scanCors },
-  tech: { name: 'Technology Detection', weight: 5, fn: scanTech },
-  nmap: { name: 'Port Scanning (nmap)', weight: 20, fn: scanNmap },
-  nuclei: { name: 'Vulnerability Scan (nuclei)', weight: 20, fn: scanNuclei },
+  dns: { name: 'DNS Reconnaissance', weight: 15, fn: scanDns },
+  cors: { name: 'CORS Misconfiguration', weight: 12, fn: scanCors },
+  tech: { name: 'Technology Detection', weight: 10, fn: scanTech },
+  subdomains: { name: 'Subdomain Enumeration', weight: 12, fn: scanSubdomains },
+  info: { name: 'Information Disclosure', weight: 12, fn: scanInfo },
 };
 
 const TEMPLATE_PRESETS = {
-  quick: { headers: true, ssl: true, paths: false, dns: false, cors: false, tech: false, nmap: false, nuclei: false },
-  standard: { headers: true, ssl: true, paths: true, dns: true, cors: true, tech: true, nmap: false, nuclei: false },
-  full: { headers: true, ssl: true, paths: true, dns: true, cors: true, tech: true, nmap: true, nuclei: true },
+  quick: { headers: true, ssl: true, paths: false, dns: false, cors: false, tech: false, subdomains: false, info: false },
+  standard: { headers: true, ssl: true, paths: true, dns: true, cors: true, tech: true, subdomains: false, info: false },
+  full: { headers: true, ssl: true, paths: true, dns: true, cors: true, tech: true, subdomains: true, info: true },
 };
 
 export function buildModules(selected) {
@@ -68,7 +68,6 @@ export async function runScan(scanId, target, options, ctx) {
   pushLog(scanId, 'info', `Modules enabled: ${enabledKeys.map((k) => MODULE_CONFIG[k].name).join(', ')}`);
   emitUpdate();
 
-  // Check tool availability for nmap/nuclei upfront
   const skippedTools = [];
 
   for (const key of enabledKeys) {

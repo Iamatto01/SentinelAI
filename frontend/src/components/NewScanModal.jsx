@@ -2,9 +2,9 @@ import { useState, useEffect } from 'react';
 import { apiFetch } from '../lib/api.js';
 
 const TEMPLATES = [
-  { id: 'quick', name: 'Quick Scan', desc: 'Headers + SSL only', modules: { headers: true, ssl: true, paths: false, dns: false, cors: false, tech: false, nmap: false, nuclei: false } },
-  { id: 'standard', name: 'Standard Scan', desc: 'All web modules', modules: { headers: true, ssl: true, paths: true, dns: true, cors: true, tech: true, nmap: false, nuclei: false } },
-  { id: 'full', name: 'Full Scan', desc: 'All modules + nmap & nuclei', modules: { headers: true, ssl: true, paths: true, dns: true, cors: true, tech: true, nmap: true, nuclei: true } },
+  { id: 'quick', name: 'Quick Scan', desc: 'Headers + SSL only', modules: { headers: true, ssl: true, paths: false, dns: false, cors: false, tech: false, subdomains: false, info: false } },
+  { id: 'standard', name: 'Standard Scan', desc: 'All web modules', modules: { headers: true, ssl: true, paths: true, dns: true, cors: true, tech: true, subdomains: false, info: false } },
+  { id: 'full', name: 'Full Scan', desc: 'All modules enabled', modules: { headers: true, ssl: true, paths: true, dns: true, cors: true, tech: true, subdomains: true, info: true } },
 ];
 
 const MODULE_INFO = {
@@ -14,14 +14,14 @@ const MODULE_INFO = {
   dns: 'DNS records, SPF, DMARC, mail server config',
   cors: 'Cross-origin resource sharing misconfigurations',
   tech: 'Technology stack fingerprinting & detection',
-  nmap: 'Port scanning & service detection (requires nmap)',
-  nuclei: 'Template-based vulnerability scan (requires nuclei)',
+  subdomains: 'Subdomain enumeration via DNS brute-force',
+  info: 'Information disclosure & sensitive data exposure',
 };
 
 export default function NewScanModal({ open, onClose, onStarted }) {
   const [target, setTarget] = useState('');
   const [template, setTemplate] = useState('standard');
-  const [modules, setModules] = useState({ headers: true, ssl: true, paths: true, dns: true, cors: true, tech: true, nmap: false, nuclei: false });
+  const [modules, setModules] = useState({ headers: true, ssl: true, paths: true, dns: true, cors: true, tech: true, subdomains: false, info: false });
   const [projectId, setProjectId] = useState('');
   const [projects, setProjects] = useState([]);
   const [submitting, setSubmitting] = useState(false);
