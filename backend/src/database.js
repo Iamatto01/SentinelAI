@@ -89,6 +89,14 @@ export async function initDatabase() {
     )
   `)
 
+  await client.execute(`
+    CREATE TABLE IF NOT EXISTS users (
+      username TEXT PRIMARY KEY,
+      passwordHash TEXT NOT NULL,
+      role TEXT DEFAULT 'analyst'
+    )
+  `)
+
   // Migration: add evidence column if missing
   try {
     await client.execute(`ALTER TABLE vulnerabilities ADD COLUMN evidence TEXT DEFAULT '{}'`)
@@ -235,5 +243,18 @@ export async function dbInsertAudit(entry) {
   await client.execute({
     sql: `INSERT INTO audit_logs (id, timestamp, user, action, resource, details) VALUES (?, ?, ?, ?, ?, ?)`,
     args: [entry.id, entry.timestamp, entry.user, entry.action, entry.resource, entry.details],
+  })
+}
+
+// Users
+export async function dbGetUser(username) {
+  const result = await client.execute({ sql: 'SELECT * FROM users WHERE username = ?', args: [username] })
+  return result.rows[0] || null
+}
+
+export async function dbInsertUser(username, passwordHash, role = 'analyst') {
+  await client.execute({
+    sql: 'INSERT OR IGNORE INTO users (username, passwordHash, role) VALUES (?, ?, ?)',
+    args: [username, passwordHash, role],
   })
 }

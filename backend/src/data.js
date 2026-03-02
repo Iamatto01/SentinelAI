@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto'
+import { randomUUID, scryptSync, randomBytes } from 'node:crypto'
 import {
   initDatabase,
   dbHasProjects,
@@ -7,7 +7,14 @@ import {
   dbGetVulnsByScan, dbInsertVuln, dbUpdateVulnStatus,
   dbGetLogsByScan, dbInsertLog,
   dbInsertAudit, dbGetAuditLogs,
+  dbGetUser, dbInsertUser,
 } from './database.js'
+
+function hashPassword(password) {
+  const salt = randomBytes(16).toString('hex')
+  const hash = scryptSync(password, salt, 64).toString('hex')
+  return `${salt}:${hash}`
+}
 
 // ── In-memory db object (backward compat with orchestrator) ─────────────────
 
@@ -55,6 +62,11 @@ async function loadFromDb() {
 
 export async function seedIfEmpty() {
   await initDatabase()
+
+  // Always ensure the default users exist (idempotent via INSERT OR IGNORE)
+  await dbInsertUser('admin', hashPassword(process.env.ADMIN_PASSWORD || 'admin'), 'admin')
+  await dbInsertUser('john@techcorp.com', hashPassword(process.env.CLIENT_PASSWORD || 'demo123'), 'client')
+  await dbInsertUser('bob@ecommerce.com', hashPassword(process.env.CLIENT_PASSWORD || 'demo123'), 'client')
 
   if (await dbHasProjects()) {
     await loadFromDb()
@@ -187,4 +199,9 @@ export function addAudit({ user, action, resource, details }) {
   }
   db.auditLogs.unshift(entry)
   dbInsertAudit(entry).catch((e) => console.error('dbInsertAudit error:', e.message))
+}
+
+// Users
+export function getUser(username) {
+  return dbGetUser(username)
 }
