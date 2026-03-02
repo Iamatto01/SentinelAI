@@ -10,14 +10,14 @@ import jwt from 'jsonwebtoken'
 
 import { authMiddleware, requireAuth, requireRole } from './auth.js'
 import {
-  db, seedIfEmpty,
+  db, seedIfEmpty, ensureClientUsersFromProjects,
   addProject, saveProject, removeProject,
   addScan, saveScan,
   initVulns, addVuln, saveVulnStatus,
   initLogs, addLog,
   addAudit,
 } from './data.js'
-import { dbGetUserByUsername, dbUpdateUserLastLogin } from './database.js'
+import { dbGetUserByUsername, dbUpdateUserLastLogin, dbGetUserByEmail } from './database.js'
 import { getCveById, searchCve } from './cve.js'
 import { runScan, buildModules, getModuleSelection } from './scanner/orchestrator.js'
 import { generateReport } from './report.js'
@@ -90,13 +90,13 @@ function loginRateLimiter(req, res, next) {
   next()
 }
 
-app.post('/api/auth/login', loginRateLimiter, (req, res) => {
-  const { username, password } = req.body || {}
-  if (!username || !password) {
-    return res.status(400).json({ error: 'username and password required' })
-  }
+app.post('/api/auth/login', loginRateLimiter, async (req, res) => {
+  try {
+    const { username, password } = req.body || {}
+    if (!username || !password) {
+      return res.status(400).json({ error: 'username and password required' })
+    }
 
-  void (async () => {
     const record = await dbGetUserByUsername(username)
     if (!record) {
       return res.status(401).json({ error: 'Invalid username or password' })
@@ -137,7 +137,7 @@ app.post('/api/auth/login', loginRateLimiter, (req, res) => {
       { issuer: JWT_ISSUER, subject: user.id, expiresIn: '12h' },
     )
 
-    addAudit({
+    await addAudit({
       user: user.username,
       action: 'LOGIN',
       resource: user.id,
@@ -145,10 +145,66 @@ app.post('/api/auth/login', loginRateLimiter, (req, res) => {
     })
 
     return res.json({ success: true, token, user })
-  })().catch((e) => {
+  } catch (e) {
     console.error('[auth] login error:', e)
     return res.status(500).json({ error: 'Login failed' })
-  })
+  }
+})
+
+// ── Client email-only login ──────────────────────────────────────────────────
+
+app.post('/api/auth/client-login', loginRateLimiter, async (req, res) => {
+  try {
+    const { email } = req.body || {}
+    if (!email || !email.trim()) {
+      return res.status(400).json({ error: 'Email is required' })
+    }
+
+    const normalizedEmail = email.trim().toLowerCase()
+
+    // Look up client user by email
+    const record = await dbGetUserByEmail(normalizedEmail)
+    if (!record || record.role !== 'client') {
+      return res.status(401).json({ error: 'No client account found for this email. Contact your security analyst.' })
+    }
+
+    const lastLogin = new Date().toISOString()
+    await dbUpdateUserLastLogin(record.id, lastLogin)
+
+    const user = {
+      id: record.id,
+      username: record.username,
+      email: record.email,
+      role: 'client',
+      permissions: ['read'],
+      assignedProjectIds: getClientProjectIds({ role: 'client', email: normalizedEmail }) || [],
+      lastLogin,
+    }
+
+    const token = jwt.sign(
+      {
+        username: user.username,
+        email: user.email,
+        role: user.role,
+        permissions: user.permissions,
+        lastLogin: user.lastLogin,
+      },
+      JWT_SECRET,
+      { issuer: JWT_ISSUER, subject: user.id, expiresIn: '12h' },
+    )
+
+    await addAudit({
+      user: user.username,
+      action: 'CLIENT_LOGIN',
+      resource: user.id,
+      details: `Client logged in via email: ${normalizedEmail}`,
+    })
+
+    return res.json({ success: true, token, user })
+  } catch (e) {
+    console.error('[auth] client-login error:', e)
+    return res.status(500).json({ error: 'Login failed' })
+  }
 })
 
 app.get('/api/auth/me', requireAuth, (req, res) => {
@@ -172,7 +228,7 @@ app.get('/api/projects/:id', requireAuth, (req, res) => {
   res.json({ project, scans })
 })
 
-app.post('/api/projects', requireAuth, requireRole('admin', 'analyst'), (req, res) => {
+app.post('/api/projects', requireAuth, requireRole('admin', 'analyst'), async (req, res) => {
   const data = req.body || {}
   if (!data.name || !data.client || !data.owner) {
     return res.status(400).json({ error: 'name, client, and owner required' })
@@ -190,8 +246,12 @@ app.post('/api/projects', requireAuth, requireRole('admin', 'analyst'), (req, re
     status: 'active',
   }
 
-  addProject(project)
-  addAudit({
+  await addProject(project)
+
+  // Create client user accounts for any new client emails
+  await ensureClientUsersFromProjects()
+
+  await addAudit({
     user: req.user.username,
     action: 'PROJECT_CREATED',
     resource: project.id,
@@ -201,7 +261,7 @@ app.post('/api/projects', requireAuth, requireRole('admin', 'analyst'), (req, re
   res.status(201).json({ project })
 })
 
-app.put('/api/projects/:id', requireAuth, requireRole('admin', 'analyst'), (req, res) => {
+app.put('/api/projects/:id', requireAuth, requireRole('admin', 'analyst'), async (req, res) => {
   const project = db.projects.find((p) => p.id === req.params.id)
   if (!project) return res.status(404).json({ error: 'Project not found' })
   const data = req.body || {}
@@ -210,8 +270,12 @@ app.put('/api/projects/:id', requireAuth, requireRole('admin', 'analyst'), (req,
     if (data[key] !== undefined) project[key] = data[key]
   }
   project.updatedAt = new Date().toISOString()
-  saveProject(project)
-  addAudit({
+  await saveProject(project)
+
+  // Create client user accounts for any new client emails
+  await ensureClientUsersFromProjects()
+
+  await addAudit({
     user: req.user.username,
     action: 'PROJECT_UPDATED',
     resource: project.id,
@@ -220,10 +284,10 @@ app.put('/api/projects/:id', requireAuth, requireRole('admin', 'analyst'), (req,
   res.json({ project })
 })
 
-app.delete('/api/projects/:id', requireAuth, requireRole('admin', 'analyst'), (req, res) => {
-  const removed = removeProject(req.params.id)
+app.delete('/api/projects/:id', requireAuth, requireRole('admin', 'analyst'), async (req, res) => {
+  const removed = await removeProject(req.params.id)
   if (!removed) return res.status(404).json({ error: 'Project not found' })
-  addAudit({
+  await addAudit({
     user: req.user.username,
     action: 'PROJECT_DELETED',
     resource: removed.id,
@@ -240,7 +304,7 @@ app.get('/api/scans', requireAuth, (req, res) => {
   res.json({ scans })
 })
 
-app.post('/api/scan/start', requireAuth, requireRole('admin', 'analyst'), (req, res) => {
+app.post('/api/scan/start', requireAuth, requireRole('admin', 'analyst'), async (req, res) => {
   const data = req.body || {}
   if (!data.target) {
     return res.status(400).json({ error: 'target is required' })
@@ -271,12 +335,12 @@ app.post('/api/scan/start', requireAuth, requireRole('admin', 'analyst'), (req, 
     assetsScanned: 0,
   }
 
-  addScan(scan)
+  await addScan(scan)
   initLogs(scan.id)
   initVulns(scan.id)
-  pushLog(scan.id, 'info', `Scan initiated for ${scan.target} (template: ${template})`)
+  await pushLog(scan.id, 'info', `Scan initiated for ${scan.target} (template: ${template})`)
 
-  addAudit({
+  await addAudit({
     user: req.user.username,
     action: 'SCAN_STARTED',
     resource: scan.id,
@@ -289,14 +353,14 @@ app.post('/api/scan/start', requireAuth, requireRole('admin', 'analyst'), (req, 
   res.status(201).json({ scan })
 })
 
-app.post('/api/scan/pause', requireAuth, requireRole('admin', 'analyst'), (req, res) => {
+app.post('/api/scan/pause', requireAuth, requireRole('admin', 'analyst'), async (req, res) => {
   const { scanId } = req.body || {}
   const scan = db.scans.find((s) => s.id === scanId) || null
   if (!scan) return res.status(404).json({ error: 'Scan not found' })
   scan.status = 'paused'
-  saveScan(scan)
-  pushLog(scan.id, 'warn', 'Scan paused by user')
-  addAudit({
+  await saveScan(scan)
+  await pushLog(scan.id, 'warn', 'Scan paused by user')
+  await addAudit({
     user: req.user.username,
     action: 'SCAN_PAUSED',
     resource: scan.id,
@@ -306,15 +370,15 @@ app.post('/api/scan/pause', requireAuth, requireRole('admin', 'analyst'), (req, 
   res.json({ scan })
 })
 
-app.post('/api/scan/stop', requireAuth, requireRole('admin', 'analyst'), (req, res) => {
+app.post('/api/scan/stop', requireAuth, requireRole('admin', 'analyst'), async (req, res) => {
   const { scanId } = req.body || {}
   const scan = db.scans.find((s) => s.id === scanId) || null
   if (!scan) return res.status(404).json({ error: 'Scan not found' })
   scan.status = 'stopped'
   scan.progress = Math.min(100, scan.progress || 0)
-  saveScan(scan)
-  pushLog(scan.id, 'error', 'Scan stopped by user')
-  addAudit({
+  await saveScan(scan)
+  await pushLog(scan.id, 'error', 'Scan stopped by user')
+  await addAudit({
     user: req.user.username,
     action: 'SCAN_STOPPED',
     resource: scan.id,
@@ -353,7 +417,7 @@ app.get('/api/scan/results', requireAuth, (req, res) => {
 
 // ── Vulnerability Status Update ─────────────────────────────────────────────
 
-app.put('/api/scan/results/:vulnId/status', requireAuth, requireRole('admin', 'analyst'), (req, res) => {
+app.put('/api/scan/results/:vulnId/status', requireAuth, requireRole('admin', 'analyst'), async (req, res) => {
   const { vulnId } = req.params
   const { status } = req.body || {}
   const validStatuses = ['open', 'in-progress', 'closed']
@@ -365,8 +429,8 @@ app.put('/api/scan/results/:vulnId/status', requireAuth, requireRole('admin', 'a
   for (const [, vulns] of db.vulnerabilitiesByScanId) {
     const vuln = vulns.find((v) => v.id === vulnId)
     if (vuln) {
-      saveVulnStatus(vulnId, status)
-      addAudit({
+      await saveVulnStatus(vulnId, status)
+      await addAudit({
         user: req.user.username,
         action: 'VULN_STATUS_UPDATED',
         resource: vulnId,
@@ -396,7 +460,7 @@ app.get('/api/vulnerabilities', requireAuth, (req, res) => {
 
 // ── Reports ──────────────────────────────────────────────────────────────────
 
-app.get('/api/reports/generate', requireAuth, requireRole('admin', 'analyst'), async (req, res) => {
+app.get('/api/reports/generate', requireAuth, async (req, res) => {
   const { type, id } = req.query
 
   if (!type || !['scan', 'project', 'full'].includes(type)) {
@@ -404,6 +468,24 @@ app.get('/api/reports/generate', requireAuth, requireRole('admin', 'analyst'), a
   }
   if ((type === 'scan' || type === 'project') && !id) {
     return res.status(400).json({ error: 'id is required for scan/project reports' })
+  }
+
+  // Allow clients to download reports for their own projects
+  if (req.user.role === 'client') {
+    if (type === 'project') {
+      const clientPids = getClientProjectIds(req.user)
+      if (!clientPids || !clientPids.includes(id)) {
+        return res.status(403).json({ error: 'Forbidden' })
+      }
+    } else if (type === 'scan') {
+      const scan = db.scans.find((s) => s.id === id)
+      const clientPids = getClientProjectIds(req.user)
+      if (!scan || !clientPids || !clientPids.includes(scan.projectId)) {
+        return res.status(403).json({ error: 'Forbidden' })
+      }
+    } else {
+      return res.status(403).json({ error: 'Forbidden' })
+    }
   }
 
   try {
@@ -416,7 +498,7 @@ app.get('/api/reports/generate', requireAuth, requireRole('admin', 'analyst'), a
     pdfStream.pipe(res)
     pdfStream.end()
 
-    addAudit({
+    await addAudit({
       user: req.user.username,
       action: 'REPORT_GENERATED',
       resource: id || 'full',
@@ -446,7 +528,7 @@ app.get('/api/cve/search', requireAuth, async (req, res) => {
   }
   const years = year ? [String(year)] : ['2025', '2024', '2023']
   const cves = await searchCve(q.trim(), { years, limit: 20 })
-  addAudit({
+  await addAudit({
     user: req.user.username,
     action: 'CVE_SEARCH',
     resource: 'cvelistV5',
@@ -462,7 +544,7 @@ app.get('/api/cve/:cveId', requireAuth, async (req, res) => {
   }
   const cve = await getCveById(cveId)
   if (!cve) return res.status(404).json({ error: `${cveId} not found in local CVE database` })
-  addAudit({
+  await addAudit({
     user: req.user.username,
     action: 'CVE_LOOKUP',
     resource: cveId,
@@ -496,9 +578,9 @@ io.on('connection', (socket) => {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function pushLog(scanId, level, message, module = 'core') {
+async function pushLog(scanId, level, message, module = 'core') {
   const entry = { timestamp: new Date().toISOString(), level, message, module }
-  return addLog(scanId, entry)
+  return await addLog(scanId, entry)
 }
 
 function emitScanUpdate(scanId) {
