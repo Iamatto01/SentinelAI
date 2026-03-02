@@ -4,8 +4,8 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "node src/index.js",
-    "start": "node src/index.js"
+    "dev": "node --env-file=.env src/index.js",
+    "start": "node --env-file=.env src/index.js"
   },
   "dependencies": {
     "@libsql/client": "^0.17.0",
