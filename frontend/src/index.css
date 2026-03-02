@@ -32,17 +32,23 @@ body {
 
 .nav-item {
   transition: all 0.3s ease;
-  border-left: 3px solid transparent;
 }
 
 .nav-item.active {
-  border-left-color: #ffffff;
   background: rgba(255, 255, 255, 0.1);
 }
 
 .nav-item:hover {
   background: rgba(255, 255, 255, 0.05);
-  border-left-color: rgba(255, 255, 255, 0.5);
+}
+
+/* Glass sidebar */
+.glass-sidebar {
+  will-change: width;
+}
+
+.glass-nav-item {
+  will-change: background-color;
 }
 
 /* Metric cards */

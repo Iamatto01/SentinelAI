@@ -74,12 +74,33 @@ export default function AuthProvider({ children }) {
     }
   }, []);
 
+  const clientLogin = useCallback(async (email) => {
+    const res = await fetch('/api/auth/client-login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({ email }),
+    });
+
+    const data = await res.json().catch(() => ({}));
+
+    if (!res.ok) {
+      throw new Error(data?.error || 'Login failed');
+    }
+
+    if (data.token && data.user) {
+      setAuth({ token: data.token, user: data.user });
+      setUser(data.user);
+    } else {
+      throw new Error('Invalid login response');
+    }
+  }, []);
+
   const logout = useCallback(() => {
     doLogout();
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout }}>
+    <AuthContext.Provider value={{ user, loading, login, clientLogin, logout }}>
       {children}
     </AuthContext.Provider>
   );

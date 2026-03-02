@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '../lib/AuthContext.jsx';
-import { apiFetch } from '../lib/api.js';
+import { apiFetch, downloadPdfReport } from '../lib/api.js';
 import VulnDetailModal from '../components/VulnDetailModal.jsx';
 
 function severityBadge(sev) {
@@ -28,13 +28,27 @@ export default function ClientPortal() {
   const [selectedVuln, setSelectedVuln] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [exporting, setExporting] = useState(null);
+  const [stats, setStats] = useState({ total: 0, critical: 0, high: 0, medium: 0, low: 0, open: 0 });
 
   useEffect(() => {
     (async () => {
       setLoading(true);
       try {
-        const data = await apiFetch('/api/projects');
-        setProjects(data?.projects || []);
+        const [projData, vulnData] = await Promise.all([
+          apiFetch('/api/projects'),
+          apiFetch('/api/vulnerabilities'),
+        ]);
+        setProjects(projData?.projects || []);
+        const vulns = vulnData?.vulnerabilities || [];
+        setStats({
+          total: vulns.length,
+          critical: vulns.filter((v) => (v.severity || '').toLowerCase() === 'critical').length,
+          high: vulns.filter((v) => (v.severity || '').toLowerCase() === 'high').length,
+          medium: vulns.filter((v) => (v.severity || '').toLowerCase() === 'medium').length,
+          low: vulns.filter((v) => (v.severity || '').toLowerCase() === 'low').length,
+          open: vulns.filter((v) => (v.status || 'open') === 'open').length,
+        });
       } catch (e) {
         setError(e?.message || String(e));
       } finally {
@@ -76,6 +90,17 @@ export default function ClientPortal() {
     }
   }
 
+  async function handleExportPdf(projectId) {
+    setExporting(projectId);
+    try {
+      await downloadPdfReport('project', projectId);
+    } catch (err) {
+      setError(err.message || 'Failed to export PDF');
+    } finally {
+      setExporting(null);
+    }
+  }
+
   return (
     <div className="min-h-screen bg-black text-white">
       {/* Header */}
@@ -103,6 +128,38 @@ export default function ClientPortal() {
       {/* Main */}
       <main className="max-w-6xl mx-auto px-6 py-8">
         <h2 className="text-2xl font-bold mb-6">Your Projects</h2>
+
+        {/* Vulnerability Summary Stats */}
+        {!loading && stats.total > 0 && (
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+            <div className="glassmorphism rounded-lg p-4 border border-white/10">
+              <p className="text-xs text-gray-400 mb-1">Total Findings</p>
+              <p className="text-2xl font-bold">{stats.total}</p>
+              <p className="text-xs text-gray-500 mt-1">{stats.open} open</p>
+            </div>
+            <div className="glassmorphism rounded-lg p-4 border border-white/10">
+              <p className="text-xs text-gray-400 mb-1">Critical</p>
+              <p className="text-2xl font-bold white-glow-text">{stats.critical}</p>
+              <div className="mt-2 w-full bg-gray-800 rounded-full h-1.5">
+                <div className="bg-white h-1.5 rounded-full" style={{ width: stats.total ? `${(stats.critical / stats.total) * 100}%` : '0%' }} />
+              </div>
+            </div>
+            <div className="glassmorphism rounded-lg p-4 border border-white/10">
+              <p className="text-xs text-gray-400 mb-1">High</p>
+              <p className="text-2xl font-bold text-gray-300">{stats.high}</p>
+              <div className="mt-2 w-full bg-gray-800 rounded-full h-1.5">
+                <div className="bg-gray-400 h-1.5 rounded-full" style={{ width: stats.total ? `${(stats.high / stats.total) * 100}%` : '0%' }} />
+              </div>
+            </div>
+            <div className="glassmorphism rounded-lg p-4 border border-white/10">
+              <p className="text-xs text-gray-400 mb-1">Medium / Low</p>
+              <p className="text-2xl font-bold text-gray-400">{stats.medium + stats.low}</p>
+              <div className="mt-2 w-full bg-gray-800 rounded-full h-1.5">
+                <div className="bg-gray-600 h-1.5 rounded-full" style={{ width: stats.total ? `${((stats.medium + stats.low) / stats.total) * 100}%` : '0%' }} />
+              </div>
+            </div>
+          </div>
+        )}
 
         {loading && (
           <div className="glassmorphism p-6 rounded border border-white/10 text-gray-300">Loading...</div>
@@ -169,6 +226,20 @@ export default function ClientPortal() {
                         <p className="text-xs text-gray-400 mb-1">Vulnerabilities</p>
                         <p className="text-sm">{p.vulnerabilityCount ?? 0}</p>
                       </div>
+                    </div>
+
+                    {/* Export PDF Button */}
+                    <div className="mb-4">
+                      <button
+                        className="px-4 py-2 text-sm font-medium border border-white/20 rounded-lg hover:bg-white/10 transition-all disabled:opacity-50 flex items-center space-x-2"
+                        onClick={() => handleExportPdf(p.id)}
+                        disabled={exporting === p.id}
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                        </svg>
+                        <span>{exporting === p.id ? 'Exporting...' : 'Export PDF Report'}</span>
+                      </button>
                     </div>
 
                     {p.description && (

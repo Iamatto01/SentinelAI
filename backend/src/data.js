@@ -133,7 +133,7 @@ async function ensureCoreUsers() {
   })
 }
 
-async function ensureClientUsersFromProjects() {
+export async function ensureClientUsersFromProjects() {
   const now = new Date().toISOString()
   const clientPassword = process.env.DEFAULT_CLIENT_PASSWORD || 'client'
   const emails = new Set()
@@ -171,34 +171,54 @@ async function ensureUser({ username, email, role, password, createdAt }) {
   })
 }
 
-// ── CRUD helpers (update in-memory immediately, fire-and-forget to DB) ──────
+// ── CRUD helpers (update in-memory + await DB write) ────────────────────────
 
 // Projects
-export function addProject(project) {
+export async function addProject(project) {
   db.projects.unshift(project)
-  dbInsertProject(project).catch((e) => console.error('dbInsertProject error:', e.message))
+  try {
+    await dbInsertProject(project)
+  } catch (e) {
+    console.error('dbInsertProject error:', e.message)
+  }
 }
 
-export function saveProject(project) {
-  dbUpdateProject(project).catch((e) => console.error('dbUpdateProject error:', e.message))
+export async function saveProject(project) {
+  try {
+    await dbUpdateProject(project)
+  } catch (e) {
+    console.error('dbUpdateProject error:', e.message)
+  }
 }
 
-export function removeProject(id) {
+export async function removeProject(id) {
   const idx = db.projects.findIndex((p) => p.id === id)
   if (idx === -1) return null
   const [removed] = db.projects.splice(idx, 1)
-  dbDeleteProject(id).catch((e) => console.error('dbDeleteProject error:', e.message))
+  try {
+    await dbDeleteProject(id)
+  } catch (e) {
+    console.error('dbDeleteProject error:', e.message)
+  }
   return removed
 }
 
 // Scans
-export function addScan(scan) {
+export async function addScan(scan) {
   db.scans.unshift(scan)
-  dbInsertScan(scan).catch((e) => console.error('dbInsertScan error:', e.message))
+  try {
+    await dbInsertScan(scan)
+  } catch (e) {
+    console.error('dbInsertScan error:', e.message)
+  }
 }
 
-export function saveScan(scan) {
-  dbUpdateScan(scan).catch((e) => console.error('dbUpdateScan error:', e.message))
+export async function saveScan(scan) {
+  try {
+    await dbUpdateScan(scan)
+  } catch (e) {
+    console.error('dbUpdateScan error:', e.message)
+  }
 }
 
 // Vulnerabilities
@@ -208,14 +228,18 @@ export function initVulns(scanId) {
   }
 }
 
-export function addVuln(scanId, vuln) {
+export async function addVuln(scanId, vuln) {
   const vulns = db.vulnerabilitiesByScanId.get(scanId) || []
   vulns.push(vuln)
   db.vulnerabilitiesByScanId.set(scanId, vulns)
-  dbInsertVuln({ ...vuln, scanId }).catch((e) => console.error('dbInsertVuln error:', e.message))
+  try {
+    await dbInsertVuln({ ...vuln, scanId })
+  } catch (e) {
+    console.error('dbInsertVuln error:', e.message)
+  }
 }
 
-export function saveVulnStatus(vulnId, status) {
+export async function saveVulnStatus(vulnId, status) {
   for (const [, vulns] of db.vulnerabilitiesByScanId) {
     const vuln = vulns.find((v) => v.id === vulnId)
     if (vuln) {
@@ -223,7 +247,11 @@ export function saveVulnStatus(vulnId, status) {
       break
     }
   }
-  dbUpdateVulnStatus(vulnId, status).catch((e) => console.error('dbUpdateVulnStatus error:', e.message))
+  try {
+    await dbUpdateVulnStatus(vulnId, status)
+  } catch (e) {
+    console.error('dbUpdateVulnStatus error:', e.message)
+  }
 }
 
 // Scan logs
@@ -234,15 +262,19 @@ export function initLogs(scanId) {
   return db.scanLogsByScanId.get(scanId)
 }
 
-export function addLog(scanId, entry) {
+export async function addLog(scanId, entry) {
   const logs = initLogs(scanId)
   logs.push(entry)
-  dbInsertLog({ scanId, ...entry }).catch((e) => console.error('dbInsertLog error:', e.message))
+  try {
+    await dbInsertLog({ scanId, ...entry })
+  } catch (e) {
+    console.error('dbInsertLog error:', e.message)
+  }
   return entry
 }
 
 // Audit logs
-export function addAudit({ user, action, resource, details }) {
+export async function addAudit({ user, action, resource, details }) {
   const entry = {
     id: 'log_' + randomUUID(),
     timestamp: new Date().toISOString(),
@@ -252,5 +284,9 @@ export function addAudit({ user, action, resource, details }) {
     details,
   }
   db.auditLogs.unshift(entry)
-  dbInsertAudit(entry).catch((e) => console.error('dbInsertAudit error:', e.message))
+  try {
+    await dbInsertAudit(entry)
+  } catch (e) {
+    console.error('dbInsertAudit error:', e.message)
+  }
 }

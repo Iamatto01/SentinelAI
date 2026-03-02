@@ -122,6 +122,14 @@ export async function dbGetUserById(id) {
   return result.rows[0] || null
 }
 
+export async function dbGetUserByEmail(email) {
+  const result = await client.execute({
+    sql: 'SELECT * FROM users WHERE LOWER(email) = LOWER(?) LIMIT 1',
+    args: [email],
+  })
+  return result.rows[0] || null
+}
+
 export async function dbInsertUser(user) {
   await client.execute({
     sql: `INSERT INTO users (id, username, email, passwordHash, role, createdAt, lastLogin)
