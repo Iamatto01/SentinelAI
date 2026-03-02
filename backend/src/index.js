@@ -3,6 +3,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import express from 'express'
 import cors from 'cors'
+import helmet from 'helmet'
 import { Server as SocketIOServer } from 'socket.io'
 import { randomUUID } from 'node:crypto'
 
@@ -20,16 +21,77 @@ import { runScan, buildModules, getModuleSelection } from './scanner/orchestrato
 import { generateReport } from './report.js'
 
 const PORT = Number(process.env.PORT || 5000)
-const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN || '*'
+const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN || ''
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 
+// Allowed origins: support comma-separated list or single origin; never fall back to wildcard
+const ALLOWED_ORIGINS = CLIENT_ORIGIN
+  ? CLIENT_ORIGIN.split(',').map((o) => o.trim()).filter(Boolean)
+  : []
+
+// Sensitive paths that must never be served
+const BLOCKED_PATHS = /^\/(\.env|\.git(\/.*)?|\.DS_Store|\.htaccess|web\.config|crossdomain\.xml|backup\.(zip|sql|tar\.gz)|database\.sql|config\.php|phpinfo\.php|wp-login\.php|wp-admin(\/.*)?|server-status|admin\/?)(\/.*)?$/i
+
 const app = express()
+
+// ── Security headers ──────────────────────────────────────────────────────────
+app.disable('x-powered-by')
+app.use(
+  helmet({
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'"],
+        styleSrc: ["'self'", "'unsafe-inline'"],
+        imgSrc: ["'self'", 'data:', 'blob:'],
+        connectSrc: ["'self'", ...(ALLOWED_ORIGINS.length ? ALLOWED_ORIGINS : [])],
+        fontSrc: ["'self'"],
+        objectSrc: ["'none'"],
+        frameSrc: ["'none'"],
+        upgradeInsecureRequests: [],
+      },
+    },
+    hsts: {
+      maxAge: 31536000,
+      includeSubDomains: true,
+      preload: true,
+    },
+    frameguard: { action: 'deny' },
+    referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
+    noSniff: true,
+    xssFilter: true,
+  }),
+)
+// Permissions-Policy is not yet included in helmet; set it manually
+app.use((_req, res, next) => {
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()')
+  next()
+})
+
+// ── Block sensitive paths ─────────────────────────────────────────────────────
+app.use((req, res, next) => {
+  if (BLOCKED_PATHS.test(req.path)) {
+    return res.status(404).json({ error: 'Not found' })
+  }
+  return next()
+})
+
 app.use(express.json({ limit: '1mb' }))
 app.use(
   cors({
-    origin: CLIENT_ORIGIN,
+    origin: (origin, callback) => {
+      // Allow requests with no origin (same-origin, server-to-server, native apps)
+      if (!origin) return callback(null, true)
+      // When ALLOWED_ORIGINS is configured, only allow listed origins
+      if (ALLOWED_ORIGINS.length > 0 && ALLOWED_ORIGINS.includes(origin)) {
+        return callback(null, true)
+      }
+      return callback(new Error('CORS: origin not allowed'))
+    },
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
     credentials: true,
   }),
 )
@@ -416,7 +478,8 @@ app.get('/api/cve/:cveId', requireAuth, async (req, res) => {
 const httpServer = http.createServer(app)
 const io = new SocketIOServer(httpServer, {
   cors: {
-    origin: CLIENT_ORIGIN,
+    origin: ALLOWED_ORIGINS.length ? ALLOWED_ORIGINS : false,
+    methods: ['GET', 'POST'],
     credentials: true,
   },
 })
@@ -460,7 +523,7 @@ function getClientProjectIds(user) {
 // ── Serve frontend build ──────────────────────────────────────────────────────
 
 const distPath = path.join(__dirname, '../../frontend/dist')
-app.use(express.static(distPath))
+app.use(express.static(distPath, { dotfiles: 'deny' }))
 app.get('*', (req, res) => {
   res.sendFile(path.join(distPath, 'index.html'))
 })
@@ -471,7 +534,7 @@ async function start() {
   await seedIfEmpty()
   httpServer.listen(PORT, '0.0.0.0', () => {
     console.log(`[backend] listening on http://0.0.0.0:${PORT}`)
-    console.log(`[backend] allow origin: ${CLIENT_ORIGIN}`)
+    console.log(`[backend] allowed origins: ${ALLOWED_ORIGINS.length ? ALLOWED_ORIGINS.join(', ') : '(same-origin only)'}`)
   })
 }
 
