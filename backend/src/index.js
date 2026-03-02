@@ -23,7 +23,7 @@ import { runScan, buildModules, getModuleSelection } from './scanner/orchestrato
 import { generateReport } from './report.js'
 
 const PORT = Number(process.env.PORT || 5000)
-const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN || '*'
+const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN || 'http://localhost:5173'
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-me'
 const JWT_ISSUER = process.env.JWT_ISSUER || 'vlolv-backend'
 
@@ -31,11 +31,30 @@ const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 
 const app = express()
+
+// Remove technology fingerprinting headers
+app.disable('x-powered-by')
+
+// Security headers middleware
+app.use((req, res, next) => {
+  // Only set HSTS on HTTPS connections (including behind reverse proxies)
+  if (req.secure || req.headers['x-forwarded-proto'] === 'https') {
+    res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains; preload')
+  }
+  res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self' ws: wss:")
+  res.setHeader('X-Frame-Options', 'DENY')
+  res.setHeader('X-Content-Type-Options', 'nosniff')
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin')
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()')
+  next()
+})
+
 app.use(express.json({ limit: '1mb' }))
 app.use(
   cors({
     origin: CLIENT_ORIGIN,
     credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   }),
 )
 app.use(authMiddleware)
@@ -48,7 +67,30 @@ app.get('/api/health', (req, res) => {
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
 
-app.post('/api/auth/login', (req, res) => {
+// Simple in-memory rate limiter for login: max 10 attempts per IP per 15 minutes
+const loginAttempts = new Map()
+const LOGIN_WINDOW_MS = 15 * 60 * 1000
+const LOGIN_MAX_ATTEMPTS = 10
+
+function loginRateLimiter(req, res, next) {
+  const ip = req.ip || req.socket.remoteAddress || 'unknown'
+  const now = Date.now()
+  const entry = loginAttempts.get(ip) || { count: 0, resetAt: now + LOGIN_WINDOW_MS }
+  if (now > entry.resetAt) {
+    entry.count = 0
+    entry.resetAt = now + LOGIN_WINDOW_MS
+  }
+  entry.count += 1
+  loginAttempts.set(ip, entry)
+  if (entry.count > LOGIN_MAX_ATTEMPTS) {
+    const retryAfter = Math.ceil((entry.resetAt - now) / 1000)
+    res.setHeader('Retry-After', String(retryAfter))
+    return res.status(429).json({ error: 'Too many login attempts. Please try again later.' })
+  }
+  next()
+}
+
+app.post('/api/auth/login', loginRateLimiter, (req, res) => {
   const { username, password } = req.body || {}
   if (!username || !password) {
     return res.status(400).json({ error: 'username and password required' })
@@ -436,6 +478,7 @@ const io = new SocketIOServer(httpServer, {
   cors: {
     origin: CLIENT_ORIGIN,
     credentials: true,
+    methods: ['GET', 'POST'],
   },
 })
 
@@ -477,6 +520,26 @@ function getClientProjectIds(user) {
 
 // ── Serve frontend build ──────────────────────────────────────────────────────
 
+// Block access to sensitive file paths before serving static files
+const BLOCKED_EXACT_PATHS = new Set([
+  '/.env', '/.ds_store', '/.htaccess',
+  '/backup.zip', '/backup.sql', '/database.sql',
+  '/config.php', '/web.config', '/crossdomain.xml',
+  '/wp-login.php', '/phpinfo.php', '/server-status',
+])
+const BLOCKED_PATH_PREFIXES = ['/.git', '/wp-admin']
+
+app.use((req, res, next) => {
+  const p = req.path.toLowerCase()
+  if (
+    BLOCKED_EXACT_PATHS.has(p) ||
+    BLOCKED_PATH_PREFIXES.some((prefix) => p === prefix || p.startsWith(prefix + '/'))
+  ) {
+    return res.status(404).end()
+  }
+  next()
+})
+
 const distPath = path.join(__dirname, '../../frontend/dist')
 app.use(express.static(distPath))
 app.get('*', (req, res) => {
@@ -486,6 +549,9 @@ app.get('*', (req, res) => {
 // ── Start ─────────────────────────────────────────────────────────────────────
 
 async function start() {
+  if (JWT_SECRET === 'dev-secret-change-me') {
+    console.warn('[backend] WARNING: JWT_SECRET is using the insecure default value. Set the JWT_SECRET environment variable in production.')
+  }
   await seedIfEmpty()
   httpServer.listen(PORT, '0.0.0.0', () => {
     console.log(`[backend] listening on http://0.0.0.0:${PORT}`)
