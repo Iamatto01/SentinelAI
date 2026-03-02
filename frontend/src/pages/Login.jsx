@@ -78,10 +78,7 @@ export default function Login() {
 
           <div className="mt-6 p-4 bg-white/5 rounded-lg border border-white/10">
             <p className="text-xs text-gray-400 text-center">
-              Default credentials: admin / admin
-            </p>
-            <p className="text-xs text-gray-400 text-center mt-1">
-              Client portal: log in with your assigned email
+              Contact your administrator if you need access
             </p>
           </div>
         </div>

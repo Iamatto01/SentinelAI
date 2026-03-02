@@ -6,7 +6,7 @@ import cors from 'cors'
 import { Server as SocketIOServer } from 'socket.io'
 import { randomUUID } from 'node:crypto'
 
-import { authMiddleware, requireAuth, requireRole } from './auth.js'
+import { authMiddleware, requireAuth, requireRole, verifyPassword } from './auth.js'
 import {
   db, seedIfEmpty,
   addProject, saveProject, removeProject,
@@ -14,10 +14,12 @@ import {
   initVulns, addVuln, saveVulnStatus,
   initLogs, addLog,
   addAudit,
+  getUser,
 } from './data.js'
 import { getCveById, searchCve } from './cve.js'
 import { runScan, buildModules, getModuleSelection } from './scanner/orchestrator.js'
 import { generateReport } from './report.js'
+import { rateLimit } from 'express-rate-limit'
 
 const PORT = Number(process.env.PORT || 5000)
 const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN || '*'
@@ -26,13 +28,22 @@ const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 
 const app = express()
+app.disable('x-powered-by')
 app.use(express.json({ limit: '1mb' }))
 app.use(
   cors({
-    origin: CLIENT_ORIGIN,
-    credentials: true,
+    origin: CLIENT_ORIGIN === '*' ? false : CLIENT_ORIGIN,
+    credentials: CLIENT_ORIGIN !== '*',
   }),
 )
+// Security headers
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff')
+  res.setHeader('X-Frame-Options', 'DENY')
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin')
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()')
+  next()
+})
 app.use(authMiddleware)
 
 // ── Health ────────────────────────────────────────────────────────────────────
@@ -43,27 +54,39 @@ app.get('/api/health', (req, res) => {
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
 
-app.post('/api/auth/login', (req, res) => {
+const loginRateLimit = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many login attempts, please try again later' },
+})
+
+app.post('/api/auth/login', loginRateLimit, async (req, res) => {
   const { username, password } = req.body || {}
   if (!username || !password) {
     return res.status(400).json({ error: 'username and password required' })
   }
 
+  // Verify credentials against stored users.
+  // Always call verifyPassword (even for unknown users) to prevent user-enumeration via timing.
+  const DUMMY_HASH = '0'.repeat(32) + ':' + '0'.repeat(128)
+  const storedUser = await getUser(username).catch(() => null)
+  const passwordValid = verifyPassword(password, storedUser ? storedUser.passwordHash : DUMMY_HASH)
+  if (!storedUser || !passwordValid) {
+    return res.status(401).json({ error: 'Invalid credentials' })
+  }
+
   // Determine role: admin, client (email matches project clientEmails), or analyst
   const usernameLC = username.toLowerCase()
-  let role = 'analyst'
+  let role = storedUser.role || 'analyst'
   let assignedProjectIds = []
 
-  if (username === 'admin') {
-    role = 'admin'
-  } else {
+  if (role === 'client') {
     const matched = db.projects.filter(
       (p) => Array.isArray(p.clientEmails) && p.clientEmails.some((e) => e.toLowerCase() === usernameLC),
     )
-    if (matched.length > 0) {
-      role = 'client'
-      assignedProjectIds = matched.map((p) => p.id)
-    }
+    assignedProjectIds = matched.map((p) => p.id)
   }
 
   const permissions =
@@ -416,8 +439,8 @@ app.get('/api/cve/:cveId', requireAuth, async (req, res) => {
 const httpServer = http.createServer(app)
 const io = new SocketIOServer(httpServer, {
   cors: {
-    origin: CLIENT_ORIGIN,
-    credentials: true,
+    origin: CLIENT_ORIGIN === '*' ? false : CLIENT_ORIGIN,
+    credentials: CLIENT_ORIGIN !== '*',
   },
 })
 

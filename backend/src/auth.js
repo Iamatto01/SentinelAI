@@ -1,4 +1,16 @@
+import { scryptSync, randomBytes, timingSafeEqual } from 'node:crypto'
 import { db } from './data.js'
+
+export function verifyPassword(password, stored) {
+  try {
+    const [salt, hash] = stored.split(':')
+    const hashBuffer = Buffer.from(hash, 'hex')
+    const derivedBuffer = scryptSync(password, salt, 64)
+    return timingSafeEqual(hashBuffer, derivedBuffer)
+  } catch {
+    return false
+  }
+}
 
 export function authMiddleware(req, res, next) {
   const authHeader = req.headers.authorization || ''
