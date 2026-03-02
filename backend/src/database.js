@@ -11,6 +11,18 @@ const client = createClient({ url: dbUrl, authToken })
 
 export async function initDatabase() {
   await client.execute(`
+    CREATE TABLE IF NOT EXISTS users (
+      id TEXT PRIMARY KEY,
+      username TEXT NOT NULL UNIQUE,
+      email TEXT,
+      passwordHash TEXT NOT NULL,
+      role TEXT DEFAULT 'analyst',
+      createdAt TEXT,
+      lastLogin TEXT
+    )
+  `)
+
+  await client.execute(`
     CREATE TABLE IF NOT EXISTS projects (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
@@ -93,6 +105,36 @@ export async function initDatabase() {
   try {
     await client.execute(`ALTER TABLE vulnerabilities ADD COLUMN evidence TEXT DEFAULT '{}'`)
   } catch (_) { /* column already exists */ }
+}
+
+// ── Users ───────────────────────────────────────────────────────────────────
+
+export async function dbGetUserByUsername(username) {
+  const result = await client.execute({
+    sql: 'SELECT * FROM users WHERE LOWER(username) = LOWER(?) LIMIT 1',
+    args: [username],
+  })
+  return result.rows[0] || null
+}
+
+export async function dbGetUserById(id) {
+  const result = await client.execute({ sql: 'SELECT * FROM users WHERE id = ? LIMIT 1', args: [id] })
+  return result.rows[0] || null
+}
+
+export async function dbInsertUser(user) {
+  await client.execute({
+    sql: `INSERT INTO users (id, username, email, passwordHash, role, createdAt, lastLogin)
+          VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    args: [user.id, user.username, user.email, user.passwordHash, user.role, user.createdAt, user.lastLogin],
+  })
+}
+
+export async function dbUpdateUserLastLogin(id, lastLogin) {
+  await client.execute({
+    sql: 'UPDATE users SET lastLogin = ? WHERE id = ?',
+    args: [lastLogin, id],
+  })
 }
 
 // ── Helper: parse/serialize JSON columns ─────────────────────────────────────

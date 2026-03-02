@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import bcrypt from 'bcryptjs'
 import {
   initDatabase,
   dbHasProjects,
@@ -7,12 +8,12 @@ import {
   dbGetVulnsByScan, dbInsertVuln, dbUpdateVulnStatus,
   dbGetLogsByScan, dbInsertLog,
   dbInsertAudit, dbGetAuditLogs,
+  dbGetUserByUsername, dbInsertUser,
 } from './database.js'
 
 // ── In-memory db object (backward compat with orchestrator) ─────────────────
 
 export const db = {
-  usersByToken: new Map(),
   projects: [],
   scans: [],
   scanLogsByScanId: new Map(),
@@ -56,8 +57,11 @@ async function loadFromDb() {
 export async function seedIfEmpty() {
   await initDatabase()
 
+  await ensureCoreUsers()
+
   if (await dbHasProjects()) {
     await loadFromDb()
+    await ensureClientUsersFromProjects()
     return
   }
 
@@ -103,6 +107,68 @@ export async function seedIfEmpty() {
   }
 
   await loadFromDb()
+
+  await ensureClientUsersFromProjects()
+}
+
+async function ensureCoreUsers() {
+  const now = new Date().toISOString()
+  const adminPassword = process.env.DEFAULT_ADMIN_PASSWORD || 'admin'
+  const analystPassword = process.env.DEFAULT_ANALYST_PASSWORD || 'analyst'
+
+  await ensureUser({
+    username: 'admin',
+    email: 'admin@company.com',
+    role: 'admin',
+    password: adminPassword,
+    createdAt: now,
+  })
+
+  await ensureUser({
+    username: 'analyst',
+    email: 'analyst@company.com',
+    role: 'analyst',
+    password: analystPassword,
+    createdAt: now,
+  })
+}
+
+async function ensureClientUsersFromProjects() {
+  const now = new Date().toISOString()
+  const clientPassword = process.env.DEFAULT_CLIENT_PASSWORD || 'client'
+  const emails = new Set()
+
+  for (const p of db.projects) {
+    if (!Array.isArray(p.clientEmails)) continue
+    for (const e of p.clientEmails) {
+      if (typeof e === 'string' && e.trim()) emails.add(e.trim().toLowerCase())
+    }
+  }
+
+  for (const email of emails) {
+    await ensureUser({
+      username: email,
+      email,
+      role: 'client',
+      password: clientPassword,
+      createdAt: now,
+    })
+  }
+}
+
+async function ensureUser({ username, email, role, password, createdAt }) {
+  const existing = await dbGetUserByUsername(username)
+  if (existing) return
+  const passwordHash = bcrypt.hashSync(password, 10)
+  await dbInsertUser({
+    id: 'usr_' + randomUUID(),
+    username,
+    email,
+    passwordHash,
+    role,
+    createdAt,
+    lastLogin: null,
+  })
 }
 
 // ── CRUD helpers (update in-memory immediately, fire-and-forget to DB) ──────

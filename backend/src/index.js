@@ -5,6 +5,8 @@ import express from 'express'
 import cors from 'cors'
 import { Server as SocketIOServer } from 'socket.io'
 import { randomUUID } from 'node:crypto'
+import bcrypt from 'bcryptjs'
+import jwt from 'jsonwebtoken'
 
 import { authMiddleware, requireAuth, requireRole } from './auth.js'
 import {
@@ -15,12 +17,15 @@ import {
   initLogs, addLog,
   addAudit,
 } from './data.js'
+import { dbGetUserByUsername, dbUpdateUserLastLogin } from './database.js'
 import { getCveById, searchCve } from './cve.js'
 import { runScan, buildModules, getModuleSelection } from './scanner/orchestrator.js'
 import { generateReport } from './report.js'
 
 const PORT = Number(process.env.PORT || 5000)
 const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN || '*'
+const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-me'
+const JWT_ISSUER = process.env.JWT_ISSUER || 'vlolv-backend'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -49,46 +54,59 @@ app.post('/api/auth/login', (req, res) => {
     return res.status(400).json({ error: 'username and password required' })
   }
 
-  // Determine role: admin, client (email matches project clientEmails), or analyst
-  const usernameLC = username.toLowerCase()
-  let role = 'analyst'
-  let assignedProjectIds = []
-
-  if (username === 'admin') {
-    role = 'admin'
-  } else {
-    const matched = db.projects.filter(
-      (p) => Array.isArray(p.clientEmails) && p.clientEmails.some((e) => e.toLowerCase() === usernameLC),
-    )
-    if (matched.length > 0) {
-      role = 'client'
-      assignedProjectIds = matched.map((p) => p.id)
+  void (async () => {
+    const record = await dbGetUserByUsername(username)
+    if (!record) {
+      return res.status(401).json({ error: 'Invalid username or password' })
     }
-  }
 
-  const permissions =
-    role === 'admin' ? ['all'] : role === 'client' ? ['read'] : ['read', 'scan', 'report']
+    const ok = bcrypt.compareSync(password, record.passwordHash)
+    if (!ok) {
+      return res.status(401).json({ error: 'Invalid username or password' })
+    }
 
-  const token = 'dev-token-' + randomUUID()
-  const user = {
-    id: randomUUID(),
-    username,
-    email: role === 'client' ? usernameLC : `${username}@company.com`,
-    role,
-    permissions,
-    assignedProjectIds,
-    lastLogin: new Date().toISOString(),
-  }
+    const role = record.role || 'analyst'
+    const permissions =
+      role === 'admin' ? ['all'] : role === 'client' ? ['read'] : ['read', 'scan', 'report']
 
-  db.usersByToken.set(token, user)
-  addAudit({
-    user: username,
-    action: 'LOGIN',
-    resource: user.id,
-    details: `User logged in (role: ${role})`,
+    const email = record.email || (role === 'client' ? String(username).toLowerCase() : `${username}@company.com`)
+    const lastLogin = new Date().toISOString()
+    await dbUpdateUserLastLogin(record.id, lastLogin)
+
+    const user = {
+      id: record.id,
+      username: record.username,
+      email,
+      role,
+      permissions,
+      assignedProjectIds: role === 'client' ? getClientProjectIds({ role: 'client', email }) || [] : [],
+      lastLogin,
+    }
+
+    const token = jwt.sign(
+      {
+        username: user.username,
+        email: user.email,
+        role: user.role,
+        permissions: user.permissions,
+        lastLogin: user.lastLogin,
+      },
+      JWT_SECRET,
+      { issuer: JWT_ISSUER, subject: user.id, expiresIn: '12h' },
+    )
+
+    addAudit({
+      user: user.username,
+      action: 'LOGIN',
+      resource: user.id,
+      details: `User logged in (role: ${role})`,
+    })
+
+    return res.json({ success: true, token, user })
+  })().catch((e) => {
+    console.error('[auth] login error:', e)
+    return res.status(500).json({ error: 'Login failed' })
   })
-
-  return res.json({ success: true, token, user })
 })
 
 app.get('/api/auth/me', requireAuth, (req, res) => {
