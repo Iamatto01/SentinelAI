@@ -11,6 +11,7 @@
     "@libsql/client": "^0.17.0",
     "cors": "^2.8.5",
     "express": "^4.19.2",
+    "helmet": "^8.1.0",
     "pdfkit": "^0.17.2",
     "socket.io": "^4.8.1"
   }
