@@ -9,8 +9,10 @@
   },
   "dependencies": {
     "@libsql/client": "^0.17.0",
+    "bcryptjs": "^3.0.2",
     "cors": "^2.8.5",
     "express": "^4.19.2",
+    "jsonwebtoken": "^9.0.2",
     "pdfkit": "^0.17.2",
     "socket.io": "^4.8.1"
   }

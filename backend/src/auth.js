@@ -1,4 +1,7 @@
-import { db } from './data.js'
+import jwt from 'jsonwebtoken'
+
+const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-me'
+const JWT_ISSUER = process.env.JWT_ISSUER || 'vlolv-backend'
 
 export function authMiddleware(req, res, next) {
   const authHeader = req.headers.authorization || ''
@@ -9,9 +12,21 @@ export function authMiddleware(req, res, next) {
   }
 
   const token = match[1]
-  const user = db.usersByToken.get(token) || null
-  req.user = user
-  req.token = token
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET, { issuer: JWT_ISSUER })
+    req.user = {
+      id: decoded.sub,
+      username: decoded.username,
+      email: decoded.email,
+      role: decoded.role,
+      permissions: decoded.permissions,
+      lastLogin: decoded.lastLogin,
+    }
+    req.token = token
+  } catch {
+    req.user = null
+    req.token = null
+  }
   return next()
 }
 
