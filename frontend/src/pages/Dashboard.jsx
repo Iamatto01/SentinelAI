@@ -86,7 +86,7 @@ export default function Dashboard() {
       subtitle="Real-time penetration testing orchestration"
       actions={
         <>
-          <div className="relative">
+          <div className="relative z-[100]">
             <button
               className="relative p-2 glassmorphism rounded-lg hover:bg-white/10 transition-all"
               onClick={() => setShowNotifications(!showNotifications)}
@@ -99,7 +99,7 @@ export default function Dashboard() {
               )}
             </button>
             {showNotifications && (
-              <div className="absolute right-0 mt-2 w-80 glassmorphism rounded-lg border border-white/10 shadow-xl z-50 overflow-hidden">
+              <div className="absolute right-0 mt-2 w-80 glassmorphism rounded-lg border border-white/10 shadow-xl z-[100] overflow-hidden">
                 <div className="p-3 border-b border-white/10 flex items-center justify-between">
                   <span className="text-sm font-semibold">Notifications</span>
                   <button className="text-xs text-gray-400 hover:text-white" onClick={() => { setShowNotifications(false); navigate('/vulnerabilities'); }}>View All</button>
@@ -383,6 +383,64 @@ export default function Dashboard() {
             </table>
           </div>
         </div>
+
+        {/* Scan History Timeline */}
+        {scans.length > 0 && (
+          <div className="glassmorphism p-6 rounded-lg">
+            <h3 className="text-xl font-semibold white-glow-text mb-6">Scan History</h3>
+            <div className="relative">
+              {/* Vertical line */}
+              <div className="absolute left-[11px] top-2 bottom-2 w-px bg-white/10" />
+              <div className="space-y-4">
+                {scans.slice(0, 10).map((s) => {
+                  const status = (s.status || 'completed').toLowerCase();
+                  const isRunning = status === 'running';
+                  const isFailed = status === 'failed' || status === 'stopped';
+                  const dotClass = isRunning
+                    ? 'bg-white animate-pulse shadow-[0_0_8px_rgba(255,255,255,0.6)]'
+                    : isFailed
+                      ? 'bg-gray-600'
+                      : 'bg-gray-400';
+
+                  let timeAgo = '';
+                  if (s.startTime) {
+                    const diff = Date.now() - new Date(s.startTime).getTime();
+                    const mins = Math.floor(diff / 60000);
+                    if (mins < 1) timeAgo = 'just now';
+                    else if (mins < 60) timeAgo = `${mins}m ago`;
+                    else if (mins < 1440) timeAgo = `${Math.floor(mins / 60)}h ago`;
+                    else timeAgo = `${Math.floor(mins / 1440)}d ago`;
+                  }
+
+                  return (
+                    <div
+                      key={s.id}
+                      className="flex items-start gap-4 pl-0 cursor-pointer group/tl"
+                      onClick={() => navigate('/scan')}
+                    >
+                      <div className={`w-[22px] h-[22px] rounded-full flex items-center justify-center flex-shrink-0 mt-0.5 border ${isRunning ? 'border-white/40' : 'border-white/10'} bg-black z-10`}>
+                        <div className={`w-2.5 h-2.5 rounded-full ${dotClass}`} />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="text-sm font-medium truncate group-hover/tl:text-white transition-colors">{s.target || 'Unknown'}</p>
+                          <span className="text-xs text-gray-500 flex-shrink-0">{timeAgo}</span>
+                        </div>
+                        <div className="flex items-center gap-3 mt-1">
+                          <span className="text-xs text-gray-400">{s.template || 'scan'}</span>
+                          <span className="text-xs text-gray-500">{s.vulnerabilitiesFound ?? 0} findings</span>
+                          <span className={`text-xs ${isRunning ? 'text-white' : isFailed ? 'text-gray-500' : 'text-gray-400'}`}>
+                            {isRunning ? `${clamp(s.progress || 0, 0, 100)}%` : status}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Quick Actions */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">

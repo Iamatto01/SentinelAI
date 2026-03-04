@@ -14,6 +14,7 @@ export default function Shell({ title, subtitle, actions, children }) {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   function handleLogout() {
     logout();
@@ -47,23 +48,25 @@ export default function Shell({ title, subtitle, actions, children }) {
 
       {/* ── Glass Sidebar ─────────────────────────────────────────── */}
       <nav
+        onMouseEnter={() => setSidebarOpen(true)}
+        onMouseLeave={() => setSidebarOpen(false)}
         className={`
           glass-sidebar
-          fixed left-3 top-3 bottom-3 z-50
+          fixed left-3 top-3 bottom-3 z-40
           flex flex-col overflow-hidden
           bg-white/[0.06] backdrop-blur-2xl
           border border-white/[0.12]
           shadow-[0_8px_30px_rgb(0,0,0,0.4)]
           rounded-3xl
           transition-all duration-300 ease-in-out
-          w-[68px] hover:w-64 group
           max-lg:hidden
+          ${sidebarOpen ? 'w-64' : 'w-[68px]'}
         `}
       >
         {/* Logo / Menu toggle area */}
         <div className="flex items-center h-14 px-[18px] mx-2 mt-4 rounded-xl cursor-pointer hover:bg-white/[0.08] transition-colors flex-shrink-0">
           <img src="/resources/logo.svg" alt="SentinelAI" className="w-7 h-7 flex-shrink-0" />
-          <span className="ml-3 font-semibold text-lg white-glow-text whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-300 delay-75">
+          <span className={`ml-3 font-semibold text-lg white-glow-text whitespace-nowrap transition-opacity duration-300 ${sidebarOpen ? 'opacity-100' : 'opacity-0'}`}>
             SentinelAI
           </span>
         </div>
@@ -85,7 +88,7 @@ export default function Shell({ title, subtitle, actions, children }) {
               `}
             >
               <item.icon className="w-5 h-5 flex-shrink-0 group-hover/item:scale-110 transition-transform duration-200" />
-              <span className="ml-3 font-medium whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-300 delay-75 text-sm">
+              <span className={`ml-3 font-medium whitespace-nowrap text-sm transition-opacity duration-300 ${sidebarOpen ? 'opacity-100' : 'opacity-0'}`}>
                 {item.label}
               </span>
             </NavLink>
@@ -106,7 +109,7 @@ export default function Shell({ title, subtitle, actions, children }) {
             `}
           >
             <Settings className="w-5 h-5 flex-shrink-0 group-hover/item:scale-110 transition-transform duration-200" />
-            <span className="ml-3 font-medium whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-300 delay-75 text-sm">
+            <span className={`ml-3 font-medium whitespace-nowrap text-sm transition-opacity duration-300 ${sidebarOpen ? 'opacity-100' : 'opacity-0'}`}>
               Settings
             </span>
           </NavLink>
@@ -116,17 +119,17 @@ export default function Shell({ title, subtitle, actions, children }) {
             className="flex items-center px-[18px] py-3 mx-2 rounded-xl text-gray-400 hover:bg-red-500/15 hover:text-red-400 transition-all w-[calc(100%-16px)] group/item"
           >
             <LogOut className="w-5 h-5 flex-shrink-0 group-hover/item:scale-110 transition-transform duration-200" />
-            <span className="ml-3 font-medium whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-300 delay-75 text-sm">
+            <span className={`ml-3 font-medium whitespace-nowrap text-sm transition-opacity duration-300 ${sidebarOpen ? 'opacity-100' : 'opacity-0'}`}>
               Sign Out
             </span>
           </button>
 
-          {/* User avatar (visible on hover) */}
+          {/* User avatar */}
           <div className="mx-2 px-[18px] py-2 flex items-center overflow-hidden">
             <div className="w-8 h-8 rounded-full bg-white/15 flex items-center justify-center text-xs font-bold flex-shrink-0">
               {(user?.username || '?')[0].toUpperCase()}
             </div>
-            <div className="ml-3 min-w-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 delay-75">
+            <div className={`ml-3 min-w-0 transition-opacity duration-300 ${sidebarOpen ? 'opacity-100' : 'opacity-0'}`}>
               <p className="text-sm font-medium truncate">{user?.username || 'User'}</p>
               <p className="text-[11px] text-gray-500 truncate">{user?.role || ''}</p>
             </div>
@@ -207,7 +210,7 @@ export default function Shell({ title, subtitle, actions, children }) {
       </nav>
 
       {/* ── Main content ──────────────────────────────────────────── */}
-      <main className="lg:ml-[80px] min-h-screen pt-14 lg:pt-0">
+      <main className={`min-h-screen pt-14 lg:pt-0 transition-all duration-300 ease-in-out ${sidebarOpen ? 'lg:ml-[272px]' : 'lg:ml-[80px]'}`}>
         <header className="glassmorphism border-b border-white/10 p-4 md:p-6">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <div>
