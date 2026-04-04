@@ -6,22 +6,52 @@ import { scanCors } from './cors.js';
 import { scanTech } from './tech.js';
 import { scanSubdomains } from './subdomains.js';
 import { scanInfo } from './info.js';
+import { scanExternal } from './external_tools.js';
+import { scanNuclei } from './nuclei.js';
+import { scanKaliAdvanced } from './kali_advanced.js';
+
+function runWithTimeout(promise, timeoutMs, moduleName) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => {
+      setTimeout(() => {
+        reject(new Error(`${moduleName} timed out after ${Math.round(timeoutMs / 1000)}s`));
+      }, timeoutMs);
+    }),
+  ]);
+}
 
 const MODULE_CONFIG = {
-  headers: { name: 'HTTP Headers Analysis', weight: 12, fn: scanHeaders },
-  ssl: { name: 'SSL/TLS Analysis', weight: 12, fn: scanSsl },
-  paths: { name: 'Exposed Paths Check', weight: 15, fn: scanPaths },
-  dns: { name: 'DNS Reconnaissance', weight: 15, fn: scanDns },
-  cors: { name: 'CORS Misconfiguration', weight: 12, fn: scanCors },
-  tech: { name: 'Technology Detection', weight: 10, fn: scanTech },
-  subdomains: { name: 'Subdomain Enumeration', weight: 12, fn: scanSubdomains },
-  info: { name: 'Information Disclosure', weight: 12, fn: scanInfo },
+  headers:      { name: 'HTTP Headers Analysis',       weight: 12, fn: scanHeaders },
+  ssl:          { name: 'SSL/TLS Analysis',             weight: 12, fn: scanSsl },
+  paths:        { name: 'Exposed Paths Check',          weight: 15, fn: scanPaths },
+  dns:          { name: 'DNS Reconnaissance',           weight: 15, fn: scanDns },
+  cors:         { name: 'CORS Misconfiguration',        weight: 12, fn: scanCors },
+  tech:         { name: 'Technology Detection',         weight: 10, fn: scanTech },
+  subdomains:   { name: 'Subdomain Enumeration',        weight: 12, fn: scanSubdomains },
+  info:         { name: 'Information Disclosure',       weight: 12, fn: scanInfo },
+  external:     { name: 'Kali Core Tools',              weight: 20, fn: scanExternal },
+  nuclei:       { name: 'Nuclei Template Scanning',     weight: 25, fn: scanNuclei },
+  kali_advanced:{ name: 'Advanced Kali Tools',          weight: 20, fn: scanKaliAdvanced },
 };
 
 const TEMPLATE_PRESETS = {
-  quick: { headers: true, ssl: true, paths: false, dns: false, cors: false, tech: false, subdomains: false, info: false },
-  standard: { headers: true, ssl: true, paths: true, dns: true, cors: true, tech: true, subdomains: false, info: false },
-  full: { headers: true, ssl: true, paths: true, dns: true, cors: true, tech: true, subdomains: true, info: true },
+  quick: {
+    headers: true, ssl: true,
+    paths: false, dns: false, cors: false, tech: false,
+    subdomains: false, info: false, external: false,
+    nuclei: false, kali_advanced: false,
+  },
+  standard: {
+    headers: true, ssl: true, paths: true, dns: true, cors: true, tech: true,
+    subdomains: false, info: false, external: false,
+    nuclei: false, kali_advanced: false,
+  },
+  full: {
+    headers: true, ssl: true, paths: true, dns: true, cors: true, tech: true,
+    subdomains: true, info: true, external: true,
+    nuclei: true, kali_advanced: true,
+  },
 };
 
 export function buildModules(selected) {
@@ -69,6 +99,23 @@ export async function runScan(scanId, target, options, ctx) {
   emitUpdate();
 
   const skippedTools = [];
+  const moduleTimeoutMs = Math.max(30_000, Number(process.env.MODULE_TIMEOUT_MS || 300_000));
+
+  function startModuleTicker(module, emitUpdateFn) {
+    const startedAt = Date.now();
+    const tickIntervalMs = 1000;
+    const timer = setInterval(() => {
+      if (module.status !== 'running') return;
+      const elapsed = Date.now() - startedAt;
+      const ratio = Math.min(elapsed / moduleTimeoutMs, 0.95);
+      const nextProgress = Math.max(module.progress || 0, Math.round(ratio * 100));
+      module.progress = Math.min(nextProgress, 95);
+      saveScan(scan);
+      emitUpdateFn();
+    }, tickIntervalMs);
+
+    return () => clearInterval(timer);
+  }
 
   for (const key of enabledKeys) {
     const config = MODULE_CONFIG[key];
@@ -77,9 +124,11 @@ export async function runScan(scanId, target, options, ctx) {
 
     // Update module status
     module.status = 'running';
-    module.progress = 0;
+    module.progress = 1;
     pushLog(scanId, 'info', `Starting module: ${config.name}`);
     emitUpdate();
+
+    const stopTicker = startModuleTicker(module, emitUpdate);
 
     try {
       const onFinding = (finding) => {
@@ -97,7 +146,11 @@ export async function runScan(scanId, target, options, ctx) {
         emitUpdate();
       };
 
-      const result = await config.fn(target, onFinding, onLog);
+      const result = await runWithTimeout(
+        config.fn(target, onFinding, onLog),
+        moduleTimeoutMs,
+        config.name,
+      );
 
       // Check if tool was skipped
       if (result?.skipped) {
@@ -115,6 +168,10 @@ export async function runScan(scanId, target, options, ctx) {
       module.status = 'failed';
       module.progress = 100;
       pushLog(scanId, 'error', `${config.name} failed: ${err.message}`);
+    } finally {
+      stopTicker();
+      saveScan(scan);
+      emitUpdate();
     }
 
     // Update overall progress

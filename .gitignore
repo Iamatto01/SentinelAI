@@ -5,6 +5,14 @@ dist-ssr/
 *.db-shm
 *.db-wal
 .env
+.env.*
+!.env.example
+.python-version
+.venv/
+venv/
+__pycache__/
+*.pyc
+ai_agents/__pycache__/
 *.local
 .DS_Store
 Thumbs.db
@@ -15,6 +23,9 @@ nul
 # Logs
 logs/
 *.log
+backend/logs/
+ai_agents/*.log
+ai_agents/discovery_results_*.json
 npm-debug.log*
 yarn-debug.log*
 pnpm-debug.log*

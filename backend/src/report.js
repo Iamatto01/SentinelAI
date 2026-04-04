@@ -198,7 +198,6 @@ function renderCoverPage(doc, { reportTitle, scans, project }) {
   doc.text('Prepared by: Security Analyst', doc.page.margins.left, doc.y, { width: w, align: 'center' })
   doc.text(`Scans Included: ${scans.length}`, doc.page.margins.left, doc.y, { width: w, align: 'center' })
 
-  doc.addPage()
 }
 
 function renderTableOfContents(doc) {
@@ -221,7 +220,6 @@ function renderTableOfContents(doc) {
     doc.moveDown(0.6)
   }
 
-  doc.addPage()
 }
 
 function renderExecutiveSummary(doc, { vulnerabilities, scans }) {
@@ -312,7 +310,6 @@ function renderExecutiveSummary(doc, { vulnerabilities, scans }) {
     doc.moveDown(0.15)
   }
 
-  doc.addPage()
 }
 
 function renderMethodology(doc, { scans }) {
@@ -380,7 +377,6 @@ function renderMethodology(doc, { scans }) {
     doc.moveDown(0.15)
   }
 
-  doc.addPage()
 }
 
 function renderFindingsSummary(doc, { vulnerabilities }) {
@@ -392,7 +388,6 @@ function renderFindingsSummary(doc, { vulnerabilities }) {
 
   if (vulnerabilities.length === 0) {
     doc.fontSize(11).font('Helvetica').fillColor('#666666').text('No vulnerabilities were discovered during this assessment.', x, doc.y, { width: w })
-    doc.addPage()
     return
   }
 
@@ -504,7 +499,6 @@ function renderFindingsSummary(doc, { vulnerabilities }) {
     doc.moveDown(0.15)
   }
 
-  doc.addPage()
 }
 
 function renderDetailedFindings(doc, { vulnerabilities }) {
@@ -516,7 +510,6 @@ function renderDetailedFindings(doc, { vulnerabilities }) {
 
   if (vulnerabilities.length === 0) {
     doc.fontSize(11).font('Helvetica').fillColor('#666666').text('No vulnerabilities to report.', x, doc.y, { width: w })
-    doc.addPage()
     return
   }
 
@@ -611,7 +604,6 @@ function renderDetailedFindings(doc, { vulnerabilities }) {
     doc.y = boxBottom + 15
   }
 
-  doc.addPage()
 }
 
 function renderAppendix(doc, { scans, project }) {
@@ -756,11 +748,17 @@ export async function generateReport(type, id, db) {
 
   // Render sections
   renderCoverPage(doc, { reportTitle, scans, project })
+  doc.addPage()
   renderTableOfContents(doc)
+  doc.addPage()
   renderExecutiveSummary(doc, { vulnerabilities, scans })
+  doc.addPage()
   renderMethodology(doc, { scans })
+  doc.addPage()
   renderFindingsSummary(doc, { vulnerabilities })
+  doc.addPage()
   renderDetailedFindings(doc, { vulnerabilities })
+  doc.addPage()
   renderAppendix(doc, { scans, project })
 
   // Add page footers

@@ -21,11 +21,23 @@ import { dbGetUserByUsername, dbUpdateUserLastLogin, dbGetUserByEmail } from './
 import { getCveById, searchCve } from './cve.js'
 import { runScan, buildModules, getModuleSelection } from './scanner/orchestrator.js'
 import { generateReport } from './report.js'
+import { AIAgentController } from './ai/agent-controller.js'
+import { canRunAIAction } from './ai/permission-gate.js'
+import { AISessionLogger } from './ai/session-logger.js'
+import { AICostTracker } from './ai/cost-tracker.js'
 
 const PORT = Number(process.env.PORT || 5000)
 const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN || 'http://localhost:5173'
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-me'
 const JWT_ISSUER = process.env.JWT_ISSUER || 'vlolv-backend'
+
+// Initialize AI services
+const aiSessionLogger = new AISessionLogger()
+const aiCostTracker = new AICostTracker()
+const aiController = new AIAgentController({
+  sessionLogger: aiSessionLogger,
+  costTracker: aiCostTracker,
+})
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -370,6 +382,23 @@ app.post('/api/scan/pause', requireAuth, requireRole('admin', 'analyst'), async 
   res.json({ scan })
 })
 
+app.post('/api/scan/resume', requireAuth, requireRole('admin', 'analyst'), async (req, res) => {
+  const { scanId } = req.body || {}
+  const scan = db.scans.find((s) => s.id === scanId) || null
+  if (!scan) return res.status(404).json({ error: 'Scan not found' })
+  scan.status = 'running'
+  await saveScan(scan)
+  await pushLog(scan.id, 'info', 'Scan resumed by user')
+  await addAudit({
+    user: req.user.username,
+    action: 'SCAN_RESUMED',
+    resource: scan.id,
+    details: `Scan resumed for target ${scan.target}`,
+  })
+  emitScanUpdate(scan.id)
+  res.json({ scan })
+})
+
 app.post('/api/scan/stop', requireAuth, requireRole('admin', 'analyst'), async (req, res) => {
   const { scanId } = req.body || {}
   const scan = db.scans.find((s) => s.id === scanId) || null
@@ -553,6 +582,272 @@ app.get('/api/cve/:cveId', requireAuth, async (req, res) => {
   res.json({ cve })
 })
 
+// ── AI Agent Integration ─────────────────────────────────────────────────────
+
+// AI-enhanced scan endpoint
+app.post('/api/ai/scan', requireAuth, requireRole('admin', 'analyst'), async (req, res) => {
+  const data = req.body || {}
+  if (!data.target) {
+    return res.status(400).json({ error: 'target is required' })
+  }
+
+  const project = data.projectId ? db.projects.find((p) => p.id === data.projectId) : null
+  const permission = canRunAIAction({
+    user: req.user,
+    action: 'ai_scan',
+    target: data.target,
+    project,
+  })
+  if (!permission.allowed) {
+    return res.status(403).json({ error: permission.reason })
+  }
+
+  if (data.projectId) {
+    const expectedScanCostUsd = Number(process.env.AI_EXPECTED_SCAN_COST_USD || 0.02)
+    const budgetCheck = aiCostTracker.canSpend(data.projectId, expectedScanCostUsd)
+    if (!budgetCheck.allowed) {
+      return res.status(402).json({ error: budgetCheck.reason, budget: budgetCheck.summary })
+    }
+  }
+
+  // Validate URL
+  try {
+    new URL(data.target)
+  } catch {
+    return res.status(400).json({ error: 'target must be a valid URL (e.g. https://example.com)' })
+  }
+
+  // Check if AI is available
+  const aiStatus = aiController.getStatus()
+  if (!aiStatus.isActive) {
+    return res.status(503).json({ error: 'AI features are not available. Please configure GROQ_API_KEY.' })
+  }
+
+  const template = data.template || 'standard'
+  const moduleSelection = getModuleSelection(template, data.modules)
+  const modules = buildModules(moduleSelection)
+
+  const now = new Date().toISOString()
+  const scan = {
+    id: 'scan_' + randomUUID(),
+    target: data.target,
+    template,
+    projectId: data.projectId || null,
+    status: 'running',
+    progress: 0,
+    startTime: now,
+    modules,
+    vulnerabilitiesFound: 0,
+    assetsScanned: 0,
+    aiEnhanced: true,  // Mark as AI-enhanced scan
+  }
+
+  await addScan(scan)
+  initLogs(scan.id)
+  initVulns(scan.id)
+  await pushLog(scan.id, 'info', `🤖 AI-Enhanced scan initiated for ${scan.target} (template: ${template})`)
+
+  await addAudit({
+    user: req.user.username,
+    action: 'AI_SCAN_STARTED',
+    resource: scan.id,
+    details: `AI-enhanced scan started for target ${scan.target}`,
+  })
+
+  const sessionId = await aiSessionLogger.startSession({
+    type: 'ai_scan',
+    user: req.user.username,
+    projectId: data.projectId || null,
+    target: scan.target,
+    metadata: { scanId: scan.id, template },
+  })
+
+  // Run AI-enhanced scan asynchronously
+  aiController.runAIScan(scan.id, data.target, { template, modules: moduleSelection, projectId: data.projectId }, {
+    db, io, pushLog, addAudit, saveScan, saveProject, addVuln
+  }, {
+    sessionId,
+    projectId: data.projectId || null,
+  }).then(async () => {
+    await aiSessionLogger.endSession(sessionId, 'completed', {
+      scanId: scan.id,
+      projectId: data.projectId || null,
+      cost: aiCostTracker.getSessionSummary(sessionId),
+    })
+  }).catch(async (err) => {
+    console.error('AI scan failed:', err.message)
+    await pushLog(scan.id, 'error', `AI scan error: ${err.message}`)
+    await aiSessionLogger.endSession(sessionId, 'failed', {
+      scanId: scan.id,
+      error: err.message,
+      cost: aiCostTracker.getSessionSummary(sessionId),
+    })
+  })
+
+  res.status(201).json({ scan, aiEnhanced: true, sessionId })
+})
+
+// Asset discovery endpoint
+app.post('/api/ai/discover', requireAuth, requireRole('admin', 'analyst'), async (req, res) => {
+  const { projectId } = req.body || {}
+  if (!projectId) {
+    return res.status(400).json({ error: 'projectId is required' })
+  }
+
+  const project = db.projects.find(p => p.id === projectId)
+  if (!project) {
+    return res.status(404).json({ error: 'Project not found' })
+  }
+
+  const permission = canRunAIAction({
+    user: req.user,
+    action: 'ai_discover',
+    target: project.scope ? `https://${String(project.scope).split(',')[0].trim().replace(/^https?:\/\//, '')}` : null,
+    project,
+  })
+  if (!permission.allowed) {
+    return res.status(403).json({ error: permission.reason })
+  }
+
+  const aiStatus = aiController.getStatus()
+  if (!aiStatus.isActive) {
+    return res.status(503).json({ error: 'AI features are not available. Please configure GROQ_API_KEY.' })
+  }
+
+  try {
+    const sessionId = await aiSessionLogger.startSession({
+      type: 'ai_discovery',
+      user: req.user.username,
+      projectId,
+      target: project.scope || null,
+      metadata: {},
+    })
+
+    const discoveredAssets = await aiController.discoverAssets(projectId, { sessionId, projectId })
+
+    await addAudit({
+      user: req.user.username,
+      action: 'AI_ASSET_DISCOVERY',
+      resource: projectId,
+      details: `AI discovered ${discoveredAssets.length} assets for project ${project.name}`,
+    })
+
+    await aiSessionLogger.endSession(sessionId, 'completed', {
+      projectId,
+      assetsDiscovered: discoveredAssets.length,
+      cost: aiCostTracker.getSessionSummary(sessionId),
+    })
+
+    res.json({
+      success: true,
+      project: project.name,
+      assets: discoveredAssets,
+      count: discoveredAssets.length,
+      cost: aiCostTracker.getSessionSummary(sessionId),
+    })
+  } catch (error) {
+    console.error('Asset discovery failed:', error.message)
+    res.status(500).json({ error: 'Asset discovery failed: ' + error.message })
+  }
+})
+
+// AI system status endpoint
+app.get('/api/ai/status', requireAuth, requireRole('admin', 'analyst'), (req, res) => {
+  const status = aiController.getStatus()
+  res.json({
+    ai: status,
+    groqConfigured: !!process.env.GROQ_API_KEY,
+    version: "1.0.0"
+  })
+})
+
+// Vulnerability analysis enhancement endpoint
+app.post('/api/ai/analyze/:scanId', requireAuth, requireRole('admin', 'analyst'), async (req, res) => {
+  const { scanId } = req.params
+  const scan = db.scans.find(s => s.id === scanId)
+
+  if (!scan) {
+    return res.status(404).json({ error: 'Scan not found' })
+  }
+
+  const project = scan.projectId ? db.projects.find((p) => p.id === scan.projectId) : null
+  const permission = canRunAIAction({
+    user: req.user,
+    action: 'ai_analyze',
+    target: scan.target,
+    project,
+  })
+  if (!permission.allowed) {
+    return res.status(403).json({ error: permission.reason })
+  }
+
+  const aiStatus = aiController.getStatus()
+  if (!aiStatus.isActive) {
+    return res.status(503).json({ error: 'AI features are not available. Please configure GROQ_API_KEY.' })
+  }
+
+  try {
+    const sessionId = await aiSessionLogger.startSession({
+      type: 'ai_analysis',
+      user: req.user.username,
+      projectId: scan.projectId || null,
+      target: scan.target,
+      metadata: { scanId },
+    })
+
+    await aiController.enhanceVulnerabilityAnalysis(scanId, { pushLog }, {
+      sessionId,
+      projectId: scan.projectId || null,
+    })
+
+    const vulnerabilities = db.vulnerabilitiesByScanId.get(scanId) || []
+    const enhancedCount = vulnerabilities.filter(v => v.aiAnalysis).length
+
+    await addAudit({
+      user: req.user.username,
+      action: 'AI_VULN_ANALYSIS',
+      resource: scanId,
+      details: `AI enhanced analysis of ${enhancedCount} vulnerabilities`,
+    })
+
+    await aiSessionLogger.endSession(sessionId, 'completed', {
+      scanId,
+      enhancedVulnerabilities: enhancedCount,
+      cost: aiCostTracker.getSessionSummary(sessionId),
+    })
+
+    res.json({
+      success: true,
+      scanId,
+      enhancedVulnerabilities: enhancedCount,
+      totalVulnerabilities: vulnerabilities.length,
+      cost: aiCostTracker.getSessionSummary(sessionId),
+    })
+  } catch (error) {
+    console.error('AI vulnerability analysis failed:', error.message)
+    res.status(500).json({ error: 'AI analysis failed: ' + error.message })
+  }
+})
+
+app.get('/api/ai/costs', requireAuth, requireRole('admin', 'analyst'), (req, res) => {
+  res.json({ projects: aiCostTracker.getAllProjectSummaries() })
+})
+
+app.get('/api/ai/costs/:projectId', requireAuth, requireRole('admin', 'analyst'), (req, res) => {
+  res.json({ project: aiCostTracker.getProjectSummary(req.params.projectId) })
+})
+
+app.put('/api/ai/budgets/:projectId', requireAuth, requireRole('admin'), (req, res) => {
+  const { budgetUsd } = req.body || {}
+  const ok = aiCostTracker.setProjectBudget(req.params.projectId, budgetUsd)
+  if (!ok) {
+    return res.status(400).json({ error: 'budgetUsd must be a non-negative number' })
+  }
+  res.json({
+    project: aiCostTracker.getProjectSummary(req.params.projectId),
+  })
+})
+
 // ── Socket.io ─────────────────────────────────────────────────────────────────
 
 const httpServer = http.createServer(app)
@@ -634,10 +929,24 @@ async function start() {
   if (JWT_SECRET === 'dev-secret-change-me') {
     console.warn('[backend] WARNING: JWT_SECRET is using the insecure default value. Set the JWT_SECRET environment variable in production.')
   }
+
+  // Initialize database and seed data
   await seedIfEmpty()
+
+  // Initialize AI Agent Controller
+  const aiInitialized = await aiController.initialize()
+  if (aiInitialized) {
+    console.log('🤖 [AI] Agent controller initialized successfully')
+  } else {
+    console.log('⚠️  [AI] Agent controller disabled (no GROQ_API_KEY)')
+  }
+
   httpServer.listen(PORT, '0.0.0.0', () => {
     console.log(`[backend] listening on http://0.0.0.0:${PORT}`)
     console.log(`[backend] allow origin: ${CLIENT_ORIGIN}`)
+    if (aiInitialized) {
+      console.log('🔥 [AI] Enhanced scanning features are available!')
+    }
   })
 }
 

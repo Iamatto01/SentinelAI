@@ -57,3 +57,15 @@ Then open the URL shown by Vite (usually `http://localhost:5173/`).
 - This backend only simulates scan progress/logs and returns demo vulnerabilities. It does **not** run real scans.
 
 ## tambah sqlite untuk save backend
+sudo apt update
+sudo apt install -y nmap nikto whatweb sqlmap sslscan gobuster wafw00f wpscan nuclei ffuf feroxbuster dnsrecon fierce amass wapiti
+pipx install sublist3r || pip3 install --user sublist3r
+go install github.com/hahwul/dalfox/v2@latest
+go install github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest
+go install github.com/OWASP/Amass/v4/...@master
+
+Optional tools that may need separate install:
+
+Commix
+Arjun
+testssl.sh

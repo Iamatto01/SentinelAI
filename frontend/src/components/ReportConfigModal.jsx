@@ -8,6 +8,8 @@ export default function ReportConfigModal({ open, onClose }) {
   const [scans, setScans] = useState([]);
   const [projects, setProjects] = useState([]);
   const [generating, setGenerating] = useState(false);
+  const [aiFirst, setAiFirst] = useState(true);
+  const [stage, setStage] = useState('');
   const [error, setError] = useState('');
   const toast = useToast();
 
@@ -15,6 +17,8 @@ export default function ReportConfigModal({ open, onClose }) {
     if (!open) return;
     setError('');
     setGenerating(false);
+    setStage('');
+    setAiFirst(true);
     Promise.all([apiFetch('/api/scans'), apiFetch('/api/projects')])
       .then(([scanData, projData]) => {
         setScans(scanData?.scans || []);
@@ -27,6 +31,7 @@ export default function ReportConfigModal({ open, onClose }) {
   useEffect(() => {
     setSelectedId('');
     setError('');
+    setStage('');
   }, [type]);
 
   const preview = useMemo(() => {
@@ -63,6 +68,18 @@ export default function ReportConfigModal({ open, onClose }) {
     return null;
   }, [type, selectedId, scans, projects]);
 
+  const aiTargetScanIds = useMemo(() => {
+    if (!aiFirst) return [];
+    if (type === 'scan') return selectedId ? [selectedId] : [];
+    if (type === 'project') {
+      if (!selectedId) return [];
+      return scans
+        .filter((s) => s.projectId === selectedId && s.id)
+        .map((s) => s.id);
+    }
+    return scans.filter((s) => s.id).map((s) => s.id);
+  }, [aiFirst, type, selectedId, scans]);
+
   async function handleGenerate() {
     if ((type === 'scan' || type === 'project') && !selectedId) {
       setError(`Please select a ${type === 'scan' ? 'scan' : 'project'}`);
@@ -71,10 +88,32 @@ export default function ReportConfigModal({ open, onClose }) {
     setGenerating(true);
     setError('');
     try {
+      if (aiFirst && aiTargetScanIds.length > 0) {
+        let failed = 0;
+        for (let i = 0; i < aiTargetScanIds.length; i++) {
+          const scanId = aiTargetScanIds[i];
+          setStage(`Running AI enhancement (${i + 1}/${aiTargetScanIds.length})...`);
+          try {
+            await apiFetch(`/api/ai/analyze/${encodeURIComponent(scanId)}`, {
+              method: 'POST',
+            });
+          } catch {
+            failed += 1;
+          }
+        }
+
+        if (failed > 0) {
+          toast(`AI enhancement finished with ${failed} skipped/failed scan(s)`);
+        }
+      }
+
+      setStage('Generating PDF report...');
       await downloadPdfReport(type, selectedId || undefined);
-      toast('PDF report downloaded!');
+      toast(aiFirst ? 'AI-enhanced PDF report downloaded!' : 'PDF report downloaded!');
+      setStage('');
       onClose();
     } catch (err) {
+      setStage('');
       setError(err.message);
     } finally {
       setGenerating(false);
@@ -167,6 +206,23 @@ export default function ReportConfigModal({ open, onClose }) {
             </div>
           )}
 
+          <label className="flex items-center space-x-3 cursor-pointer p-2 rounded hover:bg-white/5 border border-white/10">
+            <input
+              type="checkbox"
+              className="filter-checkbox"
+              checked={aiFirst}
+              onChange={(e) => setAiFirst(e.target.checked)}
+            />
+            <div>
+              <span className="text-sm font-medium">AI-enhance findings before report</span>
+              <span className="text-xs text-gray-400 ml-2">
+                {aiTargetScanIds.length > 0
+                  ? `Will run AI analysis on ${aiTargetScanIds.length} scan(s), then generate PDF.`
+                  : 'No eligible scans selected yet.'}
+              </span>
+            </div>
+          </label>
+
           {/* Preview Panel */}
           {preview && (
             <div className="p-4 bg-white/5 rounded-lg border border-white/10">
@@ -225,6 +281,7 @@ export default function ReportConfigModal({ open, onClose }) {
           </div>
 
           {error && <div className="text-red-400 text-sm">{error}</div>}
+          {stage && <div className="text-cyan-300 text-sm">{stage}</div>}
 
           <div className="flex justify-end space-x-4">
             <button
@@ -240,7 +297,7 @@ export default function ReportConfigModal({ open, onClose }) {
               className="px-6 py-3 bg-white text-black rounded hover:bg-gray-200 transition-all font-medium disabled:opacity-50"
               onClick={handleGenerate}
             >
-              {generating ? 'Generating...' : 'Generate Report'}
+              {generating ? (stage || 'Generating...') : 'Generate Report'}
             </button>
           </div>
         </div>

@@ -183,6 +183,16 @@ export default function Scan() {
     }
   }
 
+  async function resume() {
+    if (!scan?.id) return;
+    try {
+      await apiFetch('/api/scan/resume', { method: 'POST', body: { scanId: scan.id } });
+      toast('Scan resumed');
+    } catch (e) {
+      toast(`Resume failed: ${e.message}`);
+    }
+  }
+
   function handleScanStarted(newScan) {
     toast('Scan started!');
     if (newScan?.id) {
@@ -268,6 +278,16 @@ export default function Scan() {
               </button>
             </>
           )}
+          {scan?.status === 'paused' && (
+            <>
+              <button className="control-button px-4 py-2 rounded hover:bg-white/10 transition-all" onClick={resume}>
+                &#x25B6;&#xFE0F; Resume
+              </button>
+              <button className="control-button px-4 py-2 rounded hover:bg-white/10 transition-all" onClick={stop}>
+                &#x23F9;&#xFE0F; Stop
+              </button>
+            </>
+          )}
           <button
             className="px-4 py-2 bg-white text-black rounded hover:bg-gray-200 transition-all font-medium"
             onClick={() => setShowScanModal(true)}
@@ -297,6 +317,7 @@ export default function Scan() {
                 >
                   {(s.target || 'scan').replace(/^https?:\/\//, '').slice(0, 30)}
                   {s.status === 'running' && ' (running)'}
+                  {s.status === 'paused' && ' (paused)'}
                 </button>
               ))}
             </div>
