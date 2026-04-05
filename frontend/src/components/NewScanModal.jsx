@@ -2,9 +2,9 @@ import { useState, useEffect } from 'react';
 import { apiFetch } from '../lib/api.js';
 
 const TEMPLATES = [
-  { id: 'quick', name: 'Quick Scan', desc: 'Headers + SSL only', modules: { headers: true, ssl: true, paths: false, dns: false, cors: false, tech: false, subdomains: false, info: false } },
-  { id: 'standard', name: 'Standard Scan', desc: 'All web modules', modules: { headers: true, ssl: true, paths: true, dns: true, cors: true, tech: true, subdomains: false, info: false } },
-  { id: 'full', name: 'Full Scan', desc: 'All modules enabled', modules: { headers: true, ssl: true, paths: true, dns: true, cors: true, tech: true, subdomains: true, info: true } },
+  { id: 'quick', name: 'Quick Scan', desc: 'Headers + SSL only', modules: { headers: true, ssl: true, paths: false, dns: false, cors: false, tech: false, subdomains: false, info: false, api: false, secrets: false } },
+  { id: 'standard', name: 'Standard Scan', desc: 'Balanced web + API coverage', modules: { headers: true, ssl: true, paths: true, dns: true, cors: true, tech: true, subdomains: false, info: false, api: true, secrets: true } },
+  { id: 'full', name: 'Full Scan', desc: 'All modules enabled', modules: { headers: true, ssl: true, paths: true, dns: true, cors: true, tech: true, subdomains: true, info: true, api: true, secrets: true } },
 ];
 
 const MODULE_INFO = {
@@ -16,12 +16,14 @@ const MODULE_INFO = {
   tech: 'Technology stack fingerprinting & detection',
   subdomains: 'Subdomain enumeration via DNS brute-force',
   info: 'Information disclosure & sensitive data exposure',
+  api: 'API docs exposure, GraphQL introspection, method/rate-limit checks',
+  secrets: 'Hardcoded key/token patterns and source-map exposure in JS assets',
 };
 
 export default function NewScanModal({ open, onClose, onStarted }) {
   const [target, setTarget] = useState('');
   const [template, setTemplate] = useState('standard');
-  const [modules, setModules] = useState({ headers: true, ssl: true, paths: true, dns: true, cors: true, tech: true, subdomains: false, info: false });
+  const [modules, setModules] = useState({ headers: true, ssl: true, paths: true, dns: true, cors: true, tech: true, subdomains: false, info: false, api: true, secrets: true });
   const [projectId, setProjectId] = useState('');
   const [projects, setProjects] = useState([]);
   const [submitting, setSubmitting] = useState(false);

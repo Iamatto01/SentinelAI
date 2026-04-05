@@ -35,6 +35,26 @@ const MODULE_DESCRIPTIONS = {
       'CWE-548: Exposure of Information Through Directory Listing',
     ],
   },
+  api: {
+    name: 'API Security Baseline',
+    description:
+      'Performs baseline API security validation by probing for exposed OpenAPI/Swagger documentation endpoints, GraphQL introspection availability, unsafe HTTP method exposure (TRACE/CONNECT), and weak authentication throttling indicators on login endpoints. This module helps identify API surface leakage and control weaknesses that can accelerate attacker reconnaissance and abuse.',
+    standards: [
+      'OWASP API Security Top 10 - API9: Improper Inventory Management',
+      'OWASP API Security Top 10 - API4: Unrestricted Resource Consumption',
+      'CWE-200: Exposure of Sensitive Information to an Unauthorized Actor',
+    ],
+  },
+  secrets: {
+    name: 'Client-Side Secrets Exposure',
+    description:
+      'Scans HTML and same-origin JavaScript assets for hardcoded credential patterns including private keys, cloud access keys, API keys, JWT tokens, and credential-like constants. Also checks for publicly accessible source maps that may expose original application source and implementation details.',
+    standards: [
+      'OWASP A02:2021 - Cryptographic Failures',
+      'OWASP A07:2021 - Identification and Authentication Failures',
+      'CWE-798: Use of Hard-coded Credentials',
+    ],
+  },
   nmap: {
     name: 'Port Scanning (Nmap)',
     description:

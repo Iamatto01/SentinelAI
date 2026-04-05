@@ -1,15 +1,12 @@
 import Groq from 'groq-sdk'
 
 /**
- * Groq AI Client for SentinelAI
- * Provides fast inference using Groq's optimized hardware
+ * Groq AI Client — with JSON sanitization, retry logic, and better error handling.
  */
 export class GroqAI {
   constructor() {
-    this.client = new Groq({
-      apiKey: process.env.GROQ_API_KEY
-    })
-    this.defaultModel = "llama-3.1-8b-instant"  // Updated to working model
+    this.client = new Groq({ apiKey: process.env.GROQ_API_KEY })
+    this.defaultModel = 'llama-3.1-8b-instant'
     this.usageCallback = null
   }
 
@@ -18,163 +15,213 @@ export class GroqAI {
   }
 
   /**
-   * Analyze text with Groq AI
-   * @param {string} prompt - The prompt to analyze
-   * @param {object} options - Configuration options
-   * @returns {Promise<string>} AI response
+   * Core LLM call with automatic retry on rate-limit / transient errors.
+   * @param {string} prompt
+   * @param {object} options
+   * @returns {Promise<string>}
    */
   async analyze(prompt, options = {}) {
-    try {
-      const response = await this.client.chat.completions.create({
-        messages: [{
-          role: "user",
-          content: prompt
-        }],
-        model: options.model || this.defaultModel,
-        temperature: options.temperature || 0.1, // Low temperature for consistent security analysis
-        max_tokens: options.maxTokens || 1024,
-        top_p: 0.9
-      })
+    const maxRetries = options.maxRetries ?? 2
+    let lastError
 
-      if (this.usageCallback) {
-        this.usageCallback({
-          usage: response.usage || {},
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        const response = await this.client.chat.completions.create({
+          messages: [{ role: 'user', content: prompt }],
           model: options.model || this.defaultModel,
-          context: options.context || {},
+          temperature: options.temperature ?? 0.1,
+          max_tokens: options.maxTokens ?? 1024,
+          top_p: 0.9,
         })
-      }
 
-      return response.choices[0]?.message?.content || "No response generated"
-    } catch (error) {
-      console.error('Groq API Error:', error.message)
-      throw new Error(`AI Analysis failed: ${error.message}`)
+        if (this.usageCallback) {
+          this.usageCallback({
+            usage: response.usage || {},
+            model: options.model || this.defaultModel,
+            context: options.context || {},
+          })
+        }
+
+        return response.choices[0]?.message?.content ?? ''
+
+      } catch (error) {
+        lastError = error
+        const status = error?.status || error?.statusCode
+        const isRetryable = status === 429 || status === 503 || status === 502
+
+        if (isRetryable && attempt < maxRetries) {
+          const delay = (attempt + 1) * 1500  // 1.5s, 3s
+          console.warn(`[Groq] Retrying after ${delay}ms (attempt ${attempt + 1}/${maxRetries}) — ${error.message}`)
+          await new Promise(r => setTimeout(r, delay))
+          continue
+        }
+        throw new Error(`AI analysis failed: ${error.message}`)
+      }
     }
+
+    throw lastError
   }
 
   /**
-   * Analyze vulnerability data with structured output
-   * @param {object} vulnerability - Vulnerability data
-   * @returns {Promise<object>} Enhanced vulnerability analysis
+   * Strip markdown code fences from a string, then JSON.parse.
+   * Groq sometimes wraps JSON output in ```json … ``` blocks.
+   * @param {string} raw
+   * @returns {any}
+   */
+  _parseJSON(raw) {
+    if (!raw) throw new Error('Empty response from AI')
+
+    // Remove markdown code blocks (```json ... ``` or ``` ... ```)
+    let clean = raw
+      .replace(/^```(?:json)?\s*/im, '')
+      .replace(/\s*```$/im, '')
+      .trim()
+
+    // Sometimes the model produces extra text before/after the JSON object
+    const firstBrace  = clean.indexOf('{')
+    const firstBracket = clean.indexOf('[')
+
+    if (firstBrace !== -1 || firstBracket !== -1) {
+      const start = (firstBrace === -1) ? firstBracket
+                  : (firstBracket === -1) ? firstBrace
+                  : Math.min(firstBrace, firstBracket)
+      const lastBrace   = clean.lastIndexOf('}')
+      const lastBracket = clean.lastIndexOf(']')
+      const end = Math.max(lastBrace, lastBracket)
+      if (start < end) {
+        clean = clean.slice(start, end + 1)
+      }
+    }
+
+    return JSON.parse(clean)
+  }
+
+  /**
+   * Analyze a vulnerability and return a structured object.
+   * @param {object} vulnerability
+   * @param {object} meta
+   * @returns {Promise<object>}
    */
   async analyzeVulnerability(vulnerability, meta = {}) {
-    const prompt = `
-Analyze this security vulnerability and provide a JSON response with the following structure:
+    const prompt = `Analyze this security vulnerability and respond ONLY with a valid JSON object — no markdown, no extra text.
+
+Required JSON structure:
 {
-  "riskScore": 1-10,
-  "exploitability": 1-10,
-  "falsePositiveProbability": 1-10,
+  "riskScore": <1-10 integer>,
+  "exploitability": <1-10 integer>,
+  "falsePositiveProbability": <1-10 integer>,
   "priority": "critical|high|medium|low",
-  "businessImpact": "description",
-  "remediation": "specific steps",
-  "reasoning": "why this assessment"
+  "businessImpact": "<concise description>",
+  "remediation": "<specific actionable steps>",
+  "reasoning": "<brief explanation of assessment>"
 }
 
-Vulnerability Data:
-${JSON.stringify(vulnerability, null, 2)}
-
-Provide only the JSON response, no additional text.
-`
+Vulnerability data:
+${JSON.stringify(vulnerability, null, 2)}`
 
     try {
-      const response = await this.analyze(prompt, {
+      const raw = await this.analyze(prompt, {
         temperature: 0.05,
+        maxTokens: 512,
         context: { operation: 'analyze_vulnerability', ...meta },
       })
-      return JSON.parse(response)
+      return this._parseJSON(raw)
     } catch (error) {
-      console.error('Vulnerability analysis failed:', error.message)
+      console.error('[Groq] Vulnerability analysis parse error:', error.message)
       return {
         riskScore: 5,
         exploitability: 5,
         falsePositiveProbability: 5,
-        priority: "medium",
-        businessImpact: "Analysis unavailable",
-        remediation: "Manual review required",
-        reasoning: "AI analysis failed"
+        priority: 'medium',
+        businessImpact: 'Analysis unavailable — manual review required',
+        remediation: 'Review vulnerability manually and apply vendor patches',
+        reasoning: 'AI analysis failed: ' + error.message,
       }
     }
   }
 
   /**
-   * Optimize scan strategy for a target
-   * @param {object} context - Scan context (target, history, etc.)
-   * @returns {Promise<object>} Optimized scan configuration
+   * Recommend an optimal scan strategy.
+   * @param {object} context
+   * @param {object} meta
+   * @returns {Promise<object>}
    */
   async optimizeScanStrategy(context, meta = {}) {
-    const prompt = `
-Based on this context, recommend optimal security scanning strategy.
-Respond with JSON:
+    const prompt = `Based on this security scanning context, recommend an optimal strategy.
+Respond ONLY with valid JSON — no markdown, no explanation outside the JSON.
+
+Required JSON structure:
 {
   "recommendedTemplate": "quick|standard|full",
-  "moduleOverrides": {"nuclei": true, "external": false, ...},
+  "moduleOverrides": {},
   "scanFrequency": "daily|weekly|monthly",
-  "reasoning": "explanation"
+  "reasoning": "<brief explanation>"
 }
 
 Context:
-${JSON.stringify(context, null, 2)}
-
-Provide only JSON response.
-`
+${JSON.stringify(context, null, 2)}`
 
     try {
-      const response = await this.analyze(prompt, {
+      const raw = await this.analyze(prompt, {
         temperature: 0.1,
+        maxTokens: 300,
         context: { operation: 'optimize_scan_strategy', ...meta },
       })
-      return JSON.parse(response)
+      return this._parseJSON(raw)
     } catch (error) {
-      console.error('Scan optimization failed:', error.message)
+      console.error('[Groq] Scan optimization parse error:', error.message)
       return {
-        recommendedTemplate: "standard",
+        recommendedTemplate: 'standard',
         moduleOverrides: {},
-        scanFrequency: "weekly",
-        reasoning: "Default strategy due to AI analysis failure"
+        scanFrequency: 'weekly',
+        reasoning: 'Default strategy (optimization unavailable): ' + error.message,
       }
     }
   }
 
   /**
-   * Discover potential assets from a domain
-   * @param {string} domain - Base domain to analyze
-   * @returns {Promise<Array>} List of potential targets
+   * Discover likely attack-surface targets for a domain.
+   * @param {string} domain
+   * @param {object} meta
+   * @returns {Promise<Array>}
    */
   async discoverAssets(domain, meta = {}) {
-    const prompt = `
-Given this domain: ${domain}
+    const prompt = `Given domain: ${domain}
 
-Suggest potential subdomains and endpoints to investigate for security assessment.
-Respond with JSON array of targets:
+Suggest realistic subdomains and endpoints for a security assessment.
+Respond ONLY with a valid JSON array — no markdown, no explanation.
+
+Example structure:
 [
-  {"target": "api.domain.com", "type": "api", "priority": "high"},
-  {"target": "admin.domain.com", "type": "admin", "priority": "critical"}
+  {"target": "api.${domain}", "type": "api", "priority": "high"},
+  {"target": "admin.${domain}", "type": "admin", "priority": "critical"}
 ]
 
-Focus on realistic, common patterns. Provide only JSON array.
-`
+Focus on common patterns (api, admin, staging, dev, ci, git, docs, mail, vpn).`
 
     try {
-      const response = await this.analyze(prompt, {
+      const raw = await this.analyze(prompt, {
         temperature: 0.2,
+        maxTokens: 400,
         context: { operation: 'discover_assets', domain, ...meta },
       })
-      return JSON.parse(response)
+      const result = this._parseJSON(raw)
+      return Array.isArray(result) ? result : []
     } catch (error) {
-      console.error('Asset discovery failed:', error.message)
+      console.error('[Groq] Asset discovery parse error:', error.message)
       return []
     }
   }
 
   /**
-   * Test Groq API connection
-   * @returns {Promise<boolean>} Connection status
+   * Test the Groq API connection.
+   * @returns {Promise<boolean>}
    */
   async testConnection() {
     try {
-      const response = await this.analyze("Respond with 'OK' if you receive this message.")
-      return response.includes('OK')
-    } catch (error) {
-      console.error('Groq connection test failed:', error.message)
+      const response = await this.analyze("Reply with exactly the word: OK")
+      return response.trim().toUpperCase().includes('OK')
+    } catch {
       return false
     }
   }

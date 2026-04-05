@@ -3,10 +3,24 @@ import { db, addLog, saveScan, addAudit } from '../data.js'
 import { runScan, getModuleSelection } from '../scanner/orchestrator.js'
 import { buildAIScanGraph, executeAIScanGraph } from './scan-graph.js'
 
+const BRIDGE_URL = process.env.AI_BRIDGE_URL || 'http://localhost:5001'
+const BRIDGE_TIMEOUT_MS = Number(process.env.AI_BRIDGE_TIMEOUT_MS || 90_000)
+
 /**
- * AI Agent Controller for SentinelAI
- * Coordinates AI-enhanced security scanning operations
+ * Fetch helper that correctly handles timeouts via AbortController.
+ * Node.js fetch does NOT support a `timeout` option — only `signal`.
  */
+async function fetchWithTimeout(url, options = {}, timeoutMs = BRIDGE_TIMEOUT_MS) {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    const response = await fetch(url, { ...options, signal: controller.signal })
+    return response
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
 export class AIAgentController {
   constructor({ sessionLogger = null, costTracker = null } = {}) {
     this.groq = new GroqAI()
@@ -27,41 +41,33 @@ export class AIAgentController {
     })
   }
 
-  /**
-   * Initialize AI system and test connections
-   */
+  // ---------------------------------------------------------------------------
+  // Initialise
+  // ---------------------------------------------------------------------------
+
   async initialize() {
-    console.log('🤖 Initializing AI Agent Controller...')
+    console.log('🤖 Initialising AI Agent Controller…')
 
     if (!process.env.GROQ_API_KEY) {
-      console.warn('⚠️  GROQ_API_KEY not found. AI features will be disabled.')
+      console.warn('⚠️  GROQ_API_KEY not found — AI features disabled.')
       return false
     }
 
-    const isConnected = await this.groq.testConnection()
-    if (isConnected) {
+    const ok = await this.groq.testConnection()
+    if (ok) {
       console.log('✅ Groq AI connection established')
-      await addAudit({
-        user: 'ai-system',
-        action: 'AI_INITIALIZED',
-        resource: 'ai-controller',
-        details: 'AI Agent Controller started successfully'
-      })
+      await addAudit({ user: 'ai-system', action: 'AI_INITIALIZED', resource: 'ai-controller', details: 'AI Agent Controller started successfully' })
       return true
-    } else {
-      console.error('❌ Groq AI connection failed')
-      return false
     }
+
+    console.error('❌ Groq AI connection failed')
+    return false
   }
 
-  /**
-   * AI-enhanced scan execution
-   * @param {string} scanId - Scan ID
-   * @param {string} target - Target to scan
-   * @param {object} options - Scan options
-   * @param {object} ctx - Scan context
-   * @returns {Promise<object>} Enhanced scan results
-   */
+  // ---------------------------------------------------------------------------
+  // AI-enhanced scan
+  // ---------------------------------------------------------------------------
+
   async runAIScan(scanId, target, options, ctx, meta = {}) {
     console.log(`🧠 Starting AI-enhanced scan for ${target}`)
     this.activeScans.set(scanId, { target, startedAt: Date.now() })
@@ -71,7 +77,7 @@ export class AIAgentController {
       let optimization = {
         recommendedTemplate: options.template || 'standard',
         moduleOverrides: {},
-        reasoning: 'No optimization produced',
+        reasoning: 'Default — no optimization produced',
       }
 
       await executeAIScanGraph({
@@ -79,7 +85,7 @@ export class AIAgentController {
         handlers: {
           optimize: async () => {
             optimization = await this.optimizeScanStrategy(options.projectId, target, meta)
-            await this.logScan(scanId, 'info', `AI Optimization: ${optimization.recommendedTemplate} - ${optimization.reasoning}`, ctx)
+            await this.logScan(scanId, 'info', `AI Optimization: ${optimization.recommendedTemplate} — ${optimization.reasoning}`, ctx)
             return optimization
           },
           scan: async () => {
@@ -88,14 +94,12 @@ export class AIAgentController {
               template: optimization.recommendedTemplate,
               modules: { ...getModuleSelection(optimization.recommendedTemplate), ...optimization.moduleOverrides },
             }
-
-            const scan = db.scans.find((s) => s.id === scanId)
+            const scan = db.scans.find(s => s.id === scanId)
             if (scan) {
               scan.aiEnhanced = true
               scan.aiOptimization = optimization
               await saveScan(scan)
             }
-
             await runScan(scanId, target, aiOptions, ctx)
             return aiOptions
           },
@@ -117,88 +121,65 @@ export class AIAgentController {
     } catch (error) {
       console.error('AI scan failed:', error.message)
       await this.logScan(scanId, 'error', `AI scan error: ${error.message}`, ctx)
-
-      // Fallback to normal scan
-      await this.logScan(scanId, 'info', 'Falling back to standard scan execution', ctx)
+      await this.logScan(scanId, 'info', 'Falling back to standard scan', ctx)
       await runScan(scanId, target, options, ctx)
-
       throw error
     } finally {
       this.activeScans.delete(scanId)
     }
   }
 
-  /**
-   * AI-enhanced vulnerability analysis
-   * @param {string} scanId - Scan ID to analyze
-   */
-  async enhanceVulnerabilityAnalysis(scanId, ctx = null, meta = {}) {
-    console.log(`🔍 Analyzing vulnerabilities for scan ${scanId}`)
+  // ---------------------------------------------------------------------------
+  // Vulnerability enhancement
+  // ---------------------------------------------------------------------------
 
+  async enhanceVulnerabilityAnalysis(scanId, ctx = null, meta = {}) {
     const vulnerabilities = db.vulnerabilitiesByScanId.get(scanId) || []
-    let enhancedCount = 0
+    let enhanced = 0
 
     for (const vuln of vulnerabilities) {
+      if (vuln.aiAnalysis) continue
       try {
-        // Skip if already AI-analyzed
-        if (vuln.aiAnalysis) continue
-
-        const scan = db.scans.find((s) => s.id === scanId)
+        const scan = db.scans.find(s => s.id === scanId)
         const analysis = await this.groq.analyzeVulnerability(vuln, {
           projectId: scan?.projectId || meta.projectId || null,
           sessionId: meta.sessionId || null,
           operation: 'scan_vulnerability_analysis',
         })
 
-        // Enhance vulnerability with AI insights
-        vuln.aiAnalysis = {
-          ...analysis,
-          analyzedAt: new Date().toISOString(),
-          model: this.groq.defaultModel
-        }
-
-        // Update confidence score based on AI analysis
+        vuln.aiAnalysis = { ...analysis, analyzedAt: new Date().toISOString(), model: this.groq.defaultModel }
         vuln.confidence = Math.max(vuln.confidence || 0.7, 1 - (analysis.falsePositiveProbability / 10))
+        enhanced++
 
-        enhancedCount++
-
-        await this.logScan(scanId, 'info', `AI enhanced vulnerability: ${vuln.title} (Risk: ${analysis.riskScore}/10, Priority: ${analysis.priority})`, ctx)
-
-      } catch (error) {
-        console.error(`AI analysis failed for vulnerability ${vuln.id}:`, error.message)
+        await this.logScan(scanId, 'info',
+          `AI enhanced: ${vuln.title} (Risk: ${analysis.riskScore}/10, Priority: ${analysis.priority})`, ctx)
+      } catch (err) {
+        console.error(`AI analysis failed for vuln ${vuln.id}:`, err.message)
       }
     }
 
-    if (enhancedCount > 0) {
-      await this.logScan(scanId, 'success', `AI enhanced ${enhancedCount} vulnerabilities with advanced analysis`, ctx)
-
-      await addAudit({
-        user: 'ai-system',
-        action: 'AI_ANALYSIS_COMPLETED',
-        resource: `scan:${scanId}`,
-        details: `Enhanced ${enhancedCount} vulnerabilities`
-      })
+    if (enhanced > 0) {
+      await this.logScan(scanId, 'success', `AI enhanced ${enhanced} vulnerabilities`, ctx)
+      await addAudit({ user: 'ai-system', action: 'AI_ANALYSIS_COMPLETED', resource: `scan:${scanId}`, details: `Enhanced ${enhanced} vulnerabilities` })
     }
   }
 
-  /**
-   * AI scan strategy optimization
-   * @param {string} projectId - Project ID
-   * @param {string} target - Target to scan
-   * @returns {Promise<object>} Optimization recommendations
-   */
+  // ---------------------------------------------------------------------------
+  // Scan strategy optimisation
+  // ---------------------------------------------------------------------------
+
   async optimizeScanStrategy(projectId, target, meta = {}) {
     try {
       const project = db.projects.find(p => p.id === projectId)
-      const previousScans = db.scans.filter(s => s.projectId === projectId)
+      const prevScans = db.scans.filter(s => s.projectId === projectId)
 
       const context = {
         target,
         client: project?.client,
         riskLevel: project?.riskLevel,
-        previousScansCount: previousScans.length,
-        hasVulnerabilities: previousScans.some(s => (db.vulnerabilitiesByScanId.get(s.id) || []).length > 0),
-        targetType: this.analyzeTargetType(target)
+        previousScansCount: prevScans.length,
+        hasVulnerabilities: prevScans.some(s => (db.vulnerabilitiesByScanId.get(s.id) || []).length > 0),
+        targetType: this.analyzeTargetType(target),
       }
 
       return await this.groq.optimizeScanStrategy(context, {
@@ -206,290 +187,163 @@ export class AIAgentController {
         sessionId: meta.sessionId || null,
         operation: 'scan_strategy_optimization',
       })
-
     } catch (error) {
-      console.error('Scan optimization failed:', error.message)
-      return {
-        recommendedTemplate: "standard",
-        moduleOverrides: {},
-        scanFrequency: "weekly",
-        reasoning: "Using default strategy due to optimization failure"
-      }
+      console.error('Scan optimisation failed:', error.message)
+      return { recommendedTemplate: 'standard', moduleOverrides: {}, scanFrequency: 'weekly', reasoning: 'Default (optimisation failed)' }
     }
   }
 
-  /**
-   * Autonomous asset discovery using Python AI agents
-   * @param {string} projectId - Project ID
-   * @returns {Promise<Array>} Discovered assets
-   */
+  // ---------------------------------------------------------------------------
+  // Asset discovery — Groq + Python agent bridge
+  // ---------------------------------------------------------------------------
+
   async discoverAssets(projectId, meta = {}) {
-    console.log(`🔍 Starting AI-powered asset discovery for project ${projectId}`)
+    const project = db.projects.find(p => p.id === projectId)
+    if (!project?.scope) return []
 
-    try {
-      const project = db.projects.find(p => p.id === projectId)
-      if (!project?.scope) {
-        console.warn(`No scope defined for project ${projectId}`)
-        return []
+    const cacheKey = `${projectId}:${project.scope}`
+    const cached = this.discoveryCache.get(cacheKey)
+    if (cached && Date.now() - cached.timestamp < 3_600_000) return cached.assets
+
+    const domains = project.scope.split(',').map(s => s.trim().replace(/^https?:\/\//, ''))
+    const allAssets = []
+
+    for (const domain of domains) {
+      try {
+        const [groqAssets, agentAssets] = await Promise.allSettled([
+          this.groq.discoverAssets(domain, { projectId, sessionId: meta.sessionId || null, operation: 'asset_discovery' }),
+          this.discoverAssetsWithAgents(domain),
+        ])
+
+        const combined = [
+          ...(groqAssets.status === 'fulfilled' ? groqAssets.value : []),
+          ...(agentAssets.status === 'fulfilled' ? agentAssets.value : []),
+        ]
+        allAssets.push(...this.deduplicateAssets(combined))
+      } catch (err) {
+        console.error(`Asset discovery failed for ${domain}:`, err.message)
       }
-
-      // Check cache first
-      const cacheKey = `${projectId}:${project.scope}`
-      if (this.discoveryCache.has(cacheKey)) {
-        const cached = this.discoveryCache.get(cacheKey)
-        if (Date.now() - cached.timestamp < 3600000) { // 1 hour cache
-          console.log('📋 Using cached discovery results')
-          return cached.assets
-        }
-      }
-
-      // Extract domain from scope for AI discovery
-      const domains = project.scope.split(',').map(s => s.trim().replace(/^https?:\/\//, ''))
-      const allAssets = []
-
-      for (const domain of domains) {
-        console.log(`🌐 AI discovering assets for ${domain}`)
-
-        try {
-          // Use both Groq AI and Python agent bridge for discovery
-          const [groqAssets, agentAssets] = await Promise.all([
-            // Groq-based discovery (existing)
-            this.groq.discoverAssets(domain, {
-              projectId,
-              sessionId: meta.sessionId || null,
-              operation: 'asset_discovery',
-            }),
-            // Python agent-based discovery (new)
-            this.discoverAssetsWithAgents(domain)
-          ])
-
-          // Combine and deduplicate results
-          const combinedAssets = [...groqAssets, ...agentAssets]
-          const uniqueAssets = this.deduplicateAssets(combinedAssets)
-          allAssets.push(...uniqueAssets)
-
-          console.log(`✅ Discovered ${uniqueAssets.length} assets for ${domain}`)
-
-        } catch (error) {
-          console.error(`Asset discovery failed for ${domain}:`, error.message)
-          // Continue with other domains
-        }
-      }
-
-      // Cache results
-      this.discoveryCache.set(cacheKey, {
-        assets: allAssets,
-        timestamp: Date.now()
-      })
-
-      await addAudit({
-        user: 'ai-system',
-        action: 'ASSET_DISCOVERY_COMPLETED',
-        resource: `project:${projectId}`,
-        details: `Discovered ${allAssets.length} assets using AI agents`
-      })
-
-      console.log(`✅ Total discovered assets: ${allAssets.length} for ${project.client}`)
-      return allAssets
-
-    } catch (error) {
-      console.error('Asset discovery failed:', error.message)
-      return []
     }
+
+    this.discoveryCache.set(cacheKey, { assets: allAssets, timestamp: Date.now() })
+
+    await addAudit({
+      user: 'ai-system',
+      action: 'ASSET_DISCOVERY_COMPLETED',
+      resource: `project:${projectId}`,
+      details: `Discovered ${allAssets.length} assets`,
+    })
+
+    return allAssets
   }
 
   /**
-   * Discover assets using Python AI agents via bridge
-   * @param {string} domain - Domain to discover
-   * @returns {Promise<Array>} Discovered assets
+   * Call the Python agent bridge with a properly handled timeout.
    */
   async discoverAssetsWithAgents(domain) {
     try {
-      const response = await fetch('http://localhost:5001/ai/discover', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ domain }),
-        timeout: 60000 // 60 second timeout
-      })
+      const response = await fetchWithTimeout(
+        `${BRIDGE_URL}/ai/discover`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ domain }),
+        },
+        BRIDGE_TIMEOUT_MS,
+      )
 
       if (!response.ok) {
-        throw new Error(`Agent bridge responded with status ${response.status}`)
+        throw new Error(`Bridge responded with HTTP ${response.status}`)
       }
 
       const data = await response.json()
       return this.parseAgentDiscoveryResults(data.discovery_results || '')
 
     } catch (error) {
-      console.error('Python agent discovery failed:', error.message)
-      return [] // Fallback gracefully
-    }
-  }
-
-  /**
-   * Parse agent discovery results into structured format
-   * @param {string} results - Raw agent results
-   * @returns {Array} Structured assets
-   */
-  parseAgentDiscoveryResults(results) {
-    try {
-      const assets = []
-
-      // Extract URLs and endpoints from agent results
-      const urlPattern = /https?:\/\/[^\s]+/g
-      const urls = results.match(urlPattern) || []
-
-      urls.forEach(url => {
-        try {
-          const urlObj = new URL(url)
-          assets.push({
-            target: url,
-            type: this.classifyAsset(urlObj.hostname, url),
-            priority: this.calculatePriority(urlObj.hostname, url),
-            source: 'ai_agent'
-          })
-        } catch (e) {
-          // Skip invalid URLs
-        }
-      })
-
-      // Extract domain/subdomain patterns
-      const domainPattern = /([a-z0-9-]+\.)+[a-z]{2,}/gi
-      const domains = results.match(domainPattern) || []
-
-      domains.forEach(domain => {
-        if (!assets.find(a => a.target.includes(domain))) {
-          assets.push({
-            target: `https://${domain}`,
-            type: this.classifyAsset(domain),
-            priority: this.calculatePriority(domain),
-            source: 'ai_agent'
-          })
-        }
-      })
-
-      return assets.slice(0, 20) // Limit results
-    } catch (error) {
-      console.error('Error parsing agent results:', error.message)
+      if (error.name === 'AbortError') {
+        console.warn(`[AI] Agent bridge timed out for domain ${domain}`)
+      } else {
+        console.error('[AI] Python agent discovery failed:', error.message)
+      }
       return []
     }
   }
 
-  /**
-   * Deduplicate discovered assets
-   * @param {Array} assets - Assets to deduplicate
-   * @returns {Array} Unique assets
-   */
+  parseAgentDiscoveryResults(results) {
+    const assets = []
+    const urlPattern = /https?:\/\/[^\s<>"[\]{}]*/g
+    for (const url of (results.match(urlPattern) || [])) {
+      try {
+        const { hostname } = new URL(url)
+        assets.push({ target: url, type: this.classifyAsset(hostname, url), priority: this.calculatePriority(hostname, url), source: 'ai_agent' })
+      } catch { /* skip invalid URLs */ }
+    }
+    return assets.slice(0, 20)
+  }
+
   deduplicateAssets(assets) {
     const seen = new Set()
-    return assets.filter(asset => {
-      const key = asset.target || asset.url || asset.domain
-      if (seen.has(key)) {
-        return false
-      }
+    return assets.filter(a => {
+      const key = a.target || a.url || a.domain
+      if (seen.has(key)) return false
       seen.add(key)
       return true
     })
   }
 
-  /**
-   * Classify asset type
-   * @param {string} hostname - Asset hostname
-   * @param {string} url - Full URL (optional)
-   * @returns {string} Asset type
-   */
   classifyAsset(hostname, url = '') {
-    if (hostname.includes('api.') || url.includes('/api/')) return 'api'
+    if (hostname.includes('api.') || url.includes('/api/'))   return 'api'
     if (hostname.includes('admin.') || url.includes('admin')) return 'admin'
-    if (hostname.includes('staging.') || hostname.includes('dev.')) return 'staging'
-    if (hostname.includes('test.')) return 'test'
-    if (hostname.includes('mail.')) return 'mail'
+    if (/staging\.|dev\.|test\./.test(hostname))              return 'staging'
+    if (hostname.includes('mail.'))                            return 'mail'
     return 'web'
   }
 
-  /**
-   * Calculate asset priority
-   * @param {string} hostname - Asset hostname
-   * @param {string} url - Full URL (optional)
-   * @returns {string} Priority level
-   */
   calculatePriority(hostname, url = '') {
-    if (hostname.includes('admin.') || url.includes('admin')) return 'critical'
-    if (hostname.includes('api.') || url.includes('/api/')) return 'high'
-    if (hostname.includes('staging.') || hostname.includes('dev.')) return 'medium'
-    if (hostname.includes('test.')) return 'low'
+    if (hostname.includes('admin.') || url.includes('admin'))  return 'critical'
+    if (hostname.includes('api.') || url.includes('/api/'))    return 'high'
+    if (/staging\.|dev\.|test\./.test(hostname))               return 'medium'
     return 'medium'
   }
 
-  /**
-   * Plan follow-up actions based on scan results
-   * @param {string} scanId - Scan ID
-   */
   async planFollowUpActions(scanId, ctx = null) {
-    try {
-      const vulnerabilities = db.vulnerabilitiesByScanId.get(scanId) || []
-      const criticalVulns = vulnerabilities.filter(v =>
-        v.severity === 'Critical' ||
-        (v.aiAnalysis && v.aiAnalysis.priority === 'critical')
-      )
+    const vulnerabilities = db.vulnerabilitiesByScanId.get(scanId) || []
+    const criticalVulns = vulnerabilities.filter(v =>
+      v.severity === 'Critical' || (v.aiAnalysis?.priority === 'critical')
+    )
 
-      if (criticalVulns.length > 0) {
-        await this.logScan(scanId, 'warn', `🚨 ${criticalVulns.length} critical vulnerabilities detected - Immediate attention required`, ctx)
+    if (criticalVulns.length > 0) {
+      await this.logScan(scanId, 'warn', `🚨 ${criticalVulns.length} critical vulnerabilities — immediate action required`, ctx)
+      await addAudit({ user: 'ai-system', action: 'CRITICAL_VULNS_DETECTED', resource: `scan:${scanId}`, details: `${criticalVulns.length} critical vulnerabilities` })
+    }
 
-        // TODO: Trigger notifications, create tickets, schedule retests
-        await addAudit({
-          user: 'ai-system',
-          action: 'CRITICAL_VULNS_DETECTED',
-          resource: `scan:${scanId}`,
-          details: `${criticalVulns.length} critical vulnerabilities require immediate attention`
-        })
-      }
-
-      const highConfidenceVulns = vulnerabilities.filter(v => v.confidence > 0.9)
-      if (highConfidenceVulns.length > 0) {
-        await this.logScan(scanId, 'info', `✅ ${highConfidenceVulns.length} high-confidence vulnerabilities validated by AI`, ctx)
-      }
-
-    } catch (error) {
-      console.error('Follow-up planning failed:', error.message)
+    const highConfidence = vulnerabilities.filter(v => v.confidence > 0.9)
+    if (highConfidence.length > 0) {
+      await this.logScan(scanId, 'info', `✅ ${highConfidence.length} high-confidence vulnerabilities validated`, ctx)
     }
   }
 
-  /**
-   * Analyze target type for optimization
-   * @param {string} target - Target URL/IP
-   * @returns {string} Target type
-   */
   analyzeTargetType(target) {
-    if (target.includes('api.') || target.includes('/api/')) return 'api'
-    if (target.includes('admin.') || target.includes('dashboard.')) return 'admin'
-    if (target.includes('staging.') || target.includes('dev.')) return 'staging'
-    if (target.match(/^\d+\.\d+\.\d+\.\d+/)) return 'ip'
+    if (/api\.|\/api\//.test(target))          return 'api'
+    if (/admin\.|dashboard\./.test(target))    return 'admin'
+    if (/staging\.|dev\./.test(target))        return 'staging'
+    if (/^\d+\.\d+\.\d+\.\d+/.test(target))   return 'ip'
     return 'web'
   }
 
-  /**
-   * Get AI system status
-   * @returns {object} Status information
-   */
   getStatus() {
     return {
       isActive: !!process.env.GROQ_API_KEY,
       activeScans: this.activeScans.size,
       cacheEntries: this.discoveryCache.size,
-      model: this.groq.defaultModel
+      model: this.groq.defaultModel,
+      bridgeUrl: BRIDGE_URL,
     }
   }
 
   async logScan(scanId, level, message, ctx = null) {
-    if (ctx?.pushLog) {
-      return ctx.pushLog(scanId, level, message, 'ai')
-    }
-    return addLog(scanId, {
-      timestamp: new Date().toISOString(),
-      level,
-      message,
-      module: 'ai',
-    })
+    if (ctx?.pushLog) return ctx.pushLog(scanId, level, message, 'ai')
+    return addLog(scanId, { timestamp: new Date().toISOString(), level, message, module: 'ai' })
   }
 
   async appendTranscript(sessionId, entry) {

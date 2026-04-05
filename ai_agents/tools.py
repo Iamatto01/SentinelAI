@@ -1,369 +1,521 @@
 #!/usr/bin/env python3
-"""SentinelAI Agent Tools.
+"""SentinelAI Agent Tools — Enhanced with Groq AI-powered analysis."""
 
-CrewAI requires tools to be instances of ``BaseTool``. These wrappers expose
-the existing helper logic through CrewAI-compatible tool classes.
-"""
-
-import subprocess
+import socket
 import json
 import requests
 import os
 import dns.resolver
-import socket
-from typing import List, Dict, Any
+from datetime import datetime
+from typing import Optional
 from pydantic import BaseModel, Field
 from crewai.tools import BaseTool
 
+# ---------------------------------------------------------------------------
+# Groq helper — used by tools that want AI-powered analysis
+# ---------------------------------------------------------------------------
+
+try:
+    from groq import Groq as _GroqClient
+    _GROQ_AVAILABLE = bool(os.getenv('GROQ_API_KEY'))
+except ImportError:
+    _GROQ_AVAILABLE = False
+
+
+def _groq(prompt: str, max_tokens: int = 512) -> Optional[str]:
+    """Call Groq LLM and return the response text, or None on failure."""
+    if not _GROQ_AVAILABLE:
+        return None
+    try:
+        client = _GroqClient(api_key=os.getenv('GROQ_API_KEY'))
+        resp = client.chat.completions.create(
+            messages=[{"role": "user", "content": prompt}],
+            model="llama-3.1-8b-instant",
+            temperature=0.1,
+            max_tokens=max_tokens,
+        )
+        return resp.choices[0].message.content.strip()
+    except Exception as e:
+        return None
+
+
+# ---------------------------------------------------------------------------
+# Pydantic input schemas
+# ---------------------------------------------------------------------------
+
 class ScanInput(BaseModel):
-    target: str = Field(..., description="Target URL (for example: https://example.com)")
-    template: str = Field("standard", description="Scan template: quick, standard, or full")
-    project_id: str = Field("ai_generated", description="Project identifier for scan association")
+    target: str = Field(..., description="Target URL (e.g. https://example.com)")
+    template: str = Field("standard", description="quick | standard | full")
+    project_id: str = Field("ai_generated", description="Project identifier")
 
 
 class DomainInput(BaseModel):
-    domain: str = Field(..., description="Domain name to analyze (for example: example.com)")
+    domain: str = Field(..., description="Domain name (e.g. example.com)")
 
 
 class ScopeInput(BaseModel):
-    scope: str = Field(..., description="Scope value such as domain, hostname, or IP range")
+    scope: str = Field(..., description="Scope: domain, hostname, or IP")
 
 
 class ScanResultsInput(BaseModel):
-    scan_results: str = Field(..., description="Raw or summarized scan results text")
+    scan_results: str = Field(..., description="Raw scan results text")
 
+
+# ---------------------------------------------------------------------------
+# Tool: SentinelAI scan trigger
+# ---------------------------------------------------------------------------
 
 class SentinelAIScanTool(BaseTool):
-    """Execute SentinelAI security scans using the existing scanner system."""
+    """Trigger a SentinelAI security scan via the backend API."""
 
     name: str = "sentinelai_scan"
     description: str = "Start a SentinelAI scan for a target URL using quick/standard/full templates."
     args_schema: type[BaseModel] = ScanInput
 
     def _run(self, target: str, template: str = "standard", project_id: str = "ai_generated") -> str:
-        """Execute a scan using SentinelAI backend API"""
         try:
-            # Prepare scan request
-            scan_data = {
+            payload = {
                 "projectId": project_id,
                 "target": target,
                 "template": template,
                 "aiInitiated": True,
-                "modules": self._get_template_modules(template)
+                "modules": self._modules(template),
             }
-
-            # Send scan request to SentinelAI backend
-            response = requests.post(
+            r = requests.post(
                 "http://localhost:5000/api/scan/start",
                 headers={"Content-Type": "application/json"},
-                json=scan_data,
-                timeout=30
+                json=payload,
+                timeout=30,
             )
-
-            if response.status_code == 201:
-                scan_info = response.json()
-                scan_obj = scan_info.get('scan', {}) if isinstance(scan_info, dict) else {}
-                scan_id = scan_obj.get('id')
-                status = scan_obj.get('status')
-                return f"Scan initiated successfully for {target}\nScan ID: {scan_id}\nTemplate: {template}\nStatus: {status}"
-            else:
-                return f"Scan failed: HTTP {response.status_code} - {response.text}"
-
+            if r.status_code == 201:
+                s = r.json().get('scan', {})
+                return f"Scan started for {target}\nID: {s.get('id')}\nStatus: {s.get('status')}"
+            return f"Scan failed: HTTP {r.status_code} — {r.text}"
         except requests.exceptions.ConnectionError:
-            return "Cannot connect to SentinelAI backend at localhost:5000. Ensure the server is running."
+            return "Cannot reach SentinelAI backend at localhost:5000. Ensure the server is running."
         except Exception as e:
-            return f"Scan execution failed: {str(e)}"
+            return f"Scan execution error: {e}"
 
-    def _get_template_modules(self, template: str) -> dict:
-        """Get module configuration for scan templates"""
-        templates = {
-            "quick": {
-                "headers": True, "ssl": True,
-                "paths": False, "dns": False, "cors": False, "tech": False,
-                "subdomains": False, "info": False, "external": False,
-                "nuclei": False, "kali_advanced": False,
-            },
-            "standard": {
-                "headers": True, "ssl": True, "paths": True, "dns": True, "cors": True, "tech": True,
-                "subdomains": False, "info": False, "external": False,
-                "nuclei": False, "kali_advanced": False,
-            },
-            "full": {
-                "headers": True, "ssl": True, "paths": True, "dns": True, "cors": True, "tech": True,
-                "subdomains": True, "info": True, "external": True,
-                "nuclei": True, "kali_advanced": True,
-            }
+    def _modules(self, template: str) -> dict:
+        T = {
+            "quick":    dict(headers=True, ssl=True, paths=False, dns=False, cors=False, tech=False, subdomains=False, info=False, external=False, nuclei=False, kali_advanced=False),
+            "standard": dict(headers=True, ssl=True, paths=True,  dns=True,  cors=True,  tech=True,  subdomains=False, info=False, external=False, nuclei=False, kali_advanced=False),
+            "full":     dict(headers=True, ssl=True, paths=True,  dns=True,  cors=True,  tech=True,  subdomains=True,  info=True,  external=True,  nuclei=True,  kali_advanced=True),
         }
-        return templates.get(template, templates["standard"])
+        return T.get(template, T["standard"])
 
+
+# ---------------------------------------------------------------------------
+# Tool: Subdomain discovery (DNS brute-force + Certificate Transparency)
+# ---------------------------------------------------------------------------
 
 class SubdomainDiscoveryTool(BaseTool):
-    """Discover subdomains for a given domain using DNS techniques."""
+    """Discover subdomains via DNS brute-force and certificate transparency logs."""
 
     name: str = "subdomain_discovery"
-    description: str = "Discover common active subdomains for a domain."
+    description: str = "Discover active subdomains using DNS and crt.sh CT logs."
     args_schema: type[BaseModel] = DomainInput
 
+    _WORDLIST = [
+        "www", "mail", "ftp", "test", "dev", "staging", "api", "admin", "app",
+        "blog", "shop", "cdn", "beta", "alpha", "vpn", "portal", "support",
+        "docs", "wiki", "forum", "store", "mobile", "secure", "login", "auth",
+        "api-v2", "api-v1", "rest", "graphql", "ws", "static", "assets",
+        "images", "media", "download", "upload", "git", "gitlab", "jenkins",
+        "ci", "jira", "confluence", "status", "monitor", "dashboard", "internal",
+        "intranet", "backup", "old", "demo", "sandbox", "uat", "qa", "preprod",
+        "db", "database", "redis", "elastic", "kibana", "grafana", "smtp", "pop",
+        "imap", "webmail", "cpanel", "whm", "remote", "cloud",
+    ]
+
     def _run(self, domain: str) -> str:
-        """Discover subdomains for the given domain"""
-        try:
-            subdomains = []
-            common_subdomains = [
-                "www", "mail", "ftp", "test", "dev", "staging", "api", "admin", "app",
-                "blog", "shop", "cdn", "beta", "alpha", "vpn", "portal", "support",
-                "docs", "wiki", "forum", "store", "mobile", "secure", "login"
-            ]
+        found: set[str] = set()
 
-            # Test common subdomains
-            for subdomain in common_subdomains:
-                full_domain = f"{subdomain}.{domain}"
-                try:
-                    socket.gethostbyname(full_domain)
-                    subdomains.append(full_domain)
-                except socket.gaierror:
-                    continue
-
-            # Try DNS enumeration
+        # 1. DNS brute-force
+        for sub in self._WORDLIST:
+            host = f"{sub}.{domain}"
             try:
-                resolver = dns.resolver.Resolver()
-                # Try some additional DNS records
-                for record_type in ['A', 'CNAME']:
-                    try:
-                        answers = resolver.resolve(domain, record_type)
-                        for answer in answers:
-                            if hasattr(answer, 'target'):
-                                target_str = str(answer.target).rstrip('.')
-                                if target_str.endswith(domain):
-                                    subdomains.append(target_str)
-                    except:
-                        continue
-            except:
+                socket.gethostbyname(host)
+                found.add(host)
+            except socket.gaierror:
                 pass
 
-            # Remove duplicates and sort
-            unique_subdomains = list(set(subdomains))
-            unique_subdomains.sort()
+        # 2. Certificate Transparency (crt.sh)
+        try:
+            resp = requests.get(
+                f"https://crt.sh/?q=%.{domain}&output=json",
+                timeout=12,
+                headers={"User-Agent": "SentinelAI/1.0"},
+            )
+            if resp.status_code == 200:
+                for entry in resp.json()[:200]:
+                    for name in entry.get('name_value', '').split('\n'):
+                        name = name.strip().lstrip('*.')
+                        if name.endswith(f'.{domain}') or name == domain:
+                            try:
+                                socket.gethostbyname(name)
+                                found.add(name)
+                            except socket.gaierror:
+                                pass
+        except Exception:
+            pass
 
-            if unique_subdomains:
-                result = f"Discovered {len(unique_subdomains)} subdomains for {domain}:\n"
-                for subdomain in unique_subdomains:
-                    result += f"  • https://{subdomain}\n"
-                return result
-            else:
-                return f"No subdomains discovered for {domain} using basic techniques"
+        unique = sorted(found)
+        if not unique:
+            return f"No subdomains discovered for {domain}"
 
-        except Exception as e:
-            return f"Subdomain discovery failed: {str(e)}"
+        sensitive_prefixes = {'admin', 'dev', 'staging', 'test', 'internal', 'intranet',
+                              'backup', 'db', 'database', 'jenkins', 'gitlab', 'ci', 'vpn'}
+        sensitive = [h for h in unique if h.split('.')[0] in sensitive_prefixes]
 
+        out = [f"Discovered {len(unique)} subdomains for {domain}:"]
+        for h in unique:
+            tag = " ⚠️ SENSITIVE" if h in sensitive else ""
+            out.append(f"  • https://{h}{tag}")
+        if sensitive:
+            out.append(f"\n[!] {len(sensitive)} sensitive subdomain(s) require priority review")
+        return '\n'.join(out)
+
+
+# ---------------------------------------------------------------------------
+# Tool: DNS reconnaissance
+# ---------------------------------------------------------------------------
 
 class DnsTool(BaseTool):
-    """Perform DNS reconnaissance to gather information about domain infrastructure."""
+    """Comprehensive DNS reconnaissance and email security analysis."""
 
     name: str = "dns_recon"
-    description: str = "Collect DNS records (A, AAAA, MX, NS, TXT, SOA, CNAME) for a domain."
+    description: str = "Collect DNS records (A/MX/NS/TXT/SOA) and check SPF/DKIM/DMARC."
     args_schema: type[BaseModel] = DomainInput
 
     def _run(self, domain: str) -> str:
-        """Perform DNS reconnaissance"""
+        resolver = dns.resolver.Resolver()
+        resolver.timeout = 5
+        resolver.lifetime = 10
+
+        info: dict[str, list[str]] = {}
+        for rtype in ('A', 'AAAA', 'MX', 'NS', 'TXT', 'SOA', 'CNAME'):
+            try:
+                info[rtype] = [str(a) for a in resolver.resolve(domain, rtype)]
+            except Exception:
+                info[rtype] = []
+
+        lines = [f"DNS Reconnaissance — {domain}", ""]
+        for rtype, records in info.items():
+            if records:
+                lines.append(f"{rtype} Records:")
+                for r in records:
+                    lines.append(f"  • {r}")
+                lines.append("")
+
+        # --- Email security ---
+        lines.append("Email Security:")
+        spf = next((r for r in info.get('TXT', []) if 'v=spf1' in r), None)
+        if spf:
+            lines.append(f"  SPF ✓  {spf}")
+            if '+all' in spf:
+                lines.append("    ⚠️  SPF uses +all — allows ALL senders (critical misconfiguration)")
+            elif '~all' in spf:
+                lines.append("    ℹ️  SPF uses ~all (softfail — consider upgrading to -all)")
+        else:
+            lines.append("  SPF ✗  Missing — email spoofing is possible")
+
         try:
-            resolver = dns.resolver.Resolver()
-            dns_info = {}
+            dmarc_ans = resolver.resolve(f'_dmarc.{domain}', 'TXT')
+            dmarc = ' '.join(str(r) for r in dmarc_ans)
+            lines.append(f"  DMARC ✓  {dmarc}")
+            if 'p=none' in dmarc:
+                lines.append("    ⚠️  DMARC policy=none — monitoring only, no enforcement")
+        except Exception:
+            lines.append("  DMARC ✗  Missing — no email authentication enforcement")
 
-            # Common DNS record types to query
-            record_types = ['A', 'AAAA', 'MX', 'NS', 'TXT', 'SOA', 'CNAME']
+        # Check DKIM common selectors
+        dkim_selectors = ['default', 'google', 'mail', 'email', 'selector1', 'selector2', 'k1']
+        for sel in dkim_selectors:
+            try:
+                resolver.resolve(f'{sel}._domainkey.{domain}', 'TXT')
+                lines.append(f"  DKIM ✓  Selector '{sel}' found")
+                break
+            except Exception:
+                pass
 
-            for record_type in record_types:
-                try:
-                    answers = resolver.resolve(domain, record_type)
-                    dns_info[record_type] = [str(answer) for answer in answers]
-                except dns.resolver.NoAnswer:
-                    dns_info[record_type] = []
-                except Exception as e:
-                    dns_info[record_type] = [f"Error: {str(e)}"]
+        return '\n'.join(lines)
 
-            # Format results
-            result = f"DNS Reconnaissance for {domain}:\n"
-            for record_type, records in dns_info.items():
-                if records:
-                    result += f"\n{record_type} Records:\n"
-                    for record in records:
-                        result += f"  • {record}\n"
 
-            # Look for interesting TXT records
-            txt_records = dns_info.get('TXT', [])
-            interesting_txt = []
-            for txt in txt_records:
-                if any(keyword in txt.lower() for keyword in ['spf', 'dmarc', 'dkim', 'google-site-verification']):
-                    interesting_txt.append(txt)
-
-            if interesting_txt:
-                result += "\nEmail Security Records Found:\n"
-                for txt in interesting_txt:
-                    result += f"  • {txt}\n"
-
-            return result
-
-        except Exception as e:
-            return f"DNS reconnaissance failed: {str(e)}"
-
+# ---------------------------------------------------------------------------
+# Tool: AI-powered threat intelligence
+# ---------------------------------------------------------------------------
 
 class ThreatIntelTool(BaseTool):
-    """Analyze domain for known threats, reputation, and security indicators."""
+    """Domain threat intelligence: DNS reputation checks + Groq AI analysis."""
 
     name: str = "threat_intel"
-    description: str = "Perform lightweight domain threat-intelligence heuristics and risk hints."
+    description: str = "Analyze a domain for known threats using DNS blocklists and AI."
     args_schema: type[BaseModel] = DomainInput
 
+    _HIGH_RISK_TLDS = {'.tk', '.ml', '.ga', '.cf', '.bit', '.xyz', '.top', '.pw', '.cc', '.su'}
+    _SUSPICIOUS_KW  = ['login', 'secure', 'account', 'verify', 'update', 'confirm',
+                       'bank', 'paypal', 'apple', 'amazon', 'microsoft', 'google',
+                       'facebook', 'support', 'helpdesk', 'password', 'wallet']
+
     def _run(self, domain: str) -> str:
-        """Analyze domain threat intelligence"""
+        raw = self._gather(domain)
+        if _GROQ_AVAILABLE:
+            return self._ai_enrich(domain, raw)
+        return raw
+
+    def _gather(self, domain: str) -> str:
+        now = datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')
+        lines = [f"Threat Intel — {domain}", f"Timestamp: {now}", ""]
+
+        # TLD risk
+        tld = '.' + domain.rsplit('.', 1)[-1].lower()
+        lines.append(f"TLD: {tld}  {'[HIGH RISK]' if tld in self._HIGH_RISK_TLDS else '[OK]'}")
+
+        # Length / structure
+        if len(domain) > 50:
+            lines.append(f"Domain length {len(domain)}: [SUSPICIOUS — unusually long]")
+        digits = sum(1 for c in domain if c.isdigit())
+        if digits > 4:
+            lines.append(f"Digits in domain: {digits}  [SUSPICIOUS]")
+
+        # Suspicious keywords
+        kw_hits = [k for k in self._SUSPICIOUS_KW if k in domain.lower()]
+        if kw_hits:
+            lines.append(f"Suspicious keywords: {', '.join(kw_hits)}")
+
+        # DNS reputation (DNSBL checks)
+        resolver = dns.resolver.Resolver()
+        resolver.timeout = 4
+        resolver.lifetime = 8
+
+        checks = [
+            (f"{domain}.dbl.spamhaus.org",    "Spamhaus DBL (spam/phishing domains)"),
+            (f"{domain}.multi.surbl.org",     "SURBL (known malicious domains)"),
+            (f"{domain}.uribl.com",           "URIBL (URI-based spam)"),
+        ]
+        lines.append("\nDNS Reputation Checks:")
+        for query, label in checks:
+            try:
+                resolver.resolve(query, 'A')
+                lines.append(f"  ⚠️  LISTED in {label}")
+            except dns.resolver.NXDOMAIN:
+                lines.append(f"  ✓  Not listed in {label}")
+            except Exception:
+                lines.append(f"  –  {label}: check unavailable")
+
+        # Certificate transparency
         try:
-            intel_report = []
+            ct = requests.get(
+                f"https://crt.sh/?q={domain}&output=json&limit=3",
+                timeout=8,
+                headers={"User-Agent": "SentinelAI/1.0"},
+            )
+            if ct.status_code == 200 and ct.json():
+                certs = ct.json()
+                lines.append(f"\nCertificate Transparency: {len(certs)}+ certificate(s) found")
+                latest = certs[0]
+                lines.append(f"  Latest issued: {latest.get('not_before', 'unknown')}")
+                lines.append(f"  Issuer: {latest.get('issuer_name', 'unknown')}")
+        except Exception:
+            pass
 
-            # Basic domain analysis
-            intel_report.append(f"Threat Intelligence Report for {domain}")
+        return '\n'.join(lines)
 
-            # Check domain age and basic info (simulated)
-            intel_report.append("Domain Analysis:")
-            intel_report.append(f"  • Domain: {domain}")
-            intel_report.append(f"  • Analysis Date: {os.popen('date').read().strip()}")
+    def _ai_enrich(self, domain: str, raw: str) -> str:
+        prompt = f"""You are a cybersecurity threat intelligence analyst.
 
-            # Check for common threat indicators in domain name
-            threat_keywords = ['phishing', 'malware', 'spam', 'fraud', 'scam', 'fake']
-            found_keywords = [kw for kw in threat_keywords if kw in domain.lower()]
+Analyze the following domain intelligence data and provide a concise threat assessment:
 
-            if found_keywords:
-                intel_report.append(f"Suspicious Keywords Found: {', '.join(found_keywords)}")
-            else:
-                intel_report.append("No obvious threat keywords detected in domain")
+Domain: {domain}
+Intelligence Data:
+{raw}
 
-            # Analyze TLD risk
-            high_risk_tlds = ['.tk', '.ml', '.ga', '.cf', '.bit']
-            domain_tld = '.' + domain.split('.')[-1]
-            if domain_tld in high_risk_tlds:
-                intel_report.append(f"High-risk TLD detected: {domain_tld}")
-            else:
-                intel_report.append(f"TLD appears legitimate: {domain_tld}")
+Provide:
+1. Overall threat level: Low / Medium / High / Critical
+2. Key risk indicators (bullet points)
+3. Most likely threat category (phishing / spam / malware / legitimate / suspicious)
+4. Recommended immediate actions
+5. Confidence level (%)
 
-            # Check domain length and structure
-            if len(domain) > 50:
-                intel_report.append("Unusually long domain name (possible phishing indicator)")
-            elif len(domain) < 5:
-                intel_report.append("Very short domain name (investigate further)")
+Be specific and actionable. Maximum 300 words."""
 
-            # Domain character analysis
-            if any(char.isdigit() for char in domain):
-                digit_count = sum(1 for char in domain if char.isdigit())
-                if digit_count > 3:
-                    intel_report.append(f"High number of digits in domain: {digit_count}")
+        ai = _groq(prompt, max_tokens=400)
+        if ai:
+            return f"{raw}\n\n{'='*40}\nAI Threat Assessment (Groq)\n{'='*40}\n{ai}"
+        return raw
 
-            intel_report.append("\nRecommendation: Proceed with security scanning to identify vulnerabilities")
 
-            return '\n'.join(intel_report)
-
-        except Exception as e:
-            return f"Threat intelligence analysis failed: {str(e)}"
-
+# ---------------------------------------------------------------------------
+# Tool: AI-powered vulnerability analysis
+# ---------------------------------------------------------------------------
 
 class VulnerabilityAnalysisTool(BaseTool):
-    """Analyze scan results to prioritize vulnerabilities and suggest remediation."""
+    """Analyze scan results with Groq AI for intelligent vulnerability prioritization."""
 
     name: str = "vulnerability_analysis"
-    description: str = "Summarize and prioritize vulnerabilities from scan results text."
+    description: str = "AI-powered analysis and prioritization of vulnerability scan results."
     args_schema: type[BaseModel] = ScanResultsInput
 
     def _run(self, scan_results: str) -> str:
-        """Analyze vulnerability scan results"""
-        try:
-            analysis = []
-            analysis.append("Vulnerability Analysis Report")
+        if _GROQ_AVAILABLE:
+            return self._ai_analyze(scan_results)
+        return self._basic_analyze(scan_results)
 
-            # Parse scan results (simplified)
-            if "Critical" in scan_results:
-                analysis.append("CRITICAL VULNERABILITIES DETECTED!")
-                analysis.append("Immediate action required to address critical security issues.")
+    def _ai_analyze(self, scan_results: str) -> str:
+        # Truncate to stay within context limits
+        truncated = scan_results[:3500] if len(scan_results) > 3500 else scan_results
 
-            if "High" in scan_results:
-                analysis.append("High severity vulnerabilities found.")
-                analysis.append("Schedule remediation within 24-48 hours.")
+        prompt = f"""You are a senior penetration tester and vulnerability analyst.
 
-            if "Medium" in scan_results:
-                analysis.append("Medium severity issues identified.")
-                analysis.append("Plan remediation within 1-2 weeks.")
+Analyze these security scan results and provide a structured assessment:
 
-            if "Low" in scan_results:
-                analysis.append("Low severity findings noted.")
-                analysis.append("Address during regular maintenance windows.")
+{truncated}
 
-            # Provide general security recommendations
-            analysis.append("\nSecurity Recommendations:")
-            analysis.append("• Ensure all software is up to date")
-            analysis.append("• Implement proper access controls")
-            analysis.append("• Regular security monitoring")
-            analysis.append("• Employee security training")
+Structure your response as:
 
-            return '\n'.join(analysis)
+## CRITICAL (Immediate action required)
+- List each critical finding with CVE if known
 
-        except Exception as e:
-            return f"Vulnerability analysis failed: {str(e)}"
+## HIGH (Fix within 24-48 hours)
+- List each high finding
 
+## MEDIUM/LOW (Fix within 30 days)
+- Summary
+
+## Attack Chain Analysis
+- Can any findings be chained for greater impact? Explain.
+
+## Top 5 Remediation Priorities
+1.
+2.
+3.
+4.
+5.
+
+## Risk Score: X/10
+Justification: (one sentence)
+
+Be specific, technical, and actionable."""
+
+        result = _groq(prompt, max_tokens=700)
+        if result:
+            return result
+        return self._basic_analyze(scan_results)
+
+    def _basic_analyze(self, scan_results: str) -> str:
+        lines = ["Vulnerability Analysis Report", "=" * 40]
+        lower = scan_results.lower()
+
+        tiers = {
+            'CRITICAL': ['sql injection', 'remote code execution', 'rce', 'command injection',
+                         'heartbleed', 'shellshock', 'deserialization', 'xxe', 'critical'],
+            'HIGH':     ['xss', 'cross-site scripting', 'authentication bypass', 'ssrf',
+                         'idor', 'path traversal', 'lfi', 'rfi', 'open redirect', 'high'],
+            'MEDIUM':   ['csrf', 'cors misconfiguration', 'information disclosure',
+                         'default credentials', 'medium'],
+            'LOW':      ['missing header', 'insecure cookie', 'tls 1.0', 'weak cipher', 'low'],
+        }
+
+        for tier, keywords in tiers.items():
+            if any(k in lower for k in keywords):
+                lines.append(f"\n[{tier}] Issues detected — review scan output for details")
+
+        lines.extend([
+            "\nGeneral Remediation Priorities:",
+            "• Critical: Patch immediately (same day)",
+            "• High: Fix within 24-48 hours",
+            "• Medium: Schedule within 1-2 weeks",
+            "• Low: Address in next maintenance window",
+            "• Enable WAF for layered protection",
+        ])
+        return '\n'.join(lines)
+
+
+# ---------------------------------------------------------------------------
+# Tool: Asset discovery with service fingerprinting
+# ---------------------------------------------------------------------------
 
 class AssetDiscoveryTool(BaseTool):
-    """Discover and enumerate assets for a given scope or organization."""
+    """Discover live services, open ports, and exposed infrastructure."""
 
     name: str = "asset_discovery"
-    description: str = "Discover reachable services and basic asset context for a scope."
+    description: str = "Discover reachable services and asset context for a scope."
     args_schema: type[BaseModel] = ScopeInput
 
+    # port → (protocol, service label, risk_note)
+    _PORTS = {
+        80:    ('http',  'HTTP Web Server',         ''),
+        443:   ('https', 'HTTPS Web Server',        ''),
+        8080:  ('http',  'HTTP Alt / Dev Server',   ''),
+        8443:  ('https', 'HTTPS Alt',               ''),
+        3000:  ('http',  'Node.js / Dev',           'May expose dev endpoints'),
+        5000:  ('http',  'Flask / Dev',             ''),
+        8000:  ('http',  'Django / Dev',            ''),
+        4200:  ('http',  'Angular Dev',             ''),
+        3001:  ('http',  'React Dev',               ''),
+        8888:  ('http',  'Jupyter Notebook',        '⚠️ Often unauthenticated!'),
+        9200:  ('http',  'Elasticsearch',           '⚠️ Often unauthenticated!'),
+        5601:  ('http',  'Kibana',                  '⚠️ May expose sensitive logs'),
+        6379:  ('tcp',   'Redis',                   '⚠️ No auth by default!'),
+        27017: ('tcp',   'MongoDB',                 '⚠️ No auth by default!'),
+        3306:  ('tcp',   'MySQL',                   '⚠️ Should not be public'),
+        5432:  ('tcp',   'PostgreSQL',              '⚠️ Should not be public'),
+        1433:  ('tcp',   'MSSQL',                   '⚠️ Should not be public'),
+        22:    ('ssh',   'SSH',                     ''),
+        21:    ('ftp',   'FTP',                     '⚠️ Cleartext protocol'),
+        23:    ('telnet','Telnet',                  '⚠️ Cleartext — critical risk'),
+        25:    ('smtp',  'SMTP',                    ''),
+        445:   ('smb',   'SMB',                     '⚠️ Should not be internet-facing'),
+        3389:  ('rdp',   'RDP',                     '⚠️ Brute-force target'),
+    }
+
     def _run(self, scope: str) -> str:
-        """Discover assets within the given scope"""
-        try:
-            discoveries = []
-            discoveries.append(f"Asset Discovery Report for: {scope}")
+        hostname = scope.replace('https://', '').replace('http://', '').split('/')[0].split(':')[0]
+        lines = [f"Asset Discovery — {hostname}", ""]
 
-            # Parse scope (could be domain, IP range, etc.)
-            if '.' in scope and not scope.replace('.', '').isdigit():
-                # Looks like a domain
-                discoveries.append(f"\nDomain-based discovery for: {scope}")
+        live = []
+        for port, (proto, label, risk) in self._PORTS.items():
+            try:
+                s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                s.settimeout(2)
+                if s.connect_ex((hostname, port)) == 0:
+                    if port == 443 or (port == 80):
+                        url = f"{proto}://{hostname}"
+                    else:
+                        url = f"{proto}://{hostname}:{port}"
+                    live.append({'url': url, 'port': port, 'label': label, 'risk': risk})
+                s.close()
+            except Exception:
+                pass
 
-                # Common service ports to check
-                common_ports = [80, 443, 8080, 8443, 3000, 5000, 8000, 9000]
-                live_services = []
+        if live:
+            lines.append(f"Live Services ({len(live)} found):")
+            for svc in live:
+                lines.append(f"  [{svc['port']:5d}] {svc['url']:<45} {svc['label']}")
+                if svc['risk']:
+                    lines.append(f"           {svc['risk']}")
+        else:
+            lines.append("No common services detected. Run nmap for full port scan.")
 
-                for port in common_ports:
-                    try:
-                        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                        sock.settimeout(3)
-                        result = sock.connect_ex((scope, port))
-                        sock.close()
+        lines.extend([
+            "",
+            "Recommended Follow-up:",
+            "  • nmap full scan: nmap -sV -sC -p- --open " + hostname,
+            "  • Check all services for default credentials",
+            "  • Verify databases are not publicly accessible",
+            "  • Review firewall rules for unnecessary exposure",
+        ])
 
-                        if result == 0:
-                            protocol = "https" if port in [443, 8443] else "http"
-                            service_url = f"{protocol}://{scope}:{port}"
-                            live_services.append(service_url)
-                    except:
-                        continue
+        # AI enrichment when services found
+        if _GROQ_AVAILABLE and live:
+            summary = ', '.join(f"{s['label']}:{s['port']}" for s in live)
+            ai = _groq(
+                f"Security assessment: host '{hostname}' exposes: {summary}. "
+                "List the top 3 security risks in order of severity with one-line remediation each.",
+                max_tokens=250,
+            )
+            if ai:
+                lines.extend(["", "--- AI Risk Summary ---", ai])
 
-                if live_services:
-                    discoveries.append("\nLive Services Detected:")
-                    for service in live_services:
-                        discoveries.append(f"  • {service}")
-                else:
-                    discoveries.append("\nNo common web services detected")
-
-            # Asset categorization
-            discoveries.append("\nAsset Classification:")
-            discoveries.append(f"  • Primary Target: {scope}")
-            discoveries.append(f"  • Asset Type: Web Application/Service")
-            discoveries.append(f"  • Discovery Method: Port Scanning")
-
-            # Recommended next steps
-            discoveries.append("\nRecommended Actions:")
-            discoveries.append(f"  • Run full security scan on discovered assets")
-            discoveries.append(f"  • Perform subdomain enumeration")
-            discoveries.append(f"  • Check for exposed directories/files")
-            discoveries.append(f"  • Analyze SSL/TLS configuration")
-
-            return '\n'.join(discoveries)
-
-        except Exception as e:
-            return f"Asset discovery failed: {str(e)}"
+        return '\n'.join(lines)

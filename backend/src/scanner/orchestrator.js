@@ -6,6 +6,8 @@ import { scanCors } from './cors.js';
 import { scanTech } from './tech.js';
 import { scanSubdomains } from './subdomains.js';
 import { scanInfo } from './info.js';
+import { scanApi } from './api.js';
+import { scanSecrets } from './secrets.js';
 import { scanExternal } from './external_tools.js';
 import { scanNuclei } from './nuclei.js';
 import { scanKaliAdvanced } from './kali_advanced.js';
@@ -30,6 +32,8 @@ const MODULE_CONFIG = {
   tech:         { name: 'Technology Detection',         weight: 10, fn: scanTech },
   subdomains:   { name: 'Subdomain Enumeration',        weight: 12, fn: scanSubdomains },
   info:         { name: 'Information Disclosure',       weight: 12, fn: scanInfo },
+  api:          { name: 'API Security Baseline',        weight: 14, fn: scanApi },
+  secrets:      { name: 'Client-Side Secrets Exposure', weight: 14, fn: scanSecrets },
   external:     { name: 'Kali Core Tools',              weight: 20, fn: scanExternal },
   nuclei:       { name: 'Nuclei Template Scanning',     weight: 25, fn: scanNuclei },
   kali_advanced:{ name: 'Advanced Kali Tools',          weight: 20, fn: scanKaliAdvanced },
@@ -39,17 +43,17 @@ const TEMPLATE_PRESETS = {
   quick: {
     headers: true, ssl: true,
     paths: false, dns: false, cors: false, tech: false,
-    subdomains: false, info: false, external: false,
+    subdomains: false, info: false, api: false, secrets: false, external: false,
     nuclei: false, kali_advanced: false,
   },
   standard: {
     headers: true, ssl: true, paths: true, dns: true, cors: true, tech: true,
-    subdomains: false, info: false, external: false,
+    subdomains: false, info: false, api: true, secrets: true, external: false,
     nuclei: false, kali_advanced: false,
   },
   full: {
     headers: true, ssl: true, paths: true, dns: true, cors: true, tech: true,
-    subdomains: true, info: true, external: true,
+    subdomains: true, info: true, api: true, secrets: true, external: true,
     nuclei: true, kali_advanced: true,
   },
 };
