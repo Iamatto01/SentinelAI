@@ -1,10 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useSearchParams, useNavigate } from 'react-router-dom';
+import { motion, AnimatePresence } from 'framer-motion';
 import Shell from '../components/Shell.jsx';
 import { useToast } from '../components/Toast.jsx';
 import ActionMenu from '../components/ActionMenu.jsx';
 import VulnDetailModal from '../components/VulnDetailModal.jsx';
 import StatusPickerModal from '../components/StatusPickerModal.jsx';
 import { apiFetch } from '../lib/api.js';
+import { staggerContainer, fadeInUp } from '../lib/animations.js';
 
 function clamp(n, min, max) {
   return Math.max(min, Math.min(max, n));
@@ -28,6 +31,8 @@ function statusBadge(status) {
 }
 
 export default function Vulnerabilities() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [vulns, setVulns] = useState([]);
@@ -37,6 +42,12 @@ export default function Vulnerabilities() {
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [selectedVuln, setSelectedVuln] = useState(null);
   const [showStatusPicker, setShowStatusPicker] = useState(false);
+  
+  // URL filter params
+  const scanIdFilter = searchParams.get('scanId');
+  const projectIdFilter = searchParams.get('projectId');
+  const targetFilter = searchParams.get('target');
+  const hasUrlFilter = scanIdFilter || projectIdFilter;
 
   const [severityFilter, setSeverityFilter] = useState({
     critical: true,
@@ -57,7 +68,14 @@ export default function Vulnerabilities() {
     setLoading(true);
     setError('');
     try {
-      const data = await apiFetch('/api/vulnerabilities');
+      // Build API URL with optional filters
+      let url = '/api/vulnerabilities';
+      const params = new URLSearchParams();
+      if (scanIdFilter) params.set('scanId', scanIdFilter);
+      if (projectIdFilter) params.set('projectId', projectIdFilter);
+      if (params.toString()) url += `?${params.toString()}`;
+      
+      const data = await apiFetch(url);
       setVulns(data?.vulnerabilities || []);
     } catch (e) {
       setError(e?.message || String(e));
@@ -68,7 +86,11 @@ export default function Vulnerabilities() {
 
   useEffect(() => {
     loadVulns();
-  }, []);
+  }, [scanIdFilter, projectIdFilter]);
+
+  function clearUrlFilters() {
+    setSearchParams({});
+  }
 
   const filtered = useMemo(() => {
     return vulns
@@ -311,7 +333,10 @@ export default function Vulnerabilities() {
   return (
     <Shell
       title="Vulnerability Management"
-      subtitle="Analyze and prioritize security findings"
+      subtitle={hasUrlFilter 
+        ? `Filtered by ${scanIdFilter ? `scan: ${targetFilter || scanIdFilter}` : `project`}` 
+        : "Analyze and prioritize security findings"
+      }
       actions={
         <>
           <div className="flex items-center space-x-0">
@@ -337,6 +362,41 @@ export default function Vulnerabilities() {
         </>
       }
     >
+      {/* URL Filter Banner */}
+      <AnimatePresence>
+        {hasUrlFilter && (
+          <motion.div
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            className="glassmorphism p-4 rounded-xl border border-blue-500/30 bg-blue-500/10 mb-6 flex items-center justify-between"
+          >
+            <div className="flex items-center gap-3">
+              <span className="text-blue-400">🔗</span>
+              <div>
+                <p className="text-sm font-medium">
+                  {scanIdFilter 
+                    ? `Showing vulnerabilities from scan: ${targetFilter || 'Unknown target'}`
+                    : `Showing vulnerabilities from project`
+                  }
+                </p>
+                <p className="text-xs text-gray-400">
+                  {filtered.length} vulnerabilities found
+                </p>
+              </div>
+            </div>
+            <motion.button
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={clearUrlFilters}
+              className="glass-button px-4 py-2 rounded-lg text-sm"
+            >
+              Show All Vulnerabilities
+            </motion.button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {error ? (
         <div className="glassmorphism p-4 rounded border border-white/10 text-sm text-gray-200 mb-6">
           {error}

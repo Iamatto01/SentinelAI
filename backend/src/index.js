@@ -476,9 +476,18 @@ app.put('/api/scan/results/:vulnId/status', requireAuth, requireRole('admin', 'a
 
 app.get('/api/vulnerabilities', requireAuth, (req, res) => {
   const clientPids = getClientProjectIds(req.user)
+  const { scanId: filterScanId, projectId: filterProjectId } = req.query
+  
   const all = []
   for (const [scanId, vulns] of db.vulnerabilitiesByScanId) {
+    // Filter by scanId if provided
+    if (filterScanId && scanId !== filterScanId) continue
+    
     const scan = db.scans.find((s) => s.id === scanId)
+    
+    // Filter by projectId if provided
+    if (filterProjectId && (!scan || scan.projectId !== filterProjectId)) continue
+    
     if (clientPids && (!scan || !clientPids.includes(scan.projectId))) continue
     for (const v of vulns) {
       all.push({ ...v, scanId, scanTarget: scan?.target })
