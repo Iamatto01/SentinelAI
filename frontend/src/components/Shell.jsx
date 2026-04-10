@@ -6,7 +6,7 @@ import { Menu, LayoutDashboard, FolderOpen, Radar, ShieldAlert, Settings, LogOut
 import { sidebarSlide, fadeInDown, staggerContainer } from '../lib/animations.js';
 
 const navItems = [
-  { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
+  { to: '/service', icon: LayoutDashboard, label: 'Dashboard' },
   { to: '/projects', icon: FolderOpen, label: 'Projects' },
   { to: '/scan', icon: Radar, label: 'Live Scan' },
   { to: '/vulnerabilities', icon: ShieldAlert, label: 'Vulnerabilities' },
@@ -48,7 +48,7 @@ export default function Shell({ title, subtitle, actions, children }) {
         >
           <Menu className="w-5 h-5" />
         </motion.button>
-        <Link to="/" className="flex items-center space-x-2 ml-3" onClick={closeMobile}>
+        <Link to="/service" className="flex items-center space-x-2 ml-3" onClick={closeMobile}>
           <motion.img 
             src="/resources/logo.svg" 
             alt="SentinelAI" 
@@ -124,7 +124,7 @@ export default function Shell({ title, subtitle, actions, children }) {
             >
               <NavLink
                 to={item.to}
-                end={item.to === '/'}
+                end={item.to === '/service'}
                 className={({ isActive }) => `
                   glass-nav-item flex items-center px-[18px] py-3 mx-2 rounded-xl
                   transition-all group/item
@@ -199,7 +199,7 @@ export default function Shell({ title, subtitle, actions, children }) {
             className="lg:hidden fixed left-0 top-0 h-full w-72 z-50 bg-black/90 backdrop-blur-xl border-r border-white/10 flex flex-col"
           >
             <div className="p-6 flex-1">
-              <Link to="/" className="flex items-center space-x-3 mb-8" onClick={closeMobile}>
+              <Link to="/service" className="flex items-center space-x-3 mb-8" onClick={closeMobile}>
                 <motion.img 
                   src="/resources/logo.svg" 
                   alt="SentinelAI" 
@@ -225,7 +225,7 @@ export default function Shell({ title, subtitle, actions, children }) {
                   >
                     <NavLink
                       to={item.to}
-                      end={item.to === '/'}
+                      end={item.to === '/service'}
                       onClick={closeMobile}
                       className={({ isActive }) => `
                         flex items-center space-x-3 px-4 py-3 rounded-xl transition-all

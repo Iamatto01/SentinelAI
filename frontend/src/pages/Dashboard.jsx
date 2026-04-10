@@ -122,7 +122,7 @@ export default function Dashboard() {
                   initial="hidden"
                   animate="show"
                   exit="exit"
-                  className="absolute right-0 mt-2 w-80 glassmorphism rounded-2xl border border-white/10 shadow-xl z-50 overflow-hidden"
+                  className="absolute right-0 mt-2 w-80 glassmorphism rounded-2xl border border-white/10 shadow-xl z-[100] overflow-hidden"
                 >
                   <div className="p-3 border-b border-white/10 flex items-center justify-between">
                     <span className="text-sm font-semibold">Notifications</span>
@@ -154,15 +154,6 @@ export default function Dashboard() {
               )}
             </AnimatePresence>
           </div>
-          <motion.button
-            whileHover={{ scale: 1.05, rotate: 90 }}
-            whileTap={{ scale: 0.95 }}
-            transition={{ type: 'spring', stiffness: 400 }}
-            className="p-2 glass-button rounded-xl"
-            onClick={() => navigate('/settings')}
-          >
-            <span className="text-lg">&#x2699;&#xFE0F;</span>
-          </motion.button>
         </>
       }
     >

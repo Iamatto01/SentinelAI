@@ -56,6 +56,28 @@ Then open the URL shown by Vite (usually `http://localhost:5173/`).
 - The **Live Scan** page uses Socket.IO (`/socket.io/*`) to receive `scan:update` events.
 - This backend only simulates scan progress/logs and returns demo vulnerabilities. It does **not** run real scans.
 
+## HTTPS setup
+
+The backend can run over HTTPS if you provide certificate files:
+
+```bash
+HTTPS_KEY_PATH=/path/to/privkey.pem
+HTTPS_CERT_PATH=/path/to/fullchain.pem
+# Optional:
+HTTPS_CA_PATH=/path/to/ca.pem
+```
+
+When those variables are set, the backend serves the app over `https://` on the same `PORT`.
+
+For Vite dev proxying against an HTTPS backend, set:
+
+```bash
+VITE_BACKEND_TARGET=https://localhost:5000
+VITE_PROXY_SECURE=false
+```
+
+Set `VITE_PROXY_SECURE=false` only for self-signed local certificates. Keep it enabled for real public certificates.
+
 ## tambah sqlite untuk save backend
 sudo apt update
 sudo apt install -y nmap nikto whatweb sqlmap sslscan gobuster wafw00f wpscan nuclei ffuf feroxbuster dnsrecon fierce amass wapiti

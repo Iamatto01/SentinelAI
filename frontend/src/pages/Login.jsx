@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../lib/AuthContext.jsx';
+import { Link } from 'react-router-dom';
+import { ArrowLeft } from 'lucide-react';
 
 export default function Login() {
   const { login, clientLogin } = useAuth();
@@ -53,8 +55,17 @@ export default function Login() {
       <div className="floating-orb orb-2" />
       <div className="floating-orb orb-3" />
       
+      <Link 
+        to="/" 
+        className="absolute top-6 left-6 md:top-8 md:left-8 z-20 flex items-center gap-2 text-gray-400 hover:text-white transition-all duration-300 bg-white/5 backdrop-blur-md px-4 py-2 rounded-full border border-white/10 hover:border-cyan-500/50 hover:shadow-[0_0_15px_rgba(74,209,255,0.2)]"
+      >
+        <ArrowLeft size={16} />
+        <span className="text-sm font-medium">Back to Home</span>
+      </Link>
+
       <motion.div 
         initial={{ opacity: 0, y: 40 }}
+
         animate={{ opacity: 1, y: 0 }}
         transition={{ type: 'spring', damping: 20, stiffness: 100 }}
         className="w-full max-w-md mx-4 relative z-10"
@@ -69,8 +80,6 @@ export default function Login() {
             src="/resources/logo.svg" 
             alt="SentinelAI" 
             className="w-16 h-16 mx-auto mb-4"
-            animate={{ rotate: [0, 360] }}
-            transition={{ duration: 20, repeat: Infinity, ease: 'linear' }}
           />
           <h1 className="text-3xl font-bold white-glow-text">SentinelAI</h1>
           <p className="text-gray-400 mt-2">Sign in to continue</p>

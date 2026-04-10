@@ -145,6 +145,20 @@ export async function dbUpdateUserLastLogin(id, lastLogin) {
   })
 }
 
+export async function dbUpdateUser(id, email, passwordHash) {
+  if (passwordHash) {
+    await client.execute({
+      sql: 'UPDATE users SET email = ?, passwordHash = ? WHERE id = ?',
+      args: [email, passwordHash, id],
+    })
+  } else {
+    await client.execute({
+      sql: 'UPDATE users SET email = ? WHERE id = ?',
+      args: [email, id],
+    })
+  }
+}
+
 // ── Helper: parse/serialize JSON columns ─────────────────────────────────────
 
 function parseProject(row) {

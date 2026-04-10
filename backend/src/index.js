@@ -1,4 +1,6 @@
 import http from 'node:http'
+import https from 'node:https'
+import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import express from 'express'
@@ -17,7 +19,7 @@ import {
   initLogs, addLog,
   addAudit,
 } from './data.js'
-import { dbGetUserByUsername, dbUpdateUserLastLogin, dbGetUserByEmail } from './database.js'
+import { dbGetUserByUsername, dbUpdateUserLastLogin, dbGetUserByEmail, dbUpdateUser } from './database.js'
 import { getCveById, searchCve } from './cve.js'
 import { runScan, buildModules, getModuleSelection } from './scanner/orchestrator.js'
 import { generateReport } from './report.js'
@@ -30,6 +32,9 @@ const PORT = Number(process.env.PORT || 5000)
 const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN || 'http://localhost:5173'
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-me'
 const JWT_ISSUER = process.env.JWT_ISSUER || 'vlolv-backend'
+const HTTPS_KEY_PATH = process.env.HTTPS_KEY_PATH || ''
+const HTTPS_CERT_PATH = process.env.HTTPS_CERT_PATH || ''
+const HTTPS_CA_PATH = process.env.HTTPS_CA_PATH || ''
 
 // Initialize AI services
 const aiSessionLogger = new AISessionLogger()
@@ -221,6 +226,29 @@ app.post('/api/auth/client-login', loginRateLimiter, async (req, res) => {
 
 app.get('/api/auth/me', requireAuth, (req, res) => {
   res.json({ user: req.user })
+})
+
+app.put('/api/users/me', requireAuth, async (req, res) => {
+  try {
+    const { email, password } = req.body || {}
+    let passwordHash = null;
+    if (password && password.trim().length >= 6) {
+      passwordHash = bcrypt.hashSync(password, 10);
+    }
+    
+    await dbUpdateUser(req.user.id, email || req.user.email, passwordHash);
+
+    await addAudit({
+      user: req.user.username,
+      action: 'USER_PROFILE_UPDATED',
+      resource: req.user.id,
+      details: `User updated profile.`,
+    })
+
+    res.json({ success: true, message: 'Profile updated successfully' })
+  } catch (error) {
+    res.status(500).json({ error: error.message || 'Update failed' })
+  }
 })
 
 // ── Projects ──────────────────────────────────────────────────────────────────
@@ -551,6 +579,28 @@ app.get('/api/reports/generate', requireAuth, async (req, res) => {
 
 app.get('/api/settings', requireAuth, requireRole('admin', 'analyst'), (req, res) => {
   res.json({ settings: db.settings })
+})
+
+app.put('/api/settings', requireAuth, requireRole('admin', 'analyst'), async (req, res) => {
+  try {
+    const data = req.body || {}
+    if (data.aiMode) db.settings.aiMode = data.aiMode
+    if (data.rateLimit) db.settings.rateLimit = Number(data.rateLimit)
+    if (data.concurrency) db.settings.concurrency = Number(data.concurrency)
+    if (data.apiEndpoint) db.settings.apiEndpoint = data.apiEndpoint
+    if (data.modules) db.settings.modules = { ...db.settings.modules, ...data.modules }
+
+    await addAudit({
+      user: req.user.username,
+      action: 'SETTINGS_UPDATED',
+      resource: 'global',
+      details: `Global system settings updated.`,
+    })
+
+    res.json({ success: true, settings: db.settings })
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to update settings' })
+  }
 })
 
 app.get('/api/audit/logs', requireAuth, requireRole('admin', 'analyst'), (req, res) => {
@@ -952,7 +1002,7 @@ Important guidelines:
 // ── Socket.io ─────────────────────────────────────────────────────────────────
 
 const httpServer = http.createServer(app)
-const io = new SocketIOServer(httpServer, {
+const io = new SocketIOServer({
   cors: {
     origin: CLIENT_ORIGIN,
     credentials: true,
@@ -1042,9 +1092,26 @@ async function start() {
     console.log('⚠️  [AI] Agent controller disabled (no GROQ_API_KEY)')
   }
 
-  httpServer.listen(PORT, '0.0.0.0', () => {
-    console.log(`[backend] listening on http://0.0.0.0:${PORT}`)
+  const useHttps = Boolean(HTTPS_KEY_PATH && HTTPS_CERT_PATH)
+  const server = useHttps
+    ? https.createServer(
+        {
+          key: readFileSync(HTTPS_KEY_PATH),
+          cert: readFileSync(HTTPS_CERT_PATH),
+          ca: HTTPS_CA_PATH ? readFileSync(HTTPS_CA_PATH) : undefined,
+        },
+        app,
+      )
+    : httpServer
+
+  io.attach(server)
+
+  server.listen(PORT, '0.0.0.0', () => {
+    console.log(`[backend] listening on ${useHttps ? 'https' : 'http'}://0.0.0.0:${PORT}`)
     console.log(`[backend] allow origin: ${CLIENT_ORIGIN}`)
+    if (useHttps) {
+      console.log(`[backend] TLS enabled with cert: ${HTTPS_CERT_PATH}`)
+    }
     if (aiInitialized) {
       console.log('🔥 [AI] Enhanced scanning features are available!')
     }

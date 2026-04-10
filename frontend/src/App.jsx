@@ -1,5 +1,6 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { useAuth } from './lib/AuthContext.jsx';
+import Home from './pages/Home.jsx';
 import Login from './pages/Login.jsx';
 import Dashboard from './pages/Dashboard.jsx';
 import Projects from './pages/Projects.jsx';
@@ -33,29 +34,33 @@ function ProtectedRoute({ children }) {
 export default function App() {
   const { user, loading } = useAuth();
   const isClient = user?.role === 'client';
+  const defaultPath = user ? '/service' : '/';
 
   return (
     <>
+      <div className="fixed inset-0 -z-20 bg-gradient-to-br from-zinc-950 via-zinc-900 to-black animate-mesh-gradient"></div>
+      <div className="animated-bg"></div>
       <Routes>
+        <Route path="/" element={<Home />} />
         <Route
           path="/login"
           element={
-            !loading && user ? <Navigate to="/" replace /> : <Login />
+            !loading && user ? <Navigate to="/service" replace /> : <Login />
           }
         />
         {isClient ? (
           <>
-            <Route path="/" element={<ProtectedRoute><ClientPortal /></ProtectedRoute>} />
-            <Route path="*" element={<Navigate to="/" replace />} />
+            <Route path="/service" element={<ProtectedRoute><ClientPortal /></ProtectedRoute>} />
+            <Route path="*" element={<Navigate to={defaultPath} replace />} />
           </>
         ) : (
           <>
-            <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+            <Route path="/service" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
             <Route path="/projects" element={<ProtectedRoute><Projects /></ProtectedRoute>} />
             <Route path="/scan" element={<ProtectedRoute><Scan /></ProtectedRoute>} />
             <Route path="/vulnerabilities" element={<ProtectedRoute><Vulnerabilities /></ProtectedRoute>} />
             <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
-            <Route path="*" element={<Navigate to="/" replace />} />
+            <Route path="*" element={<Navigate to={defaultPath} replace />} />
           </>
         )}
       </Routes>
