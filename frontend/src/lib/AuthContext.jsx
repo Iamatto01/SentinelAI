@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState, useCallback } from 'react';
-import { getAuthToken, setAuth, clearStoredAuth, setOnUnauthorized } from './api.js';
+import { getAuthToken, setAuth, clearStoredAuth, setOnUnauthorized, apiFetch } from './api.js';
 
 const AuthContext = createContext(null);
 
@@ -32,13 +32,9 @@ export default function AuthProvider({ children }) {
       return;
     }
 
-    fetch('/api/auth/me', {
-      headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
+    apiFetch('/api/auth/me', {
+      headers: { Authorization: `Bearer ${token}` },
     })
-      .then((res) => {
-        if (!res.ok) throw new Error('Invalid token');
-        return res.json();
-      })
       .then((data) => {
         if (data?.user) {
           setUser(data.user);
@@ -54,19 +50,12 @@ export default function AuthProvider({ children }) {
   }, []);
 
   const login = useCallback(async (username, password) => {
-    const res = await fetch('/api/auth/login', {
+    const data = await apiFetch('/api/auth/login', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify({ username, password }),
+      body: { username, password },
     });
 
-    const data = await res.json().catch(() => ({}));
-
-    if (!res.ok) {
-      throw new Error(data?.error || 'Login failed');
-    }
-
-    if (data.token && data.user) {
+    if (data?.token && data?.user) {
       setAuth({ token: data.token, user: data.user });
       setUser(data.user);
     } else {
@@ -75,19 +64,12 @@ export default function AuthProvider({ children }) {
   }, []);
 
   const clientLogin = useCallback(async (email) => {
-    const res = await fetch('/api/auth/client-login', {
+    const data = await apiFetch('/api/auth/client-login', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify({ email }),
+      body: { email },
     });
 
-    const data = await res.json().catch(() => ({}));
-
-    if (!res.ok) {
-      throw new Error(data?.error || 'Login failed');
-    }
-
-    if (data.token && data.user) {
+    if (data?.token && data?.user) {
       setAuth({ token: data.token, user: data.user });
       setUser(data.user);
     } else {

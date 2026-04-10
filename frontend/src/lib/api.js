@@ -39,20 +39,46 @@ export async function apiFetch(path, options = {}) {
   if (!headers.has('Content-Type') && options.body && typeof options.body !== 'string') {
     headers.set('Content-Type', 'application/json');
   }
-  if (token) headers.set('Authorization', `Bearer ${token}`);
+  // Only set token if Authorization header not already provided
+  if (!headers.has('Authorization') && token) {
+    headers.set('Authorization', `Bearer ${token}`);
+  }
 
   const body = options.body && typeof options.body !== 'string' ? JSON.stringify(options.body) : options.body;
-  const res = await fetch(path, { ...options, headers, body });
-  const contentType = res.headers.get('content-type') || '';
-  const payload = contentType.includes('application/json') ? await res.json().catch(() => ({})) : null;
-  if (!res.ok) {
-    if (res.status === 401 && _onUnauthorized) {
-      _onUnauthorized();
+  
+  // Retry logic for connection failures
+  const maxRetries = 5;
+  const retryDelays = [500, 1000, 2000, 4000, 8000]; // Exponential backoff
+  
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      const res = await fetch(path, { ...options, headers, body });
+      const contentType = res.headers.get('content-type') || '';
+      const payload = contentType.includes('application/json') ? await res.json().catch(() => ({})) : null;
+      if (!res.ok) {
+        if (res.status === 401 && _onUnauthorized) {
+          _onUnauthorized();
+        }
+        const message = payload?.error || payload?.message || `Request failed: ${res.status}`;
+        throw new Error(message);
+      }
+      return payload;
+    } catch (err) {
+      // Check if it's a connection error (ECONNREFUSED, unreachable, etc.)
+      const isConnectionError = err.message.includes('Failed to fetch') || 
+                                err.message.includes('ERR_') ||
+                                err.message.includes('ECONNREFUSED');
+      
+      if (isConnectionError && attempt < maxRetries) {
+        const delay = retryDelays[attempt];
+        console.warn(`[API] Connection attempt ${attempt + 1} failed, retrying in ${delay}ms...`, err.message);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        continue;
+      }
+      
+      throw err;
     }
-    const message = payload?.error || payload?.message || `Request failed: ${res.status}`;
-    throw new Error(message);
   }
-  return payload;
 }
 
 // ── Project helpers ─────────────────────────────────────────────────────────

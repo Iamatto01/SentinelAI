@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "dev": "concurrently -n \"backend,frontend\" -c \"blue,green\" \"npm run dev --prefix backend\" \"npm run dev --prefix frontend\"",
+    "dev": "concurrently --kill-others-on-fail -n \"backend,frontend\" -c \"blue,green\" \"npm run dev --prefix backend\" \"sleep 3 && npm run dev --prefix frontend\"",
     "build": "npm run build --prefix frontend",
     "backend": "npm run dev --prefix backend",
     "frontend": "npm run dev --prefix frontend",

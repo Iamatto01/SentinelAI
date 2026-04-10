@@ -857,6 +857,98 @@ app.put('/api/ai/budgets/:projectId', requireAuth, requireRole('admin'), (req, r
   })
 })
 
+// ── AI Chat Endpoint ─────────────────────────────────────────────────────────
+
+app.post('/api/ai/chat', requireAuth, async (req, res) => {
+  const { message, history, context } = req.body || {}
+  if (!message || !message.trim()) {
+    return res.status(400).json({ error: 'message is required' })
+  }
+
+  const aiStatus = aiController.getStatus()
+  if (!aiStatus.isActive) {
+    return res.status(503).json({ error: 'AI features are not available. Please configure GROQ_API_KEY in your environment.' })
+  }
+
+  try {
+    // Build system context
+    let systemPrompt = `You are SentinelAI Assistant — an expert security analyst AI embedded in a penetration testing platform called SentinelAI.
+
+Your role:
+- Help security analysts and clients understand vulnerabilities, assess risk, and plan remediation
+- Provide clear, actionable security advice
+- Explain complex security concepts in an accessible way
+- Reference relevant CVEs, CWEs, OWASP categories, and industry standards when appropriate
+- Be concise but thorough
+
+Important guidelines:
+- Always provide specific, actionable remediation steps when asked about fixes
+- Include severity context when discussing risks
+- Mention relevant compliance frameworks when applicable
+- If uncertain, clearly state so and recommend manual review
+- Format responses with clear structure using bullet points and headers when helpful`
+
+    // If vulnerability context is provided, add it to the prompt
+    if (context?.type === 'vulnerability' && context.vulnerability) {
+      const v = context.vulnerability
+      systemPrompt += `\n\nYou are currently being asked about a specific vulnerability:\n`
+      systemPrompt += `- Title: ${v.title || 'Unknown'}\n`
+      systemPrompt += `- Severity: ${v.severity || 'Unknown'}\n`
+      systemPrompt += `- CVSS Score: ${v.cvss ?? 'N/A'}\n`
+      systemPrompt += `- CWE: ${v.cweId || 'N/A'}\n`
+      systemPrompt += `- Status: ${v.status || 'open'}\n`
+      systemPrompt += `- Affected Asset: ${v.asset || 'Unknown'}\n`
+      systemPrompt += `- Module: ${v.module || 'Unknown'}\n`
+      if (v.description) systemPrompt += `- Description: ${v.description}\n`
+      if (v.remediation) systemPrompt += `- Current Remediation Notes: ${v.remediation}\n`
+      systemPrompt += `\nProvide answers specifically about this vulnerability. Be detailed and practical.`
+    }
+
+    // Build messages array for the Groq API
+    const messages = [{ role: 'system', content: systemPrompt }]
+
+    // Add conversation history (limited to last 10 messages)
+    if (Array.isArray(history)) {
+      for (const h of history.slice(-10)) {
+        if (h.role && h.content) {
+          messages.push({ role: h.role === 'assistant' ? 'assistant' : 'user', content: h.content })
+        }
+      }
+    }
+
+    // Add the current user message
+    messages.push({ role: 'user', content: message.trim() })
+
+    // Call Groq directly for multi-turn chat (bypasses the single-prompt .analyze() method)
+    const groqClient = aiController.groq
+    if (!groqClient?.client) {
+      return res.status(503).json({ error: 'AI client not initialized' })
+    }
+
+    const completion = await groqClient.client.chat.completions.create({
+      messages,
+      model: groqClient.defaultModel,
+      temperature: 0.3,
+      max_tokens: 1024,
+      top_p: 0.9,
+    })
+
+    const response = completion.choices[0]?.message?.content || ''
+
+    await addAudit({
+      user: req.user.username,
+      action: 'AI_CHAT',
+      resource: context?.vulnerability?.id || 'general',
+      details: `AI chat: "${message.slice(0, 80)}${message.length > 80 ? '...' : ''}"`,
+    })
+
+    res.json({ response })
+  } catch (error) {
+    console.error('[AI Chat] Error:', error.message)
+    res.status(500).json({ error: 'AI chat failed: ' + error.message })
+  }
+})
+
 // ── Socket.io ─────────────────────────────────────────────────────────────────
 
 const httpServer = http.createServer(app)

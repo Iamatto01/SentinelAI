@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { apiFetch } from '../lib/api.js';
+import VulnChatBox from './VulnChatBox.jsx';
 
 function severityColor(sev) {
   const s = (sev || '').toLowerCase();
@@ -156,6 +157,11 @@ export default function VulnDetailModal({ open, vuln, onClose, onStatusChange, r
               </div>
             </div>
           )}
+
+          {/* AI Chat about this vulnerability */}
+          <div className="border-t border-white/10 pt-4">
+            <VulnChatBox vuln={vuln} />
+          </div>
 
           {/* Status Change */}
           {!readOnly && (

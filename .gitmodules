@@ -1,0 +1,6 @@
+[submodule "commix"]
+	path = commix
+	url = https://github.com/commixproject/commix.git
+[submodule "testssl.sh"]
+	path = testssl.sh
+	url = https://github.com/drwetter/testssl.sh.git

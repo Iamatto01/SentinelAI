@@ -7,6 +7,7 @@ import Scan from './pages/Scan.jsx';
 import Vulnerabilities from './pages/Vulnerabilities.jsx';
 import Settings from './pages/Settings.jsx';
 import ClientPortal from './pages/ClientPortal.jsx';
+import AIChatWidget from './components/AIChatWidget.jsx';
 
 function ProtectedRoute({ children }) {
   const { user, loading } = useAuth();
@@ -34,28 +35,32 @@ export default function App() {
   const isClient = user?.role === 'client';
 
   return (
-    <Routes>
-      <Route
-        path="/login"
-        element={
-          !loading && user ? <Navigate to="/" replace /> : <Login />
-        }
-      />
-      {isClient ? (
-        <>
-          <Route path="/" element={<ProtectedRoute><ClientPortal /></ProtectedRoute>} />
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </>
-      ) : (
-        <>
-          <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
-          <Route path="/projects" element={<ProtectedRoute><Projects /></ProtectedRoute>} />
-          <Route path="/scan" element={<ProtectedRoute><Scan /></ProtectedRoute>} />
-          <Route path="/vulnerabilities" element={<ProtectedRoute><Vulnerabilities /></ProtectedRoute>} />
-          <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </>
-      )}
-    </Routes>
+    <>
+      <Routes>
+        <Route
+          path="/login"
+          element={
+            !loading && user ? <Navigate to="/" replace /> : <Login />
+          }
+        />
+        {isClient ? (
+          <>
+            <Route path="/" element={<ProtectedRoute><ClientPortal /></ProtectedRoute>} />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </>
+        ) : (
+          <>
+            <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+            <Route path="/projects" element={<ProtectedRoute><Projects /></ProtectedRoute>} />
+            <Route path="/scan" element={<ProtectedRoute><Scan /></ProtectedRoute>} />
+            <Route path="/vulnerabilities" element={<ProtectedRoute><Vulnerabilities /></ProtectedRoute>} />
+            <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </>
+        )}
+      </Routes>
+      {/* Global AI Chat Widget — visible for all authenticated users */}
+      {user && <AIChatWidget />}
+    </>
   );
 }
