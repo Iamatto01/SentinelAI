@@ -8,6 +8,7 @@ import Scan from './pages/Scan.jsx';
 import Vulnerabilities from './pages/Vulnerabilities.jsx';
 import Settings from './pages/Settings.jsx';
 import ClientPortal from './pages/ClientPortal.jsx';
+import Subscription from './pages/Subscription.jsx';
 import AIChatWidget from './components/AIChatWidget.jsx';
 
 function ProtectedRoute({ children }) {
@@ -42,6 +43,7 @@ export default function App() {
       <div className="animated-bg"></div>
       <Routes>
         <Route path="/" element={<Home />} />
+        <Route path="/subscription" element={<Subscription />} />
         <Route
           path="/login"
           element={

@@ -37,3 +37,6 @@ pnpm-debug.log*
 *.njsproj
 *.sln
 *.sw?
+
+# context-mem
+.context-mem/

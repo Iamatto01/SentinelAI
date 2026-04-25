@@ -58,6 +58,10 @@ body {
   overflow-x: hidden;
 }
 
+.bg-gradient-conic {
+  background-image: conic-gradient(var(--tw-gradient-stops));
+}
+
 /* Animated gradient background */
 .animated-bg {
   position: fixed;
