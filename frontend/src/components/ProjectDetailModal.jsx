@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { apiFetch } from '../lib/api.js';
+import { apiFetch, downloadPdfReport } from '../lib/api.js';
 
 function statusBadge(status) {
   const s = (status || '').toLowerCase();
@@ -25,6 +25,7 @@ export default function ProjectDetailModal({ open, project, onClose }) {
 
   useEffect(() => {
     if (!open || !project?.id) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoading(true);
     apiFetch(`/api/projects/${project.id}`)
       .then((d) => setScans(d?.scans || []))
@@ -234,6 +235,17 @@ export default function ProjectDetailModal({ open, project, onClose }) {
             </div>
 
             <div className="flex justify-end mt-6 gap-3">
+              <motion.button 
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+                className="px-6 py-3 glass-button rounded-xl font-medium"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  downloadPdfReport('project', project.id).catch(() => {});
+                }}
+              >
+                📄 Download Report
+              </motion.button>
               {project.vulnerabilityCount > 0 && (
                 <motion.button 
                   whileHover={{ scale: 1.02 }}

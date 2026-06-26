@@ -3,7 +3,7 @@ import { Link, NavLink, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../lib/AuthContext.jsx';
 import { Menu, LayoutDashboard, FolderOpen, Radar, ShieldAlert, Settings, LogOut } from 'lucide-react';
-import { sidebarSlide, fadeInDown, staggerContainer } from '../lib/animations.js';
+import { staggerContainer } from '../lib/animations.js';
 
 const navItems = [
   { to: '/service', icon: LayoutDashboard, label: 'Dashboard' },
@@ -49,13 +49,7 @@ export default function Shell({ title, subtitle, actions, children }) {
           <Menu className="w-5 h-5" />
         </motion.button>
         <Link to="/service" className="flex items-center space-x-2 ml-3" onClick={closeMobile}>
-          <motion.img 
-            src="/resources/logo.svg" 
-            alt="SentinelAI" 
-            className="w-8 h-8"
-            whileHover={{ rotate: 360 }}
-            transition={{ duration: 0.6 }}
-          />
+          <img src="/favicon.svg" alt="SentinelAI" className="w-10 h-10 rounded-xl" />
           <span className="font-bold white-glow-text">SentinelAI</span>
         </Link>
       </motion.div>
@@ -96,13 +90,7 @@ export default function Shell({ title, subtitle, actions, children }) {
           whileHover={{ scale: 1.02 }}
           className="flex items-center h-14 px-[18px] mx-2 mt-4 rounded-xl cursor-pointer hover:bg-white/[0.08] transition-colors flex-shrink-0"
         >
-          <motion.img 
-            src="/resources/logo.svg" 
-            alt="SentinelAI" 
-            className="w-7 h-7 flex-shrink-0"
-            whileHover={{ rotate: 180 }}
-            transition={{ duration: 0.4 }}
-          />
+          <img src="/favicon.svg" alt="SentinelAI" className="w-9 h-9 rounded-lg flex-shrink-0" />
           <span className="ml-3 font-semibold text-lg white-glow-text whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-300 delay-75">
             SentinelAI
           </span>
@@ -200,13 +188,7 @@ export default function Shell({ title, subtitle, actions, children }) {
           >
             <div className="p-6 flex-1">
               <Link to="/service" className="flex items-center space-x-3 mb-8" onClick={closeMobile}>
-                <motion.img 
-                  src="/resources/logo.svg" 
-                  alt="SentinelAI" 
-                  className="w-10 h-10"
-                  whileHover={{ rotate: 360 }}
-                  transition={{ duration: 0.6 }}
-                />
+                <img src="/favicon.svg" alt="SentinelAI" className="w-12 h-12 rounded-xl" />
                 <h1 className="text-xl font-bold white-glow-text">SentinelAI</h1>
               </Link>
 

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { QRCodeSVG } from 'qrcode.react';
 import {
   motion,
   useMotionTemplate,
@@ -79,25 +80,25 @@ const featureCards = [
     icon: Bot,
     title: 'Autonomous Security Agents',
     description:
-      'Crew-based AI agents continuously map attack surfaces, trigger scans, and adapt strategy to your infrastructure changes.',
+      'AI agents automatically map your attack surface, trigger scans, and adapt as your infrastructure changes — no manual intervention needed.',
   },
   {
     icon: Radar,
-    title: 'Continuous Multi-Tool Scanning',
+    title: 'Multi-Tool Scanning',
     description:
-      'SentinelAI orchestrates scanner pipelines for web, network, and API layers so visibility stays fresh, not stale.',
+      'Run Nmap, Nuclei, OWASP ZAP, and Nikto together. SentinelAI coordinates everything so you get full-spectrum visibility.',
   },
   {
     icon: ShieldAlert,
-    title: 'Risk-First Vulnerability Triage',
+    title: 'Smart Vulnerability Triage',
     description:
-      'Findings are prioritized by exploitability and business impact so teams fix what matters first.',
+      'Findings are ranked by real-world exploitability and business impact — your team fixes what matters first.',
   },
   {
     icon: FileText,
-    title: 'Client Portal And Reporting',
+    title: 'Client Portal & Reports',
     description:
-      'Give stakeholders clean dashboards, status tracking, and exportable reports without exposing internal complexity.',
+      'Give clients clean dashboards and professional PDF reports. They see progress, you keep control.',
   },
 ];
 
@@ -186,45 +187,28 @@ const useCases = [
   },
 ];
 
-const outcomeStats = [
-  {
-    value: '81%',
-    label: 'False-positive reduction after AI correlation',
-  },
-  {
-    value: '3.2x',
-    label: 'Faster time-to-priority with risk-first triage',
-  },
-  {
-    value: '94%',
-    label: 'Coverage consistency across repeat scan cycles',
-  },
-  {
-    value: '24m',
-    label: 'Average initial visibility time for new assets',
-  },
-];
+
 
 const faqItems = [
   {
-    question: 'Can we keep our current login and project flow?',
+    question: 'Can I keep my current workflow?',
     answer:
-      'Yes. SentinelAI layers on top of your current dashboard and authentication flow, so teams can adopt it without process disruption.',
+      'Yes. SentinelAI works alongside your existing setup — no disruption. Log in, start scanning, and see results immediately.',
   },
   {
-    question: 'How does SentinelAI reduce scanner noise?',
+    question: 'How does it handle false positives?',
     answer:
-      'It correlates repeated findings across tools, de-duplicates evidence, and ranks issues by exploitability and business context.',
+      'It cross-checks findings from multiple scanners, deduplicates, and ranks by real exploitability — so you spend time on real threats.',
   },
   {
-    question: 'Is this only for large enterprise environments?',
+    question: 'Is this only for large companies?',
     answer:
-      'No. The workflow scales from smaller web estates to multi-tenant environments through modular scanning strategies.',
+      'Not at all. Works great for freelance pentesters, small security teams, and enterprise environments alike.',
   },
   {
-    question: 'Can clients see progress without raw technical complexity?',
+    question: 'Can my clients see scan progress?',
     answer:
-      'Yes. Client portal views summarize status, severity movement, and remediation progress in plain, audit-friendly language.',
+      'Yes. The client portal shows scan status, findings overview, and lets them download reports — all in plain, non-technical language.',
   },
 ];
 
@@ -309,7 +293,7 @@ export default function Home() {
 
       <header className="at-home__header">
         <Link to="/" className="at-home__brand" aria-label="SentinelAI home">
-          <img src="/resources/logo.svg" alt="SentinelAI" />
+          <img src="/favicon.svg" alt="SentinelAI" className="at-home__brand-logo" />
           <span>SentinelAI</span>
         </Link>
 
@@ -616,54 +600,7 @@ export default function Home() {
           </div>
         </section>
 
-        <section className="at-home__results">
-          <motion.div
-            className="at-home__section-head"
-            initial={reducedMotion ? undefined : sectionReveal.resultsHead.initial}
-            whileInView={reducedMotion ? undefined : sectionReveal.resultsHead.whileInView}
-            viewport={{ once: true, amount: 0.35 }}
-            transition={reducedMotion ? undefined : sectionReveal.resultsHead.transition}
-          >
-            <p>Measured Outcomes</p>
-            <h2>Security Programs Move Faster With Clearer Priority</h2>
-          </motion.div>
 
-          <div className="at-home__results-grid">
-            {outcomeStats.map((item, idx) => (
-              <motion.article
-                key={item.label}
-                className="at-home__result-card"
-                initial={
-                  reducedMotion
-                    ? undefined
-                    : {
-                        opacity: 0,
-                        y: 26,
-                        scale: 0.88,
-                        filter: 'blur(8px)',
-                      }
-                }
-                whileInView={
-                  reducedMotion ? undefined : { opacity: 1, y: 0, scale: 1, filter: 'blur(0px)' }
-                }
-                viewport={{ once: true, amount: 0.3 }}
-                transition={
-                  reducedMotion
-                    ? undefined
-                    : {
-                        type: 'spring',
-                        stiffness: 180,
-                        damping: 16,
-                        delay: idx * 0.08,
-                      }
-                }
-              >
-                <h3>{item.value}</h3>
-                <p>{item.label}</p>
-              </motion.article>
-            ))}
-          </div>
-        </section>
 
         <section className="at-home__faq">
           <motion.div
@@ -741,8 +678,28 @@ export default function Home() {
             viewport={{ once: true, amount: 0.8 }}
             transition={reducedMotion ? undefined : { duration: 0.46, delay: 0.12 }}
           >
-            Keep your current login and dashboard flow, now with a high-impact homepage experience in front.
+            Start scanning today. Log in, enter a target URL, and get your first vulnerability report in minutes.
           </motion.p>
+
+          {/* QR Code for quick access */}
+          <motion.div
+            className="at-home__qr-section"
+            initial={reducedMotion ? undefined : { opacity: 0, scale: 0.9 }}
+            whileInView={reducedMotion ? undefined : { opacity: 1, scale: 1 }}
+            viewport={{ once: true, amount: 0.8 }}
+            transition={reducedMotion ? undefined : { duration: 0.5, delay: 0.14 }}
+          >
+            <div className="at-home__qr-wrapper">
+              <QRCodeSVG
+                value={typeof window !== 'undefined' ? window.location.origin : 'https://sentinelai.app'}
+                size={120}
+                bgColor="transparent"
+                fgColor="#ffffff"
+                level="M"
+              />
+            </div>
+            <p className="at-home__qr-label">Scan to access SentinelAI</p>
+          </motion.div>
           <motion.div
             className="at-home__cta-actions"
             initial={reducedMotion ? undefined : { opacity: 0, y: 12, scale: 0.98 }}

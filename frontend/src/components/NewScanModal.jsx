@@ -2,10 +2,18 @@ import { useState, useEffect } from 'react';
 import { apiFetch } from '../lib/api.js';
 
 const TEMPLATES = [
-  { id: 'quick', name: 'Quick Scan', desc: 'Headers + SSL only', modules: { headers: true, ssl: true, paths: false, dns: false, cors: false, tech: false, subdomains: false, info: false, api: false, secrets: false } },
-  { id: 'standard', name: 'Standard Scan', desc: 'Balanced web + API coverage', modules: { headers: true, ssl: true, paths: true, dns: true, cors: true, tech: true, subdomains: false, info: false, api: true, secrets: true } },
-  { id: 'full', name: 'Full Scan', desc: 'All modules enabled', modules: { headers: true, ssl: true, paths: true, dns: true, cors: true, tech: true, subdomains: true, info: true, api: true, secrets: true } },
+  { id: 'quick', name: 'Quick Scan', desc: 'Headers + SSL only', modules: { headers: true, ssl: true, paths: false, dns: false, cors: false, tech: false, subdomains: false, info: false, api: false, secrets: false, nmap: false, nuclei: false, zap: false, nikto: false } },
+  { id: 'standard', name: 'Standard Scan', desc: 'Balanced web + API coverage', modules: { headers: true, ssl: true, paths: true, dns: true, cors: true, tech: true, subdomains: false, info: false, api: true, secrets: true, nmap: false, nuclei: false, zap: false, nikto: false } },
+  { id: 'pentest', name: 'Pentest Scan', desc: 'Core tools: Nmap, Nuclei, ZAP, Nikto', modules: { headers: true, ssl: true, paths: true, dns: false, cors: true, tech: true, subdomains: false, info: false, api: true, secrets: true, nmap: true, nuclei: true, zap: true, nikto: true } },
+  { id: 'full', name: 'Full Scan', desc: 'All modules enabled', modules: { headers: true, ssl: true, paths: true, dns: true, cors: true, tech: true, subdomains: true, info: true, api: true, secrets: true, nmap: true, nuclei: true, zap: true, nikto: true } },
 ];
+
+const CORE_TOOLS = {
+  nmap: { name: 'Nmap', desc: 'TCP port scanning, service/version detection, vulnerability scripts', icon: '🔍' },
+  nuclei: { name: 'Nuclei', desc: 'Template-based CVE detection, misconfigurations, default credentials', icon: '☢️' },
+  zap: { name: 'OWASP ZAP', desc: 'Web application security baseline scan, active/passive checks', icon: '⚡' },
+  nikto: { name: 'Nikto', desc: 'Web server scanner — outdated software, dangerous files, config issues', icon: '🕷️' },
+};
 
 const MODULE_INFO = {
   headers: 'HTTP security headers, cookies, info leakage',
@@ -23,7 +31,7 @@ const MODULE_INFO = {
 export default function NewScanModal({ open, onClose, onStarted }) {
   const [target, setTarget] = useState('');
   const [template, setTemplate] = useState('standard');
-  const [modules, setModules] = useState({ headers: true, ssl: true, paths: true, dns: true, cors: true, tech: true, subdomains: false, info: false, api: true, secrets: true });
+  const [modules, setModules] = useState({ headers: true, ssl: true, paths: true, dns: true, cors: true, tech: true, subdomains: false, info: false, api: true, secrets: true, nmap: false, nuclei: false, zap: false, nikto: false });
   const [projectId, setProjectId] = useState('');
   const [projects, setProjects] = useState([]);
   const [submitting, setSubmitting] = useState(false);
@@ -73,7 +81,7 @@ export default function NewScanModal({ open, onClose, onStarted }) {
 
   return (
     <div className="fixed inset-0 modal-backdrop z-50 flex items-center justify-center" onClick={onClose}>
-      <div className="modal-content w-full max-w-2xl mx-4 rounded-lg p-6" onClick={(e) => e.stopPropagation()}>
+      <div className="modal-content w-full max-w-2xl mx-4 rounded-lg p-6 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-6">
           <h3 className="text-2xl font-bold">New Scan</h3>
           <button className="text-gray-400 hover:text-white text-xl" onClick={onClose}>&#x2715;</button>
@@ -96,7 +104,7 @@ export default function NewScanModal({ open, onClose, onStarted }) {
           {/* Template Selection */}
           <div>
             <label className="block text-sm font-medium mb-3">Scan Template</label>
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               {TEMPLATES.map((t) => (
                 <button
                   key={t.id}
@@ -111,9 +119,39 @@ export default function NewScanModal({ open, onClose, onStarted }) {
             </div>
           </div>
 
-          {/* Module Checkboxes */}
+          {/* Core Pentest Tools */}
           <div>
-            <label className="block text-sm font-medium mb-3">Modules</label>
+            <label className="block text-sm font-medium mb-3">
+              🛡️ Core Pentest Tools
+              <span className="text-xs text-gray-400 ml-2 font-normal">Requires tools installed on server</span>
+            </label>
+            <div className="grid grid-cols-2 gap-3">
+              {Object.entries(CORE_TOOLS).map(([key, info]) => (
+                <label
+                  key={key}
+                  className={`flex items-start space-x-3 cursor-pointer p-3 rounded-lg border transition-all ${modules[key] ? 'border-white/30 bg-white/10' : 'border-white/10 hover:border-white/20 hover:bg-white/5'}`}
+                >
+                  <input
+                    type="checkbox"
+                    className="filter-checkbox mt-0.5"
+                    checked={modules[key] || false}
+                    onChange={() => toggleModule(key)}
+                  />
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm">{info.icon}</span>
+                      <span className="text-sm font-semibold">{info.name}</span>
+                    </div>
+                    <span className="text-xs text-gray-400 leading-tight block mt-1">{info.desc}</span>
+                  </div>
+                </label>
+              ))}
+            </div>
+          </div>
+
+          {/* Additional Modules */}
+          <div>
+            <label className="block text-sm font-medium mb-3">Additional Modules</label>
             <div className="space-y-2">
               {Object.entries(MODULE_INFO).map(([key, desc]) => (
                 <label key={key} className="flex items-center space-x-3 cursor-pointer p-2 rounded hover:bg-white/5">

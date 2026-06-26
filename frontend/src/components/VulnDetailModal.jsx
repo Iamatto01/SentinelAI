@@ -21,7 +21,7 @@ function severityBadge(sev) {
 }
 
 export default function VulnDetailModal({ open, vuln, onClose, onStatusChange, readOnly = false }) {
-  const [newStatus, setNewStatus] = useState('');
+
   const [updating, setUpdating] = useState(false);
 
   if (!open || !vuln) return null;
@@ -38,7 +38,7 @@ export default function VulnDetailModal({ open, vuln, onClose, onStatusChange, r
         body: { status },
       });
       onStatusChange?.(vuln.id, status);
-      setNewStatus('');
+
     } catch {
       // silently fail
     } finally {
@@ -84,10 +84,17 @@ export default function VulnDetailModal({ open, vuln, onClose, onStatusChange, r
               <p className="text-xs text-gray-400">Module</p>
               <p className="font-medium text-sm">{vuln.module || 'Unknown'}</p>
             </div>
-            <div className="p-3 bg-white/5 rounded-lg">
-              <p className="text-xs text-gray-400">AI Confidence</p>
-              <p className="font-medium text-sm">{aiPct}%</p>
-            </div>
+            {aiPct > 0 ? (
+              <div className="p-3 bg-white/5 rounded-lg">
+                <p className="text-xs text-gray-400">AI Confidence</p>
+                <p className="font-medium text-sm">{aiPct}%</p>
+              </div>
+            ) : (
+              <div className="p-3 bg-white/5 rounded-lg">
+                <p className="text-xs text-gray-400">Source</p>
+                <p className="font-medium text-sm">{vuln.module || 'Scanner'}</p>
+              </div>
+            )}
             <div className="p-3 bg-white/5 rounded-lg">
               <p className="text-xs text-gray-400">Discovered</p>
               <p className="font-medium text-sm">{vuln.discovered ? new Date(vuln.discovered).toLocaleDateString() : '\u2014'}</p>

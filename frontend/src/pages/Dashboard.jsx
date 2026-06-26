@@ -12,10 +12,7 @@ import {
   fadeInUp, 
   fadeInLeft, 
   fadeInRight,
-  metricCardVariant,
-  glassCardHover,
-  buttonTap,
-  notificationPop 
+  metricCardVariant
 } from '../lib/animations.js';
 
 function clamp(n, min, max) {
@@ -40,7 +37,6 @@ export default function Dashboard() {
   const [showScanModal, setShowScanModal] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
   const [selectedVuln, setSelectedVuln] = useState(null);
-  const [showNotifications, setShowNotifications] = useState(false);
   const navigate = useNavigate();
   const toast = useToast();
 
@@ -73,10 +69,8 @@ export default function Dashboard() {
   const metrics = useMemo(() => {
     const critical = vulns.filter((v) => (v.severity || '').toLowerCase() === 'critical').length;
     const high = vulns.filter((v) => (v.severity || '').toLowerCase() === 'high').length;
-    const avg = vulns.length
-      ? Math.round((vulns.reduce((sum, v) => sum + (v.aiConfidence || 0), 0) / vulns.length) * 100)
-      : 0;
-    return { critical, high, ai: clamp(avg, 0, 100) };
+    const openCount = vulns.filter((v) => (v.status || 'open') === 'open').length;
+    return { critical, high, openCount };
   }, [vulns]);
 
   function handleScanStarted(scan) {
@@ -95,67 +89,6 @@ export default function Dashboard() {
     <Shell
       title="Security Dashboard"
       subtitle="Real-time penetration testing orchestration"
-      actions={
-        <>
-          <div className="relative">
-            <motion.button
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              className="relative p-2 glass-button rounded-xl"
-              onClick={() => setShowNotifications(!showNotifications)}
-            >
-              <span className="text-lg">&#x1F514;</span>
-              {vulns.filter((v) => (v.status || 'open') === 'open').length > 0 && (
-                <motion.span 
-                  initial={{ scale: 0 }}
-                  animate={{ scale: 1 }}
-                  className="notification-badge absolute -top-1 -right-1 w-5 h-5 rounded-full text-xs flex items-center justify-center"
-                >
-                  {vulns.filter((v) => (v.status || 'open') === 'open').length}
-                </motion.span>
-              )}
-            </motion.button>
-            <AnimatePresence>
-              {showNotifications && (
-                <motion.div 
-                  variants={notificationPop}
-                  initial="hidden"
-                  animate="show"
-                  exit="exit"
-                  className="absolute right-0 mt-2 w-80 glassmorphism rounded-2xl border border-white/10 shadow-xl z-[100] overflow-hidden"
-                >
-                  <div className="p-3 border-b border-white/10 flex items-center justify-between">
-                    <span className="text-sm font-semibold">Notifications</span>
-                    <button className="text-xs text-gray-400 hover:text-white transition-colors" onClick={() => { setShowNotifications(false); navigate('/vulnerabilities'); }}>View All</button>
-                  </div>
-                  <div className="max-h-72 overflow-y-auto">
-                    {vulns.filter((v) => (v.status || 'open') === 'open').length === 0 ? (
-                      <div className="p-4 text-sm text-gray-400 text-center">No open findings</div>
-                    ) : (
-                      vulns.filter((v) => (v.status || 'open') === 'open').slice(0, 8).map((v, index) => (
-                        <motion.div
-                          key={v.id}
-                          initial={{ opacity: 0, x: -10 }}
-                          animate={{ opacity: 1, x: 0 }}
-                          transition={{ delay: index * 0.05 }}
-                          className="p-3 border-b border-white/5 hover:bg-white/5 cursor-pointer transition-colors"
-                          onClick={() => { setShowNotifications(false); setSelectedVuln(v); }}
-                        >
-                          <div className="flex items-center space-x-2">
-                            <span className={`${severityBadge(v.severity)} px-1.5 py-0.5 rounded text-[10px]`}>{(v.severity || 'info').toUpperCase()}</span>
-                            <span className="text-sm truncate">{v.title || 'Untitled'}</span>
-                          </div>
-                          <p className="text-xs text-gray-400 mt-1 truncate">{v.asset || 'Unknown asset'}</p>
-                        </motion.div>
-                      ))
-                    )}
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
-        </>
-      }
     >
       {error ? (
         <motion.div 
@@ -199,11 +132,11 @@ export default function Dashboard() {
               onClick: () => navigate('/scan')
             },
             { 
-              label: 'AI Confidence', 
-              value: loading ? '\u2014' : `${metrics.ai}%`, 
-              icon: '🤖',
-              glow: true,
-              progress: metrics.ai,
+              label: 'Open Issues', 
+              value: loading ? '\u2014' : metrics.openCount, 
+              icon: '📋',
+              glow: metrics.openCount > 0,
+              progress: vulns.length ? clamp((metrics.openCount / vulns.length) * 100, 0, 100) : 0,
               onClick: () => navigate('/vulnerabilities')
             }
           ].map((card, index) => (
@@ -241,7 +174,7 @@ export default function Dashboard() {
                 </div>
                 <p className="text-xs text-gray-400 mt-1">
                   {card.label === 'Active Scans' ? 'Running right now' : 
-                   card.label === 'AI Confidence' ? 'Average across findings' : 'From all scans'}
+                   card.label === 'Open Issues' ? 'Needs attention' : 'From all scans'}
                 </p>
               </div>
             </motion.div>
@@ -493,7 +426,7 @@ export default function Dashboard() {
               description: 'Generate a professional PDF security report with executive summary.',
               onClick: () => setShowReportModal(true)
             }
-          ].map((action, index) => (
+          ].map((action) => (
             <motion.button
               key={action.title}
               variants={fadeInUp}

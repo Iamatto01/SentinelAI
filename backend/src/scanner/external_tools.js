@@ -471,8 +471,18 @@ async function runSqlmap(targetUrl, onFinding, onLog) {
   const evidence = out.stdout || out.stderr || ''
   if (!evidence) return
 
-  const vulnerable = /is vulnerable|Parameter:|injectable|payload|sql injection found/i.test(evidence)
-  const dbmsMatch  = /DBMS:\s*([\w\s]+)/i.exec(evidence)
+  // Positive confirmation patterns — phrases sqlmap uses ONLY when injection is confirmed
+  const positivePatterns = /is vulnerable|sqlmap identified the following injection|Place:\s*\w+\s*Parameter:/i
+  // Negative patterns that contain words like 'injectable' but indicate NO vulnerability
+  const negativeOnly = /does not (seem to be|appear to be) injectable|not be injectable|might not be injectable/i
+
+  // Check for real confirmation: positive pattern must be present,
+  // and we must not be fooled by negative messages containing 'injectable'
+  const hasPositive = positivePatterns.test(evidence)
+  const hasNegative = negativeOnly.test(evidence)
+  const vulnerable = hasPositive && !(hasNegative && !hasPositive)
+
+  const dbmsMatch  = /back-end DBMS:\s*([\w\s]+)/i.exec(evidence) || /DBMS:\s*([\w\s]+)/i.exec(evidence)
 
   if (vulnerable) {
     const dbms = dbmsMatch ? dbmsMatch[1].trim() : 'unknown'
@@ -789,5 +799,51 @@ export async function scanExternal(targetUrl, onFinding, onLog) {
   }
 
   onLog?.('info', `External Tools complete — ${findings.length} findings`)
+  return findings
+}
+
+// ---------------------------------------------------------------------------
+// Standalone wrappers for individual module use in orchestrator
+// ---------------------------------------------------------------------------
+
+export async function scanNmapStandalone(targetUrl, onFinding, onLog) {
+  onLog?.('info', `Nmap standalone: scanning ${targetUrl}`)
+
+  if (!isToolAvailable('nmap')) {
+    onLog?.('warn', 'Nmap: not found on system. Install with: apt install nmap')
+    return { skipped: true, reason: 'nmap-not-installed' }
+  }
+
+  let urlObj
+  try { urlObj = new URL(targetUrl) } catch {
+    onLog?.('error', `Invalid URL: ${targetUrl}`)
+    return { skipped: true, reason: 'invalid-url' }
+  }
+
+  const host = urlObj.hostname
+  const port = urlObj.port || (urlObj.protocol === 'https:' ? '443' : '80')
+  const findings = []
+  const wrap = f => { findings.push(f); onFinding?.(f) }
+
+  await runNmap(host, port, targetUrl, wrap, (l, m) => onLog?.(l, m))
+
+  onLog?.('info', `Nmap standalone: completed with ${findings.length} findings`)
+  return findings
+}
+
+export async function scanNiktoStandalone(targetUrl, onFinding, onLog) {
+  onLog?.('info', `Nikto standalone: scanning ${targetUrl}`)
+
+  if (!isToolAvailable('nikto')) {
+    onLog?.('warn', 'Nikto: not found on system. Install with: apt install nikto')
+    return { skipped: true, reason: 'nikto-not-installed' }
+  }
+
+  const findings = []
+  const wrap = f => { findings.push(f); onFinding?.(f) }
+
+  await runNikto(targetUrl, wrap, (l, m) => onLog?.(l, m))
+
+  onLog?.('info', `Nikto standalone: completed with ${findings.length} findings`)
   return findings
 }

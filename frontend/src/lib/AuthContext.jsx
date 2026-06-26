@@ -3,6 +3,7 @@ import { getAuthToken, setAuth, clearStoredAuth, setOnUnauthorized, apiFetch } f
 
 const AuthContext = createContext(null);
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function useAuth() {
   const ctx = useContext(AuthContext);
   if (!ctx) throw new Error('useAuth must be used within AuthProvider');
@@ -28,6 +29,7 @@ export default function AuthProvider({ children }) {
   useEffect(() => {
     const token = getAuthToken();
     if (!token) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setLoading(false);
       return;
     }

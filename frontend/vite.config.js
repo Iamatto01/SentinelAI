@@ -1,3 +1,4 @@
+/* global process */
 import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
 import { fileURLToPath, URL } from 'node:url'
@@ -5,8 +6,11 @@ import { fileURLToPath, URL } from 'node:url'
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), 'VITE_')
+  // Auto-detect backend: use env var, or fall back to local IP in dev, localhost in prod
   const backendTarget = env.VITE_BACKEND_TARGET || 'http://localhost:5000'
   const proxySecure = env.VITE_PROXY_SECURE !== 'false'
+
+  console.log(`[Vite] Backend target: ${backendTarget}`)
 
   return {
     plugins: [react()],

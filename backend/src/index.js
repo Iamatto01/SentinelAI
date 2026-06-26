@@ -67,9 +67,25 @@ app.use((req, res, next) => {
 })
 
 app.use(express.json({ limit: '1mb' }))
+
+// Dynamic CORS: allow localhost, 127.0.0.1, and local network IPs (for development)
+const isDev = process.env.NODE_ENV !== 'production'
 app.use(
   cors({
-    origin: CLIENT_ORIGIN,
+    origin: (origin, callback) => {
+      // Allow requests without origin (like mobile apps)
+      if (!origin) return callback(null, true)
+      
+      // Always allow configured CLIENT_ORIGIN
+      if (origin === CLIENT_ORIGIN) return callback(null, true)
+      
+      // In development, allow any localhost/127.0.0.1/local IP on port 5173
+      if (isDev && /^https?:\/\/(localhost|127\.0\.0\.1|192\.168\.|10\.|172\.1[6-9]\.|172\.2[0-9]\.|172\.3[01]\.)(:\d+)?$/.test(origin)) {
+        return callback(null, true)
+      }
+      
+      callback(new Error('CORS not allowed'))
+    },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   }),

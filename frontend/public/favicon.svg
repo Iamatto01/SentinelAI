@@ -22,17 +22,23 @@
       <feComposite in="SourceGraphic" in2="blur" operator="over"/>
     </filter>
   </defs>
+  <!-- Background rounded square -->
   <rect width="512" height="512" rx="108" ry="108" fill="url(#bg)"/>
+  <!-- Subtle ring -->
   <rect x="24" y="24" width="464" height="464" rx="88" ry="88" fill="none" stroke="rgba(74,209,255,0.12)" stroke-width="1.5"/>
+  <!-- Shield shape -->
   <path d="M256 72 L400 136 L400 280 C400 360 340 420 256 448 C172 420 112 360 112 280 L112 136 Z" 
         fill="none" stroke="url(#shield)" stroke-width="8" stroke-linejoin="round" opacity="0.35" filter="url(#glow)"/>
   <path d="M256 88 L388 146 L388 276 C388 348 334 404 256 430 C178 404 124 348 124 276 L124 146 Z" 
         fill="none" stroke="url(#shield)" stroke-width="3" stroke-linejoin="round" opacity="0.6"/>
+  <!-- Scan line accents -->
   <line x1="160" y1="200" x2="200" y2="200" stroke="#4ad1ff" stroke-width="2.5" opacity="0.4" stroke-linecap="round"/>
   <line x1="312" y1="200" x2="352" y2="200" stroke="#4ad1ff" stroke-width="2.5" opacity="0.4" stroke-linecap="round"/>
   <line x1="160" y1="340" x2="200" y2="340" stroke="#6c5ce7" stroke-width="2.5" opacity="0.3" stroke-linecap="round"/>
   <line x1="312" y1="340" x2="352" y2="340" stroke="#6c5ce7" stroke-width="2.5" opacity="0.3" stroke-linecap="round"/>
+  <!-- The S lettermark -->
   <text x="256" y="310" text-anchor="middle" font-family="'Segoe UI','Helvetica Neue',Arial,sans-serif" font-weight="800" font-size="240" fill="url(#s-grad)" filter="url(#inner-glow)">S</text>
+  <!-- Dot accent -->
   <circle cx="340" cy="160" r="6" fill="#4ad1ff" opacity="0.7"/>
   <circle cx="340" cy="160" r="12" fill="none" stroke="#4ad1ff" stroke-width="1.5" opacity="0.3"/>
 </svg>

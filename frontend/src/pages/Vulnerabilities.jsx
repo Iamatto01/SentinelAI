@@ -1,17 +1,14 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useSearchParams, useNavigate } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import Shell from '../components/Shell.jsx';
 import { useToast } from '../components/Toast.jsx';
 import ActionMenu from '../components/ActionMenu.jsx';
 import VulnDetailModal from '../components/VulnDetailModal.jsx';
 import StatusPickerModal from '../components/StatusPickerModal.jsx';
-import { apiFetch } from '../lib/api.js';
-import { staggerContainer, fadeInUp } from '../lib/animations.js';
-
-function clamp(n, min, max) {
-  return Math.max(min, Math.min(max, n));
-}
+import ReportConfigModal from '../components/ReportConfigModal.jsx';
+import { apiFetch, downloadPdfReport } from '../lib/api.js';
+import { SlidersHorizontal } from 'lucide-react';
 
 function severityBadge(sev) {
   const s = (sev || '').toLowerCase();
@@ -32,7 +29,6 @@ function statusBadge(status) {
 
 export default function Vulnerabilities() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [vulns, setVulns] = useState([]);
@@ -42,6 +38,8 @@ export default function Vulnerabilities() {
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [selectedVuln, setSelectedVuln] = useState(null);
   const [showStatusPicker, setShowStatusPicker] = useState(false);
+  const [filtersCollapsed, setFiltersCollapsed] = useState(false);
+  const [showReportModal, setShowReportModal] = useState(false);
   
   // URL filter params
   const scanIdFilter = searchParams.get('scanId');
@@ -86,6 +84,7 @@ export default function Vulnerabilities() {
 
   useEffect(() => {
     loadVulns();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scanIdFilter, projectIdFilter]);
 
   function clearUrlFilters() {
@@ -221,7 +220,6 @@ export default function Vulnerabilities() {
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Asset</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Status</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">CVSS</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">AI Confidence</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Actions</th>
             </tr>
           </thead>
@@ -229,8 +227,6 @@ export default function Vulnerabilities() {
             {filtered.map((v) => {
               const sev = (v.severity || 'info').toLowerCase();
               const status = (v.status || 'open').toLowerCase();
-              const aiPct = clamp(Math.round((v.aiConfidence || 0) * 100), 0, 100);
-              const aiClass = aiPct >= 90 ? 'ai-high' : aiPct >= 70 ? 'ai-medium' : 'ai-low';
               return (
                 <tr
                   key={v.id}
@@ -263,9 +259,6 @@ export default function Vulnerabilities() {
                     </span>
                   </td>
                   <td className="px-6 py-4 text-sm">{v.cvss ?? '\u2014'}</td>
-                  <td className="px-6 py-4 text-sm">
-                    <span className={aiClass}>{aiPct}%</span>
-                  </td>
                   <td className="px-6 py-4" onClick={(e) => e.stopPropagation()}>
                     <ActionMenu
                       items={[
@@ -279,7 +272,7 @@ export default function Vulnerabilities() {
             })}
             {!loading && filtered.length === 0 ? (
               <tr>
-                <td className="px-6 py-4 text-gray-400" colSpan={8}>
+                <td className="px-6 py-4 text-gray-400" colSpan={7}>
                   No vulnerabilities match filters.
                 </td>
               </tr>
@@ -296,7 +289,6 @@ export default function Vulnerabilities() {
         {filtered.map((v) => {
           const sev = (v.severity || 'info').toLowerCase();
           const status = (v.status || 'open').toLowerCase();
-          const aiPct = clamp(Math.round((v.aiConfidence || 0) * 100), 0, 100);
           return (
             <div
               key={v.id}
@@ -316,7 +308,7 @@ export default function Vulnerabilities() {
               <div className="flex justify-between text-xs text-gray-400">
                 <span className="truncate max-w-[150px]">{v.asset || '\u2014'}</span>
                 <span>CVSS: {v.cvss ?? '\u2014'}</span>
-                <span>AI: {aiPct}%</span>
+                <span>{v.module || ''}</span>
               </div>
             </div>
           );
@@ -358,6 +350,20 @@ export default function Vulnerabilities() {
             onClick={exportCSV}
           >
             Export CSV
+          </button>
+          <button
+            className="action-button px-4 py-2 rounded hover:bg-white/10 transition-all font-medium"
+            onClick={() => {
+              if (scanIdFilter) {
+                downloadPdfReport('scan', scanIdFilter).catch(err => toast(`Report failed: ${err.message}`));
+              } else if (projectIdFilter) {
+                downloadPdfReport('project', projectIdFilter).catch(err => toast(`Report failed: ${err.message}`));
+              } else {
+                setShowReportModal(true);
+              }
+            }}
+          >
+            📄 Download Report
           </button>
         </>
       }
@@ -435,72 +441,102 @@ export default function Vulnerabilities() {
       </div>
 
       <div className="flex gap-6">
-        <div className="w-64 flex-shrink-0 filter-sidebar p-6 rounded-lg">
-          <h3 className="text-lg font-semibold mb-6">Filters</h3>
-
-          <div className="mb-6">
-            <h4 className="text-sm font-medium mb-3 text-gray-300">Severity</h4>
-            <div className="space-y-2">
-              {['critical', 'high', 'medium', 'low', 'info'].map((s) => (
-                <label key={s} className="flex items-center space-x-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    className="filter-checkbox"
-                    checked={severityFilter[s] || false}
-                    onChange={() => setSeverityFilter((prev) => ({ ...prev, [s]: !prev[s] }))}
-                  />
-                  <span className={`${severityBadge(s)} px-2 py-1 rounded text-xs`}>
-                    {s.charAt(0).toUpperCase() + s.slice(1)}
-                  </span>
-                  <span className="text-xs text-gray-400">({counts.sev[s] || 0})</span>
-                </label>
-              ))}
-            </div>
-          </div>
-
-          <div className="mb-6">
-            <h4 className="text-sm font-medium mb-3 text-gray-300">Status</h4>
-            <div className="space-y-2">
-              {[
-                { key: 'open', label: 'Open' },
-                { key: 'in-progress', label: 'In Progress' },
-                { key: 'closed', label: 'Closed' },
-              ].map(({ key, label }) => (
-                <label key={key} className="flex items-center space-x-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    className="filter-checkbox"
-                    checked={statusFilter[key]}
-                    onChange={() => setStatusFilter((prev) => ({ ...prev, [key]: !prev[key] }))}
-                  />
-                  <span className="text-sm">{label}</span>
-                  <span className="text-xs text-gray-400">({counts.st[key]})</span>
-                </label>
-              ))}
-            </div>
-          </div>
-
-          <div className="mb-6">
-            <h4 className="text-sm font-medium mb-3 text-gray-300">Assets</h4>
-            <div className="space-y-2">
-              {Object.entries(counts.assets)
-                .slice(0, 5)
-                .map(([asset, count]) => (
-                  <div key={asset} className="flex items-center justify-between text-sm">
-                    <span className="text-gray-300 truncate max-w-[150px]">{asset}</span>
-                    <span className="text-xs text-gray-400">({count})</span>
-                  </div>
-                ))}
-            </div>
-          </div>
-
+        <motion.div
+          initial={false}
+          animate={{ width: filtersCollapsed ? 64 : 256 }}
+          transition={{ duration: 0.3, ease: 'easeInOut' }}
+          className="flex-shrink-0 filter-sidebar rounded-lg relative overflow-hidden bg-white/5 border border-white/10"
+          style={{ minHeight: '600px' }}
+        >
+          {/* Persistent Toggle Button */}
           <button
-            className="w-full action-button px-4 py-2 rounded text-sm"
-            onClick={clearFilters}
+            className="absolute top-5 right-4 z-10 text-gray-400 hover:text-white transition-colors p-2 rounded-lg bg-white/5 hover:bg-white/10"
+            onClick={() => setFiltersCollapsed(!filtersCollapsed)}
+            title={filtersCollapsed ? 'Expand filters' : 'Collapse filters'}
           >
-            Clear All Filters
+            <SlidersHorizontal className="w-4 h-4" />
           </button>
-        </div>
+
+          {/* Inner Content wrapper with fixed width so it doesn't squish during animation */}
+          <div className="w-64 p-6 h-full">
+            <div className="flex items-center mb-6 h-8">
+              <motion.h3 
+                animate={{ opacity: filtersCollapsed ? 0 : 1 }}
+                className="text-lg font-semibold whitespace-nowrap"
+              >
+                Filters
+              </motion.h3>
+            </div>
+
+            <motion.div 
+              animate={{ opacity: filtersCollapsed ? 0 : 1, pointerEvents: filtersCollapsed ? 'none' : 'auto' }}
+              className="space-y-6"
+            >
+              <div>
+                <h4 className="text-sm font-medium mb-3 text-gray-300">Severity</h4>
+                <div className="space-y-2">
+                  {['critical', 'high', 'medium', 'low', 'info'].map((s) => (
+                    <label key={s} className="flex items-center space-x-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        className="filter-checkbox"
+                        checked={severityFilter[s] || false}
+                        onChange={() => setSeverityFilter((prev) => ({ ...prev, [s]: !prev[s] }))}
+                      />
+                      <span className={`${severityBadge(s)} px-2 py-1 rounded text-xs`}>
+                        {s.charAt(0).toUpperCase() + s.slice(1)}
+                      </span>
+                      <span className="text-xs text-gray-400">({counts.sev[s] || 0})</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <h4 className="text-sm font-medium mb-3 text-gray-300">Status</h4>
+                <div className="space-y-2">
+                  {[
+                    { key: 'open', label: 'Open' },
+                    { key: 'in-progress', label: 'In Progress' },
+                    { key: 'closed', label: 'Closed' },
+                  ].map(({ key, label }) => (
+                    <label key={key} className="flex items-center space-x-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        className="filter-checkbox"
+                        checked={statusFilter[key]}
+                        onChange={() => setStatusFilter((prev) => ({ ...prev, [key]: !prev[key] }))}
+                      />
+                      <span className="text-sm">{label}</span>
+                      <span className="text-xs text-gray-400">({counts.st[key]})</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <h4 className="text-sm font-medium mb-3 text-gray-300">Assets</h4>
+                <div className="space-y-2">
+                  {Object.entries(counts.assets)
+                    .slice(0, 5)
+                    .map(([asset, count]) => (
+                      <div key={asset} className="flex items-center justify-between text-sm">
+                        <span className="text-gray-300 truncate max-w-[150px]">{asset}</span>
+                        <span className="text-xs text-gray-400">({count})</span>
+                      </div>
+                    ))}
+                </div>
+              </div>
+
+              <button
+                className="w-full action-button px-4 py-2 rounded text-sm"
+                onClick={clearFilters}
+              >
+                Clear All Filters
+              </button>
+            </motion.div>
+          </div>
+        </motion.div>
 
         <div className="flex-1">
           <div className="bulk-actions p-4 rounded-lg mb-6 flex items-center justify-between">
@@ -553,6 +589,11 @@ export default function Vulnerabilities() {
         vulnIds={selectedIds}
         onClose={() => setShowStatusPicker(false)}
         onDone={handleBulkStatusDone}
+      />
+
+      <ReportConfigModal
+        open={showReportModal}
+        onClose={() => setShowReportModal(false)}
       />
     </Shell>
   );

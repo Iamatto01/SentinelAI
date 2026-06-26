@@ -3,7 +3,7 @@ import Shell from '../components/Shell.jsx';
 import { useToast } from '../components/Toast.jsx';
 import ActionMenu from '../components/ActionMenu.jsx';
 import ProjectDetailModal from '../components/ProjectDetailModal.jsx';
-import { apiFetch, getStoredUser, updateProject, deleteProject } from '../lib/api.js';
+import { apiFetch, getStoredUser, updateProject, deleteProject, downloadPdfReport } from '../lib/api.js';
 
 function severityBadge(sev) {
   const s = (sev || '').toLowerCase();
@@ -65,7 +65,12 @@ export default function Projects() {
         return (order[(a.riskLevel || 'medium').toLowerCase()] ?? 2) - (order[(b.riskLevel || 'medium').toLowerCase()] ?? 2);
       }
       if (sortBy === 'status') return (a.status || '').localeCompare(b.status || '');
-      return 0;
+      if (sortBy === 'scans') return (b.scanCount ?? 0) - (a.scanCount ?? 0);
+      if (sortBy === 'vulns') return (b.vulnerabilityCount ?? 0) - (a.vulnerabilityCount ?? 0);
+      // Default: date — sort by updatedAt or createdAt descending
+      const aDate = a.updatedAt || a.createdAt || '';
+      const bDate = b.updatedAt || b.createdAt || '';
+      return bDate.localeCompare(aDate);
     });
 
   async function handleCreateProject(e) {
@@ -191,6 +196,8 @@ export default function Projects() {
               <option value="name" className="text-black">Name</option>
               <option value="risk" className="text-black">Risk Level</option>
               <option value="status" className="text-black">Status</option>
+              <option value="scans" className="text-black">Scan Count</option>
+              <option value="vulns" className="text-black">Vulnerabilities</option>
             </select>
           </div>
         </div>
@@ -229,6 +236,7 @@ export default function Projects() {
                   items={[
                     { label: 'View Details', onClick: () => setDetailProject(p) },
                     { label: 'Edit Project', onClick: () => setEditProject(p) },
+                    { label: '📄 Download Report', onClick: () => downloadPdfReport('project', p.id).catch(err => toast(`Report failed: ${err.message}`)) },
                     { divider: true },
                     { label: 'Delete Project', onClick: () => handleDeleteProject(p), danger: true },
                   ]}

@@ -4,6 +4,14 @@ import PDFDocument from 'pdfkit'
 
 const SEV_ORDER = ['critical', 'high', 'medium', 'low', 'info']
 
+const SEV_EXPLANATIONS = {
+  critical: 'Must fix immediately — can be actively exploited right now with high business impact',
+  high: 'Fix urgently — significant security risk that could lead to data breach or system compromise',
+  medium: 'Fix soon — moderate risk that should be addressed in the next development cycle',
+  low: 'Fix when convenient — minor issue with limited direct security impact',
+  info: 'For awareness — informational finding that may assist in security hardening',
+}
+
 const MODULE_DESCRIPTIONS = {
   headers: {
     name: 'HTTP Headers Analysis',
@@ -308,20 +316,24 @@ function renderExecutiveSummary(doc, { vulnerabilities, scans }) {
   doc.fontSize(13).font('Helvetica-Bold').fillColor('#000000').text('Key Statistics', x, doc.y)
   doc.moveDown(0.7)
 
-  const avgAi = vulnerabilities.length
-    ? Math.round(
-        (vulnerabilities.reduce((sum, v) => sum + (v.aiConfidence || 0), 0) / vulnerabilities.length) * 100,
-      )
-    : 0
   const uniqueAssets = new Set(vulnerabilities.map((v) => v.asset).filter(Boolean)).size
   const modules = usedModuleKeys(scans)
+
+  // Only show AI confidence if AI was actually run
+  const aiVulns = vulnerabilities.filter(v => (v.aiConfidence || 0) > 0)
+  const avgAi = aiVulns.length
+    ? Math.round((aiVulns.reduce((sum, v) => sum + (v.aiConfidence || 0), 0) / aiVulns.length) * 100)
+    : 0
 
   const stats = [
     ['Unique Assets Scanned', String(uniqueAssets)],
     ['Modules Executed', String(modules.size)],
-    ['Average AI Confidence', `${avgAi}%`],
     ['Overall Risk Rating', riskRating(vulnerabilities)],
   ]
+
+  if (avgAi > 0) {
+    stats.push(['Average AI Confidence', `${avgAi}%`])
+  }
 
   for (const [label, value] of stats) {
     doc.fontSize(10).font('Helvetica').fillColor('#222222')
@@ -341,60 +353,34 @@ function renderMethodology(doc, { scans }) {
 
   doc.fontSize(11).font('Helvetica').fillColor('#222222')
   doc.text(
-    'The security assessment was performed using SentinelAI, an automated penetration testing orchestration platform. ' +
-      'SentinelAI employs a modular architecture where each scanning module targets a specific security domain. ' +
-      'The platform coordinates module execution, aggregates findings, and applies AI-assisted analysis to determine confidence levels and prioritise remediation efforts. ' +
-      'The methodology follows industry-standard frameworks including the OWASP Testing Guide v4.2 and NIST SP 800-115.',
+    'This assessment was performed using SentinelAI, an automated security testing platform. ' +
+      'It coordinates multiple scanning modules covering network, web application, and configuration security. ' +
+      'Methodology follows OWASP Testing Guide v4.2 and NIST SP 800-115.',
     x,
     doc.y,
     { width: w },
   )
-  doc.moveDown(1.5)
+  doc.moveDown(1)
 
-  doc.fontSize(13).font('Helvetica-Bold').text('Scanning Modules', x, doc.y)
-  doc.moveDown(0.7)
+  doc.fontSize(13).font('Helvetica-Bold').text('Modules Used', x, doc.y)
+  doc.moveDown(0.5)
 
   const keys = usedModuleKeys(scans)
 
   for (const [key, info] of Object.entries(MODULE_DESCRIPTIONS)) {
     if (!keys.has(key)) continue
-    ensureSpace(doc, 120)
+    ensureSpace(doc, 30)
 
-    doc.fontSize(12).font('Helvetica-Bold').fillColor('#000000').text(`2.${Object.keys(MODULE_DESCRIPTIONS).indexOf(key) + 1}  ${info.name}`, x, doc.y)
-    doc.moveDown(0.4)
-    doc.fontSize(10).font('Helvetica').fillColor('#333333').text(info.description, x + 10, doc.y, { width: w - 10 })
-    doc.moveDown(0.5)
-
-    doc.fontSize(9).font('Helvetica-Bold').fillColor('#555555').text('Referenced Standards:', x + 10, doc.y)
-    doc.moveDown(0.2)
-    for (const std of info.standards) {
-      doc.fontSize(9).font('Helvetica').fillColor('#555555').text(`  -  ${std}`, x + 15, doc.y, { width: w - 15 })
-      doc.moveDown(0.15)
-    }
-    doc.moveDown(0.8)
+    doc.fontSize(10).font('Helvetica-Bold').fillColor('#222222').text(`•  ${info.name}`, x + 5, doc.y, { continued: true })
+    // Show a short one-line summary instead of full description
+    const shortDesc = info.description.split('.')[0] + '.'
+    doc.font('Helvetica').fillColor('#555555').text(`  — ${shortDesc}`, { width: w - 20 })
+    doc.moveDown(0.25)
   }
 
   // If no modules ran
   if (keys.size === 0) {
     doc.fontSize(10).font('Helvetica').fillColor('#666666').text('No scanning modules were executed.', x, doc.y)
-  }
-
-  doc.moveDown(1)
-  doc.fontSize(13).font('Helvetica-Bold').fillColor('#000000').text('References', x, doc.y)
-  doc.moveDown(0.5)
-
-  const refs = [
-    'OWASP Top 10 (2021) - https://owasp.org/Top10/',
-    'OWASP Testing Guide v4.2 - https://owasp.org/www-project-web-security-testing-guide/',
-    'NIST SP 800-115 - Technical Guide to Information Security Testing and Assessment',
-    'NIST SP 800-52 Rev 2 - Guidelines for the Selection, Configuration, and Use of TLS Implementations',
-    'CVE - Common Vulnerabilities and Exposures - https://cve.mitre.org',
-    'CWE - Common Weakness Enumeration - https://cwe.mitre.org',
-  ]
-
-  for (const ref of refs) {
-    doc.fontSize(9).font('Helvetica').fillColor('#444444').text(`  -  ${ref}`, x + 10, doc.y, { width: w - 10 })
-    doc.moveDown(0.15)
   }
 
 }
@@ -519,6 +505,71 @@ function renderFindingsSummary(doc, { vulnerabilities }) {
     doc.moveDown(0.15)
   }
 
+  // Severity explanations for non-technical readers
+  ensureSpace(doc, 100)
+  doc.moveDown(1)
+  doc.fontSize(13).font('Helvetica-Bold').fillColor('#000000').text('Understanding Severity Levels', x, doc.y)
+  doc.moveDown(0.5)
+
+  for (const s of SEV_ORDER) {
+    ensureSpace(doc, 24)
+    doc.fontSize(10).font('Helvetica-Bold').fillColor('#222222').text(`${sevLabel(s)}: `, x, doc.y, { continued: true })
+    doc.font('Helvetica').fillColor('#555555').text(SEV_EXPLANATIONS[s])
+    doc.moveDown(0.25)
+  }
+
+  // Remediation Priority section
+  const critAndHigh = vulnerabilities.filter(v => {
+    const s = (v.severity || 'info').toLowerCase()
+    return s === 'critical' || s === 'high'
+  })
+
+  if (critAndHigh.length > 0) {
+    ensureSpace(doc, 80)
+    doc.moveDown(1)
+    doc.fontSize(13).font('Helvetica-Bold').fillColor('#000000').text('Remediation Priority \u2014 Fix These First', x, doc.y)
+    doc.moveDown(0.5)
+    doc.fontSize(10).font('Helvetica').fillColor('#333333').text(
+      'The following findings should be addressed as the top priority due to their high exploitability and potential business impact:',
+      x, doc.y, { width: w }
+    )
+    doc.moveDown(0.5)
+
+    for (const v of critAndHigh.slice(0, 10)) {
+      ensureSpace(doc, 22)
+      doc.fontSize(9).font('Helvetica-Bold').fillColor('#222222')
+      doc.text(`  \u2022  [${sevLabel(v.severity)}] ${(v.title || 'Untitled').substring(0, 80)}`, x + 10, doc.y, { width: w - 20 })
+      doc.moveDown(0.15)
+    }
+  }
+
+  // Quick Wins section
+  const quickWins = vulnerabilities.filter(v => {
+    const s = (v.severity || 'info').toLowerCase()
+    const hasRemediation = v.remediation && v.remediation.length > 0
+    return (s === 'medium' || s === 'low') && hasRemediation
+  })
+
+  if (quickWins.length > 0) {
+    ensureSpace(doc, 80)
+    doc.moveDown(1)
+    doc.fontSize(13).font('Helvetica-Bold').fillColor('#000000').text('Quick Wins \u2014 Easy Fixes', x, doc.y)
+    doc.moveDown(0.5)
+    doc.fontSize(10).font('Helvetica').fillColor('#333333').text(
+      'These issues are relatively straightforward to fix and will improve your overall security posture:',
+      x, doc.y, { width: w }
+    )
+    doc.moveDown(0.5)
+
+    for (const v of quickWins.slice(0, 8)) {
+      ensureSpace(doc, 22)
+      doc.fontSize(9).font('Helvetica-Bold').fillColor('#222222')
+      doc.text(`  \u2022  ${(v.title || 'Untitled').substring(0, 70)}`, x + 10, doc.y, { continued: true })
+      doc.font('Helvetica').fillColor('#555555').text(` \u2014 ${(v.remediation || '').substring(0, 60)}`)
+      doc.moveDown(0.15)
+    }
+  }
+
 }
 
 function renderDetailedFindings(doc, { vulnerabilities }) {
@@ -594,8 +645,8 @@ function renderDetailedFindings(doc, { vulnerabilities }) {
       doc.moveDown(0.5)
     }
 
-    // AI Analysis
-    if (v.aiReasoning) {
+    // AI Analysis — only show when AI was actually used
+    if (v.aiReasoning && (v.aiConfidence || 0) > 0) {
       ensureSpace(doc, 60)
       const pct = Math.round((v.aiConfidence || 0) * 100)
       doc.fontSize(10).font('Helvetica-Bold').fillColor('#333333').text(`AI Analysis (${pct}% confidence):`, x + 10, doc.y)
@@ -768,17 +819,40 @@ export async function generateReport(type, id, db) {
 
   // Render sections
   renderCoverPage(doc, { reportTitle, scans, project })
+  
   doc.addPage()
   renderTableOfContents(doc)
+  
   doc.addPage()
   renderExecutiveSummary(doc, { vulnerabilities, scans })
-  doc.addPage()
+  
+  // Smart page breaks: only add new page if less than 20% space remaining
+  const smartBreak = () => {
+    const usable = doc.page.height - doc.page.margins.top - doc.page.margins.bottom
+    const remaining = doc.page.height - 80 - doc.y
+    if (remaining < usable * 0.2) {
+      doc.addPage()
+    } else {
+      doc.moveDown(2)
+      const lineY = doc.y
+      doc.strokeColor('#cccccc').lineWidth(0.5)
+        .moveTo(doc.page.margins.left, lineY)
+        .lineTo(doc.page.width - doc.page.margins.right, lineY)
+        .stroke()
+      doc.moveDown(1.5)
+    }
+  }
+
+  smartBreak()
   renderMethodology(doc, { scans })
-  doc.addPage()
+  
+  smartBreak()
   renderFindingsSummary(doc, { vulnerabilities })
-  doc.addPage()
+  
+  smartBreak()
   renderDetailedFindings(doc, { vulnerabilities })
-  doc.addPage()
+  
+  smartBreak()
   renderAppendix(doc, { scans, project })
 
   // Add page footers

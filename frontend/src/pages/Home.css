@@ -146,9 +146,12 @@
   font-size: 1.02rem;
 }
 
-.at-home__brand img {
-  width: 1.9rem;
-  height: 1.9rem;
+.at-home__brand-logo {
+  width: 2.6rem;
+  height: 2.6rem;
+  border-radius: 0.65rem;
+  flex-shrink: 0;
+  object-fit: contain;
 }
 
 .at-home__header-actions,
@@ -1242,6 +1245,31 @@
   .at-home__signal-strip {
     border-radius: 0.8rem;
   }
+}
+
+/* QR Code section */
+.at-home__qr-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 1.5rem;
+}
+
+.at-home__qr-wrapper {
+  padding: 1rem;
+  border-radius: 1rem;
+  border: 1px solid rgba(194, 228, 255, 0.2);
+  background: rgba(11, 30, 43, 0.5);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.at-home__qr-label {
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--at-muted);
+  letter-spacing: 0.04em;
 }
 
 @media (prefers-reduced-motion: reduce) {

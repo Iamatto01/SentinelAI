@@ -8,9 +8,10 @@ import { scanSubdomains } from './subdomains.js';
 import { scanInfo } from './info.js';
 import { scanApi } from './api.js';
 import { scanSecrets } from './secrets.js';
-import { scanExternal } from './external_tools.js';
+import { scanExternal, scanNmapStandalone, scanNiktoStandalone } from './external_tools.js';
 import { scanNuclei } from './nuclei.js';
 import { scanKaliAdvanced } from './kali_advanced.js';
+import { scanZap } from './zap.js';
 
 function runWithTimeout(promise, timeoutMs, moduleName) {
   return Promise.race([
@@ -34,9 +35,12 @@ const MODULE_CONFIG = {
   info:         { name: 'Information Disclosure',       weight: 12, fn: scanInfo },
   api:          { name: 'API Security Baseline',        weight: 14, fn: scanApi },
   secrets:      { name: 'Client-Side Secrets Exposure', weight: 14, fn: scanSecrets },
-  external:     { name: 'Kali Core Tools',              weight: 20, fn: scanExternal },
-  nuclei:       { name: 'Nuclei Template Scanning',     weight: 25, fn: scanNuclei },
-  kali_advanced:{ name: 'Advanced Kali Tools',          weight: 20, fn: scanKaliAdvanced },
+  external:     { name: 'Kali Core Tools',              weight: 20, fn: scanExternal,     timeoutMs: 600_000 },
+  nuclei:       { name: 'Nuclei Template Scanning',     weight: 25, fn: scanNuclei,       timeoutMs: 300_000 },
+  kali_advanced:{ name: 'Advanced Kali Tools',          weight: 20, fn: scanKaliAdvanced,  timeoutMs: 600_000 },
+  nmap:         { name: 'Nmap Port & Service Scanner',  weight: 18, fn: scanNmapStandalone },
+  nikto:        { name: 'Nikto Web Server Scanner',     weight: 18, fn: scanNiktoStandalone },
+  zap:          { name: 'OWASP ZAP Baseline Scan',      weight: 22, fn: scanZap,          timeoutMs: 300_000 },
 };
 
 const TEMPLATE_PRESETS = {
@@ -54,7 +58,12 @@ const TEMPLATE_PRESETS = {
   full: {
     headers: true, ssl: true, paths: true, dns: true, cors: true, tech: true,
     subdomains: true, info: true, api: true, secrets: true, external: true,
-    nuclei: true, kali_advanced: true,
+    nuclei: true, kali_advanced: true, nmap: true, nikto: true, zap: true,
+  },
+  pentest: {
+    headers: true, ssl: true, paths: true, dns: false, cors: true, tech: true,
+    subdomains: false, info: false, api: true, secrets: true, external: false,
+    nuclei: true, kali_advanced: false, nmap: true, nikto: true, zap: true,
   },
 };
 
@@ -105,13 +114,13 @@ export async function runScan(scanId, target, options, ctx) {
   const skippedTools = [];
   const moduleTimeoutMs = Math.max(30_000, Number(process.env.MODULE_TIMEOUT_MS || 300_000));
 
-  function startModuleTicker(module, emitUpdateFn) {
+  function startModuleTicker(module, emitUpdateFn, tickTimeoutMs) {
     const startedAt = Date.now();
     const tickIntervalMs = 1000;
     const timer = setInterval(() => {
       if (module.status !== 'running') return;
       const elapsed = Date.now() - startedAt;
-      const ratio = Math.min(elapsed / moduleTimeoutMs, 0.95);
+      const ratio = Math.min(elapsed / tickTimeoutMs, 0.95);
       const nextProgress = Math.max(module.progress || 0, Math.round(ratio * 100));
       module.progress = Math.min(nextProgress, 95);
       saveScan(scan);
@@ -126,13 +135,43 @@ export async function runScan(scanId, target, options, ctx) {
     const module = scan.modules.find((m) => m.key === key);
     if (!module) continue;
 
+    // Check scan status before each module
+    const currentScan = db.scans.find((s) => s.id === scanId);
+    if (currentScan?.status === 'stopped') {
+      pushLog(scanId, 'warn', 'Scan was stopped by user — aborting remaining modules');
+      break;
+    }
+
+    // Wait while paused
+    if (currentScan?.status === 'paused') {
+      pushLog(scanId, 'info', 'Scan paused — waiting to resume...');
+      emitUpdate();
+      while (true) {
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+        const refreshed = db.scans.find((s) => s.id === scanId);
+        if (!refreshed || refreshed.status === 'stopped') {
+          pushLog(scanId, 'warn', 'Scan was stopped while paused — aborting');
+          break;
+        }
+        if (refreshed.status === 'running') {
+          pushLog(scanId, 'info', 'Scan resumed');
+          emitUpdate();
+          break;
+        }
+      }
+      // Re-check after pause loop
+      const postPauseScan = db.scans.find((s) => s.id === scanId);
+      if (postPauseScan?.status === 'stopped') break;
+    }
+
     // Update module status
     module.status = 'running';
     module.progress = 1;
     pushLog(scanId, 'info', `Starting module: ${config.name}`);
     emitUpdate();
 
-    const stopTicker = startModuleTicker(module, emitUpdate);
+    const effectiveTimeout = config.timeoutMs || moduleTimeoutMs;
+    const stopTicker = startModuleTicker(module, emitUpdate, effectiveTimeout);
 
     try {
       const onFinding = (finding) => {
@@ -152,7 +191,7 @@ export async function runScan(scanId, target, options, ctx) {
 
       const result = await runWithTimeout(
         config.fn(target, onFinding, onLog),
-        moduleTimeoutMs,
+        effectiveTimeout,
         config.name,
       );
 
@@ -185,11 +224,17 @@ export async function runScan(scanId, target, options, ctx) {
     emitUpdate();
   }
 
-  // Scan complete
-  scan.status = 'completed';
-  scan.progress = 100;
-  scan.endTime = new Date().toISOString();
-  saveScan(scan);
+  // Scan complete — only mark complete if not manually stopped
+  const finalScan = db.scans.find((s) => s.id === scanId);
+  if (finalScan && finalScan.status !== 'stopped') {
+    scan.status = 'completed';
+    scan.progress = 100;
+    scan.endTime = new Date().toISOString();
+    saveScan(scan);
+  } else if (finalScan?.status === 'stopped') {
+    scan.endTime = new Date().toISOString();
+    saveScan(scan);
+  }
 
   const totalVulns = (db.vulnerabilitiesByScanId.get(scanId) || []).length;
   pushLog(scanId, 'success', `Scan complete. Total findings: ${totalVulns}`);
