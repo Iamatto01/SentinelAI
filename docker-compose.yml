@@ -1,0 +1,57 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+# SentinelAI — Docker Compose
+#
+# Quick start:
+#   1. cp .env.example .env
+#   2. Edit .env and set your GROQ_API_KEY
+#   3. docker compose up --build
+#   4. Open http://localhost:5000
+#
+# Stop:
+#   docker compose down
+# ═══════════════════════════════════════════════════════════════════════════════
+
+services:
+  # ── Backend (Node.js) — API + serves built frontend ─────────────────────────
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: backend
+    container_name: sentinelai-backend
+    ports:
+      - "${PORT:-5000}:5000"
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=production
+      - PORT=5000
+      - CLIENT_ORIGIN=http://localhost:5000
+      - AI_BRIDGE_URL=http://ai-bridge:5001
+    depends_on:
+      ai-bridge:
+        condition: service_healthy
+    networks:
+      - sentinelai
+    restart: unless-stopped
+
+  # ── AI Bridge (Python/Flask) — CrewAI agent bridge ──────────────────────────
+  ai-bridge:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: ai-bridge
+    container_name: sentinelai-ai-bridge
+    ports:
+      - "${AI_BRIDGE_PORT:-5001}:5001"
+    env_file:
+      - .env
+    environment:
+      - AI_BRIDGE_PORT=5001
+    networks:
+      - sentinelai
+    restart: unless-stopped
+
+networks:
+  sentinelai:
+    driver: bridge

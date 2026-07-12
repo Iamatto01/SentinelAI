@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useAuth } from '../lib/AuthContext.jsx';
 import { apiFetch, downloadPdfReport } from '../lib/api.js';
 import VulnDetailModal from '../components/VulnDetailModal.jsx';
+import { useVoice } from '../lib/useVoice.js';
 
 function severityBadge(sev) {
   const s = (sev || '').toLowerCase();
@@ -30,6 +31,8 @@ export default function ClientPortal() {
   const [error, setError] = useState('');
   const [exporting, setExporting] = useState(null);
   const [stats, setStats] = useState({ total: 0, critical: 0, high: 0, medium: 0, low: 0, open: 0 });
+  const [reportLoading, setReportLoading] = useState(null);
+  const voice = useVoice();
 
   useEffect(() => {
     (async () => {
@@ -228,8 +231,8 @@ export default function ClientPortal() {
                       </div>
                     </div>
 
-                    {/* Export PDF Button */}
-                    <div className="mb-4">
+                    {/* Export & Voice Report Buttons */}
+                    <div className="mb-4 flex items-center gap-3 flex-wrap">
                       <button
                         className="px-4 py-2 text-sm font-medium border border-white/20 rounded-lg hover:bg-white/10 transition-all disabled:opacity-50 flex items-center space-x-2"
                         onClick={() => handleExportPdf(p.id)}
@@ -240,6 +243,45 @@ export default function ClientPortal() {
                         </svg>
                         <span>{exporting === p.id ? 'Exporting...' : 'Export PDF Report'}</span>
                       </button>
+
+                      {voice.supported.tts && (
+                        <button
+                          className={`voice-summary-btn ${voice.isSpeaking && reportLoading === null ? 'speaking' : ''} ${reportLoading === p.id ? 'loading' : ''}`}
+                          disabled={reportLoading === p.id}
+                          onClick={async () => {
+                            if (voice.isSpeaking) {
+                              voice.stopSpeaking();
+                              return;
+                            }
+                            setReportLoading(p.id);
+                            try {
+                              const res = await apiFetch('/api/ai/voice/summarize-project', {
+                                method: 'POST',
+                                body: { projectId: p.id },
+                              });
+                              voice.speak(res.summary || 'Unable to generate report summary.');
+                            } catch (err) {
+                              voice.speak(`Executive summary for ${p.name || 'the project'}. ${stats.total} vulnerabilities found, ${stats.critical} critical, ${stats.high} high severity. ${stats.open} issues remain open.`);
+                            } finally {
+                              setReportLoading(null);
+                            }
+                          }}
+                        >
+                          {reportLoading === p.id ? (
+                            <>
+                              <span className="voice-summary-spinner" />
+                              Generating...
+                            </>
+                          ) : voice.isSpeaking ? (
+                            <>
+                              <span className="voice-summary-waves"><span /><span /><span /></span>
+                              Stop Reading
+                            </>
+                          ) : (
+                            '\ud83d\udd0a Read Report'
+                          )}
+                        </button>
+                      )}
                     </div>
 
                     {p.description && (

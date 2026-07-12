@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { MessageSquare, X, Maximize2, Minimize2, Send, Sparkles, Bot, User, ChevronDown } from 'lucide-react';
+import { MessageSquare, X, Maximize2, Minimize2, Send, Sparkles, Bot, User, ChevronDown, Mic, MicOff, Volume2, VolumeX } from 'lucide-react';
 import { apiFetch } from '../lib/api.js';
+import { useVoice } from '../lib/useVoice.js';
 
 const HOT_QUESTIONS = [
   { label: '🛡️ Security Overview', prompt: 'Give me a high-level security overview of my project. What are the most critical areas to focus on?' },
@@ -30,9 +31,64 @@ export default function AIChatWidget() {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [showHotQuestions, setShowHotQuestions] = useState(true);
+  const [speakingMsgId, setSpeakingMsgId] = useState(null);
+  const [autoSpeak, setAutoSpeak] = useState(false);
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
   const scrollContainerRef = useRef(null);
+
+  const voice = useVoice();
+
+  // When STT produces a transcript, update the input field
+  useEffect(() => {
+    if (voice.transcript) {
+      setInput(voice.transcript);
+    }
+  }, [voice.transcript]);
+
+  // Track which message is being spoken
+  useEffect(() => {
+    if (!voice.isSpeaking) {
+      setSpeakingMsgId(null);
+    }
+  }, [voice.isSpeaking]);
+
+  // Auto-speak new AI responses when autoSpeak is on
+  useEffect(() => {
+    if (!autoSpeak || messages.length === 0) return;
+    const lastMsg = messages[messages.length - 1];
+    if (lastMsg.role === 'assistant' && !lastMsg.isError) {
+      voice.speak(lastMsg.content);
+      setSpeakingMsgId(lastMsg.id);
+    }
+  }, [messages, autoSpeak]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  function handleMicToggle() {
+    if (voice.isListening) {
+      voice.stopListening();
+      // Auto-send if we have a transcript
+      if (voice.transcript.trim()) {
+        setTimeout(() => {
+          sendMessage(voice.transcript.trim());
+          voice.setTranscript('');
+        }, 300);
+      }
+    } else {
+      setInput('');
+      voice.setTranscript('');
+      voice.startListening();
+    }
+  }
+
+  function handleSpeakMessage(msg) {
+    if (speakingMsgId === msg.id) {
+      voice.stopSpeaking();
+      setSpeakingMsgId(null);
+    } else {
+      voice.speak(msg.content);
+      setSpeakingMsgId(msg.id);
+    }
+  }
 
   const scrollToBottom = useCallback(() => {
     if (messagesEndRef.current) {
@@ -307,6 +363,22 @@ export default function AIChatWidget() {
                       <p key={i} className={i > 0 ? 'mt-1.5' : ''}>{line}</p>
                     ))}
                   </div>
+                  {/* TTS speaker button on AI messages */}
+                  {msg.role === 'assistant' && !msg.isError && voice.supported.tts && (
+                    <motion.button
+                      whileHover={{ scale: 1.15 }}
+                      whileTap={{ scale: 0.9 }}
+                      className={`ai-chat-speak-btn ${speakingMsgId === msg.id ? 'speaking' : ''}`}
+                      onClick={() => handleSpeakMessage(msg)}
+                      title={speakingMsgId === msg.id ? 'Stop reading' : 'Read aloud'}
+                    >
+                      {speakingMsgId === msg.id ? (
+                        <VolumeX className="w-3 h-3" />
+                      ) : (
+                        <Volume2 className="w-3 h-3" />
+                      )}
+                    </motion.button>
+                  )}
                 </motion.div>
               ))}
 
@@ -353,17 +425,62 @@ export default function AIChatWidget() {
                 )}
               </AnimatePresence>
 
+              {/* Listening indicator */}
+              <AnimatePresence>
+                {voice.isListening && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    exit={{ opacity: 0, height: 0 }}
+                    className="ai-chat-listening-bar"
+                  >
+                    <span className="ai-chat-listening-dot" />
+                    <span className="text-[10px] text-red-400 font-medium">
+                      Listening{voice.interimTranscript ? `: "${voice.interimTranscript}"` : '...'}
+                    </span>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
               <div className="ai-chat-input-row">
                 <textarea
                   ref={inputRef}
-                  value={input}
+                  value={voice.isListening ? (voice.transcript + (voice.interimTranscript ? ' ' + voice.interimTranscript : '')) : input}
                   onChange={(e) => setInput(e.target.value)}
                   onKeyDown={handleKeyDown}
-                  placeholder="Ask about security..."
+                  placeholder={voice.isListening ? 'Listening... speak now' : 'Ask about security...'}
                   className="ai-chat-input"
                   rows={1}
-                  disabled={loading}
+                  disabled={loading || voice.isListening}
                 />
+
+                {/* Mic button */}
+                {voice.supported.stt && (
+                  <motion.button
+                    whileHover={{ scale: 1.1 }}
+                    whileTap={{ scale: 0.9 }}
+                    className={`ai-chat-mic-btn ${voice.isListening ? 'listening' : ''}`}
+                    onClick={handleMicToggle}
+                    disabled={loading}
+                    title={voice.isListening ? 'Stop listening' : 'Voice input'}
+                  >
+                    {voice.isListening ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
+                  </motion.button>
+                )}
+
+                {/* Auto-speak toggle */}
+                {voice.supported.tts && (
+                  <motion.button
+                    whileHover={{ scale: 1.1 }}
+                    whileTap={{ scale: 0.9 }}
+                    className={`ai-chat-auto-speak-btn ${autoSpeak ? 'active' : ''}`}
+                    onClick={() => setAutoSpeak(!autoSpeak)}
+                    title={autoSpeak ? 'Auto-speak ON — click to disable' : 'Auto-speak OFF — click to enable'}
+                  >
+                    <Volume2 className="w-3.5 h-3.5" />
+                  </motion.button>
+                )}
+
                 <motion.button
                   whileHover={{ scale: 1.1 }}
                   whileTap={{ scale: 0.9 }}

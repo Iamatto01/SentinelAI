@@ -391,35 +391,20 @@ export default function Home() {
             return (
               <motion.article
                 key={feature.title}
-                className="at-home__feature-card"
-                initial={
-                  reducedMotion
-                    ? undefined
-                    : {
-                        opacity: 0,
-                        y: idx % 2 === 0 ? 30 : -30,
-                        x: idx % 2 === 0 ? -16 : 16,
-                        rotate: idx % 2 === 0 ? -1.2 : 1.2,
-                      }
-                }
-                whileInView={reducedMotion ? undefined : { opacity: 1, y: 0, x: 0, rotate: 0 }}
+                className="at-home__feature-card group relative flex h-full flex-col items-center justify-center overflow-hidden rounded-3xl border border-slate-800 bg-slate-950/80 p-5 text-center shadow-2xl backdrop-blur-md transition-colors duration-300 hover:border-slate-700 sm:p-7 lg:p-8"
+                initial={reducedMotion ? undefined : { opacity: 0, y: 30 }}
+                whileInView={reducedMotion ? undefined : { opacity: 1, y: 0 }}
                 viewport={{ once: true, amount: 0.35 }}
-                transition={
-                  reducedMotion
-                    ? undefined
-                    : {
-                        type: 'spring',
-                        stiffness: 150,
-                        damping: 16,
-                        delay: idx * 0.09,
-                      }
-                }
+                transition={reducedMotion ? undefined : { duration: 0.5, delay: idx * 0.1 }}
               >
-                <div className="at-home__feature-icon">
-                  <Icon size={20} />
+                <div className="absolute inset-0 bg-gradient-to-br from-cyan-500/5 via-transparent to-purple-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none"></div>
+                <div className="absolute pointer-events-none inset-0 flex items-center justify-center bg-black/20 group-hover:bg-black/0 transition-colors duration-500 [mask-image:radial-gradient(ellipse_at_center,black,transparent_75%)]"></div>
+                
+                <div className="relative z-10 mb-6 opacity-80 transition-all duration-500 ease-out group-hover:-translate-y-2 group-hover:scale-110 group-hover:opacity-100 sm:mb-8 text-cyan-400">
+                  <Icon size={40} />
                 </div>
-                <h3>{feature.title}</h3>
-                <p>{feature.description}</p>
+                <h3 className="relative z-10 mb-3 text-xl font-bold tracking-tight text-slate-100 transition-colors duration-300 group-hover:text-white sm:mb-4 sm:text-2xl">{feature.title}</h3>
+                <p className="relative z-10 mx-auto max-w-[240px] text-sm leading-relaxed text-slate-400 transition-colors duration-300 group-hover:text-slate-300 md:text-base">{feature.description}</p>
               </motion.article>
             );
           })}
@@ -458,38 +443,21 @@ export default function Home() {
               return (
                 <motion.article
                   key={item.title}
-                  className="at-home__bento-card"
+                  className="at-home__bento-card group relative flex h-full flex-col items-center justify-center overflow-hidden rounded-3xl border border-slate-800 bg-slate-950/80 p-5 text-center shadow-2xl backdrop-blur-md transition-colors duration-300 hover:border-slate-700 sm:p-7 lg:p-8"
                   data-size={item.size}
-                  initial={
-                    reducedMotion
-                      ? undefined
-                      : {
-                          opacity: 0,
-                          y: 18,
-                          x: idx % 2 === 0 ? -14 : 14,
-                          scale: 0.96,
-                          rotateZ: idx % 2 === 0 ? -0.9 : 0.9,
-                        }
-                  }
-                  whileInView={
-                    reducedMotion ? undefined : { opacity: 1, y: 0, x: 0, scale: 1, rotateZ: 0 }
-                  }
+                  initial={reducedMotion ? undefined : { opacity: 0, y: 30 }}
+                  whileInView={reducedMotion ? undefined : { opacity: 1, y: 0 }}
                   viewport={{ once: true, amount: 0.25 }}
-                  transition={
-                    reducedMotion
-                      ? undefined
-                      : {
-                          duration: 0.48,
-                          ease: idx % 2 === 0 ? [0.22, 1, 0.36, 1] : [0.34, 1.56, 0.64, 1],
-                          delay: idx * 0.07,
-                        }
-                  }
+                  transition={reducedMotion ? undefined : { duration: 0.5, delay: idx * 0.1 }}
                 >
-                  <div className="at-home__bento-icon">
-                    <Icon size={18} />
+                  <div className="absolute inset-0 bg-gradient-to-br from-cyan-500/5 via-transparent to-purple-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none"></div>
+                  <div className="absolute pointer-events-none inset-0 flex items-center justify-center bg-black/20 group-hover:bg-black/0 transition-colors duration-500 [mask-image:radial-gradient(ellipse_at_center,black,transparent_75%)]"></div>
+                  
+                  <div className="relative z-10 mb-6 opacity-80 transition-all duration-500 ease-out group-hover:-translate-y-2 group-hover:scale-110 group-hover:opacity-100 sm:mb-8 text-cyan-400">
+                    <Icon size={40} />
                   </div>
-                  <h3>{item.title}</h3>
-                  <p>{item.description}</p>
+                  <h3 className="relative z-10 mb-3 text-xl font-bold tracking-tight text-slate-100 transition-colors duration-300 group-hover:text-white sm:mb-4 sm:text-2xl">{item.title}</h3>
+                  <p className="relative z-10 mx-auto max-w-[400px] text-sm leading-relaxed text-slate-400 transition-colors duration-300 group-hover:text-slate-300 md:text-base">{item.description}</p>
                 </motion.article>
               );
             })}
@@ -515,32 +483,18 @@ export default function Home() {
             {workflow.map((item, idx) => (
               <motion.article
                 key={item.step}
-                initial={
-                  reducedMotion
-                    ? undefined
-                    : {
-                        opacity: 0,
-                        y: idx % 2 === 0 ? 24 : -24,
-                        x: idx % 2 === 0 ? -10 : 10,
-                        rotate: idx % 2 === 0 ? -1 : 1,
-                      }
-                }
-                whileInView={reducedMotion ? undefined : { opacity: 1, y: 0, x: 0, rotate: 0 }}
+                className="at-home__workflow-card group relative flex h-full flex-col items-center justify-center overflow-hidden rounded-3xl border border-slate-800 bg-slate-950/80 p-5 text-center shadow-2xl backdrop-blur-md transition-colors duration-300 hover:border-slate-700 sm:p-7 lg:p-8"
+                initial={reducedMotion ? undefined : { opacity: 0, y: 30 }}
+                whileInView={reducedMotion ? undefined : { opacity: 1, y: 0 }}
                 viewport={{ once: true, amount: 0.35 }}
-                transition={
-                  reducedMotion
-                    ? undefined
-                    : {
-                        type: 'spring',
-                        stiffness: 165,
-                        damping: 17,
-                        delay: idx * 0.09,
-                      }
-                }
+                transition={reducedMotion ? undefined : { duration: 0.5, delay: idx * 0.1 }}
               >
-                <span>{item.step}</span>
-                <h3>{item.title}</h3>
-                <p>{item.text}</p>
+                <div className="absolute inset-0 bg-gradient-to-br from-cyan-500/5 via-transparent to-purple-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none"></div>
+                <div className="absolute pointer-events-none inset-0 flex items-center justify-center bg-black/20 group-hover:bg-black/0 transition-colors duration-500 [mask-image:radial-gradient(ellipse_at_center,black,transparent_75%)]"></div>
+                
+                <span className="relative z-10 mb-4 inline-block text-cyan-400 text-sm font-bold tracking-wider transition-all duration-500 group-hover:-translate-y-1">{item.step}</span>
+                <h3 className="relative z-10 mb-3 text-xl font-bold tracking-tight text-slate-100 transition-colors duration-300 group-hover:text-white sm:mb-4 sm:text-2xl">{item.title}</h3>
+                <p className="relative z-10 mx-auto max-w-[240px] text-sm leading-relaxed text-slate-400 transition-colors duration-300 group-hover:text-slate-300 md:text-base">{item.text}</p>
               </motion.article>
             ))}
           </div>
@@ -564,36 +518,20 @@ export default function Home() {
               return (
                 <motion.article
                   key={item.title}
-                  className="at-home__use-case-card"
-                  initial={
-                    reducedMotion
-                      ? undefined
-                      : {
-                          opacity: 0,
-                          y: 14,
-                          rotateY: idx % 2 === 0 ? -22 : 22,
-                          transformPerspective: 900,
-                        }
-                  }
-                  whileInView={
-                    reducedMotion ? undefined : { opacity: 1, y: 0, rotateY: 0, transformPerspective: 900 }
-                  }
+                  className="at-home__use-case-card group relative flex h-full flex-col items-center justify-center overflow-hidden rounded-3xl border border-slate-800 bg-slate-950/80 p-5 text-center shadow-2xl backdrop-blur-md transition-colors duration-300 hover:border-slate-700 sm:p-7 lg:p-8"
+                  initial={reducedMotion ? undefined : { opacity: 0, y: 30 }}
+                  whileInView={reducedMotion ? undefined : { opacity: 1, y: 0 }}
                   viewport={{ once: true, amount: 0.3 }}
-                  transition={
-                    reducedMotion
-                      ? undefined
-                      : {
-                          duration: 0.58,
-                          ease: [0.16, 1, 0.3, 1],
-                          delay: idx * 0.11,
-                        }
-                  }
+                  transition={reducedMotion ? undefined : { duration: 0.5, delay: idx * 0.1 }}
                 >
-                  <div className="at-home__use-case-icon">
-                    <Icon size={20} />
+                  <div className="absolute inset-0 bg-gradient-to-br from-cyan-500/5 via-transparent to-purple-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none"></div>
+                  <div className="absolute pointer-events-none inset-0 flex items-center justify-center bg-black/20 group-hover:bg-black/0 transition-colors duration-500 [mask-image:radial-gradient(ellipse_at_center,black,transparent_75%)]"></div>
+                  
+                  <div className="relative z-10 mb-6 opacity-80 transition-all duration-500 ease-out group-hover:-translate-y-2 group-hover:scale-110 group-hover:opacity-100 sm:mb-8 text-cyan-400">
+                    <Icon size={40} />
                   </div>
-                  <h3>{item.title}</h3>
-                  <p>{item.text}</p>
+                  <h3 className="relative z-10 mb-3 text-xl font-bold tracking-tight text-slate-100 transition-colors duration-300 group-hover:text-white sm:mb-4 sm:text-2xl">{item.title}</h3>
+                  <p className="relative z-10 mx-auto max-w-[240px] text-sm leading-relaxed text-slate-400 transition-colors duration-300 group-hover:text-slate-300 md:text-base">{item.text}</p>
                 </motion.article>
               );
             })}
@@ -618,40 +556,17 @@ export default function Home() {
             {faqItems.map((item, idx) => (
               <motion.details
                 key={item.question}
-                className="at-home__faq-item"
-                initial={
-                  reducedMotion
-                    ? undefined
-                    : {
-                        opacity: 0,
-                        x: idx % 2 === 0 ? -14 : 14,
-                        y: 12,
-                        clipPath: 'inset(0 100% 0 0 round 14px)',
-                      }
-                }
-                whileInView={
-                  reducedMotion
-                    ? undefined
-                    : {
-                        opacity: 1,
-                        x: 0,
-                        y: 0,
-                        clipPath: 'inset(0 0% 0 0 round 14px)',
-                      }
-                }
+                className="at-home__faq-item group relative flex flex-col overflow-hidden rounded-3xl border border-slate-800 bg-slate-950/80 p-5 shadow-2xl backdrop-blur-md transition-colors duration-300 hover:border-slate-700 sm:p-7"
+                initial={reducedMotion ? undefined : { opacity: 0, y: 20 }}
+                whileInView={reducedMotion ? undefined : { opacity: 1, y: 0 }}
                 viewport={{ once: true, amount: 0.35 }}
-                transition={
-                  reducedMotion
-                    ? undefined
-                    : {
-                        duration: 0.54,
-                        ease: [0.2, 0.9, 0.2, 1],
-                        delay: idx * 0.06,
-                      }
-                }
+                transition={reducedMotion ? undefined : { duration: 0.4, delay: idx * 0.1 }}
               >
-                <summary>{item.question}</summary>
-                <p>{item.answer}</p>
+                <div className="absolute inset-0 bg-gradient-to-br from-cyan-500/5 via-transparent to-purple-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none"></div>
+                <div className="absolute pointer-events-none inset-0 flex items-center justify-center bg-black/20 group-hover:bg-black/0 transition-colors duration-500 [mask-image:radial-gradient(ellipse_at_center,black,transparent_75%)]"></div>
+                
+                <summary className="relative z-10 cursor-pointer list-none text-lg font-bold tracking-tight text-slate-100 transition-colors duration-300 group-hover:text-white md:text-xl [&::-webkit-details-marker]:hidden">{item.question}</summary>
+                <p className="relative z-10 mt-4 text-sm leading-relaxed text-slate-400 transition-colors duration-300 group-hover:text-slate-300 md:text-base">{item.answer}</p>
               </motion.details>
             ))}
           </div>

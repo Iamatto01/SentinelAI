@@ -27,6 +27,7 @@ import { AIAgentController } from './ai/agent-controller.js'
 import { canRunAIAction } from './ai/permission-gate.js'
 import { AISessionLogger } from './ai/session-logger.js'
 import { AICostTracker } from './ai/cost-tracker.js'
+import { generateVulnSummary, generateProjectSummary } from './ai/voice-summary.js'
 
 const PORT = Number(process.env.PORT || 5000)
 const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN || 'http://localhost:5173'
@@ -62,7 +63,7 @@ app.use((req, res, next) => {
   res.setHeader('X-Frame-Options', 'DENY')
   res.setHeader('X-Content-Type-Options', 'nosniff')
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin')
-  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()')
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(self), geolocation=()')
   next()
 })
 
@@ -1012,6 +1013,64 @@ Important guidelines:
   } catch (error) {
     console.error('[AI Chat] Error:', error.message)
     res.status(500).json({ error: 'AI chat failed: ' + error.message })
+  }
+})
+
+// ── Voice Summary Endpoints ──────────────────────────────────────────────────
+
+app.post('/api/ai/voice/summarize-vuln', requireAuth, async (req, res) => {
+  const { vulnerability } = req.body || {}
+  if (!vulnerability) {
+    return res.status(400).json({ error: 'vulnerability object is required' })
+  }
+
+  const aiStatus = aiController.getStatus()
+  if (!aiStatus.isActive) {
+    return res.status(503).json({ error: 'AI features are not available. Please configure GROQ_API_KEY.' })
+  }
+
+  try {
+    const summary = await generateVulnSummary(vulnerability)
+
+    await addAudit({
+      user: req.user.username,
+      action: 'AI_VOICE_SUMMARY',
+      resource: vulnerability.id || 'unknown',
+      details: `Voice summary generated for: ${vulnerability.title || 'Unknown vulnerability'}`,
+    })
+
+    res.json({ summary })
+  } catch (error) {
+    console.error('[Voice Summary] Vuln error:', error.message)
+    res.status(500).json({ error: 'Failed to generate vulnerability summary: ' + error.message })
+  }
+})
+
+app.post('/api/ai/voice/summarize-project', requireAuth, async (req, res) => {
+  const { projectId } = req.body || {}
+  if (!projectId) {
+    return res.status(400).json({ error: 'projectId is required' })
+  }
+
+  const aiStatus = aiController.getStatus()
+  if (!aiStatus.isActive) {
+    return res.status(503).json({ error: 'AI features are not available. Please configure GROQ_API_KEY.' })
+  }
+
+  try {
+    const summary = await generateProjectSummary(projectId)
+
+    await addAudit({
+      user: req.user.username,
+      action: 'AI_VOICE_PROJECT_SUMMARY',
+      resource: `project:${projectId}`,
+      details: 'Executive voice summary generated',
+    })
+
+    res.json({ summary })
+  } catch (error) {
+    console.error('[Voice Summary] Project error:', error.message)
+    res.status(500).json({ error: 'Failed to generate project summary: ' + error.message })
   }
 })
 

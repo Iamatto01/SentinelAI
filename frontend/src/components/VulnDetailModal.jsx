@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { apiFetch } from '../lib/api.js';
 import VulnChatBox from './VulnChatBox.jsx';
+import { useVoice } from '../lib/useVoice.js';
 
 function severityColor(sev) {
   const s = (sev || '').toLowerCase();
@@ -23,6 +24,9 @@ function severityBadge(sev) {
 export default function VulnDetailModal({ open, vuln, onClose, onStatusChange, readOnly = false }) {
 
   const [updating, setUpdating] = useState(false);
+  const [summaryLoading, setSummaryLoading] = useState(false);
+  const [summaryText, setSummaryText] = useState('');
+  const voice = useVoice();
 
   if (!open || !vuln) return null;
 
@@ -162,6 +166,66 @@ export default function VulnDetailModal({ open, vuln, onClose, onStatusChange, r
                 )}
                 <pre className="text-xs font-mono text-gray-200 whitespace-pre-wrap break-all max-h-48 overflow-y-auto leading-relaxed">{vuln.evidence.data}</pre>
               </div>
+            </div>
+          )}
+
+          {/* Voice Summary - Read Aloud */}
+          {voice.supported.tts && (
+            <div className="border-t border-white/10 pt-4">
+              <div className="flex items-center gap-3">
+                <button
+                  className={`voice-summary-btn ${voice.isSpeaking ? 'speaking' : ''} ${summaryLoading ? 'loading' : ''}`}
+                  disabled={summaryLoading}
+                  onClick={async () => {
+                    if (voice.isSpeaking) {
+                      voice.stopSpeaking();
+                      return;
+                    }
+                    // If we already have a summary, just speak it
+                    if (summaryText) {
+                      voice.speak(summaryText);
+                      return;
+                    }
+                    // Generate summary via backend
+                    setSummaryLoading(true);
+                    try {
+                      const res = await apiFetch('/api/ai/voice/summarize-vuln', {
+                        method: 'POST',
+                        body: { vulnerability: vuln },
+                      });
+                      const text = res.summary || 'Unable to generate summary.';
+                      setSummaryText(text);
+                      voice.speak(text);
+                    } catch (err) {
+                      // Fallback: speak basic info
+                      const fallback = `${vuln.severity || 'Unknown'} severity vulnerability: ${vuln.title || 'Unknown'}. ${vuln.description || 'No description available.'}`;
+                      setSummaryText(fallback);
+                      voice.speak(fallback);
+                    } finally {
+                      setSummaryLoading(false);
+                    }
+                  }}
+                >
+                  {summaryLoading ? (
+                    <>
+                      <span className="voice-summary-spinner" />
+                      Generating Summary...
+                    </>
+                  ) : voice.isSpeaking ? (
+                    <>
+                      <span className="voice-summary-waves"><span /><span /><span /></span>
+                      Stop Reading
+                    </>
+                  ) : (
+                    <>
+                      🔊 Read Summary Aloud
+                    </>
+                  )}
+                </button>
+              </div>
+              {summaryText && !voice.isSpeaking && !summaryLoading && (
+                <p className="text-xs text-gray-400 mt-2 italic">"{summaryText.slice(0, 120)}…"</p>
+              )}
             </div>
           )}
 

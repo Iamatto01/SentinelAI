@@ -4,38 +4,52 @@ Full working project built from the **lol UI** (static multi-page Tailwind UI) +
 
 ## What’s inside
 
-- `public/` — the UI copied from `lol/` and wired to the backend via `/api/*`
-- `server/` — Express backend (safe simulated scan + sample data)
+- `frontend/` — The React client (Tailwind UI)
+- `backend/` — Express backend (simulated scan, API, socket.io)
+- `ai_agents/` — Python CrewAI bridge for intelligent security analysis
 
-## Run
+## Run with Docker (Recommended)
 
-### Option A (recommended): run the server directly
+The easiest way to run SentinelAI with all its components (Frontend, Backend, and AI Agents) is using Docker Compose.
 
-```powershell
-Set-Location "f:\FYP\vlolv\server"
-node src\index.js
+1. **Set up environment variables:**
+   ```bash
+   cp .env.example .env
+   ```
+   *Edit `.env` and add your `GROQ_API_KEY` to enable AI features.*
+
+2. **Build and start the containers:**
+   ```bash
+   docker compose up --build
+   ```
+
+3. **Open the app:**
+   Go to http://localhost:5000 in your browser.
+
+To stop the application, press `Ctrl+C` or run:
+```bash
+docker compose down
 ```
 
-Then open:
+---
 
-- http://localhost:5000/index.html
-- http://localhost:5000/v2/index.html
+## Run Locally (Manual Setup)
 
-### Option B: npm scripts (if you prefer)
+### Option A: Run using npm (concurrently)
+
+From the project root, you can install dependencies and run both frontend and backend together:
 
 ```powershell
-Set-Location "f:\FYP\vlolv\server"
+npm run install:all
 npm run dev
 ```
 
-## React (new UI)
-
-The React client lives in `client-react/`.
+### Option B: Run services separately
 
 1) Start the backend:
 
 ```powershell
-Set-Location "f:\FYP\vlolv\server"
+cd backend
 npm install
 npm run dev
 ```
@@ -43,7 +57,7 @@ npm run dev
 2) Start the React dev server (in a separate terminal):
 
 ```powershell
-Set-Location "f:\FYP\vlolv\client-react"
+cd frontend
 npm install
 npm run dev
 ```
@@ -91,3 +105,11 @@ Optional tools that may need separate install:
 Commix
 Arjun
 testssl.sh
+
+
+Approach: Browser-Native Web Speech API (100% Free, No Server Cost)
+We will use the Web Speech API built into modern browsers (Chrome, Edge, Safari):
+
+Feature	API	Cost	Browser Support
+STT	SpeechRecognition / webkitSpeechRecognition	Free	Chrome, Edge, Safari
+TTS	speechSynthesis	Free	All modern browser

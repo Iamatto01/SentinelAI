@@ -1160,6 +1160,247 @@ body {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
+   Voice UI Styles — Mic, Speaker, Listening Indicator
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+/* Mic button */
+.ai-chat-mic-btn {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+
+.ai-chat-mic-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.ai-chat-mic-btn.listening {
+  background: rgba(239, 68, 68, 0.2);
+  border-color: rgba(239, 68, 68, 0.5);
+  color: #ef4444;
+  animation: mic-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes mic-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 0 8px rgba(239, 68, 68, 0);
+  }
+}
+
+.ai-chat-mic-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+/* Auto-speak toggle */
+.ai-chat-auto-speak-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+  color: rgba(255, 255, 255, 0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+
+.ai-chat-auto-speak-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.ai-chat-auto-speak-btn.active {
+  background: rgba(59, 130, 246, 0.15);
+  border-color: rgba(59, 130, 246, 0.4);
+  color: #60a5fa;
+}
+
+/* Speaker button on messages */
+.ai-chat-speak-btn {
+  position: absolute;
+  bottom: 4px;
+  right: 4px;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  border: none;
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  opacity: 0;
+}
+
+.ai-chat-message:hover .ai-chat-speak-btn {
+  opacity: 1;
+}
+
+.ai-chat-speak-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.ai-chat-speak-btn.speaking {
+  opacity: 1;
+  background: rgba(59, 130, 246, 0.15);
+  color: #60a5fa;
+  animation: speak-glow 1.5s ease-in-out infinite;
+}
+
+@keyframes speak-glow {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(96, 165, 250, 0.3);
+  }
+  50% {
+    box-shadow: 0 0 0 4px rgba(96, 165, 250, 0);
+  }
+}
+
+/* Make messages relative for the speak button */
+.ai-chat-message {
+  position: relative;
+}
+
+/* Listening indicator bar */
+.ai-chat-listening-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  margin-bottom: 4px;
+}
+
+.ai-chat-listening-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #ef4444;
+  animation: listening-blink 1s ease-in-out infinite;
+}
+
+@keyframes listening-blink {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.4;
+    transform: scale(0.8);
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   Voice Summary Button (used in VulnDetailModal & ClientPortal)
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.voice-summary-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.25s ease;
+}
+
+.voice-summary-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.25);
+  color: #fff;
+}
+
+.voice-summary-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.voice-summary-btn.speaking {
+  background: rgba(59, 130, 246, 0.1);
+  border-color: rgba(59, 130, 246, 0.3);
+  color: #60a5fa;
+}
+
+.voice-summary-btn.loading {
+  pointer-events: none;
+}
+
+/* Spinner for loading state */
+.voice-summary-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  border-top-color: rgba(255, 255, 255, 0.7);
+  border-radius: 50%;
+  animation: voice-spin 0.7s linear infinite;
+}
+
+@keyframes voice-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Audio waveform animation for speaking state */
+.voice-summary-waves {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 14px;
+}
+
+.voice-summary-waves span {
+  width: 3px;
+  height: 8px;
+  background: #60a5fa;
+  border-radius: 2px;
+  animation: voice-wave 0.8s ease-in-out infinite;
+}
+
+.voice-summary-waves span:nth-child(2) {
+  animation-delay: 0.15s;
+  height: 12px;
+}
+
+.voice-summary-waves span:nth-child(3) {
+  animation-delay: 0.3s;
+  height: 6px;
+}
+
+@keyframes voice-wave {
+  0%, 100% {
+    transform: scaleY(0.5);
+  }
+  50% {
+    transform: scaleY(1.3);
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
    Vulnerability Chat Box Styles
    ═══════════════════════════════════════════════════════════════════════════════ */
 
