@@ -8,9 +8,9 @@ import { scanSubdomains } from './subdomains.js';
 import { scanInfo } from './info.js';
 import { scanApi } from './api.js';
 import { scanSecrets } from './secrets.js';
-import { scanExternal, scanNmapStandalone, scanNiktoStandalone } from './external_tools.js';
+import { scanExternal, scanNmapStandalone, scanNiktoStandalone, scanSqlmapStandalone, scanGobusterStandalone, scanHydra, scanSubfinder, scanWhatwebStandalone } from './external_tools.js';
 import { scanNuclei } from './nuclei.js';
-import { scanKaliAdvanced } from './kali_advanced.js';
+import { scanKaliAdvanced, scanTestsslStandalone } from './kali_advanced.js';
 import { scanZap } from './zap.js';
 
 function runWithTimeout(promise, timeoutMs, moduleName) {
@@ -41,6 +41,12 @@ const MODULE_CONFIG = {
   nmap:         { name: 'Nmap Port & Service Scanner',  weight: 18, fn: scanNmapStandalone },
   nikto:        { name: 'Nikto Web Server Scanner',     weight: 18, fn: scanNiktoStandalone },
   zap:          { name: 'OWASP ZAP Baseline Scan',      weight: 22, fn: scanZap,          timeoutMs: 300_000 },
+  sqlmap:       { name: 'SQLMap SQL Injection Scanner', weight: 20, fn: scanSqlmapStandalone, timeoutMs: 300_000 },
+  gobuster:     { name: 'Gobuster Dir & DNS Brute-Force', weight: 16, fn: scanGobusterStandalone, timeoutMs: 180_000 },
+  hydra:        { name: 'Hydra Credential Brute-Force', weight: 16, fn: scanHydra,         timeoutMs: 180_000 },
+  subfinder:    { name: 'Subfinder Passive Subdomain Enum', weight: 14, fn: scanSubfinder,  timeoutMs: 180_000 },
+  testssl:      { name: 'testssl.sh TLS/SSL Analysis',  weight: 16, fn: scanTestsslStandalone, timeoutMs: 240_000 },
+  whatweb:      { name: 'WhatWeb Tech Fingerprinting',  weight: 15, fn: scanWhatwebStandalone, timeoutMs: 180_000 },
 };
 
 const TEMPLATE_PRESETS = {
@@ -48,22 +54,26 @@ const TEMPLATE_PRESETS = {
     headers: true, ssl: true,
     paths: false, dns: false, cors: false, tech: false,
     subdomains: false, info: false, api: false, secrets: false, external: false,
-    nuclei: false, kali_advanced: false,
+    nuclei: false, kali_advanced: false, whatweb: true,
   },
   standard: {
     headers: true, ssl: true, paths: true, dns: true, cors: true, tech: true,
     subdomains: false, info: false, api: true, secrets: true, external: false,
-    nuclei: false, kali_advanced: false,
-  },
-  full: {
-    headers: true, ssl: true, paths: true, dns: true, cors: true, tech: true,
-    subdomains: true, info: true, api: true, secrets: true, external: true,
-    nuclei: true, kali_advanced: true, nmap: true, nikto: true, zap: true,
+    nuclei: false, kali_advanced: false, whatweb: true,
   },
   pentest: {
     headers: true, ssl: true, paths: true, dns: false, cors: true, tech: true,
     subdomains: false, info: false, api: true, secrets: true, external: false,
     nuclei: true, kali_advanced: false, nmap: true, nikto: true, zap: true,
+    sqlmap: true, gobuster: true, hydra: false, subfinder: false, testssl: true,
+    whatweb: true,
+  },
+  full: {
+    headers: true, ssl: true, paths: true, dns: true, cors: true, tech: true,
+    subdomains: true, info: true, api: true, secrets: true, external: true,
+    nuclei: true, kali_advanced: true, nmap: true, nikto: true, zap: true,
+    sqlmap: true, gobuster: true, hydra: true, subfinder: true, testssl: true,
+    whatweb: true,
   },
 };
 

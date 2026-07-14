@@ -7,7 +7,7 @@ import { fileURLToPath, URL } from 'node:url'
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), 'VITE_')
   // Auto-detect backend: use env var, or fall back to local IP in dev, localhost in prod
-  const backendTarget = env.VITE_BACKEND_TARGET || 'http://localhost:5000'
+  const backendTarget = env.VITE_BACKEND_TARGET || 'http://127.0.0.1:5000'
   const proxySecure = env.VITE_PROXY_SECURE !== 'false'
 
   console.log(`[Vite] Backend target: ${backendTarget}`)

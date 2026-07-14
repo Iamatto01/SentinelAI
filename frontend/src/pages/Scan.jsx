@@ -56,9 +56,21 @@ export default function Scan() {
   const [showScanModal, setShowScanModal] = useState(false);
   const [vulnList, setVulnList] = useState([]);
   const [selectedVuln, setSelectedVuln] = useState(null);
+  const [sortSeverity, setSortSeverity] = useState(null); // null | 'asc' | 'desc'
   const logRef = useRef(null);
   const socketRef = useRef(null);
   const toast = useToast();
+
+  const SEVERITY_WEIGHT = { critical: 4, high: 3, medium: 2, low: 1, info: 0 };
+
+  const sortedVulnList = useMemo(() => {
+    if (!sortSeverity) return vulnList;
+    return [...vulnList].sort((a, b) => {
+      const wa = SEVERITY_WEIGHT[(a.severity || 'info').toLowerCase()] ?? 0;
+      const wb = SEVERITY_WEIGHT[(b.severity || 'info').toLowerCase()] ?? 0;
+      return sortSeverity === 'desc' ? wb - wa : wa - wb;
+    });
+  }, [vulnList, sortSeverity]);
 
   async function loadScans() {
     setLoading(true);
@@ -193,6 +205,25 @@ export default function Scan() {
     }
   }
 
+  async function deleteScan() {
+    if (!scan?.id) return;
+    if (!confirm('Are you sure you want to delete this scan and all its findings?')) return;
+    try {
+      await apiFetch(`/api/scans/${scan.id}`, { method: 'DELETE' });
+      toast('Scan deleted');
+      const newScans = scans.filter(s => s.id !== scan.id);
+      setScans(newScans);
+      if (newScans.length > 0) {
+        selectScan(newScans[0]);
+      } else {
+        setScan(null);
+        setActiveScanId(null);
+      }
+    } catch (e) {
+      toast(`Delete failed: ${e.message}`);
+    }
+  }
+
   function handleScanStarted(newScan) {
     toast('Scan started!');
     if (newScan?.id) {
@@ -288,8 +319,24 @@ export default function Scan() {
               </button>
             </>
           )}
+          {scan?.status === 'stopped' && (
+            <span className="px-3 py-1 rounded text-sm font-medium bg-red-900/40 text-red-300 border border-red-700/40">
+              &#x1F6D1; Stopped — start a new scan to continue
+            </span>
+          )}
+          {scan?.status === 'completed' && (
+            <span className="px-3 py-1 rounded text-sm font-medium bg-green-900/40 text-green-300 border border-green-700/40">
+              &#x2705; Scan Complete
+            </span>
+          )}
           <button
-            className="px-4 py-2 bg-white text-black rounded hover:bg-gray-200 transition-all font-medium"
+            className="px-4 py-2 bg-red-900/40 text-red-300 border border-red-700/40 rounded hover:bg-red-900/60 transition-all font-medium ml-2"
+            onClick={deleteScan}
+          >
+            &#x1F5D1;&#xFE0F; Delete
+          </button>
+          <button
+            className="px-4 py-2 bg-white text-black rounded hover:bg-gray-200 transition-all font-medium ml-2"
             onClick={() => setShowScanModal(true)}
           >
             + New Scan
@@ -495,9 +542,18 @@ export default function Scan() {
         <div className="glassmorphism p-6 rounded-lg">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-xl font-semibold">Scan Results</h3>
-            <span className="text-xs text-gray-400">
-              {vulnList.length} {vulnList.length === 1 ? 'finding' : 'findings'}
-            </span>
+            <div className="flex items-center gap-3">
+              <span className="text-xs text-gray-400">
+                {vulnList.length} {vulnList.length === 1 ? 'finding' : 'findings'}
+              </span>
+              <button
+                className="control-button px-3 py-1 rounded text-xs flex items-center gap-1"
+                onClick={() => setSortSeverity((s) => s === null ? 'desc' : s === 'desc' ? 'asc' : null)}
+                title="Sort by severity"
+              >
+                Sort: Severity {sortSeverity === 'desc' ? '↓' : sortSeverity === 'asc' ? '↑' : '—'}
+              </button>
+            </div>
           </div>
 
           <div className="overflow-x-auto">
@@ -512,7 +568,7 @@ export default function Scan() {
                 </tr>
               </thead>
               <tbody>
-                {vulnList.map((v) => (
+                {sortedVulnList.map((v) => (
                   <tr
                     key={v.id}
                     className="border-b border-white/5 hover:bg-white/5 cursor-pointer"

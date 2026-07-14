@@ -101,6 +101,84 @@ export async function initDatabase() {
     )
   `)
 
+  // ── Monitoring / SIEM tables ───────────────────────────────────────────────
+
+  await client.execute(`
+    CREATE TABLE IF NOT EXISTS monitors (
+      id TEXT PRIMARY KEY,
+      projectId TEXT,
+      target TEXT NOT NULL,
+      schedule TEXT DEFAULT '1h',
+      modules TEXT DEFAULT '["headers","ssl","paths","cors"]',
+      status TEXT DEFAULT 'active',
+      healthStatus TEXT DEFAULT 'unknown',
+      lastCheckAt TEXT,
+      nextCheckAt TEXT,
+      totalChecks INTEGER DEFAULT 0,
+      createdBy TEXT,
+      createdAt TEXT,
+      updatedAt TEXT
+    )
+  `)
+
+  await client.execute(`
+    CREATE TABLE IF NOT EXISTS monitor_events (
+      id TEXT PRIMARY KEY,
+      monitorId TEXT NOT NULL,
+      type TEXT NOT NULL,
+      severity TEXT DEFAULT 'info',
+      title TEXT,
+      details TEXT,
+      aiSummary TEXT,
+      createdAt TEXT
+    )
+  `)
+
+  await client.execute(`
+    CREATE TABLE IF NOT EXISTS monitor_alerts (
+      id TEXT PRIMARY KEY,
+      monitorId TEXT NOT NULL,
+      type TEXT NOT NULL,
+      severity TEXT NOT NULL,
+      title TEXT,
+      details TEXT,
+      acknowledged INTEGER DEFAULT 0,
+      acknowledgedBy TEXT,
+      acknowledgedAt TEXT,
+      createdAt TEXT
+    )
+  `)
+
+  await client.execute(`
+    CREATE TABLE IF NOT EXISTS monitor_reports (
+      id TEXT PRIMARY KEY,
+      monitorId TEXT NOT NULL,
+      projectId TEXT,
+      type TEXT,
+      period TEXT,
+      summary TEXT,
+      data TEXT DEFAULT '{}',
+      createdAt TEXT
+    )
+  `)
+
+  await client.execute(`
+    CREATE TABLE IF NOT EXISTS ingested_logs (
+      id TEXT PRIMARY KEY,
+      projectId TEXT,
+      source TEXT NOT NULL,
+      level TEXT NOT NULL,
+      message TEXT NOT NULL,
+      metadata TEXT DEFAULT '{}',
+      timestamp TEXT NOT NULL,
+      aiAnalysis TEXT,
+      anomalyScore REAL DEFAULT 0,
+      analyzed INTEGER DEFAULT 0
+    )
+  `)
+
+  console.log('✅ Database initialized (Turso/SQLite)')
+
   // Migration: add evidence column if missing
   try {
     await client.execute(`ALTER TABLE vulnerabilities ADD COLUMN evidence TEXT DEFAULT '{}'`)
@@ -257,6 +335,12 @@ export async function dbUpdateScan(s) {
   })
 }
 
+export async function dbDeleteScan(id) {
+  await client.execute({ sql: 'DELETE FROM scans WHERE id = ?', args: [id] })
+  await client.execute({ sql: 'DELETE FROM vulnerabilities WHERE scanId = ?', args: [id] })
+  await client.execute({ sql: 'DELETE FROM scan_logs WHERE scanId = ?', args: [id] })
+}
+
 // Vulnerabilities
 export async function dbGetVulnsByScan(scanId) {
   const result = await client.execute({ sql: 'SELECT * FROM vulnerabilities WHERE scanId = ?', args: [scanId] })
@@ -301,3 +385,200 @@ export async function dbInsertAudit(entry) {
     args: [entry.id, entry.timestamp, entry.user, entry.action, entry.resource, entry.details],
   })
 }
+
+// ── Monitors ─────────────────────────────────────────────────────────────────
+
+function parseMonitor(row) {
+  if (!row) return null
+  return { ...row, modules: JSON.parse(row.modules || '[]') }
+}
+
+export async function dbGetAllMonitors() {
+  const result = await client.execute('SELECT * FROM monitors ORDER BY createdAt DESC')
+  return result.rows.map(parseMonitor)
+}
+
+export async function dbGetMonitorById(id) {
+  const result = await client.execute({ sql: 'SELECT * FROM monitors WHERE id = ? LIMIT 1', args: [id] })
+  return parseMonitor(result.rows[0] || null)
+}
+
+export async function dbGetMonitorsByProject(projectId) {
+  const result = await client.execute({ sql: 'SELECT * FROM monitors WHERE projectId = ? ORDER BY createdAt DESC', args: [projectId] })
+  return result.rows.map(parseMonitor)
+}
+
+export async function dbGetActiveMonitors() {
+  const result = await client.execute("SELECT * FROM monitors WHERE status = 'active' ORDER BY nextCheckAt ASC")
+  return result.rows.map(parseMonitor)
+}
+
+export async function dbInsertMonitor(m) {
+  await client.execute({
+    sql: `INSERT INTO monitors (id, projectId, target, schedule, modules, status, healthStatus, lastCheckAt, nextCheckAt, totalChecks, createdBy, createdAt, updatedAt)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    args: [m.id, m.projectId, m.target, m.schedule, JSON.stringify(m.modules || []), m.status, m.healthStatus || 'unknown', m.lastCheckAt, m.nextCheckAt, m.totalChecks || 0, m.createdBy, m.createdAt, m.updatedAt],
+  })
+}
+
+export async function dbUpdateMonitor(m) {
+  await client.execute({
+    sql: `UPDATE monitors SET projectId=?, target=?, schedule=?, modules=?, status=?, healthStatus=?, lastCheckAt=?, nextCheckAt=?, totalChecks=?, updatedAt=? WHERE id=?`,
+    args: [m.projectId, m.target, m.schedule, JSON.stringify(m.modules || []), m.status, m.healthStatus, m.lastCheckAt, m.nextCheckAt, m.totalChecks, m.updatedAt, m.id],
+  })
+}
+
+export async function dbDeleteMonitor(id) {
+  await client.execute({ sql: 'DELETE FROM monitors WHERE id = ?', args: [id] })
+  await client.execute({ sql: 'DELETE FROM monitor_events WHERE monitorId = ?', args: [id] })
+  await client.execute({ sql: 'DELETE FROM monitor_alerts WHERE monitorId = ?', args: [id] })
+  await client.execute({ sql: 'DELETE FROM monitor_reports WHERE monitorId = ?', args: [id] })
+}
+
+// ── Monitor Events ───────────────────────────────────────────────────────────
+
+export async function dbGetEventsByMonitor(monitorId, limit = 100) {
+  const result = await client.execute({ sql: 'SELECT * FROM monitor_events WHERE monitorId = ? ORDER BY createdAt DESC LIMIT ?', args: [monitorId, limit] })
+  return result.rows.map(r => ({ ...r, details: r.details ? JSON.parse(r.details) : null }))
+}
+
+export async function dbInsertEvent(e) {
+  await client.execute({
+    sql: `INSERT INTO monitor_events (id, monitorId, type, severity, title, details, aiSummary, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    args: [e.id, e.monitorId, e.type, e.severity, e.title, typeof e.details === 'string' ? e.details : JSON.stringify(e.details || {}), e.aiSummary, e.createdAt],
+  })
+}
+
+// ── Monitor Alerts ───────────────────────────────────────────────────────────
+
+export async function dbGetAlertsByMonitor(monitorId, limit = 50) {
+  const result = await client.execute({ sql: 'SELECT * FROM monitor_alerts WHERE monitorId = ? ORDER BY createdAt DESC LIMIT ?', args: [monitorId, limit] })
+  return result.rows.map(r => ({ ...r, details: r.details ? JSON.parse(r.details) : null }))
+}
+
+export async function dbGetUnacknowledgedAlerts(limit = 100) {
+  const result = await client.execute({ sql: 'SELECT * FROM monitor_alerts WHERE acknowledged = 0 ORDER BY createdAt DESC LIMIT ?', args: [limit] })
+  return result.rows.map(r => ({ ...r, details: r.details ? JSON.parse(r.details) : null }))
+}
+
+export async function dbInsertAlert(a) {
+  await client.execute({
+    sql: `INSERT INTO monitor_alerts (id, monitorId, type, severity, title, details, acknowledged, createdAt) VALUES (?, ?, ?, ?, ?, ?, 0, ?)`,
+    args: [a.id, a.monitorId, a.type, a.severity, a.title, typeof a.details === 'string' ? a.details : JSON.stringify(a.details || {}), a.createdAt],
+  })
+}
+
+export async function dbAcknowledgeAlert(id, username) {
+  await client.execute({
+    sql: 'UPDATE monitor_alerts SET acknowledged = 1, acknowledgedBy = ?, acknowledgedAt = ? WHERE id = ?',
+    args: [username, new Date().toISOString(), id],
+  })
+}
+
+// ── Monitor Reports ──────────────────────────────────────────────────────────
+
+export async function dbGetReportsByMonitor(monitorId) {
+  const result = await client.execute({
+    sql: 'SELECT * FROM monitor_reports WHERE monitorId = ? ORDER BY createdAt DESC',
+    args: [monitorId]
+  })
+  return result.rows.map(row => ({
+    ...row,
+    data: JSON.parse(row.data)
+  }))
+}
+
+// ── Ingested Logs (Splunk-like) ──────────────────────────────────────────────
+
+export async function dbInsertIngestedLogs(logsArray) {
+  if (!logsArray || logsArray.length === 0) return
+
+  // Batch insert logs
+  const statements = logsArray.map(log => ({
+    sql: `INSERT INTO ingested_logs (id, projectId, source, level, message, metadata, timestamp, analyzed) 
+          VALUES (?, ?, ?, ?, ?, ?, ?, 0)`,
+    args: [
+      log.id,
+      log.projectId || null,
+      log.source || 'unknown',
+      log.level || 'info',
+      log.message || '',
+      JSON.stringify(log.metadata || {}),
+      log.timestamp || new Date().toISOString()
+    ]
+  }))
+
+  await client.batch(statements, 'write')
+}
+
+export async function dbGetIngestedLogs(options = {}) {
+  let sql = 'SELECT * FROM ingested_logs WHERE 1=1'
+  const args = []
+
+  if (options.projectId) {
+    sql += ' AND projectId = ?'
+    args.push(options.projectId)
+  }
+  if (options.source) {
+    sql += ' AND source = ?'
+    args.push(options.source)
+  }
+  if (options.level) {
+    sql += ' AND level = ?'
+    args.push(options.level)
+  }
+  if (options.search) {
+    sql += ' AND message LIKE ?'
+    args.push(`%${options.search}%`)
+  }
+  if (options.minAnomalyScore !== undefined) {
+    sql += ' AND anomalyScore >= ?'
+    args.push(options.minAnomalyScore)
+  }
+  if (options.analyzed !== undefined) {
+    sql += ' AND analyzed = ?'
+    args.push(options.analyzed ? 1 : 0)
+  }
+
+  sql += ' ORDER BY timestamp DESC LIMIT ? OFFSET ?'
+  args.push(options.limit || 100, options.offset || 0)
+
+  const result = await client.execute({ sql, args })
+  return result.rows.map(row => ({
+    ...row,
+    metadata: JSON.parse(row.metadata)
+  }))
+}
+
+export async function dbUpdateIngestedLogsAnalysis(logsUpdates) {
+  if (!logsUpdates || logsUpdates.length === 0) return
+
+  const statements = logsUpdates.map(u => ({
+    sql: 'UPDATE ingested_logs SET aiAnalysis = ?, anomalyScore = ?, analyzed = 1 WHERE id = ?',
+    args: [u.aiAnalysis, u.anomalyScore || 0, u.id]
+  }))
+
+  await client.batch(statements, 'write')
+}
+
+export async function dbGetIngestedLogsStats(projectId = null) {
+  // Aggregate log counts by level over the last 24 hours
+  const sql = `
+    SELECT level, COUNT(*) as count 
+    FROM ingested_logs 
+    WHERE timestamp >= datetime('now', '-24 hours')
+    ${projectId ? 'AND projectId = ?' : ''}
+    GROUP BY level
+  `
+  const args = projectId ? [projectId] : []
+  const result = await client.execute({ sql, args })
+  return result.rows
+}
+
+export async function dbInsertReport(r) {
+  await client.execute({
+    sql: `INSERT INTO monitor_reports (id, monitorId, projectId, type, period, summary, data, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    args: [r.id, r.monitorId, r.projectId, r.type, r.period, r.summary, typeof r.data === 'string' ? r.data : JSON.stringify(r.data || {}), r.createdAt],
+  })
+}
+

@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { MessageSquare, X, Maximize2, Minimize2, Send, Sparkles, Bot, User, ChevronDown, Mic, MicOff, Volume2, VolumeX } from 'lucide-react';
+import { MessageSquare, X, Maximize2, Minimize2, Send, Sparkles, Bot, User, ChevronDown, Mic, MicOff, Volume2, VolumeX, FolderOpen, Save, Trash2 } from 'lucide-react';
 import { apiFetch } from '../lib/api.js';
 import { useVoice } from '../lib/useVoice.js';
 
@@ -33,6 +33,9 @@ export default function AIChatWidget() {
   const [showHotQuestions, setShowHotQuestions] = useState(true);
   const [speakingMsgId, setSpeakingMsgId] = useState(null);
   const [autoSpeak, setAutoSpeak] = useState(false);
+  const [workspacePath, setWorkspacePath] = useState('');
+  const [attachedFiles, setAttachedFiles] = useState([]);
+  const [fileBusyPath, setFileBusyPath] = useState('');
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
   const scrollContainerRef = useRef(null);
@@ -90,6 +93,105 @@ export default function AIChatWidget() {
     }
   }
 
+  function extractSuggestedFileContent(text) {
+    if (!text) return '';
+
+    const fenced = text.match(/```(?:[\w-]+)?\n([\s\S]*?)```/);
+    if (fenced?.[1]) {
+      return fenced[1].trim();
+    }
+
+    return text.trim();
+  }
+
+  async function loadWorkspaceFile() {
+    const targetPath = workspacePath.trim();
+    if (!targetPath || loading) return;
+
+    setFileBusyPath(targetPath);
+    try {
+      const res = await apiFetch(`/api/ai/files?path=${encodeURIComponent(targetPath)}`);
+      const fileRecord = {
+        path: res.path,
+        content: res.content,
+        size: res.size,
+        modifiedAt: res.modifiedAt,
+      };
+
+      setAttachedFiles((prev) => [
+        ...prev.filter((item) => item.path !== res.path),
+        fileRecord,
+      ]);
+      setWorkspacePath('');
+    } catch (err) {
+      setMessages((prev) => [...prev, {
+        role: 'assistant',
+        content: `⚠️ ${err.message || 'Failed to load file.'}`,
+        id: Date.now() + 1,
+        isError: true,
+      }]);
+    } finally {
+      setFileBusyPath('');
+    }
+  }
+
+  function removeAttachment(path) {
+    setAttachedFiles((prev) => prev.filter((item) => item.path !== path));
+  }
+
+  async function applyAssistantToFile(file) {
+    const lastAssistant = [...messages].reverse().find((msg) => msg.role === 'assistant' && !msg.isError);
+    if (!lastAssistant) {
+      setMessages((prev) => [...prev, {
+        role: 'assistant',
+        content: '⚠️ Generate an AI response first, then apply it to the file.',
+        id: Date.now() + 1,
+        isError: true,
+      }]);
+      return;
+    }
+
+    const nextContent = extractSuggestedFileContent(lastAssistant.content);
+    if (!nextContent) {
+      setMessages((prev) => [...prev, {
+        role: 'assistant',
+        content: `⚠️ The latest AI response did not contain usable file content for ${file.path}.`,
+        id: Date.now() + 1,
+        isError: true,
+      }]);
+      return;
+    }
+
+    const ok = window.confirm(`Overwrite ${file.path} with the latest AI response?`);
+    if (!ok) return;
+
+    setFileBusyPath(file.path);
+    try {
+      const res = await apiFetch('/api/ai/files', {
+        method: 'PUT',
+        body: {
+          path: file.path,
+          content: nextContent,
+        },
+      });
+
+      setMessages((prev) => [...prev, {
+        role: 'assistant',
+        content: `✅ Saved updated content to ${res.path}`,
+        id: Date.now() + 1,
+      }]);
+    } catch (err) {
+      setMessages((prev) => [...prev, {
+        role: 'assistant',
+        content: `⚠️ ${err.message || `Failed to save ${file.path}`}`,
+        id: Date.now() + 1,
+        isError: true,
+      }]);
+    } finally {
+      setFileBusyPath('');
+    }
+  }
+
   const scrollToBottom = useCallback(() => {
     if (messagesEndRef.current) {
       messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
@@ -107,9 +209,10 @@ export default function AIChatWidget() {
   }, [isOpen]);
 
   async function sendMessage(text) {
-    if (!text.trim() || loading) return;
+    const prompt = text.trim() || (attachedFiles.length > 0 ? 'Please read the attached file context and help me update it.' : '');
+    if (!prompt || loading) return;
     
-    const userMsg = { role: 'user', content: text.trim(), id: Date.now() };
+    const userMsg = { role: 'user', content: prompt, id: Date.now() };
     setMessages((prev) => [...prev, userMsg]);
     setInput('');
     setShowHotQuestions(false);
@@ -119,8 +222,14 @@ export default function AIChatWidget() {
       const res = await apiFetch('/api/ai/chat', {
         method: 'POST',
         body: {
-          message: text.trim(),
+          message: prompt,
           history: messages.slice(-10).map(m => ({ role: m.role, content: m.content })),
+          attachments: attachedFiles.map(({ path, content, size, modifiedAt }) => ({
+            path,
+            content,
+            size,
+            modifiedAt,
+          })),
         },
       });
       
@@ -153,6 +262,8 @@ export default function AIChatWidget() {
   function clearChat() {
     setMessages([]);
     setShowHotQuestions(true);
+    setAttachedFiles([]);
+    setWorkspacePath('');
   }
 
   // Fab button animation variants
@@ -390,6 +501,80 @@ export default function AIChatWidget() {
 
             {/* Input area */}
             <div className="ai-chat-input-area">
+              <div className="mb-2 rounded-2xl border border-white/10 bg-white/5 p-2.5 backdrop-blur-sm">
+                <div className="flex gap-2">
+                  <input
+                    value={workspacePath}
+                    onChange={(e) => setWorkspacePath(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        loadWorkspaceFile();
+                      }
+                    }}
+                    placeholder="Load workspace file by path, e.g. frontend/src/components/AIChatWidget.jsx"
+                    className="min-w-0 flex-1 rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-xs text-white placeholder:text-white/40 outline-none transition focus:border-cyan-400/60"
+                  />
+                  <motion.button
+                    whileHover={{ scale: 1.04 }}
+                    whileTap={{ scale: 0.97 }}
+                    className="inline-flex items-center gap-1.5 rounded-xl border border-cyan-400/30 bg-cyan-400/15 px-3 py-2 text-xs font-medium text-cyan-100 disabled:cursor-not-allowed disabled:opacity-50"
+                    onClick={loadWorkspaceFile}
+                    disabled={!workspacePath.trim() || loading || Boolean(fileBusyPath)}
+                    title="Read a workspace file into chat"
+                  >
+                    <FolderOpen className="h-3.5 w-3.5" />
+                    {fileBusyPath && fileBusyPath === workspacePath.trim() ? 'Loading...' : 'Load file'}
+                  </motion.button>
+                </div>
+
+                {attachedFiles.length > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {attachedFiles.map((file) => (
+                      <div
+                        key={file.path}
+                        className="flex max-w-full items-center gap-2 rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-[11px] text-white/80"
+                      >
+                        <div className="min-w-0">
+                          <div className="truncate font-medium text-white">{file.path}</div>
+                          <div className="text-white/45">
+                            {typeof file.size === 'number' ? `${file.size} bytes` : 'Loaded file'}
+                            {file.modifiedAt ? ` • ${new Date(file.modifiedAt).toLocaleString()}` : ''}
+                          </div>
+                        </div>
+
+                        <motion.button
+                          whileHover={{ scale: 1.08 }}
+                          whileTap={{ scale: 0.95 }}
+                          className="inline-flex items-center gap-1 rounded-lg border border-emerald-400/30 bg-emerald-400/15 px-2 py-1 text-[10px] text-emerald-100 disabled:opacity-50"
+                          onClick={() => applyAssistantToFile(file)}
+                          disabled={loading || Boolean(fileBusyPath)}
+                          title="Write the latest AI reply back to this file"
+                        >
+                          <Save className="h-3 w-3" />
+                          Apply reply
+                        </motion.button>
+
+                        <motion.button
+                          whileHover={{ scale: 1.08 }}
+                          whileTap={{ scale: 0.95 }}
+                          className="inline-flex items-center gap-1 rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-[10px] text-white/70 disabled:opacity-50"
+                          onClick={() => removeAttachment(file.path)}
+                          disabled={loading}
+                          title="Remove file from chat context"
+                        >
+                          <Trash2 className="h-3 w-3" />
+                          Remove
+                        </motion.button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <p className="mt-2 text-[10px] text-white/45">
+                  Load a file from your workspace to give the assistant read access. Use “Apply reply” to write the last AI response back to that file.
+                </p>
+              </div>
+
               {messages.length > 0 && (
                 <motion.button
                   initial={{ opacity: 0, height: 0 }}
@@ -484,9 +669,9 @@ export default function AIChatWidget() {
                 <motion.button
                   whileHover={{ scale: 1.1 }}
                   whileTap={{ scale: 0.9 }}
-                  className={`ai-chat-send-btn ${input.trim() && !loading ? 'active' : ''}`}
+                  className={`ai-chat-send-btn ${(input.trim() || attachedFiles.length > 0) && !loading ? 'active' : ''}`}
                   onClick={() => sendMessage(input)}
-                  disabled={!input.trim() || loading}
+                  disabled={!(input.trim() || attachedFiles.length > 0) || loading}
                 >
                   <Send className="w-4 h-4" />
                 </motion.button>

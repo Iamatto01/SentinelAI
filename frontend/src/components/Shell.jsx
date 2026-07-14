@@ -2,14 +2,16 @@ import { useState } from 'react';
 import { Link, NavLink, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../lib/AuthContext.jsx';
-import { Menu, LayoutDashboard, FolderOpen, Radar, ShieldAlert, Settings, LogOut } from 'lucide-react';
+import { Menu, LayoutDashboard, FolderOpen, Radar, Activity, ShieldAlert, Settings, LogOut, TerminalSquare } from 'lucide-react';
 import { staggerContainer } from '../lib/animations.js';
 
 const navItems = [
   { to: '/service', icon: LayoutDashboard, label: 'Dashboard' },
   { to: '/projects', icon: FolderOpen, label: 'Projects' },
   { to: '/scan', icon: Radar, label: 'Live Scan' },
+  { to: '/monitoring', icon: Activity, label: 'Monitoring' },
   { to: '/vulnerabilities', icon: ShieldAlert, label: 'Vulnerabilities' },
+  { to: '/logs', icon: TerminalSquare, label: 'Log Explorer' },
 ];
 
 export default function Shell({ title, subtitle, actions, children }) {

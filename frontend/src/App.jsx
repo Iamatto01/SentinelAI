@@ -6,6 +6,9 @@ import Dashboard from './pages/Dashboard.jsx';
 import Projects from './pages/Projects.jsx';
 import Scan from './pages/Scan.jsx';
 import Vulnerabilities from './pages/Vulnerabilities.jsx';
+import Monitoring from './pages/Monitoring.jsx';
+import MonitorDetail from './pages/MonitorDetail.jsx';
+import Logs from './pages/Logs.jsx';
 import Settings from './pages/Settings.jsx';
 import ClientPortal from './pages/ClientPortal.jsx';
 import Subscription from './pages/Subscription.jsx';
@@ -60,7 +63,10 @@ export default function App() {
             <Route path="/service" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
             <Route path="/projects" element={<ProtectedRoute><Projects /></ProtectedRoute>} />
             <Route path="/scan" element={<ProtectedRoute><Scan /></ProtectedRoute>} />
+            <Route path="/monitoring" element={<ProtectedRoute><Monitoring /></ProtectedRoute>} />
+            <Route path="/monitoring/:id" element={<ProtectedRoute><MonitorDetail /></ProtectedRoute>} />
             <Route path="/vulnerabilities" element={<ProtectedRoute><Vulnerabilities /></ProtectedRoute>} />
+            <Route path="/logs" element={<ProtectedRoute><Logs /></ProtectedRoute>} />
             <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
             <Route path="*" element={<Navigate to={defaultPath} replace />} />
           </>

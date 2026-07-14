@@ -847,3 +847,260 @@ export async function scanNiktoStandalone(targetUrl, onFinding, onLog) {
   onLog?.('info', `Nikto standalone: completed with ${findings.length} findings`)
   return findings
 }
+
+// ---------------------------------------------------------------------------
+// Standalone: SQLMap
+// ---------------------------------------------------------------------------
+export async function scanSqlmapStandalone(targetUrl, onFinding, onLog) {
+  onLog?.('info', `SQLMap standalone: SQL injection testing on ${targetUrl}`)
+
+  if (!isToolAvailable('sqlmap')) {
+    onLog?.('warn', 'SQLMap: not found on system. Install with: apt install sqlmap')
+    return { skipped: true, reason: 'sqlmap-not-installed' }
+  }
+
+  const findings = []
+  const wrap = f => { findings.push(f); onFinding?.(f) }
+
+  await runSqlmap(targetUrl, wrap, (l, m) => onLog?.(l, m))
+
+  onLog?.('info', `SQLMap standalone: completed with ${findings.length} findings`)
+  return findings
+}
+
+// ---------------------------------------------------------------------------
+// Standalone: Gobuster
+// ---------------------------------------------------------------------------
+export async function scanGobusterStandalone(targetUrl, onFinding, onLog) {
+  onLog?.('info', `Gobuster standalone: directory & DNS brute-force on ${targetUrl}`)
+
+  if (!isToolAvailable('gobuster')) {
+    onLog?.('warn', 'Gobuster: not found on system. Install with: apt install gobuster')
+    return { skipped: true, reason: 'gobuster-not-installed' }
+  }
+
+  let urlObj
+  try { urlObj = new URL(targetUrl) } catch {
+    return { skipped: true, reason: 'invalid-url' }
+  }
+
+  const host = urlObj.hostname
+  const findings = []
+  const wrap = f => { findings.push(f); onFinding?.(f) }
+
+  await runGobuster(host, targetUrl, wrap, (l, m) => onLog?.(l, m))
+
+  onLog?.('info', `Gobuster standalone: completed with ${findings.length} findings`)
+  return findings
+}
+
+// ---------------------------------------------------------------------------
+// Standalone: Hydra — credential brute-force
+// ---------------------------------------------------------------------------
+export async function scanHydra(targetUrl, onFinding, onLog) {
+  onLog?.('info', `Hydra standalone: credential brute-force assessment on ${targetUrl}`)
+
+  if (!isToolAvailable('hydra')) {
+    onLog?.('warn', 'Hydra: not found on system. Install with: apt install hydra')
+    return { skipped: true, reason: 'hydra-not-installed' }
+  }
+
+  let urlObj
+  try { urlObj = new URL(targetUrl) } catch {
+    return { skipped: true, reason: 'invalid-url' }
+  }
+
+  const host = urlObj.hostname
+  const findings = []
+  const wrap = f => { findings.push(f); onFinding?.(f) }
+
+  // Only run SSH brute-force if port 22 is reachable (light probe)
+  const { createConnection } = await import('node:net')
+  const sshOpen = await new Promise(resolve => {
+    const s = createConnection(22, host)
+    s.setTimeout(3000)
+    s.on('connect', () => { s.destroy(); resolve(true) })
+    s.on('timeout', () => { s.destroy(); resolve(false) })
+    s.on('error', () => resolve(false))
+  }).catch(() => false)
+
+  if (sshOpen) {
+    onLog?.('info', 'Hydra: SSH port 22 is open — running password spray with common creds')
+    // Use a very small wordlist for safe FYP demonstration
+    const out = await runCommand('hydra', [
+      '-L', '/usr/share/wordlists/metasploit/unix_users.txt',
+      '-P', '/usr/share/wordlists/metasploit/unix_passwords.txt',
+      '-t', '4', '-f', '-q',
+      `ssh://${host}`,
+    ], 90_000)
+
+    const evidence = out.stdout || out.stderr || ''
+    if (/login:.*password:/i.test(evidence)) {
+      const matches = evidence.split('\n').filter(l => /login:.*password:/i.test(l))
+      wrap(makeFinding({
+        title: `Hydra: Weak SSH credentials found on ${host}`,
+        severity: 'critical', cvss: 9.8, cweId: 'CWE-521',
+        description: `Hydra found valid SSH credentials: ${matches.slice(0, 3).join(' | ')}. Server is vulnerable to credential stuffing.`,
+        remediation: 'Enforce strong, unique passwords. Disable password auth — use SSH key auth only. Enable fail2ban.',
+        aiConfidence: 0.95,
+        evidence: { type: 'raw', label: 'hydra ssh output', data: cap(evidence) },
+      }, targetUrl))
+    } else {
+      onLog?.('info', 'Hydra: no common SSH credentials matched')
+      wrap(makeFinding({
+        title: `Hydra: SSH port open on ${host} — brute-force attempted`,
+        severity: 'low', cvss: 3.7, cweId: 'CWE-307',
+        description: `SSH port 22 is reachable. No common credentials matched during limited spray test. Consider enforcing key-based authentication.`,
+        remediation: 'Disable SSH password authentication. Use ssh keys. Enable fail2ban or similar brute-force protection.',
+        aiConfidence: 0.80,
+        evidence: { type: 'raw', label: 'hydra ssh result', data: 'No credentials matched in quick spray.' },
+      }, targetUrl))
+    }
+  } else {
+    onLog?.('info', `Hydra: SSH port 22 not open on ${host} — checking HTTP login forms`)
+    // Lightweight HTTP form check
+    const httpOut = await runCommand('hydra', [
+      '-L', '/usr/share/wordlists/metasploit/unix_users.txt',
+      '-P', '/usr/share/wordlists/metasploit/unix_passwords.txt',
+      '-t', '4', '-f', '-q',
+      `http-get://${host}`,
+    ], 60_000)
+
+    const evidence = httpOut.stdout || httpOut.stderr || ''
+    if (/login:.*password:/i.test(evidence)) {
+      const matches = evidence.split('\n').filter(l => /login:.*password:/i.test(l))
+      wrap(makeFinding({
+        title: `Hydra: Weak HTTP credentials found on ${host}`,
+        severity: 'critical', cvss: 9.8, cweId: 'CWE-521',
+        description: `Hydra found valid HTTP basic auth credentials: ${matches.slice(0, 3).join(' | ')}`,
+        remediation: 'Remove HTTP Basic Auth. Use token-based auth with rate limiting. Implement account lockout.',
+        aiConfidence: 0.90,
+        evidence: { type: 'raw', label: 'hydra http output', data: cap(evidence) },
+      }, targetUrl))
+    } else {
+      onLog?.('info', 'Hydra: no open brute-forceable services found')
+    }
+  }
+
+  onLog?.('info', `Hydra standalone: completed with ${findings.length} findings`)
+  return findings
+}
+
+// ---------------------------------------------------------------------------
+// Standalone: Subfinder — passive subdomain enumeration
+// ---------------------------------------------------------------------------
+export async function scanSubfinder(targetUrl, onFinding, onLog) {
+  onLog?.('info', `Subfinder standalone: passive subdomain enumeration on ${targetUrl}`)
+
+  if (!isToolAvailable('subfinder')) {
+    onLog?.('warn', 'Subfinder: not found on system. Install with: go install github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest')
+    return { skipped: true, reason: 'subfinder-not-installed' }
+  }
+
+  let urlObj
+  try { urlObj = new URL(targetUrl) } catch {
+    return { skipped: true, reason: 'invalid-url' }
+  }
+
+  const host = urlObj.hostname
+  const findings = []
+  const wrap = f => { findings.push(f); onFinding?.(f) }
+
+  onLog?.('info', `Subfinder: enumerating subdomains for ${host}`)
+  const out = await runCommand('subfinder', ['-d', host, '-silent', '-o', '-'], 120_000)
+  const evidence = out.stdout || ''
+
+  if (!evidence.trim()) {
+    onLog?.('info', 'Subfinder: no subdomains discovered')
+    return findings
+  }
+
+  const subs = [...new Set(evidence.split('\n').map(s => s.trim()).filter(Boolean))]
+  const sensitive = subs.filter(s => /dev\.|staging\.|test\.|internal\.|admin\.|vpn\.|jenkins\.|git\.|db\.|api\./.test(s))
+
+  if (sensitive.length > 0) {
+    wrap(makeFinding({
+      title: `Subfinder: ${sensitive.length} sensitive subdomain(s) discovered`,
+      severity: 'medium', cvss: 5.3, cweId: 'CWE-200',
+      description: `Passive subdomain enumeration revealed sensitive subdomains: ${sensitive.slice(0, 8).join(', ')}`,
+      remediation: 'Restrict internal subdomains from public DNS. Use split-horizon DNS. Remove unused records.',
+      aiConfidence: 0.88,
+      evidence: { type: 'raw', label: 'subfinder sensitive', data: sensitive.join('\n') },
+    }, targetUrl))
+  }
+
+  wrap(makeFinding({
+    title: `Subfinder: ${subs.length} subdomain(s) discovered for ${host}`,
+    severity: subs.length > 20 ? 'low' : 'info', cvss: subs.length > 20 ? 3.7 : 0,
+    cweId: 'CWE-200',
+    description: `Subfinder found ${subs.length} subdomains via passive OSINT sources. Large attack surface may exist.`,
+    remediation: 'Audit all subdomains. Decommission unused ones. Apply consistent security policies across all subdomains.',
+    aiConfidence: 0.85,
+    evidence: { type: 'raw', label: 'subfinder all results', data: subs.slice(0, 100).join('\n') },
+  }, targetUrl))
+
+  onLog?.('info', `Subfinder standalone: found ${subs.length} subdomains, ${findings.length} findings`)
+  return findings
+}
+
+// ---------------------------------------------------------------------------
+// Tool: whatweb (Technology Fingerprinting)
+// ---------------------------------------------------------------------------
+export async function scanWhatwebStandalone(targetUrl, onLog) {
+  const findings = []
+  const wrap = f => findings.push(f)
+
+  try {
+    const u = new URL(targetUrl)
+    const host = u.hostname
+    
+    if (!isToolAvailable('whatweb')) {
+      onLog?.('warn', 'whatweb standalone: tool not found (check PATH)')
+      return findings
+    }
+
+    onLog?.('info', `whatweb standalone: starting technology fingerprinting for ${host}`)
+
+    const out = await runCommand('whatweb', ['-a', '3', '--color=NEVER', targetUrl], 180_000)
+    const evidence = out.stdout || ''
+
+    if (!evidence.trim()) {
+      onLog?.('info', 'whatweb: no output returned')
+      return findings
+    }
+
+    // Process output and extract technologies
+    const plugins = evidence.match(/\[([^\]]+)\]/g) || []
+    const uniquePlugins = [...new Set(plugins.map(p => p.replace(/\[|\]/g, '')))]
+    
+    if (uniquePlugins.length > 0) {
+       wrap(makeFinding({
+         title: `WhatWeb: ${uniquePlugins.length} Technologies Fingerprinted`,
+         severity: 'info', cvss: 0, cweId: 'CWE-200',
+         description: `WhatWeb identified the following technologies and frameworks: ${uniquePlugins.join(', ')}`,
+         remediation: 'Ensure all identified software is kept up to date and does not leak unnecessary version information.',
+         aiConfidence: 0.90,
+         evidence: { type: 'raw', label: 'whatweb fingerprint', data: cap(evidence) },
+       }, targetUrl))
+    }
+
+    // Look for outdated/vulnerable components in whatweb output
+    if (/outdated|vulnerable/i.test(evidence)) {
+       wrap(makeFinding({
+         title: `WhatWeb: Outdated or Vulnerable Component Detected`,
+         severity: 'medium', cvss: 5.3, cweId: 'CWE-1035',
+         description: `WhatWeb flagged potentially outdated or vulnerable software components on the target.`,
+         remediation: 'Review the WhatWeb fingerprint and update outdated frameworks or servers immediately.',
+         aiConfidence: 0.85,
+         evidence: { type: 'raw', label: 'whatweb warnings', data: cap(evidence) },
+       }, targetUrl))
+    }
+
+    onLog?.('info', `whatweb standalone: finished, ${findings.length} findings`)
+  } catch (err) {
+    onLog?.('error', `whatweb standalone error: ${err.message}`)
+  }
+
+  return findings
+}
+

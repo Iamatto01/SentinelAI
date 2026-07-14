@@ -310,25 +310,15 @@ export default function Home() {
 
       <HeroParallax products={parallaxProducts}>
         <motion.section
-          className="at-home__hero w-full mx-auto flex flex-col items-center justify-center pt-0 pb-10 sm:pb-14 md:pb-20 px-4 sm:px-6"
+          className="at-home__hero relative z-50 pointer-events-auto w-full mx-auto flex flex-col items-center justify-center pt-0 pb-10 sm:pb-14 md:pb-20 px-4 sm:px-6"
           style={reducedMotion ? undefined : { y: heroY, opacity: heroOpacity }}
         >
-          <motion.p
-            className="at-home__eyebrow mb-4 sm:mb-6 text-[11px] sm:text-xs"
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5 }}
-          >
-            <Sparkles size={14} />
-            AI-Native Offensive Security Platform
-          </motion.p>
-
-          <div className="relative z-10 mb-6 sm:mb-8 md:mt-4 flex flex-col items-center justify-center">
+          <div className="relative z-10 flex flex-col items-center justify-center text-center">
             <motion.h1
               initial={{ opacity: 0, y: 20 }}
               whileInView={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.1, duration: 0.8, ease: 'easeInOut' }}
-              className="bg-transparent bg-clip-text text-center text-4xl sm:text-5xl font-bold tracking-tight leading-[1.1] text-white md:text-7xl"
+              className="bg-transparent bg-clip-text text-center text-6xl sm:text-7xl font-extrabold tracking-tighter leading-[1.05] text-white md:text-8xl lg:text-9xl"
             >
               <EncryptedText
                 text="Detect Real Risk"
@@ -346,29 +336,9 @@ export default function Home() {
             </motion.h1>
           </div>
 
-          <motion.p
-            className="at-home__subtitle text-center mx-auto mb-8 sm:mb-10 text-base sm:text-lg md:text-xl text-slate-300 px-1"
-            initial={{ opacity: 0, y: 24 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.7, delay: 0.18 }}
-          >
-            SentinelAI unifies autonomous discovery, intelligent scanning, and vulnerability triage into one high-speed workflow for modern teams.
-          </motion.p>
 
-          <motion.div
-            className="at-home__hero-actions relative z-20 mb-10 flex w-full max-w-xl flex-col items-stretch justify-center gap-3 sm:mb-14 sm:w-auto sm:max-w-none sm:flex-row sm:items-center"
-            initial={{ opacity: 0, y: 24 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.7, delay: 0.28 }}
-          >
-            <Link to="/subscription" className="at-home__btn at-home__btn--solid at-home__btn--hero pointer-events-auto w-full sm:w-auto">
-              Launch Service Console
-              <ArrowRight size={16} />
-            </Link>
-            <Link to="/login" className="at-home__btn at-home__btn--ghost at-home__btn--hero pointer-events-auto w-full sm:w-auto">
-              Go To Login
-            </Link>
-          </motion.div>
+
+
 
         </motion.section>
       </HeroParallax>

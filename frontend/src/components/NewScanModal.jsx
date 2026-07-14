@@ -2,10 +2,10 @@ import { useState, useEffect } from 'react';
 import { apiFetch } from '../lib/api.js';
 
 const TEMPLATES = [
-  { id: 'quick', name: 'Quick Scan', desc: 'Headers + SSL only', modules: { headers: true, ssl: true, paths: false, dns: false, cors: false, tech: false, subdomains: false, info: false, api: false, secrets: false, nmap: false, nuclei: false, zap: false, nikto: false } },
-  { id: 'standard', name: 'Standard Scan', desc: 'Balanced web + API coverage', modules: { headers: true, ssl: true, paths: true, dns: true, cors: true, tech: true, subdomains: false, info: false, api: true, secrets: true, nmap: false, nuclei: false, zap: false, nikto: false } },
-  { id: 'pentest', name: 'Pentest Scan', desc: 'Core tools: Nmap, Nuclei, ZAP, Nikto', modules: { headers: true, ssl: true, paths: true, dns: false, cors: true, tech: true, subdomains: false, info: false, api: true, secrets: true, nmap: true, nuclei: true, zap: true, nikto: true } },
-  { id: 'full', name: 'Full Scan', desc: 'All modules enabled', modules: { headers: true, ssl: true, paths: true, dns: true, cors: true, tech: true, subdomains: true, info: true, api: true, secrets: true, nmap: true, nuclei: true, zap: true, nikto: true } },
+  { id: 'quick', name: 'Quick Scan', desc: 'Headers + SSL only', modules: { headers: true, ssl: true, paths: false, dns: false, cors: false, tech: false, subdomains: false, info: false, api: false, secrets: false, nmap: false, nuclei: false, zap: false, nikto: false, sqlmap: false, gobuster: false, hydra: false, subfinder: false, testssl: false, whatweb: true } },
+  { id: 'standard', name: 'Standard Scan', desc: 'Balanced web + API coverage', modules: { headers: true, ssl: true, paths: true, dns: true, cors: true, tech: true, subdomains: false, info: false, api: true, secrets: true, nmap: false, nuclei: false, zap: false, nikto: false, sqlmap: false, gobuster: false, hydra: false, subfinder: false, testssl: false, whatweb: true } },
+  { id: 'pentest', name: 'Pentest Scan', desc: 'Core tools: Nmap, Nuclei, ZAP, Nikto, SQLMap, Gobuster, testssl', modules: { headers: true, ssl: true, paths: true, dns: false, cors: true, tech: true, subdomains: false, info: false, api: true, secrets: true, nmap: true, nuclei: true, zap: true, nikto: true, sqlmap: true, gobuster: true, hydra: false, subfinder: false, testssl: true, whatweb: true } },
+  { id: 'full', name: 'Full Scan', desc: 'All modules enabled', modules: { headers: true, ssl: true, paths: true, dns: true, cors: true, tech: true, subdomains: true, info: true, api: true, secrets: true, nmap: true, nuclei: true, zap: true, nikto: true, sqlmap: true, gobuster: true, hydra: true, subfinder: true, testssl: true, whatweb: true } },
 ];
 
 const CORE_TOOLS = {
@@ -13,6 +13,12 @@ const CORE_TOOLS = {
   nuclei: { name: 'Nuclei', desc: 'Template-based CVE detection, misconfigurations, default credentials', icon: '☢️' },
   zap: { name: 'OWASP ZAP', desc: 'Web application security baseline scan, active/passive checks', icon: '⚡' },
   nikto: { name: 'Nikto', desc: 'Web server scanner — outdated software, dangerous files, config issues', icon: '🕷️' },
+  whatweb: { name: 'WhatWeb', desc: 'Technology stack fingerprinting and version detection', icon: '🧩' },
+  sqlmap: { name: 'SQLMap', desc: 'Automated SQL injection detection and exploitation testing', icon: '💉' },
+  gobuster: { name: 'Gobuster', desc: 'Directory & DNS brute-force to find hidden endpoints and subdomains', icon: '📂' },
+  hydra: { name: 'Hydra', desc: 'Credential brute-force on SSH/FTP/HTTP — validates password policy', icon: '🔑' },
+  subfinder: { name: 'Subfinder', desc: 'Passive subdomain enumeration using OSINT sources', icon: '🌐' },
+  testssl: { name: 'testssl.sh', desc: 'Comprehensive TLS/SSL analysis — ciphers, protocols, vulnerabilities', icon: '🔒' },
 };
 
 const MODULE_INFO = {
@@ -31,7 +37,7 @@ const MODULE_INFO = {
 export default function NewScanModal({ open, onClose, onStarted }) {
   const [target, setTarget] = useState('');
   const [template, setTemplate] = useState('standard');
-  const [modules, setModules] = useState({ headers: true, ssl: true, paths: true, dns: true, cors: true, tech: true, subdomains: false, info: false, api: true, secrets: true, nmap: false, nuclei: false, zap: false, nikto: false });
+  const [modules, setModules] = useState({ headers: true, ssl: true, paths: true, dns: true, cors: true, tech: true, subdomains: false, info: false, api: true, secrets: true, nmap: false, nuclei: false, zap: false, nikto: false, sqlmap: false, gobuster: false, hydra: false, subfinder: false, testssl: false, whatweb: true });
   const [projectId, setProjectId] = useState('');
   const [projects, setProjects] = useState([]);
   const [submitting, setSubmitting] = useState(false);

@@ -118,7 +118,7 @@ export const HeroParallax = ({
           translateY,
           opacity,
         }}
-        className=""
+        className="pointer-events-none"
       >
         <motion.div className={`flex flex-row-reverse ${rowSpacingClass}`}>
           {firstRow.map((product) => (
@@ -191,7 +191,7 @@ export const ProductCard = ({
         y: -20,
       }}
       key={product.title}
-      className="group/product relative flex h-[15rem] w-[82vw] max-w-[22rem] shrink-0 cursor-default flex-col items-center justify-center overflow-hidden rounded-3xl border border-slate-800 bg-slate-950/80 p-5 text-center shadow-2xl backdrop-blur-md transition-colors duration-300 hover:border-slate-700 sm:h-80 sm:w-[24rem] sm:p-7 lg:h-96 lg:w-[30rem] lg:p-8"
+      className="pointer-events-auto group/product relative flex h-[15rem] w-[82vw] max-w-[22rem] shrink-0 cursor-default flex-col items-center justify-center overflow-hidden rounded-3xl border border-slate-800 bg-slate-950/80 p-5 text-center shadow-2xl backdrop-blur-md transition-colors duration-300 hover:border-slate-700 sm:h-80 sm:w-[24rem] sm:p-7 lg:h-96 lg:w-[30rem] lg:p-8"
     >
       {/* Background ambient glow effect */}
       <div className="absolute inset-0 bg-gradient-to-br from-cyan-500/5 via-transparent to-purple-500/5 opacity-0 group-hover/product:opacity-100 transition-opacity duration-500 pointer-events-none"></div>

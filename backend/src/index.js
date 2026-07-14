@@ -1,6 +1,21 @@
+// ── Global error handlers (prevent crashes from transient DB/network errors) ──
+process.on('unhandledRejection', (reason) => {
+  console.error('[backend] Unhandled rejection (non-fatal):', reason?.message || reason)
+})
+process.on('uncaughtException', (err) => {
+  // Only crash on truly fatal errors, not network hiccups
+  if (err.code === 'EAI_AGAIN' || err.code === 'ECONNRESET' || err.code === 'ETIMEDOUT') {
+    console.error('[backend] Network error (non-fatal):', err.message)
+    return
+  }
+  console.error('[backend] Fatal uncaught exception:', err)
+  process.exit(1)
+})
+
 import http from 'node:http'
 import https from 'node:https'
 import { readFileSync } from 'node:fs'
+import fs from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import express from 'express'
@@ -24,10 +39,20 @@ import { getCveById, searchCve } from './cve.js'
 import { runScan, buildModules, getModuleSelection } from './scanner/orchestrator.js'
 import { generateReport } from './report.js'
 import { AIAgentController } from './ai/agent-controller.js'
-import { canRunAIAction } from './ai/permission-gate.js'
 import { AISessionLogger } from './ai/session-logger.js'
 import { AICostTracker } from './ai/cost-tracker.js'
 import { generateVulnSummary, generateProjectSummary } from './ai/voice-summary.js'
+import { AIWorker } from './ai/ai-worker.js'
+import { MonitorScheduler } from './ai/monitor-scheduler.js'
+import { LogAnalyzer } from './ai/log-analyzer.js'
+import {
+  dbGetAllMonitors, dbGetMonitorById, dbGetMonitorsByProject,
+  dbInsertMonitor, dbUpdateMonitor, dbDeleteMonitor,
+  dbGetEventsByMonitor, dbGetAlertsByMonitor, dbGetUnacknowledgedAlerts,
+  dbAcknowledgeAlert, dbGetReportsByMonitor,
+  dbInsertIngestedLogs, dbGetIngestedLogs, dbGetIngestedLogsStats,
+  dbDeleteScan
+} from './database.js'
 
 const PORT = Number(process.env.PORT || 5000)
 const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN || 'http://localhost:5173'
@@ -37,6 +62,37 @@ const HTTPS_KEY_PATH = process.env.HTTPS_KEY_PATH || ''
 const HTTPS_CERT_PATH = process.env.HTTPS_CERT_PATH || ''
 const HTTPS_CA_PATH = process.env.HTTPS_CA_PATH || ''
 
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = path.dirname(__filename)
+
+const WORKSPACE_ROOT = path.resolve(__dirname, '../..')
+const BLOCKED_WORKSPACE_NAMES = new Set(['.env', '.env.local', '.env.production', '.git', 'node_modules', 'dist', 'build', 'coverage'])
+
+function resolveWorkspacePath(requestedPath) {
+  if (!requestedPath || typeof requestedPath !== 'string') return null
+
+  const cleaned = requestedPath
+    .trim()
+    .replace(/^file:\/\//i, '')
+    .replace(/^['"`]|['"`]$/g, '')
+
+  if (!cleaned) return null
+
+  const resolved = path.resolve(WORKSPACE_ROOT, cleaned)
+  const relative = path.relative(WORKSPACE_ROOT, resolved)
+
+  if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) return null
+
+  const segments = relative.split(path.sep).map((segment) => segment.toLowerCase())
+  if (segments.some((segment) => BLOCKED_WORKSPACE_NAMES.has(segment))) return null
+
+  return resolved
+}
+
+function looksLikeFileEditRequest(message = '') {
+  return /\b(modify|edit|update|fix|rewrite|patch|replace)\b/i.test(message)
+}
+
 // Initialize AI services
 const aiSessionLogger = new AISessionLogger()
 const aiCostTracker = new AICostTracker()
@@ -44,9 +100,9 @@ const aiController = new AIAgentController({
   sessionLogger: aiSessionLogger,
   costTracker: aiCostTracker,
 })
-
-const __filename = fileURLToPath(import.meta.url)
-const __dirname = path.dirname(__filename)
+const aiWorker = new AIWorker()
+const logAnalyzer = new LogAnalyzer({ aiWorker })
+let monitorScheduler = null
 
 const app = express()
 
@@ -431,6 +487,9 @@ app.post('/api/scan/resume', requireAuth, requireRole('admin', 'analyst'), async
   const { scanId } = req.body || {}
   const scan = db.scans.find((s) => s.id === scanId) || null
   if (!scan) return res.status(404).json({ error: 'Scan not found' })
+  if (scan.status !== 'paused') {
+    return res.status(400).json({ error: `Cannot resume a scan with status '${scan.status}'. Only paused scans can be resumed.` })
+  }
   scan.status = 'running'
   await saveScan(scan)
   await pushLog(scan.id, 'info', 'Scan resumed by user')
@@ -443,6 +502,7 @@ app.post('/api/scan/resume', requireAuth, requireRole('admin', 'analyst'), async
   emitScanUpdate(scan.id)
   res.json({ scan })
 })
+
 
 app.post('/api/scan/stop', requireAuth, requireRole('admin', 'analyst'), async (req, res) => {
   const { scanId } = req.body || {}
@@ -487,6 +547,32 @@ app.get('/api/scan/results', requireAuth, (req, res) => {
   if (scan && clientPids && !clientPids.includes(scan.projectId)) return res.status(403).json({ error: 'Forbidden' })
   const vulnerabilities = db.vulnerabilitiesByScanId.get(scanId) || []
   res.json({ vulnerabilities })
+})
+
+app.delete('/api/scans/:id', requireAuth, requireRole('admin', 'analyst'), async (req, res) => {
+  const scan = db.scans.find(s => s.id === req.params.id)
+  if (!scan) return res.status(404).json({ error: 'Scan not found' })
+
+  try {
+    await dbDeleteScan(req.params.id)
+    
+    // Clean up memory state
+    db.scans = db.scans.filter(s => s.id !== req.params.id)
+    db.scanLogsByScanId.delete(req.params.id)
+    db.vulnerabilitiesByScanId.delete(req.params.id)
+    
+    await addAudit({
+      user: req.user.username,
+      action: 'SCAN_DELETED',
+      resource: req.params.id,
+      details: `Scan deleted for target ${scan.target}`,
+    })
+
+    res.json({ success: true })
+  } catch (err) {
+    console.error('Delete scan error:', err)
+    res.status(500).json({ error: 'Failed to delete scan' })
+  }
 })
 
 // ── Vulnerability Status Update ─────────────────────────────────────────────
@@ -658,251 +744,323 @@ app.get('/api/cve/:cveId', requireAuth, async (req, res) => {
   res.json({ cve })
 })
 
-// ── AI Agent Integration ─────────────────────────────────────────────────────
+// ── Monitoring / SIEM Endpoints ──────────────────────────────────────────────
 
-// AI-enhanced scan endpoint
-app.post('/api/ai/scan', requireAuth, requireRole('admin', 'analyst'), async (req, res) => {
+// Create a new monitor
+app.post('/api/monitors', requireAuth, requireRole('admin', 'analyst'), async (req, res) => {
   const data = req.body || {}
   if (!data.target) {
-    return res.status(400).json({ error: 'target is required' })
+    return res.status(400).json({ error: 'target URL is required' })
   }
 
-  const project = data.projectId ? db.projects.find((p) => p.id === data.projectId) : null
-  const permission = canRunAIAction({
-    user: req.user,
-    action: 'ai_scan',
-    target: data.target,
-    project,
-  })
-  if (!permission.allowed) {
-    return res.status(403).json({ error: permission.reason })
+  try { new URL(data.target) } catch {
+    return res.status(400).json({ error: 'target must be a valid URL' })
   }
 
-  if (data.projectId) {
-    const expectedScanCostUsd = Number(process.env.AI_EXPECTED_SCAN_COST_USD || 0.02)
-    const budgetCheck = aiCostTracker.canSpend(data.projectId, expectedScanCostUsd)
-    if (!budgetCheck.allowed) {
-      return res.status(402).json({ error: budgetCheck.reason, budget: budgetCheck.summary })
-    }
-  }
-
-  // Validate URL
-  try {
-    new URL(data.target)
-  } catch {
-    return res.status(400).json({ error: 'target must be a valid URL (e.g. https://example.com)' })
-  }
-
-  // Check if AI is available
-  const aiStatus = aiController.getStatus()
-  if (!aiStatus.isActive) {
-    return res.status(503).json({ error: 'AI features are not available. Please configure GROQ_API_KEY.' })
-  }
-
-  const template = data.template || 'standard'
-  const moduleSelection = getModuleSelection(template, data.modules)
-  const modules = buildModules(moduleSelection)
+  const validSchedules = ['5m', '15m', '30m', '1h', '6h', '12h', '24h']
+  const schedule = validSchedules.includes(data.schedule) ? data.schedule : '1h'
+  const defaultModules = ['headers', 'ssl', 'paths', 'cors']
+  const modules = Array.isArray(data.modules) && data.modules.length > 0 ? data.modules : defaultModules
 
   const now = new Date().toISOString()
-  const scan = {
-    id: 'scan_' + randomUUID(),
-    target: data.target,
-    template,
+  const monitor = {
+    id: 'mon_' + randomUUID(),
     projectId: data.projectId || null,
-    status: 'running',
-    progress: 0,
-    startTime: now,
+    target: data.target,
+    schedule,
     modules,
-    vulnerabilitiesFound: 0,
-    assetsScanned: 0,
-    aiEnhanced: true,  // Mark as AI-enhanced scan
+    status: 'active',
+    healthStatus: 'unknown',
+    lastCheckAt: null,
+    nextCheckAt: now,
+    totalChecks: 0,
+    createdBy: req.user.username,
+    createdAt: now,
+    updatedAt: now,
   }
 
-  await addScan(scan)
-  initLogs(scan.id)
-  initVulns(scan.id)
-  await pushLog(scan.id, 'info', `🤖 AI-Enhanced scan initiated for ${scan.target} (template: ${template})`)
-
+  await dbInsertMonitor(monitor)
   await addAudit({
     user: req.user.username,
-    action: 'AI_SCAN_STARTED',
-    resource: scan.id,
-    details: `AI-enhanced scan started for target ${scan.target}`,
+    action: 'MONITOR_CREATED',
+    resource: monitor.id,
+    details: `Monitor created for ${monitor.target} (schedule: ${schedule})`,
   })
 
-  const sessionId = await aiSessionLogger.startSession({
-    type: 'ai_scan',
-    user: req.user.username,
-    projectId: data.projectId || null,
-    target: scan.target,
-    metadata: { scanId: scan.id, template },
-  })
-
-  // Run AI-enhanced scan asynchronously
-  aiController.runAIScan(scan.id, data.target, { template, modules: moduleSelection, projectId: data.projectId }, {
-    db, io, pushLog, addAudit, saveScan, saveProject, addVuln
-  }, {
-    sessionId,
-    projectId: data.projectId || null,
-  }).then(async () => {
-    await aiSessionLogger.endSession(sessionId, 'completed', {
-      scanId: scan.id,
-      projectId: data.projectId || null,
-      cost: aiCostTracker.getSessionSummary(sessionId),
-    })
-  }).catch(async (err) => {
-    console.error('AI scan failed:', err.message)
-    await pushLog(scan.id, 'error', `AI scan error: ${err.message}`)
-    await aiSessionLogger.endSession(sessionId, 'failed', {
-      scanId: scan.id,
-      error: err.message,
-      cost: aiCostTracker.getSessionSummary(sessionId),
-    })
-  })
-
-  res.status(201).json({ scan, aiEnhanced: true, sessionId })
+  res.status(201).json({ monitor })
 })
 
-// Asset discovery endpoint
-app.post('/api/ai/discover', requireAuth, requireRole('admin', 'analyst'), async (req, res) => {
-  const { projectId } = req.body || {}
-  if (!projectId) {
-    return res.status(400).json({ error: 'projectId is required' })
-  }
-
-  const project = db.projects.find(p => p.id === projectId)
-  if (!project) {
-    return res.status(404).json({ error: 'Project not found' })
-  }
-
-  const permission = canRunAIAction({
-    user: req.user,
-    action: 'ai_discover',
-    target: project.scope ? `https://${String(project.scope).split(',')[0].trim().replace(/^https?:\/\//, '')}` : null,
-    project,
-  })
-  if (!permission.allowed) {
-    return res.status(403).json({ error: permission.reason })
-  }
-
-  const aiStatus = aiController.getStatus()
-  if (!aiStatus.isActive) {
-    return res.status(503).json({ error: 'AI features are not available. Please configure GROQ_API_KEY.' })
-  }
-
+// List all monitors (admin sees all, client sees their projects)
+app.get('/api/monitors', requireAuth, async (req, res) => {
   try {
-    const sessionId = await aiSessionLogger.startSession({
-      type: 'ai_discovery',
-      user: req.user.username,
-      projectId,
-      target: project.scope || null,
-      metadata: {},
-    })
+    const clientPids = getClientProjectIds(req.user)
+    let monitors = await dbGetAllMonitors()
+    if (clientPids) {
+      monitors = monitors.filter(m => m.projectId && clientPids.includes(m.projectId))
+    }
+    res.json({ monitors })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
 
-    const discoveredAssets = await aiController.discoverAssets(projectId, { sessionId, projectId })
+// Get single monitor details
+app.get('/api/monitors/:id', requireAuth, async (req, res) => {
+  try {
+    const monitor = await dbGetMonitorById(req.params.id)
+    if (!monitor) return res.status(404).json({ error: 'Monitor not found' })
 
+    const clientPids = getClientProjectIds(req.user)
+    if (clientPids && (!monitor.projectId || !clientPids.includes(monitor.projectId))) {
+      return res.status(403).json({ error: 'Forbidden' })
+    }
+
+    res.json({ monitor })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// Update monitor (schedule, modules, pause/resume)
+app.put('/api/monitors/:id', requireAuth, requireRole('admin', 'analyst'), async (req, res) => {
+  try {
+    const monitor = await dbGetMonitorById(req.params.id)
+    if (!monitor) return res.status(404).json({ error: 'Monitor not found' })
+
+    const data = req.body || {}
+    const validSchedules = ['5m', '15m', '30m', '1h', '6h', '12h', '24h']
+    if (data.schedule && validSchedules.includes(data.schedule)) monitor.schedule = data.schedule
+    if (Array.isArray(data.modules)) monitor.modules = data.modules
+    if (data.status && ['active', 'paused'].includes(data.status)) monitor.status = data.status
+    if (data.projectId !== undefined) monitor.projectId = data.projectId
+    monitor.updatedAt = new Date().toISOString()
+
+    await dbUpdateMonitor(monitor)
     await addAudit({
       user: req.user.username,
-      action: 'AI_ASSET_DISCOVERY',
-      resource: projectId,
-      details: `AI discovered ${discoveredAssets.length} assets for project ${project.name}`,
+      action: 'MONITOR_UPDATED',
+      resource: monitor.id,
+      details: `Monitor updated for ${monitor.target}`,
     })
 
-    await aiSessionLogger.endSession(sessionId, 'completed', {
-      projectId,
-      assetsDiscovered: discoveredAssets.length,
-      cost: aiCostTracker.getSessionSummary(sessionId),
-    })
-
-    res.json({
-      success: true,
-      project: project.name,
-      assets: discoveredAssets,
-      count: discoveredAssets.length,
-      cost: aiCostTracker.getSessionSummary(sessionId),
-    })
-  } catch (error) {
-    console.error('Asset discovery failed:', error.message)
-    res.status(500).json({ error: 'Asset discovery failed: ' + error.message })
+    res.json({ monitor })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
   }
 })
 
-// AI system status endpoint
+// Delete monitor
+app.delete('/api/monitors/:id', requireAuth, requireRole('admin', 'analyst'), async (req, res) => {
+  try {
+    const monitor = await dbGetMonitorById(req.params.id)
+    if (!monitor) return res.status(404).json({ error: 'Monitor not found' })
+
+    await dbDeleteMonitor(monitor.id)
+    await addAudit({
+      user: req.user.username,
+      action: 'MONITOR_DELETED',
+      resource: monitor.id,
+      details: `Monitor deleted for ${monitor.target}`,
+    })
+
+    res.json({ success: true })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// Get monitor events (timeline)
+app.get('/api/monitors/:id/events', requireAuth, async (req, res) => {
+  try {
+    const monitor = await dbGetMonitorById(req.params.id)
+    if (!monitor) return res.status(404).json({ error: 'Monitor not found' })
+
+    const clientPids = getClientProjectIds(req.user)
+    if (clientPids && (!monitor.projectId || !clientPids.includes(monitor.projectId))) {
+      return res.status(403).json({ error: 'Forbidden' })
+    }
+
+    const limit = Math.min(Number(req.query.limit) || 100, 500)
+    const events = await dbGetEventsByMonitor(monitor.id, limit)
+    res.json({ events })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// Get monitor alerts
+app.get('/api/monitors/:id/alerts', requireAuth, async (req, res) => {
+  try {
+    const monitor = await dbGetMonitorById(req.params.id)
+    if (!monitor) return res.status(404).json({ error: 'Monitor not found' })
+
+    const clientPids = getClientProjectIds(req.user)
+    if (clientPids && (!monitor.projectId || !clientPids.includes(monitor.projectId))) {
+      return res.status(403).json({ error: 'Forbidden' })
+    }
+
+    const alerts = await dbGetAlertsByMonitor(monitor.id)
+    res.json({ alerts })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// Acknowledge an alert
+app.post('/api/monitors/:id/alerts/:alertId/ack', requireAuth, requireRole('admin', 'analyst'), async (req, res) => {
+  try {
+    await dbAcknowledgeAlert(req.params.alertId, req.user.username)
+    await addAudit({
+      user: req.user.username,
+      action: 'ALERT_ACKNOWLEDGED',
+      resource: req.params.alertId,
+      details: `Alert acknowledged`,
+    })
+    res.json({ success: true })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// Get monitor reports
+app.get('/api/monitors/:id/reports', requireAuth, async (req, res) => {
+  try {
+    const monitor = await dbGetMonitorById(req.params.id)
+    if (!monitor) return res.status(404).json({ error: 'Monitor not found' })
+
+    const clientPids = getClientProjectIds(req.user)
+    if (clientPids && (!monitor.projectId || !clientPids.includes(monitor.projectId))) {
+      return res.status(403).json({ error: 'Forbidden' })
+    }
+
+    const reports = await dbGetReportsByMonitor(monitor.id)
+    res.json({ reports })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// Fleet overview (admin only)
+app.get('/api/fleet/overview', requireAuth, requireRole('admin', 'analyst'), async (req, res) => {
+  try {
+    const monitors = await dbGetAllMonitors()
+    const alerts = await dbGetUnacknowledgedAlerts(50)
+
+    const healthCounts = { healthy: 0, degraded: 0, critical: 0, down: 0, unknown: 0 }
+    for (const m of monitors) {
+      healthCounts[m.healthStatus] = (healthCounts[m.healthStatus] || 0) + 1
+    }
+
+    res.json({
+      totalMonitors: monitors.length,
+      activeMonitors: monitors.filter(m => m.status === 'active').length,
+      healthCounts,
+      unacknowledgedAlerts: alerts.length,
+      recentAlerts: alerts.slice(0, 20),
+      monitors: monitors.map(m => ({
+        id: m.id,
+        target: m.target,
+        projectId: m.projectId,
+        status: m.status,
+        healthStatus: m.healthStatus,
+        schedule: m.schedule,
+        lastCheckAt: m.lastCheckAt,
+        nextCheckAt: m.nextCheckAt,
+        totalChecks: m.totalChecks,
+      })),
+    })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// ── Log Ingestion (Splunk-like) ──────────────────────────────────────────────
+
+// Ingest logs (can be called by external agents/servers)
+app.post('/api/logs/ingest', async (req, res) => {
+  // Support both single object and array of logs
+  const logs = Array.isArray(req.body) ? req.body : [req.body]
+  
+  if (!logs.length) {
+    return res.status(400).json({ error: 'No logs provided' })
+  }
+
+  const processedLogs = logs.map(l => ({
+    id: 'log_' + randomUUID(),
+    projectId: l.projectId || null,
+    source: l.source || 'unknown',
+    level: (l.level || 'info').toLowerCase(),
+    message: l.message || '',
+    metadata: l.metadata || {},
+    timestamp: l.timestamp || new Date().toISOString()
+  }))
+
+  try {
+    await dbInsertIngestedLogs(processedLogs)
+    res.status(201).json({ success: true, count: processedLogs.length })
+  } catch (err) {
+    console.error('Log ingestion error:', err)
+    res.status(500).json({ error: 'Failed to ingest logs' })
+  }
+})
+
+// Query logs (The Log Explorer API)
+app.get('/api/logs', requireAuth, async (req, res) => {
+  try {
+    const { source, level, search, minAnomalyScore, projectId, analyzed, limit, offset } = req.query
+    const options = {
+      source,
+      level,
+      search,
+      minAnomalyScore: minAnomalyScore ? Number(minAnomalyScore) : undefined,
+      projectId,
+      analyzed: analyzed !== undefined ? (analyzed === 'true') : undefined,
+      limit: limit ? Number(limit) : 100,
+      offset: offset ? Number(offset) : 0
+    }
+
+    const clientPids = getClientProjectIds(req.user)
+    if (clientPids && clientPids.length > 0) {
+      if (!options.projectId || !clientPids.includes(options.projectId)) {
+        return res.status(403).json({ error: 'Forbidden' })
+      }
+    }
+
+    const logs = await dbGetIngestedLogs(options)
+    res.json({ logs })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// Log Statistics (for charts)
+app.get('/api/logs/stats', requireAuth, async (req, res) => {
+  try {
+    const { projectId } = req.query
+    const clientPids = getClientProjectIds(req.user)
+    if (clientPids && clientPids.length > 0) {
+      if (!projectId || !clientPids.includes(projectId)) {
+        return res.status(403).json({ error: 'Forbidden' })
+      }
+    }
+
+    const stats = await dbGetIngestedLogsStats(projectId)
+    res.json({ stats })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// ── AI System Status ─────────────────────────────────────────────────────────
 app.get('/api/ai/status', requireAuth, requireRole('admin', 'analyst'), (req, res) => {
   const status = aiController.getStatus()
+  const workerStatus = aiWorker.getStatus()
   res.json({
     ai: status,
+    worker: workerStatus,
     groqConfigured: !!process.env.GROQ_API_KEY,
-    version: "1.0.0"
+    version: '2.0.0',
   })
-})
-
-// Vulnerability analysis enhancement endpoint
-app.post('/api/ai/analyze/:scanId', requireAuth, requireRole('admin', 'analyst'), async (req, res) => {
-  const { scanId } = req.params
-  const scan = db.scans.find(s => s.id === scanId)
-
-  if (!scan) {
-    return res.status(404).json({ error: 'Scan not found' })
-  }
-
-  const project = scan.projectId ? db.projects.find((p) => p.id === scan.projectId) : null
-  const permission = canRunAIAction({
-    user: req.user,
-    action: 'ai_analyze',
-    target: scan.target,
-    project,
-  })
-  if (!permission.allowed) {
-    return res.status(403).json({ error: permission.reason })
-  }
-
-  const aiStatus = aiController.getStatus()
-  if (!aiStatus.isActive) {
-    return res.status(503).json({ error: 'AI features are not available. Please configure GROQ_API_KEY.' })
-  }
-
-  try {
-    const sessionId = await aiSessionLogger.startSession({
-      type: 'ai_analysis',
-      user: req.user.username,
-      projectId: scan.projectId || null,
-      target: scan.target,
-      metadata: { scanId },
-    })
-
-    await aiController.enhanceVulnerabilityAnalysis(scanId, { pushLog }, {
-      sessionId,
-      projectId: scan.projectId || null,
-    })
-
-    const vulnerabilities = db.vulnerabilitiesByScanId.get(scanId) || []
-    const enhancedCount = vulnerabilities.filter(v => v.aiAnalysis).length
-
-    await addAudit({
-      user: req.user.username,
-      action: 'AI_VULN_ANALYSIS',
-      resource: scanId,
-      details: `AI enhanced analysis of ${enhancedCount} vulnerabilities`,
-    })
-
-    await aiSessionLogger.endSession(sessionId, 'completed', {
-      scanId,
-      enhancedVulnerabilities: enhancedCount,
-      cost: aiCostTracker.getSessionSummary(sessionId),
-    })
-
-    res.json({
-      success: true,
-      scanId,
-      enhancedVulnerabilities: enhancedCount,
-      totalVulnerabilities: vulnerabilities.length,
-      cost: aiCostTracker.getSessionSummary(sessionId),
-    })
-  } catch (error) {
-    console.error('AI vulnerability analysis failed:', error.message)
-    res.status(500).json({ error: 'AI analysis failed: ' + error.message })
-  }
 })
 
 app.get('/api/ai/costs', requireAuth, requireRole('admin', 'analyst'), (req, res) => {
@@ -924,10 +1082,77 @@ app.put('/api/ai/budgets/:projectId', requireAuth, requireRole('admin'), (req, r
   })
 })
 
+app.get('/api/ai/files', requireAuth, async (req, res) => {
+  try {
+    const requestedPath = String(req.query.path || '')
+    const resolvedPath = resolveWorkspacePath(requestedPath)
+    if (!resolvedPath) {
+      return res.status(400).json({ error: 'Invalid or blocked file path' })
+    }
+
+    const stats = await fs.stat(resolvedPath)
+    if (!stats.isFile()) {
+      return res.status(400).json({ error: 'Path is not a file' })
+    }
+
+    const content = await fs.readFile(resolvedPath, 'utf8')
+    await addAudit({
+      user: req.user.username,
+      action: 'AI_FILE_READ',
+      resource: requestedPath,
+      details: `Read workspace file: ${requestedPath}`,
+    })
+
+    res.json({
+      path: requestedPath,
+      content,
+      size: stats.size,
+      modifiedAt: stats.mtime.toISOString(),
+    })
+  } catch (error) {
+    console.error('[AI File Read] Error:', error.message)
+    res.status(500).json({ error: 'Failed to read file: ' + error.message })
+  }
+})
+
+app.put('/api/ai/files', requireAuth, async (req, res) => {
+  try {
+    const { path: requestedPath, content } = req.body || {}
+    const resolvedPath = resolveWorkspacePath(requestedPath)
+    if (!resolvedPath) {
+      return res.status(400).json({ error: 'Invalid or blocked file path' })
+    }
+    if (typeof content !== 'string') {
+      return res.status(400).json({ error: 'content must be a string' })
+    }
+
+    await fs.mkdir(path.dirname(resolvedPath), { recursive: true })
+    await fs.writeFile(resolvedPath, content, 'utf8')
+
+    const stats = await fs.stat(resolvedPath)
+    await addAudit({
+      user: req.user.username,
+      action: 'AI_FILE_WRITE',
+      resource: requestedPath,
+      details: `Updated workspace file: ${requestedPath}`,
+    })
+
+    res.json({
+      success: true,
+      path: requestedPath,
+      size: stats.size,
+      modifiedAt: stats.mtime.toISOString(),
+    })
+  } catch (error) {
+    console.error('[AI File Write] Error:', error.message)
+    res.status(500).json({ error: 'Failed to write file: ' + error.message })
+  }
+})
+
 // ── AI Chat Endpoint ─────────────────────────────────────────────────────────
 
 app.post('/api/ai/chat', requireAuth, async (req, res) => {
-  const { message, history, context } = req.body || {}
+  const { message, history, context, attachments } = req.body || {}
   if (!message || !message.trim()) {
     return res.status(400).json({ error: 'message is required' })
   }
@@ -969,6 +1194,29 @@ Important guidelines:
       if (v.description) systemPrompt += `- Description: ${v.description}\n`
       if (v.remediation) systemPrompt += `- Current Remediation Notes: ${v.remediation}\n`
       systemPrompt += `\nProvide answers specifically about this vulnerability. Be detailed and practical.`
+    }
+
+    const fileAttachments = Array.isArray(attachments)
+      ? attachments
+          .filter((item) => item && typeof item.content === 'string')
+          .slice(0, 5)
+      : []
+
+    if (fileAttachments.length > 0) {
+      systemPrompt += `\n\nAttached file context:\n`
+      for (const file of fileAttachments) {
+        const fileLabel = file.path || file.name || 'attached-file'
+        const preview = file.content.length > 12_000
+          ? `${file.content.slice(0, 12_000)}\n\n[Truncated after 12,000 characters]`
+          : file.content
+        systemPrompt += `\nFile: ${fileLabel}\n\`\`\`text\n${preview}\n\`\`\`\n`
+      }
+
+      if (looksLikeFileEditRequest(message)) {
+        systemPrompt += `\nWhen the user asks to modify an attached file, return the full updated file content only, or a clear unified diff if the full file is too large. Avoid extra commentary so the result can be written back to disk.`
+      } else {
+        systemPrompt += `\nUse the attached file context when answering and reference the file path if it matters.`
+      }
     }
 
     // Build messages array for the Groq API
@@ -1095,6 +1343,17 @@ io.on('connection', (socket) => {
     if (!scanId) return
     socket.leave(`scan:${scanId}`)
   })
+
+  // Monitor real-time updates
+  socket.on('monitor:join', (monitorId) => {
+    if (!monitorId) return
+    socket.join(`monitor:${monitorId}`)
+  })
+
+  socket.on('monitor:leave', (monitorId) => {
+    if (!monitorId) return
+    socket.leave(`monitor:${monitorId}`)
+  })
 })
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -1167,6 +1426,14 @@ async function start() {
     console.log('⚠️  [AI] Agent controller disabled (no GROQ_API_KEY)')
   }
 
+  // Initialize AI Worker + Monitor Scheduler + Log Analyzer
+  await aiWorker.initialize()
+  monitorScheduler = new MonitorScheduler({ aiWorker, io })
+  monitorScheduler.start()
+  logAnalyzer.start()
+  console.log('⏱️  [SIEM] Monitor scheduler initialized')
+  console.log('📝 [SIEM] Log analyzer initialized')
+
   const useHttps = Boolean(HTTPS_KEY_PATH && HTTPS_CERT_PATH)
   const server = useHttps
     ? https.createServer(
@@ -1181,6 +1448,18 @@ async function start() {
 
   io.attach(server)
 
+  server.on('error', (err) => {
+    if (err.code === 'EADDRINUSE') {
+      console.error(`\n❌ [backend] Port ${PORT} is already in use!`)
+      console.error(`   Another SentinelAI instance is already running.`)
+      console.error(`   Run this command to fix it:\n`)
+      console.error(`   npx kill-port ${PORT}\n`)
+      process.exit(1)
+    } else {
+      throw err
+    }
+  })
+
   server.listen(PORT, '0.0.0.0', () => {
     console.log(`[backend] listening on ${useHttps ? 'https' : 'http'}://0.0.0.0:${PORT}`)
     console.log(`[backend] allow origin: ${CLIENT_ORIGIN}`)
@@ -1190,6 +1469,7 @@ async function start() {
     if (aiInitialized) {
       console.log('🔥 [AI] Enhanced scanning features are available!')
     }
+    console.log('🛡️  [SIEM] Continuous monitoring system is active!')
   })
 }
 

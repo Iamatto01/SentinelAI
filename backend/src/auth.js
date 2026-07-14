@@ -1,9 +1,10 @@
 import jwt from 'jsonwebtoken'
+import { dbGetUserById } from './database.js'
 
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-me'
 const JWT_ISSUER = process.env.JWT_ISSUER || 'vlolv-backend'
 
-export function authMiddleware(req, res, next) {
+export async function authMiddleware(req, res, next) {
   const authHeader = req.headers.authorization || ''
   const match = authHeader.match(/^Bearer\s+(.+)$/i)
   if (!match) {
@@ -14,6 +15,15 @@ export function authMiddleware(req, res, next) {
   const token = match[1]
   try {
     const decoded = jwt.verify(token, JWT_SECRET, { issuer: JWT_ISSUER })
+    
+    // Verify user actually exists in current database
+    const dbUser = await dbGetUserById(decoded.sub)
+    if (!dbUser) {
+      req.user = null
+      req.token = null
+      return next()
+    }
+
     req.user = {
       id: decoded.sub,
       username: decoded.username,

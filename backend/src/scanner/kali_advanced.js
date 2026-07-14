@@ -1173,3 +1173,32 @@ export async function scanKaliAdvanced(targetUrl, onFinding, onLog) {
   onLog?.('info', `Advanced Kali Tools complete — ${findings.length} findings`)
   return findings
 }
+
+// ---------------------------------------------------------------------------
+// Standalone: testssl — individually selectable from orchestrator
+// ---------------------------------------------------------------------------
+export async function scanTestsslStandalone(targetUrl, onFinding, onLog) {
+  onLog?.('info', `testssl standalone: SSL/TLS analysis on ${targetUrl}`)
+
+  const cmd = isToolAvailable('testssl') ? 'testssl' : isToolAvailable('testssl.sh') ? 'testssl.sh' : null
+  if (!cmd) {
+    onLog?.('warn', 'testssl: not found on system. Install testssl.sh from https://testssl.sh or: apt install testssl')
+    return { skipped: true, reason: 'testssl-not-installed' }
+  }
+
+  let urlObj
+  try { urlObj = new URL(targetUrl) } catch {
+    return { skipped: true, reason: 'invalid-url' }
+  }
+
+  const host = urlObj.hostname
+  const port = urlObj.port || (urlObj.protocol === 'https:' ? '443' : '80')
+  const findings = []
+  const wrap = f => { findings.push(f); onFinding?.(f) }
+
+  await runTestssl(host, port, targetUrl, wrap, (l, m) => onLog?.(l, m))
+
+  onLog?.('info', `testssl standalone: completed with ${findings.length} findings`)
+  return findings
+}
+
