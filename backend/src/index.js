@@ -14,7 +14,7 @@ process.on('uncaughtException', (err) => {
 
 import http from 'node:http'
 import https from 'node:https'
-import { readFileSync } from 'node:fs'
+import { readFileSync, existsSync } from 'node:fs'
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -1403,10 +1403,15 @@ app.use((req, res, next) => {
 })
 
 const distPath = path.join(__dirname, '../../frontend/dist')
-app.use(express.static(distPath))
-app.get('*', (req, res) => {
-  res.sendFile(path.join(distPath, 'index.html'))
-})
+const distIndexPath = path.join(distPath, 'index.html')
+if (existsSync(distIndexPath)) {
+  app.use(express.static(distPath))
+  app.get('*', (req, res) => {
+    res.sendFile(distIndexPath)
+  })
+} else {
+  console.warn('[backend] Frontend build not found at frontend/dist. Static serving disabled (expected in dev).')
+}
 
 // ── Start ─────────────────────────────────────────────────────────────────────
 

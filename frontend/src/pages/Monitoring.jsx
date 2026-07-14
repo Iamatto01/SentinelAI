@@ -6,7 +6,7 @@ import { useToast } from '../components/Toast.jsx';
 import MonitorSetupModal from '../components/MonitorSetupModal.jsx';
 import { apiFetch } from '../lib/api.js';
 import { staggerContainer, fadeInUp } from '../lib/animations.js';
-import { Activity, Shield, AlertTriangle, Plus, Pause, Play, Trash2, Eye, Clock, CheckCircle, XCircle, RefreshCw } from 'lucide-react';
+import { Activity, Shield, AlertTriangle, Plus, Pause, Play, Trash2, Eye, Clock, CheckCircle, XCircle, RefreshCw, FileText } from 'lucide-react';
 
 const healthColors = {
   healthy: { bg: 'bg-emerald-500/15', text: 'text-emerald-400', dot: 'bg-emerald-400', label: 'Healthy' },
@@ -34,6 +34,17 @@ export default function Monitoring() {
   const navigate = useNavigate();
   const toast = useToast();
 
+  const [logs, setLogs] = useState([]);
+
+  const loadLogs = useCallback(async () => {
+    try {
+      const data = await apiFetch('/api/logs?limit=15');
+      setLogs(data?.logs || []);
+    } catch (e) {
+      // Ignore background log fetch errors
+    }
+  }, []);
+
   const loadFleet = useCallback(async () => {
     try {
       const data = await apiFetch('/api/fleet/overview');
@@ -43,13 +54,17 @@ export default function Monitoring() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [toast]);
 
   useEffect(() => {
     loadFleet();
-    const interval = setInterval(loadFleet, 15000);
+    loadLogs();
+    const interval = setInterval(() => {
+      loadFleet();
+      loadLogs();
+    }, 15000);
     return () => clearInterval(interval);
-  }, [loadFleet]);
+  }, [loadFleet, loadLogs]);
 
   async function toggleMonitor(id, currentStatus) {
     try {
@@ -238,6 +253,44 @@ export default function Monitoring() {
               })}
             </div>
           )}
+
+          {/* ── Live Log Feed ───────────────────────────────────────── */}
+          <motion.div variants={fadeInUp} className="glassmorphism rounded-2xl border border-white/10 p-5 mt-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold flex items-center gap-2">
+                <FileText className="w-5 h-5 text-gray-400" />
+                Live Log Feed
+              </h3>
+              <button onClick={() => navigate('/logs')} className="text-xs text-blue-400 hover:text-blue-300 transition-colors">
+                View All Logs
+              </button>
+            </div>
+            <div className="space-y-2 max-h-[300px] overflow-y-auto font-mono text-xs pr-2 scrollbar-hide">
+              {logs.length === 0 ? (
+                <div className="text-gray-500 text-center py-4">Waiting for logs...</div>
+              ) : (
+                logs.map((log) => (
+                  <div key={log.id} className="flex gap-3 p-2 rounded bg-black/20 hover:bg-black/40 border border-white/5 transition-colors">
+                    <span className="text-gray-500 min-w-[60px] md:min-w-[100px] shrink-0">
+                      {new Date(log.timestamp).toLocaleTimeString()}
+                    </span>
+                    <span className={`uppercase font-bold w-12 shrink-0 ${
+                      log.level === 'error' ? 'text-red-400' : 
+                      log.level === 'warning' ? 'text-amber-400' : 
+                      log.level === 'debug' ? 'text-blue-400' : 'text-gray-400'
+                    }`}>
+                      {log.level}
+                    </span>
+                    <span className="text-emerald-400 w-16 md:w-24 truncate shrink-0" title={log.source}>
+                      {log.source}
+                    </span>
+                    <span className="text-gray-300 break-all">{log.message}</span>
+                  </div>
+                ))
+              )}
+            </div>
+          </motion.div>
+
         </motion.div>
       )}
 

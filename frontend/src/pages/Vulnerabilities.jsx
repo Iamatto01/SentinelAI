@@ -8,7 +8,7 @@ import VulnDetailModal from '../components/VulnDetailModal.jsx';
 import StatusPickerModal from '../components/StatusPickerModal.jsx';
 import ReportConfigModal from '../components/ReportConfigModal.jsx';
 import { apiFetch, downloadPdfReport } from '../lib/api.js';
-import { SlidersHorizontal } from 'lucide-react';
+import { SlidersHorizontal, Trash2 } from 'lucide-react';
 
 function severityBadge(sev) {
   const s = (sev || '').toLowerCase();
@@ -89,6 +89,18 @@ export default function Vulnerabilities() {
 
   function clearUrlFilters() {
     setSearchParams({});
+  }
+
+  async function handleDeleteScan() {
+    if (!scanIdFilter) return;
+    if (!confirm('Are you sure you want to delete this scan and all its findings?')) return;
+    try {
+      await apiFetch(`/api/scans/${scanIdFilter}`, { method: 'DELETE' });
+      toast.success('Scan deleted');
+      clearUrlFilters();
+    } catch (e) {
+      toast.error(`Delete failed: ${e.message}`);
+    }
   }
 
   const filtered = useMemo(() => {
@@ -391,14 +403,26 @@ export default function Vulnerabilities() {
                 </p>
               </div>
             </div>
-            <motion.button
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              onClick={clearUrlFilters}
-              className="glass-button px-4 py-2 rounded-lg text-sm"
-            >
-              Show All Vulnerabilities
-            </motion.button>
+            <div className="flex items-center gap-2">
+              <motion.button
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                onClick={clearUrlFilters}
+                className="glass-button px-4 py-2 rounded-lg text-sm"
+              >
+                Show All Vulnerabilities
+              </motion.button>
+              {scanIdFilter && (
+                <motion.button
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                  onClick={handleDeleteScan}
+                  className="px-4 py-2 rounded-lg text-sm border border-red-500/30 bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-colors flex items-center gap-2"
+                >
+                  <Trash2 className="w-4 h-4" /> Delete Scan
+                </motion.button>
+              )}
+            </div>
           </motion.div>
         )}
       </AnimatePresence>

@@ -1046,9 +1046,12 @@ export async function scanSubfinder(targetUrl, onFinding, onLog) {
 // ---------------------------------------------------------------------------
 // Tool: whatweb (Technology Fingerprinting)
 // ---------------------------------------------------------------------------
-export async function scanWhatwebStandalone(targetUrl, onLog) {
+export async function scanWhatwebStandalone(targetUrl, onFinding, onLog) {
   const findings = []
-  const wrap = f => findings.push(f)
+  const wrap = f => {
+    findings.push(f)
+    if (onFinding) onFinding(f)
+  }
 
   try {
     const u = new URL(targetUrl)

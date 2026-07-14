@@ -4,6 +4,7 @@ import Shell from '../components/Shell.jsx';
 import { useToast } from '../components/Toast.jsx';
 import NewScanModal from '../components/NewScanModal.jsx';
 import VulnDetailModal from '../components/VulnDetailModal.jsx';
+import { X } from 'lucide-react';
 import { apiFetch } from '../lib/api.js';
 
 function fmt(dt) {
@@ -205,22 +206,25 @@ export default function Scan() {
     }
   }
 
-  async function deleteScan() {
-    if (!scan?.id) return;
+  async function deleteScan(id = null) {
+    const targetId = id && typeof id === 'string' ? id : scan?.id;
+    if (!targetId) return;
     if (!confirm('Are you sure you want to delete this scan and all its findings?')) return;
     try {
-      await apiFetch(`/api/scans/${scan.id}`, { method: 'DELETE' });
-      toast('Scan deleted');
-      const newScans = scans.filter(s => s.id !== scan.id);
+      await apiFetch(`/api/scans/${targetId}`, { method: 'DELETE' });
+      toast.success('Scan deleted');
+      const newScans = scans.filter(s => s.id !== targetId);
       setScans(newScans);
-      if (newScans.length > 0) {
-        selectScan(newScans[0]);
-      } else {
-        setScan(null);
-        setActiveScanId(null);
+      if (activeScanId === targetId) {
+        if (newScans.length > 0) {
+          selectScan(newScans[0]);
+        } else {
+          setScan(null);
+          setActiveScanId(null);
+        }
       }
     } catch (e) {
-      toast(`Delete failed: ${e.message}`);
+      toast.error(`Delete failed: ${e.message}`);
     }
   }
 
@@ -351,21 +355,32 @@ export default function Scan() {
       ) : null}
 
       <div className="space-y-6">
-        {scans.length > 1 && (
+        {scans.length > 0 && (
           <div className="glassmorphism p-4 rounded-lg">
             <div className="flex items-center space-x-2 overflow-x-auto scrollbar-hide">
-              {scans.slice(0, 10).map((s) => (
-                <button
+              {scans.map((s) => (
+                <div 
                   key={s.id}
-                  className={`flex-shrink-0 px-4 py-2 rounded text-sm transition-all ${
-                    activeScanId === s.id ? 'bg-white text-black font-medium' : 'border border-white/20 hover:bg-white/10'
+                  className={`flex items-center flex-shrink-0 rounded text-sm transition-all border ${
+                    activeScanId === s.id ? 'bg-white text-black font-medium border-white' : 'border-white/20 hover:bg-white/10'
                   }`}
-                  onClick={() => selectScan(s)}
                 >
-                  {(s.target || 'scan').replace(/^https?:\/\//, '').slice(0, 30)}
-                  {s.status === 'running' && ' (running)'}
-                  {s.status === 'paused' && ' (paused)'}
-                </button>
+                  <button
+                    className="px-4 py-2"
+                    onClick={() => selectScan(s)}
+                  >
+                    {(s.target || 'scan').replace(/^https?:\/\//, '').slice(0, 30)}
+                    {s.status === 'running' && ' (running)'}
+                    {s.status === 'paused' && ' (paused)'}
+                  </button>
+                  <button 
+                    onClick={(e) => { e.stopPropagation(); deleteScan(s.id); }} 
+                    className={`p-2 hover:bg-red-500/20 hover:text-red-500 rounded-r transition-colors ${activeScanId === s.id ? 'text-black' : 'text-gray-400'}`}
+                    title="Delete Scan"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
               ))}
             </div>
           </div>

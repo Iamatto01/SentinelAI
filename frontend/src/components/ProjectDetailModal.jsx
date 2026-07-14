@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { apiFetch, downloadPdfReport } from '../lib/api.js';
+import { Trash2 } from 'lucide-react';
+import { useToast } from './Toast.jsx';
 
 function statusBadge(status) {
   const s = (status || '').toLowerCase();
@@ -22,6 +24,7 @@ export default function ProjectDetailModal({ open, project, onClose }) {
   const [scans, setScans] = useState([]);
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
+  const toast = useToast();
 
   useEffect(() => {
     if (!open || !project?.id) return;
@@ -49,6 +52,18 @@ export default function ProjectDetailModal({ open, project, onClose }) {
     onClose();
     // Navigate to vulnerabilities filtered by project
     navigate(`/vulnerabilities?projectId=${project.id}`);
+  }
+
+  async function handleDeleteScan(scanId, e) {
+    e.stopPropagation();
+    if (!confirm('Are you sure you want to delete this scan and all its findings?')) return;
+    try {
+      await apiFetch(`/api/scans/${scanId}`, { method: 'DELETE' });
+      toast.success('Scan deleted');
+      setScans(prev => prev.filter(s => s.id !== scanId));
+    } catch (err) {
+      toast.error(`Delete failed: ${err.message}`);
+    }
   }
 
   return (
@@ -208,6 +223,15 @@ export default function ProjectDetailModal({ open, project, onClose }) {
                           <div className="text-xs text-gray-400">
                             {s.startTime ? new Date(s.startTime).toLocaleDateString() : '\u2014'}
                           </div>
+                          <motion.button 
+                            whileHover={{ scale: 1.1 }}
+                            whileTap={{ scale: 0.9 }}
+                            onClick={(e) => handleDeleteScan(s.id, e)}
+                            className="p-2 ml-2 hover:bg-red-500/20 text-gray-400 hover:text-red-500 rounded transition-colors"
+                            title="Delete Scan"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </motion.button>
                           <motion.span 
                             initial={{ x: 0 }}
                             whileHover={{ x: 4 }}

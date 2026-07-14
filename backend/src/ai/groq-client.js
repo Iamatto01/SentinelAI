@@ -5,7 +5,8 @@ import Groq from 'groq-sdk'
  */
 export class GroqAI {
   constructor() {
-    this.client = new Groq({ apiKey: process.env.GROQ_API_KEY })
+    const apiKey = (process.env.GROQ_API_KEY || '').trim()
+    this.client = apiKey ? new Groq({ apiKey }) : null
     this.defaultModel = 'llama-3.1-8b-instant'
     this.usageCallback = null
   }
@@ -21,6 +22,10 @@ export class GroqAI {
    * @returns {Promise<string>}
    */
   async analyze(prompt, options = {}) {
+    if (!this.client) {
+      throw new Error('GROQ_API_KEY is missing. AI features are disabled until it is configured.')
+    }
+
     const maxRetries = options.maxRetries ?? 2
     let lastError
 
