@@ -4,6 +4,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../lib/AuthContext.jsx';
 import { Menu, LayoutDashboard, FolderOpen, Radar, Activity, ShieldAlert, Settings, LogOut, TerminalSquare } from 'lucide-react';
 import { staggerContainer } from '../lib/animations.js';
+import useShortcut from '../lib/useShortcut.js';
+import Tooltip from './Tooltip.jsx';
 
 const navItems = [
   { to: '/service', icon: LayoutDashboard, label: 'Dashboard' },
@@ -27,6 +29,14 @@ export default function Shell({ title, subtitle, actions, children }) {
   function closeMobile() {
     setMobileOpen(false);
   }
+
+  // Keyboard shortcuts for navigation (Alt + 1-6)
+  useShortcut('1', () => navigate('/service'));
+  useShortcut('2', () => navigate('/projects'));
+  useShortcut('3', () => navigate('/scan'));
+  useShortcut('4', () => navigate('/monitoring'));
+  useShortcut('5', () => navigate('/vulnerabilities'));
+  useShortcut('6', () => navigate('/logs'));
 
   return (
     <div className="text-white">
@@ -112,55 +122,61 @@ export default function Shell({ title, subtitle, actions, children }) {
               animate={{ opacity: 1, x: 0 }}
               transition={{ delay: index * 0.1 + 0.2 }}
             >
-              <NavLink
-                to={item.to}
-                end={item.to === '/service'}
-                className={({ isActive }) => `
-                  glass-nav-item flex items-center px-[18px] py-3 mx-2 rounded-xl
-                  transition-all group/item
-                  ${isActive
-                    ? 'bg-white/[0.14] text-white shadow-[0_0_15px_rgba(255,255,255,0.08)]'
-                    : 'text-gray-400 hover:bg-white/[0.08] hover:text-white'
-                  }
-                `}
-              >
-                <item.icon className="w-5 h-5 flex-shrink-0 group-hover/item:scale-110 transition-transform duration-200" />
-                <span className="ml-3 font-medium whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-300 delay-75 text-sm">
-                  {item.label}
-                </span>
-              </NavLink>
+              <Tooltip content={item.label} shortcut={`Alt+${index + 1}`} position="right" className="w-full mx-2">
+                <NavLink
+                  to={item.to}
+                  end={item.to === '/service'}
+                  className={({ isActive }) => `
+                    glass-nav-item w-full flex items-center px-[18px] py-3 rounded-xl
+                    transition-all group/item
+                    ${isActive
+                      ? 'bg-white/[0.14] text-white shadow-[0_0_15px_rgba(255,255,255,0.08)]'
+                      : 'text-gray-400 hover:bg-white/[0.08] hover:text-white'
+                    }
+                  `}
+                >
+                  <item.icon className="w-5 h-5 flex-shrink-0 group-hover/item:scale-110 transition-transform duration-200" />
+                  <span className="ml-3 font-medium whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-300 delay-75 text-sm">
+                    {item.label}
+                  </span>
+                </NavLink>
+              </Tooltip>
             </motion.div>
           ))}
         </motion.div>
 
         {/* Bottom: Settings, Logout, User */}
         <div className="pb-4 pt-2 space-y-1">
-          <NavLink
-            to="/settings"
-            className={({ isActive }) => `
-              glass-nav-item flex items-center px-[18px] py-3 mx-2 rounded-xl
-              transition-all group/item
-              ${isActive
-                ? 'bg-white/[0.14] text-white shadow-[0_0_15px_rgba(255,255,255,0.08)]'
-                : 'text-gray-400 hover:bg-white/[0.08] hover:text-white'
-              }
-            `}
-          >
-            <Settings className="w-5 h-5 flex-shrink-0 group-hover/item:scale-110 transition-transform duration-200" />
-            <span className="ml-3 font-medium whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-300 delay-75 text-sm">
-              Settings
-            </span>
-          </NavLink>
+          <Tooltip content="Settings" position="right" className="w-full mx-2">
+            <NavLink
+              to="/settings"
+              className={({ isActive }) => `
+                glass-nav-item flex items-center px-[18px] py-3 w-full rounded-xl
+                transition-all group/item
+                ${isActive
+                  ? 'bg-white/[0.14] text-white shadow-[0_0_15px_rgba(255,255,255,0.08)]'
+                  : 'text-gray-400 hover:bg-white/[0.08] hover:text-white'
+                }
+              `}
+            >
+              <Settings className="w-5 h-5 flex-shrink-0 group-hover/item:scale-110 transition-transform duration-200" />
+              <span className="ml-3 font-medium whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-300 delay-75 text-sm">
+                Settings
+              </span>
+            </NavLink>
+          </Tooltip>
 
-          <button
-            onClick={handleLogout}
-            className="flex items-center px-[18px] py-3 mx-2 rounded-xl text-gray-400 hover:bg-red-500/15 hover:text-red-400 transition-all w-[calc(100%-16px)] group/item"
-          >
-            <LogOut className="w-5 h-5 flex-shrink-0 group-hover/item:scale-110 transition-transform duration-200" />
-            <span className="ml-3 font-medium whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-300 delay-75 text-sm">
-              Sign Out
-            </span>
-          </button>
+          <Tooltip content="Sign Out" position="right" className="w-full mx-2">
+            <button
+              onClick={handleLogout}
+              className="flex items-center px-[18px] py-3 rounded-xl text-gray-400 hover:bg-red-500/15 hover:text-red-400 transition-all w-[calc(100%-16px)] group/item"
+            >
+              <LogOut className="w-5 h-5 flex-shrink-0 group-hover/item:scale-110 transition-transform duration-200" />
+              <span className="ml-3 font-medium whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-300 delay-75 text-sm">
+                Sign Out
+              </span>
+            </button>
+          </Tooltip>
 
           {/* User avatar (visible on hover) */}
           <div className="mx-2 px-[18px] py-2 flex items-center overflow-hidden">

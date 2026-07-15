@@ -4,6 +4,8 @@ import Shell from '../components/Shell.jsx';
 import { useToast } from '../components/Toast.jsx';
 import NewScanModal from '../components/NewScanModal.jsx';
 import VulnDetailModal from '../components/VulnDetailModal.jsx';
+import Tooltip from '../components/Tooltip.jsx';
+import useShortcut from '../lib/useShortcut.js';
 import { X } from 'lucide-react';
 import { apiFetch } from '../lib/api.js';
 
@@ -212,7 +214,7 @@ export default function Scan() {
     if (!confirm('Are you sure you want to delete this scan and all its findings?')) return;
     try {
       await apiFetch(`/api/scans/${targetId}`, { method: 'DELETE' });
-      toast.success('Scan deleted');
+      toast('Scan deleted');
       const newScans = scans.filter(s => s.id !== targetId);
       setScans(newScans);
       if (activeScanId === targetId) {
@@ -224,7 +226,7 @@ export default function Scan() {
         }
       }
     } catch (e) {
-      toast.error(`Delete failed: ${e.message}`);
+      toast(`Delete failed: ${e.message}`);
     }
   }
 
@@ -264,18 +266,27 @@ export default function Scan() {
     toast('Logs exported');
   }
 
+  // Keyboard shortcuts
+  useShortcut('s', () => setShowScanModal(true));
+  useShortcut('e', exportLogs);
+  useShortcut('p', () => { if (scan?.status === 'running') pause(); });
+  useShortcut('r', () => { if (scan?.status === 'paused') resume(); });
+  useShortcut('x', () => { if (scan?.status === 'running' || scan?.status === 'paused') stop(); });
+
   if (!loading && scans.length === 0) {
     return (
       <Shell
         title="Live Scan Monitor"
         subtitle="Real-time penetration testing orchestration"
         actions={
-          <button
-            className="px-4 py-2 bg-white text-black rounded hover:bg-gray-200 transition-all font-medium"
-            onClick={() => setShowScanModal(true)}
-          >
-            + New Scan
-          </button>
+          <Tooltip content="Start a New Scan" shortcut="Alt+S" position="bottom">
+            <button
+              className="px-4 py-2 bg-white text-black rounded hover:bg-gray-200 transition-all font-medium"
+              onClick={() => setShowScanModal(true)}
+            >
+              + New Scan
+            </button>
+          </Tooltip>
         }
       >
         <div className="flex flex-col items-center justify-center py-20">
@@ -305,22 +316,30 @@ export default function Scan() {
         <>
           {scan?.status === 'running' && (
             <>
-              <button className="control-button px-4 py-2 rounded hover:bg-white/10 transition-all" onClick={pause}>
-                &#x23F8;&#xFE0F; Pause
-              </button>
-              <button className="control-button px-4 py-2 rounded hover:bg-white/10 transition-all" onClick={stop}>
-                &#x23F9;&#xFE0F; Stop
-              </button>
+              <Tooltip content="Pause Scan" shortcut="Alt+P" position="bottom">
+                <button className="control-button px-4 py-2 rounded hover:bg-white/10 transition-all" onClick={pause}>
+                  &#x23F8;&#xFE0F; Pause
+                </button>
+              </Tooltip>
+              <Tooltip content="Stop Scan" shortcut="Alt+X" position="bottom">
+                <button className="control-button px-4 py-2 rounded hover:bg-white/10 transition-all" onClick={stop}>
+                  &#x23F9;&#xFE0F; Stop
+                </button>
+              </Tooltip>
             </>
           )}
           {scan?.status === 'paused' && (
             <>
-              <button className="control-button px-4 py-2 rounded hover:bg-white/10 transition-all" onClick={resume}>
-                &#x25B6;&#xFE0F; Resume
-              </button>
-              <button className="control-button px-4 py-2 rounded hover:bg-white/10 transition-all" onClick={stop}>
-                &#x23F9;&#xFE0F; Stop
-              </button>
+              <Tooltip content="Resume Scan" shortcut="Alt+R" position="bottom">
+                <button className="control-button px-4 py-2 rounded hover:bg-white/10 transition-all" onClick={resume}>
+                  &#x25B6;&#xFE0F; Resume
+                </button>
+              </Tooltip>
+              <Tooltip content="Stop Scan" shortcut="Alt+X" position="bottom">
+                <button className="control-button px-4 py-2 rounded hover:bg-white/10 transition-all" onClick={stop}>
+                  &#x23F9;&#xFE0F; Stop
+                </button>
+              </Tooltip>
             </>
           )}
           {scan?.status === 'stopped' && (
@@ -339,12 +358,14 @@ export default function Scan() {
           >
             &#x1F5D1;&#xFE0F; Delete
           </button>
-          <button
-            className="px-4 py-2 bg-white text-black rounded hover:bg-gray-200 transition-all font-medium ml-2"
-            onClick={() => setShowScanModal(true)}
-          >
-            + New Scan
-          </button>
+          <Tooltip content="Start a New Scan" shortcut="Alt+S" position="bottom">
+            <button
+              className="px-4 py-2 bg-white text-black rounded hover:bg-gray-200 transition-all font-medium ml-2"
+              onClick={() => setShowScanModal(true)}
+            >
+              + New Scan
+            </button>
+          </Tooltip>
         </>
       }
     >
@@ -496,12 +517,14 @@ export default function Scan() {
                 >
                   Auto-scroll {autoScroll ? 'ON' : 'OFF'}
                 </button>
-                <button
-                  className="control-button px-3 py-1 rounded text-sm"
-                  onClick={exportLogs}
-                >
-                  Export
-                </button>
+                <Tooltip content="Export Logs" shortcut="Alt+E" position="top">
+                  <button
+                    className="control-button px-3 py-1 rounded text-sm"
+                    onClick={exportLogs}
+                  >
+                    Export
+                  </button>
+                </Tooltip>
               </div>
             </div>
 

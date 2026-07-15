@@ -860,6 +860,11 @@ export async function generateReport(type, id, db) {
   const totalPages = range.count
   for (let i = range.start; i < range.start + totalPages; i++) {
     doc.switchToPage(i)
+    
+    // Temporarily remove bottom margin to prevent auto page-break
+    const originalBottom = doc.page.margins.bottom
+    doc.page.margins.bottom = 0
+
     // Save state to avoid affecting other content
     doc.save()
     doc
@@ -879,6 +884,9 @@ export async function generateReport(type, id, db) {
         lineBreak: false,
       })
     doc.restore()
+    
+    // Restore margin
+    doc.page.margins.bottom = originalBottom
   }
 
   return doc

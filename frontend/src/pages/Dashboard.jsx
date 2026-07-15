@@ -6,6 +6,8 @@ import { useToast } from '../components/Toast.jsx';
 import NewScanModal from '../components/NewScanModal.jsx';
 import VulnDetailModal from '../components/VulnDetailModal.jsx';
 import ReportConfigModal from '../components/ReportConfigModal.jsx';
+import Tooltip from '../components/Tooltip.jsx';
+import useShortcut from '../lib/useShortcut.js';
 import { apiFetch } from '../lib/api.js';
 import { 
   staggerContainer, 
@@ -84,6 +86,10 @@ export default function Dashboard() {
     setSelectedVuln((prev) => (prev && prev.id === vulnId ? { ...prev, status } : prev));
     toast(`Status updated to ${status}`);
   }
+
+  // Keyboard shortcuts
+  useShortcut('q', () => setShowScanModal(true));
+  useShortcut('r', () => setShowReportModal(true));
 
   return (
     <Shell
@@ -412,6 +418,7 @@ export default function Dashboard() {
               icon: '🔍', 
               title: 'New Scan', 
               description: 'Start a new vulnerability scan by providing a target URL.',
+              shortcut: 'Alt+Q',
               onClick: () => setShowScanModal(true)
             },
             { 
@@ -424,26 +431,28 @@ export default function Dashboard() {
               icon: '📄', 
               title: 'Generate Report', 
               description: 'Generate a professional PDF security report with executive summary.',
+              shortcut: 'Alt+R',
               onClick: () => setShowReportModal(true)
             }
           ].map((action) => (
-            <motion.button
-              key={action.title}
-              variants={fadeInUp}
-              whileHover={{ scale: 1.03, y: -4 }}
-              whileTap={{ scale: 0.98 }}
-              className="card-hover p-6 glassmorphism rounded-2xl text-left"
-              onClick={action.onClick}
-            >
-              <motion.div 
-                whileHover={{ scale: 1.1, rotate: 5 }}
-                className="w-12 h-12 bg-white/10 rounded-xl flex items-center justify-center mb-4"
+            <Tooltip key={action.title} content={action.title} shortcut={action.shortcut} position="top" className="w-full">
+              <motion.button
+                variants={fadeInUp}
+                whileHover={{ scale: 1.03, y: -4 }}
+                whileTap={{ scale: 0.98 }}
+                className="card-hover p-6 glassmorphism rounded-2xl text-left w-full h-full"
+                onClick={action.onClick}
               >
-                <span className="text-2xl">{action.icon}</span>
-              </motion.div>
-              <h4 className="text-lg font-semibold mb-2">{action.title}</h4>
-              <p className="text-sm text-gray-400">{action.description}</p>
-            </motion.button>
+                <motion.div 
+                  whileHover={{ scale: 1.1, rotate: 5 }}
+                  className="w-12 h-12 bg-white/10 rounded-xl flex items-center justify-center mb-4"
+                >
+                  <span className="text-2xl">{action.icon}</span>
+                </motion.div>
+                <h4 className="text-lg font-semibold mb-2">{action.title}</h4>
+                <p className="text-sm text-gray-400">{action.description}</p>
+              </motion.button>
+            </Tooltip>
           ))}
         </motion.div>
       </div>

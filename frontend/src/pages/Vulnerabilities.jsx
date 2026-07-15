@@ -7,6 +7,8 @@ import ActionMenu from '../components/ActionMenu.jsx';
 import VulnDetailModal from '../components/VulnDetailModal.jsx';
 import StatusPickerModal from '../components/StatusPickerModal.jsx';
 import ReportConfigModal from '../components/ReportConfigModal.jsx';
+import Tooltip from '../components/Tooltip.jsx';
+import useShortcut from '../lib/useShortcut.js';
 import { apiFetch, downloadPdfReport } from '../lib/api.js';
 import { SlidersHorizontal, Trash2 } from 'lucide-react';
 
@@ -61,6 +63,15 @@ export default function Vulnerabilities() {
   });
 
   const toast = useToast();
+
+  // Keyboard shortcuts
+  useShortcut('c', clearFilters);
+  useShortcut('r', () => {
+    if (scanIdFilter) downloadPdfReport('scan', scanIdFilter).catch(err => toast.error(`Report failed: ${err.message}`));
+    else if (projectIdFilter) downloadPdfReport('project', projectIdFilter).catch(err => toast.error(`Report failed: ${err.message}`));
+    else setShowReportModal(true);
+  });
+  useShortcut('e', exportCSV);
 
   async function loadVulns() {
     setLoading(true);
@@ -357,26 +368,30 @@ export default function Vulnerabilities() {
               Cards
             </button>
           </div>
-          <button
-            className="action-button px-4 py-2 rounded hover:bg-white/10 transition-all"
-            onClick={exportCSV}
-          >
-            Export CSV
-          </button>
-          <button
-            className="action-button px-4 py-2 rounded hover:bg-white/10 transition-all font-medium"
-            onClick={() => {
-              if (scanIdFilter) {
-                downloadPdfReport('scan', scanIdFilter).catch(err => toast(`Report failed: ${err.message}`));
-              } else if (projectIdFilter) {
-                downloadPdfReport('project', projectIdFilter).catch(err => toast(`Report failed: ${err.message}`));
-              } else {
-                setShowReportModal(true);
-              }
-            }}
-          >
-            📄 Download Report
-          </button>
+          <Tooltip content="Export filtered list to CSV" shortcut="Alt+E" position="bottom">
+            <button
+              className="action-button px-4 py-2 rounded hover:bg-white/10 transition-all"
+              onClick={exportCSV}
+            >
+              Export CSV
+            </button>
+          </Tooltip>
+          <Tooltip content="Generate PDF Report" shortcut="Alt+R" position="bottom">
+            <button
+              className="action-button px-4 py-2 rounded hover:bg-white/10 transition-all font-medium"
+              onClick={() => {
+                if (scanIdFilter) {
+                  downloadPdfReport('scan', scanIdFilter).catch(err => toast.error(`Report failed: ${err.message}`));
+                } else if (projectIdFilter) {
+                  downloadPdfReport('project', projectIdFilter).catch(err => toast.error(`Report failed: ${err.message}`));
+                } else {
+                  setShowReportModal(true);
+                }
+              }}
+            >
+              📄 Download Report
+            </button>
+          </Tooltip>
         </>
       }
     >
@@ -552,12 +567,14 @@ export default function Vulnerabilities() {
                 </div>
               </div>
 
-              <button
-                className="w-full action-button px-4 py-2 rounded text-sm"
-                onClick={clearFilters}
-              >
-                Clear All Filters
-              </button>
+              <Tooltip content="Reset all filters" shortcut="Alt+C" position="bottom" className="w-full">
+                <button
+                  className="w-full action-button px-4 py-2 rounded text-sm"
+                  onClick={clearFilters}
+                >
+                  Clear All Filters
+                </button>
+              </Tooltip>
             </motion.div>
           </div>
         </motion.div>

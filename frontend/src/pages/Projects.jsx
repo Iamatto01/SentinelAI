@@ -3,6 +3,8 @@ import Shell from '../components/Shell.jsx';
 import { useToast } from '../components/Toast.jsx';
 import ActionMenu from '../components/ActionMenu.jsx';
 import ProjectDetailModal from '../components/ProjectDetailModal.jsx';
+import Tooltip from '../components/Tooltip.jsx';
+import useShortcut from '../lib/useShortcut.js';
 import { apiFetch, getStoredUser, updateProject, deleteProject, downloadPdfReport } from '../lib/api.js';
 
 function severityBadge(sev) {
@@ -139,17 +141,22 @@ export default function Projects() {
   const isEditing = !!editProject;
   const modalOpen = showModal || isEditing;
 
+  // Keyboard shortcut
+  useShortcut('n', () => setShowModal(true));
+
   return (
     <Shell
       title="Projects"
       subtitle="Manage penetration testing engagements"
       actions={
-        <button
-          className="px-6 py-3 bg-white text-black rounded hover:bg-gray-200 transition-all font-medium"
-          onClick={() => setShowModal(true)}
-        >
-          + New Project
-        </button>
+        <Tooltip content="Create a New Project" shortcut="Alt+N" position="bottom">
+          <button
+            className="px-6 py-3 bg-white text-black rounded hover:bg-gray-200 transition-all font-medium"
+            onClick={() => setShowModal(true)}
+          >
+            + New Project
+          </button>
+        </Tooltip>
       }
     >
       {error ? (
