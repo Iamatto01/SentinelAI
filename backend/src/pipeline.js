@@ -2,7 +2,6 @@ import { randomUUID } from 'node:crypto'
 import { hexstrike, payloadsRag } from './integrations/index.js'
 import { runNativeTool } from './integrations/native-tools.js'
 import { aiEngine } from './ai/ai-engine.js'
-import { aiFeedbackLoop } from './ai/feedback-loop.js'
 import { enrichWithOwasp } from './owasp.js'
 import * as db from './db.js'
 
