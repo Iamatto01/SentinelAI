@@ -176,11 +176,34 @@ app.post('/api/auth/login', loginLimiter, (req, res) => {
   // 2. Check client portal credentials (added under projects)
   const clientCred = db.get(`SELECT * FROM client_credentials WHERE email = ?`, identifier)
   if (clientCred && (password === clientCred.password || bcrypt.compareSync(password || '', clientCred.password))) {
+    // Ensure corresponding record in users table exists so foreign keys always resolve
+    let u = db.get(`SELECT * FROM users WHERE email = ? OR id = ?`, clientCred.email, clientCred.id)
+    if (!u) {
+      const uId = clientCred.id.startsWith('usr_') ? clientCred.id : `usr_${clientCred.id.replace(/[^a-zA-Z0-9]/g, '_')}`
+      const passHash = clientCred.password.startsWith('$2') ? clientCred.password : bcrypt.hashSync(clientCred.password, 10)
+      const uName = clientCred.email.split('@')[0] || 'client'
+      try {
+        db.run(
+          `INSERT INTO users (id, username, email, password_hash, role, created_at, last_login) VALUES (?,?,?,?,?,?,?)`,
+          uId, uName, clientCred.email, passHash, 'client', new Date().toISOString(), new Date().toISOString()
+        )
+      } catch {
+        // If username conflict, append random suffix
+        db.run(
+          `INSERT INTO users (id, username, email, password_hash, role, created_at, last_login) VALUES (?,?,?,?,?,?,?)`,
+          uId, `${uName}_${randomUUID().slice(0, 4)}`, clientCred.email, passHash, 'client', new Date().toISOString(), new Date().toISOString()
+        )
+      }
+      u = db.get(`SELECT * FROM users WHERE id = ?`, uId)
+    } else {
+      db.run(`UPDATE users SET last_login = ? WHERE id = ?`, new Date().toISOString(), u.id)
+    }
+
     const clientUser = {
-      id: clientCred.id,
-      username: clientCred.email.split('@')[0] || 'client',
+      id: u.id,
+      username: u.username,
       role: 'client',
-      email: clientCred.email,
+      email: u.email,
       projectId: clientCred.project_id
     }
     audit(clientCred.email, 'login', `client portal login for project ${clientCred.project_id}`)
@@ -493,12 +516,38 @@ app.post('/api/scans', requireAuth, async (req, res) => {
   if (mode === 'blackbox' && !target) return res.status(400).json({ error: 'Target URL or hostname is required' })
   if (mode === 'whitebox' && (!files || !files.length)) return res.status(400).json({ error: 'Source files are required for whitebox scan' })
 
+  // Validate projectId exists in DB to prevent foreign key constraint violations
+  let validProjectId = null
+  if (projectId) {
+    const p = db.get(`SELECT id FROM projects WHERE id = ?`, projectId)
+    if (p) validProjectId = p.id
+  }
+
+  // Validate userId exists in DB to prevent foreign key constraint violations
+  let validUserId = null
+  if (userId) {
+    const u = db.get(`SELECT id FROM users WHERE id = ?`, userId)
+    if (u) {
+      validUserId = u.id
+    } else {
+      try {
+        db.run(
+          `INSERT INTO users (id, username, email, role, password_hash, created_at) VALUES (?, ?, ?, 'client', 'managed', ?)`,
+          userId, req.user.username || 'client', req.user.email || null, new Date().toISOString()
+        )
+        validUserId = userId
+      } catch {
+        validUserId = null
+      }
+    }
+  }
+
   const id = `scan_${randomUUID()}`
   const now = new Date().toISOString()
   db.run(`INSERT INTO scans (id, project_id, target, target_type, mode, status, template, modules, progress, created_at, started_at, user_id)
           VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
-    id, projectId, target || '(whitebox)', targetType, mode, 'running', template,
-    JSON.stringify(modules), 0, now, now, userId)
+    id, validProjectId, target || '(whitebox)', targetType, mode, 'running', template,
+    JSON.stringify(modules), 0, now, now, validUserId)
   const scan = db.get(`SELECT * FROM scans WHERE id = ?`, id)
   audit(req.user.username, 'scan:start', `${mode} → ${target || 'codebase'} (by ${req.user.role})`)
   saveScanConfig(id, { target, targetType, mode, template, modules, objective, maxTools, files, language, focus, verify, depth, dynamicTarget, dynamicModules })

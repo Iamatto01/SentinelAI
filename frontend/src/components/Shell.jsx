@@ -4,7 +4,7 @@ import {
   LayoutDashboard, Radar, Bug, FolderKanban, Plug, LogOut, Shield, Plus,
   Hexagon, Activity, Settings as SettingsIcon, Crosshair, Menu, X,
   ChevronLeft, ChevronRight, Search, Bell, Sparkles, GitBranch, CreditCard,
-  Users, AlertTriangle, ArrowRight
+  Users, AlertTriangle, ArrowRight, Lock, CheckCircle2, Zap
 } from 'lucide-react'
 import { useAuth } from '../lib/AuthContext.jsx'
 import { api } from '../lib/api.js'
@@ -21,17 +21,20 @@ export default function Shell() {
   const [pinned, setPinned] = useState(false)
   const [isHovered, setIsHovered] = useState(false)
   const [subscription, setSubscription] = useState(null)
+  const [loadingSub, setLoadingSub] = useState(true)
 
   const isAdmin = user?.role === 'admin'
   const isClient = user?.role === 'client'
   const isExpanded = pinned || isHovered
 
-  // Load subscription status to show renewal notification if expired
+  // Load subscription status to enforce strict paywall
   useEffect(() => {
     if (user) {
+      setLoadingSub(true)
       api.billingSubscription()
         .then(sub => setSubscription(sub))
         .catch(() => {})
+        .finally(() => setLoadingSub(false))
     }
   }, [user, location.pathname])
 
@@ -59,7 +62,26 @@ export default function Shell() {
 
   const navItems = isAdmin ? adminNav : clientNav
   const currentNav = navItems.find(n => location.pathname.startsWith(n.to)) || { label: 'Platform' }
-  const isSubscriptionExpired = isClient && (subscription?.isExpired || subscription?.status === 'expired' || subscription?.status === 'inactive')
+
+  // Strict Paywall Condition: Client has no active paid subscription or is expired
+  const isSubscriptionExpired = isClient && (
+    subscription?.isSubscribed === false ||
+    subscription?.isExpired ||
+    subscription?.status === 'expired' ||
+    subscription?.status === 'inactive' ||
+    subscription?.plan_id === 'none'
+  )
+
+  const isAllowedPathWhenExpired = location.pathname.startsWith('/app/billing') || location.pathname.startsWith('/app/settings')
+
+  const handleScanButtonClick = () => {
+    if (isSubscriptionExpired) {
+      nav('/app/billing')
+    } else {
+      setShowNew(true)
+    }
+    setMobileOpen(false)
+  }
 
   return (
     <div className="min-h-screen grid-bg relative selection:bg-cyan-500 selection:text-slate-950">
@@ -69,14 +91,14 @@ export default function Shell() {
           <div className="flex items-center gap-2 max-w-4xl">
             <AlertTriangle size={16} className="shrink-0 animate-bounce text-amber-200" />
             <span>
-              <strong>Subscription Inactive or Expired:</strong> Your scan quota is paused. Please renew your SentinelAI subscription to run new blackbox & whitebox audits.
+              <strong>Subscription Inactive or Expired:</strong> Your account is locked until a subscription is activated. Subscribe to access assessments and GitHub CI/CD automation.
             </span>
           </div>
           <Link
             to="/app/billing"
             className="px-3 py-1 rounded-full bg-slate-950/80 hover:bg-slate-950 text-cyan-300 font-extrabold text-[11px] border border-white/20 transition-all flex items-center gap-1 shrink-0 ml-3"
           >
-            <span>Renew Plan</span> <ArrowRight size={12} />
+            <span>Unlock Now</span> <ArrowRight size={12} />
           </Link>
         </div>
       )}
@@ -98,10 +120,11 @@ export default function Shell() {
         </div>
 
         <button
-          onClick={() => setShowNew(true)}
+          onClick={handleScanButtonClick}
           className="btn-primary text-xs py-1.5 px-3.5 shadow-glow flex items-center gap-1.5"
         >
-          <Plus size={14} /> <span>New Scan</span>
+          {isSubscriptionExpired ? <Lock size={14} /> : <Plus size={14} />}
+          <span>{isSubscriptionExpired ? 'Subscribe' : 'New Scan'}</span>
         </button>
       </header>
 
@@ -154,42 +177,52 @@ export default function Shell() {
           </div>
         </div>
 
-        {/* Universal Scan Action Button (No Permission Wall) */}
+        {/* Scan Action Button */}
         <div className="p-3">
           <button
-            onClick={() => { setShowNew(true); setMobileOpen(false) }}
-            title="Launch New Security Audit"
+            onClick={handleScanButtonClick}
+            title={isSubscriptionExpired ? "Subscribe to Launch Scans" : "Launch New Security Audit"}
             className={`btn-primary w-full justify-center ${!isExpanded ? 'lg:!px-0' : ''}`}
           >
-            <Plus size={16} />
-            {isExpanded && <span>Launch Scan</span>}
+            {isSubscriptionExpired ? <Lock size={16} /> : <Plus size={16} />}
+            {isExpanded && <span>{isSubscriptionExpired ? 'Subscribe to Scan' : 'Launch Scan'}</span>}
           </button>
         </div>
 
         {/* Vision Navigation Links */}
         <nav className="flex-1 px-3 space-y-1.5 overflow-y-auto">
-          {navItems.map(({ to, label, icon: Icon }) => (
-            <NavLink
-              key={to}
-              to={to}
-              title={!isExpanded ? label : undefined}
-              onClick={() => setMobileOpen(false)}
-              className={({ isActive }) =>
-                `flex items-center gap-3.5 rounded-2xl py-2.5 text-sm font-semibold transition-all duration-200 ${
-                  !isExpanded ? 'lg:justify-center lg:px-0 px-3' : 'px-3.5'
-                } ${
-                  isActive
-                    ? 'bg-gradient-to-r from-cyan-500/25 to-blue-600/25 text-cyan-300 border border-cyan-400/40 glass-glow'
-                    : 'text-slate-400 border border-transparent hover:bg-white/[0.06] hover:text-slate-100'
-                }`
-              }
-            >
-              <div className={`p-1.5 rounded-xl transition-colors ${location.pathname.startsWith(to) ? 'bg-cyan-500 text-slate-950' : 'bg-white/5 text-slate-300'}`}>
-                <Icon size={16} />
-              </div>
-              {isExpanded && <span className="truncate">{label}</span>}
-            </NavLink>
-          ))}
+          {navItems.map(({ to, label, icon: Icon }) => {
+            const isLocked = isSubscriptionExpired && !to.startsWith('/app/billing') && !to.startsWith('/app/settings')
+            return (
+              <NavLink
+                key={to}
+                to={to}
+                title={!isExpanded ? label : undefined}
+                onClick={() => setMobileOpen(false)}
+                className={({ isActive }) =>
+                  `flex items-center gap-3.5 rounded-2xl py-2.5 text-sm font-semibold transition-all duration-200 ${
+                    !isExpanded ? 'lg:justify-center lg:px-0 px-3' : 'px-3.5'
+                  } ${
+                    isActive
+                      ? 'bg-gradient-to-r from-cyan-500/25 to-blue-600/25 text-cyan-300 border border-cyan-400/40 glass-glow'
+                      : isLocked
+                      ? 'text-slate-500 hover:text-slate-400 opacity-60'
+                      : 'text-slate-400 border border-transparent hover:bg-white/[0.06] hover:text-slate-100'
+                  }`
+                }
+              >
+                <div className={`p-1.5 rounded-xl transition-colors ${location.pathname.startsWith(to) ? 'bg-cyan-500 text-slate-950' : 'bg-white/5 text-slate-300'}`}>
+                  {isLocked ? <Lock size={16} className="text-amber-400" /> : <Icon size={16} />}
+                </div>
+                {isExpanded && (
+                  <span className="truncate flex items-center justify-between flex-1">
+                    <span>{label}</span>
+                    {isLocked && <Lock size={12} className="text-amber-400" />}
+                  </span>
+                )}
+              </NavLink>
+            )
+          })}
         </nav>
 
         {/* User Info Footer */}
@@ -226,11 +259,19 @@ export default function Shell() {
             {isClient && subscription && (
               <Link
                 to="/app/billing"
-                className="chip bg-slate-900/80 border-white/10 hover:border-cyan-400/50 text-xs px-3 py-1 font-bold flex items-center gap-2 text-slate-300 transition-colors"
+                className={`chip text-xs px-3 py-1 font-bold flex items-center gap-2 transition-colors ${
+                  isSubscriptionExpired
+                    ? 'bg-rose-500/20 text-rose-300 border-rose-500/40'
+                    : 'bg-slate-900/80 border-white/10 hover:border-cyan-400/50 text-slate-300'
+                }`}
               >
-                <CreditCard size={13} className="text-cyan-400" />
+                <CreditCard size={13} className={isSubscriptionExpired ? 'text-rose-400' : 'text-cyan-400'} />
                 <span>
-                  Quota: <strong className="text-cyan-300">{subscription.isUnlimited ? 'Unlimited' : `${subscription.scan_quota_used}/${subscription.scan_quota_total}`}</strong>
+                  {isSubscriptionExpired ? (
+                    <strong className="text-rose-300">Subscription Inactive</strong>
+                  ) : (
+                    <>Quota: <strong className="text-cyan-300">{subscription.isUnlimited ? 'Unlimited' : `${subscription.scan_quota_used}/${subscription.scan_quota_total}`}</strong></>
+                  )}
                 </span>
               </Link>
             )}
@@ -242,7 +283,82 @@ export default function Shell() {
         </header>
 
         <div className="mx-auto max-w-7xl px-3 sm:px-6 py-4 sm:py-6">
-          <Outlet />
+          {/* Paywall Gate: If client has no subscription and tries to view dashboard/scans, show Paywall Card */}
+          {isSubscriptionExpired && !isAllowedPathWhenExpired ? (
+            <div className="space-y-6 animate-in fade-in duration-300 py-6">
+              <div className="glass rounded-3xl border border-rose-500/30 p-8 sm:p-12 text-center max-w-3xl mx-auto shadow-2xl relative overflow-hidden bg-slate-950/80">
+                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-rose-500/10 rounded-full blur-[100px] pointer-events-none" />
+
+                <div className="relative z-10 space-y-4">
+                  <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-rose-500/20 to-amber-500/20 border border-rose-500/40 flex items-center justify-center mx-auto shadow-lg shadow-rose-500/20">
+                    <Lock size={32} className="text-rose-400" />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-rose-500/10 text-rose-300 text-xs font-extrabold border border-rose-500/30 uppercase tracking-wide">
+                      Access Locked
+                    </span>
+                    <h2 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
+                      Active Subscription Required
+                    </h2>
+                    <p className="text-sm text-slate-300 max-w-lg mx-auto">
+                      Your SentinelAI account currently does not have an active subscription. Choose a plan to unlock autonomous AI audits, Kali vulnerability scans, and GitHub automation.
+                    </p>
+                  </div>
+
+                  {/* Plan Selection Cards Preview */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-left pt-6 max-w-xl mx-auto">
+                    <div className="p-5 rounded-2xl border border-cyan-500/40 bg-cyan-950/20 flex flex-col justify-between space-y-4">
+                      <div>
+                        <div className="flex items-center justify-between">
+                          <span className="font-extrabold text-white text-base">SentinelAI Pro</span>
+                          <span className="text-[10px] px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-300 font-bold">Popular</span>
+                        </div>
+                        <div className="text-2xl font-black text-cyan-300 mt-1">$19<span className="text-xs text-slate-400 font-normal">/mo</span></div>
+                        <ul className="text-xs text-slate-300 space-y-1.5 mt-3">
+                          <li className="flex items-center gap-2"><CheckCircle2 size={14} className="text-cyan-400 shrink-0" /> 50 AI Code Audits / mo</li>
+                          <li className="flex items-center gap-2"><CheckCircle2 size={14} className="text-cyan-400 shrink-0" /> 5 Linked Repositories</li>
+                          <li className="flex items-center gap-2"><CheckCircle2 size={14} className="text-cyan-400 shrink-0" /> Automated Email PDF</li>
+                        </ul>
+                      </div>
+                      <Link to="/app/billing" className="btn-primary text-xs py-2 w-full justify-center shadow-glow">
+                        Subscribe to Pro ($19)
+                      </Link>
+                    </div>
+
+                    <div className="p-5 rounded-2xl border border-emerald-500/40 bg-emerald-950/20 flex flex-col justify-between space-y-4">
+                      <div>
+                        <div className="flex items-center justify-between">
+                          <span className="font-extrabold text-white text-base">Enterprise</span>
+                          <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-bold">Unlimited</span>
+                        </div>
+                        <div className="text-2xl font-black text-emerald-300 mt-1">$79<span className="text-xs text-slate-400 font-normal">/mo</span></div>
+                        <ul className="text-xs text-slate-300 space-y-1.5 mt-3">
+                          <li className="flex items-center gap-2"><CheckCircle2 size={14} className="text-emerald-400 shrink-0" /> Unlimited AI Code Audits</li>
+                          <li className="flex items-center gap-2"><CheckCircle2 size={14} className="text-emerald-400 shrink-0" /> Unlimited GitHub Repos</li>
+                          <li className="flex items-center gap-2"><CheckCircle2 size={14} className="text-emerald-400 shrink-0" /> Dedicated SLA & PR Bot</li>
+                        </ul>
+                      </div>
+                      <Link to="/app/billing" className="btn-secondary text-xs py-2 w-full justify-center border-emerald-500/40 text-emerald-300 hover:text-white">
+                        Subscribe to Enterprise ($79)
+                      </Link>
+                    </div>
+                  </div>
+
+                  <div className="pt-4">
+                    <Link
+                      to="/app/billing"
+                      className="text-xs font-bold text-slate-400 hover:text-cyan-300 transition-colors inline-flex items-center gap-1.5"
+                    >
+                      <CreditCard size={14} /> Go to Billing & Payment Management Center →
+                    </Link>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <Outlet />
+          )}
         </div>
       </main>
 
