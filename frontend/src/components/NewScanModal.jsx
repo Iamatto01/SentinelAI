@@ -426,7 +426,21 @@ export default function NewScanModal({ onClose, onStarted, initialProjectId = ''
             AI agent verification (reduce false positives)
           </label>
 
-          {err && <div className="rounded-lg bg-sev-critical/10 border border-sev-critical/40 px-4 py-2.5 text-sm text-sev-critical">{err}</div>}
+          {err && (
+            <div className="rounded-xl bg-rose-500/10 border border-rose-500/40 p-4 text-xs text-rose-300 space-y-2">
+              <p className="font-semibold">{err}</p>
+              {(err.includes('quota') || err.includes('subscription') || err.includes('expired') || err.includes('paid')) && (
+                <div className="pt-2">
+                  <a
+                    href="/app/billing"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-cyan-500 text-slate-950 font-bold hover:bg-cyan-400 transition-colors"
+                  >
+                    <span>Upgrade / Renew Plan in Billing</span> →
+                  </a>
+                </div>
+              )}
+            </div>
+          )}
 
           <div className="flex justify-end gap-3 pt-1">
             <button type="button" onClick={onClose} className="btn-ghost">Cancel</button>

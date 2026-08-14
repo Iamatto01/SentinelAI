@@ -1,8 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { useNavigate, useLocation, Link } from 'react-router-dom'
-import { ArrowLeft, Loader2, ShieldCheck, KeyRound, User, EyeOff, Sparkles } from 'lucide-react'
+import {
+  ArrowLeft, Loader2, ShieldCheck, KeyRound, User, EyeOff, Sparkles,
+  Mail, Check, AlertCircle, Zap, Star
+} from 'lucide-react'
 import InspectorLogo from '../components/InspectorLogo.jsx'
 import { useAuth } from '../lib/AuthContext.jsx'
+import { api, setToken } from '../lib/api.js'
 
 function EyeCursorTracker() {
   const [pupilOffset, setPupilOffset] = useState({ x: 0, y: 0 })
@@ -49,23 +53,50 @@ function EyeCursorTracker() {
 }
 
 export default function Login() {
-  const { login } = useAuth()
+  const { login, setUser } = useAuth()
   const nav = useNavigate()
   const loc = useLocation()
+
+  // Parse URL query params
+  const searchParams = new URLSearchParams(loc.search)
+  const initialMode = searchParams.get('mode') === 'register' ? 'register' : 'login'
+  const initialPlan = searchParams.get('plan') === 'enterprise' ? 'enterprise' : 'pro'
+  const initialInterval = searchParams.get('interval') === 'yearly' ? 'yearly' : 'monthly'
+
+  const [mode, setMode] = useState(initialMode) // 'login' | 'register'
   const [username, setUsername] = useState('')
+  const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [planId, setPlanId] = useState(initialPlan)
+  const [interval, setInterval] = useState(initialInterval)
   const [showPassword, setShowPassword] = useState(false)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
 
   async function submit(e) {
     e.preventDefault()
-    setErr(''); setBusy(true)
+    setErr('')
+    setBusy(true)
     try {
-      await login(username.trim(), password)
-      nav(loc.state?.from?.pathname || '/app/dashboard', { replace: true })
+      if (mode === 'login') {
+        await login(username.trim(), password)
+        nav(loc.state?.from?.pathname || '/app/dashboard', { replace: true })
+      } else {
+        // Register with Plan
+        const res = await api.register({
+          username: username.trim(),
+          email: email.trim(),
+          password,
+          planId,
+          billingInterval: interval,
+          paymentProvider: 'stripe',
+        })
+        setToken(res.token)
+        setUser(res.user)
+        nav('/app/dashboard', { replace: true })
+      }
     } catch (e2) {
-      setErr(e2.message || 'Login failed')
+      setErr(e2.message || (mode === 'login' ? 'Login failed' : 'Registration failed'))
       setBusy(false)
     }
   }
@@ -85,82 +116,181 @@ export default function Login() {
       <div className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-cyan-500/15 rounded-full blur-[120px] pointer-events-none" />
       <div className="absolute bottom-1/3 left-1/2 -translate-x-1/2 translate-y-1/2 w-[500px] h-[500px] bg-purple-600/15 rounded-full blur-[120px] pointer-events-none" />
 
-      {/* Main Centered Login Container */}
-      <div className="w-full max-w-md relative z-10 my-auto motion-fade-up">
+      {/* Main Centered Login / Register Container */}
+      <div className="w-full max-w-lg relative z-10 my-auto motion-fade-up">
         {/* Header Logo & Title */}
-        <div className="flex flex-col items-center mb-8 text-center">
-          <div className="relative mb-4 group">
+        <div className="flex flex-col items-center mb-6 text-center">
+          <div className="relative mb-3 group">
             <div className="absolute -inset-3 rounded-full bg-gradient-to-r from-cyan-400 via-blue-600 to-purple-600 opacity-60 blur-xl group-hover:opacity-90 transition duration-500" />
             <div className="relative">
-              <InspectorLogo size={68} />
+              <InspectorLogo size={58} />
             </div>
           </div>
-          <h1 className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight">SentinelAI</h1>
-          <p className="text-[10px] uppercase tracking-[0.25em] text-cyan-400 font-extrabold mt-1.5 flex items-center gap-1.5 justify-center">
-            <Sparkles size={12} className="text-cyan-300 animate-pulse" /> Vision Security Suite
+          <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">SentinelAI</h1>
+          <p className="text-[10px] uppercase tracking-[0.25em] text-cyan-400 font-extrabold mt-1 flex items-center gap-1.5 justify-center">
+            <Sparkles size={12} className="text-cyan-300 animate-pulse" /> Autonomous Security Suite
           </p>
         </div>
 
+        {/* Tab Switcher */}
+        <div className="flex rounded-2xl bg-slate-900/80 p-1 border border-white/10 mb-4">
+          <button
+            type="button"
+            onClick={() => { setMode('login'); setErr('') }}
+            className={`flex-1 py-2 text-xs font-bold rounded-xl transition-all cursor-pointer ${
+              mode === 'login'
+                ? 'bg-cyan-500 text-slate-950 shadow-lg shadow-cyan-500/20'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            Sign In
+          </button>
+          <button
+            type="button"
+            onClick={() => { setMode('register'); setErr('') }}
+            className={`flex-1 py-2 text-xs font-bold rounded-xl transition-all cursor-pointer ${
+              mode === 'register'
+                ? 'bg-cyan-500 text-slate-950 shadow-lg shadow-cyan-500/20'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            Create Account & Subscribe
+          </button>
+        </div>
+
         {/* Vision UI Form Card */}
-        <form onSubmit={submit} className="glass rounded-3xl border border-white/20 p-7 sm:p-8 shadow-2xl space-y-5 relative">
-          <div className="space-y-1.5">
+        <form onSubmit={submit} className="glass rounded-3xl border border-white/20 p-6 sm:p-7 shadow-2xl space-y-4 relative">
+          <div className="space-y-1">
             <label className="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
-              <User size={14} className="text-cyan-400" /> Username
+              <User size={13} className="text-cyan-400" /> Username
             </label>
-            <div className="relative">
-              <input
-                className="input py-3 text-sm text-slate-100 placeholder-slate-500 focus:border-cyan-400 transition-all"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                autoComplete="username"
-                placeholder="Enter username"
-              />
-            </div>
+            <input
+              className="input py-2.5 text-sm text-slate-100 placeholder-slate-500 focus:border-cyan-400 transition-all"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              autoComplete="username"
+              placeholder="Enter username"
+              required
+            />
           </div>
 
-          <div className="space-y-1.5">
+          {mode === 'register' && (
+            <div className="space-y-1">
+              <label className="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
+                <Mail size={13} className="text-cyan-400" /> Email Address
+              </label>
+              <input
+                type="email"
+                className="input py-2.5 text-sm text-slate-100 placeholder-slate-500 focus:border-cyan-400 transition-all"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                autoComplete="email"
+                placeholder="you@company.com"
+                required
+              />
+            </div>
+          )}
+
+          <div className="space-y-1">
             <label className="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
-              <KeyRound size={14} className="text-cyan-400" /> Password
+              <KeyRound size={13} className="text-cyan-400" /> Password
             </label>
             <div className="relative flex items-center">
               <input
                 type={showPassword ? 'text' : 'password'}
-                className="input py-3 pr-11 text-sm text-slate-100 placeholder-slate-500 focus:border-cyan-400 transition-all"
+                className="input py-2.5 pr-11 text-sm text-slate-100 placeholder-slate-500 focus:border-cyan-400 transition-all"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                autoComplete="current-password"
+                autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
                 placeholder="••••••••"
+                required
               />
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3.5 p-1 rounded-lg hover:bg-white/10 text-slate-400 hover:text-cyan-300 transition-colors focus:outline-none"
+                className="absolute right-3 p-1 rounded-lg hover:bg-white/10 text-slate-400 hover:text-cyan-300 transition-colors focus:outline-none"
                 title={showPassword ? 'Hide password' : 'Reveal password'}
               >
-                {showPassword ? <EyeCursorTracker /> : <EyeOff size={18} className="text-slate-400" />}
+                {showPassword ? <EyeCursorTracker /> : <EyeOff size={16} className="text-slate-400" />}
               </button>
             </div>
           </div>
 
+          {/* Registration Plan Selection */}
+          {mode === 'register' && (
+            <div className="space-y-2 pt-2 border-t border-white/10">
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-bold text-slate-200">Select Subscription Plan:</span>
+                <button
+                  type="button"
+                  onClick={() => setInterval(interval === 'monthly' ? 'yearly' : 'monthly')}
+                  className="text-[11px] text-cyan-300 font-semibold hover:underline"
+                >
+                  {interval === 'yearly' ? 'Yearly (17% OFF)' : 'Monthly'}
+                </button>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => setPlanId('pro')}
+                  className={`p-3 rounded-2xl border text-left transition-all cursor-pointer ${
+                    planId === 'pro'
+                      ? 'border-cyan-400 bg-cyan-500/15 ring-1 ring-cyan-400'
+                      : 'border-white/10 bg-slate-950/60 hover:border-white/20'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-extrabold text-white">SentinelAI Pro</span>
+                    {planId === 'pro' && <Check size={14} className="text-cyan-400" />}
+                  </div>
+                  <div className="text-lg font-black text-cyan-300 mt-1">
+                    ${interval === 'yearly' ? '190' : '19'}<span className="text-[10px] text-slate-400 font-normal">/{interval === 'yearly' ? 'yr' : 'mo'}</span>
+                  </div>
+                  <div className="text-[10px] text-slate-400 mt-0.5">50 Scans &bull; 5 Repos</div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setPlanId('enterprise')}
+                  className={`p-3 rounded-2xl border text-left transition-all cursor-pointer ${
+                    planId === 'enterprise'
+                      ? 'border-emerald-400 bg-emerald-500/15 ring-1 ring-emerald-400'
+                      : 'border-white/10 bg-slate-950/60 hover:border-white/20'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-extrabold text-white">Enterprise</span>
+                    {planId === 'enterprise' && <Check size={14} className="text-emerald-400" />}
+                  </div>
+                  <div className="text-lg font-black text-emerald-300 mt-1">
+                    ${interval === 'yearly' ? '790' : '79'}<span className="text-[10px] text-slate-400 font-normal">/{interval === 'yearly' ? 'yr' : 'mo'}</span>
+                  </div>
+                  <div className="text-[10px] text-slate-400 mt-0.5">Unlimited Scans & Repos</div>
+                </button>
+              </div>
+            </div>
+          )}
+
           {err && (
-            <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-xs text-rose-300 font-semibold">
-              {err}
+            <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-2.5 text-xs text-rose-300 font-semibold flex items-center gap-2">
+              <AlertCircle size={14} className="shrink-0 text-rose-400" />
+              <span>{err}</span>
             </div>
           )}
 
           <button
             type="submit"
             disabled={busy}
-            className="btn-primary w-full justify-center py-3.5 text-sm font-extrabold shadow-glow hover:scale-[1.01] active:scale-[0.99] transition-all cursor-pointer"
+            className="btn-primary w-full justify-center py-3 text-xs font-extrabold shadow-glow hover:scale-[1.01] active:scale-[0.99] transition-all cursor-pointer"
           >
-            {busy && <Loader2 size={16} className="animate-spin" />}
-            {busy ? 'Authenticating...' : 'Sign In to Operations Center'}
+            {busy && <Loader2 size={15} className="animate-spin" />}
+            {busy
+              ? (mode === 'login' ? 'Authenticating...' : 'Activating Subscription...')
+              : (mode === 'login' ? 'Sign In to Operations Center' : `Subscribe & Activate ${planId === 'enterprise' ? 'Enterprise' : 'Pro'}`)}
           </button>
         </form>
       </div>
     </div>
   )
 }
-
-
-

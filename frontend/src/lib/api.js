@@ -99,6 +99,9 @@ export const api = {
   exportBackupUrl: '/api/backup/export',
   auditLogs: (limit = 50) => apiFetch(`/api/audit?limit=${limit}`),
 
+  // ── Auth & Registration ──
+  register: (body) => apiFetch('/api/auth/register', { method: 'POST', body }),
+
   // ── GitHub Automation ──
   githubStatus: () => apiFetch('/api/github/status'),
   githubConnect: (token) => apiFetch('/api/github/connect', { method: 'POST', body: { token } }),
@@ -112,6 +115,11 @@ export const api = {
   billingSubscription: () => apiFetch('/api/billing/subscription'),
   billingCheckout: (planId, billingInterval = 'monthly') => apiFetch('/api/billing/checkout', { method: 'POST', body: { planId, billingInterval } }),
   billingHistory: () => apiFetch('/api/billing/history'),
+
+  // ── Admin Panel ──
+  adminClients: () => apiFetch('/api/admin/clients'),
+  adminUpdateClientSubscription: (id, body) => apiFetch(`/api/admin/clients/${id}/subscription`, { method: 'POST', body }),
+  adminOverview: () => apiFetch('/api/admin/overview'),
 }
 
 export default api

@@ -1,12 +1,13 @@
-import React from 'react'
+import React, { useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
-  ShieldAlert, Bot, Radar, FileText, ArrowRight, ShieldCheck, Cpu, DatabaseZap, Sparkles, Globe2, Binary
+  ShieldAlert, Bot, Radar, FileText, ArrowRight, ShieldCheck, Cpu, DatabaseZap, Sparkles, Globe2, Binary, CheckCircle2
 } from 'lucide-react'
 import InspectorLogo from '../components/InspectorLogo.jsx'
 import './Home.css'
 
 export default function Landing() {
+  const [interval, setInterval] = useState('monthly')
   return (
     <div className="at-home min-h-screen relative overflow-x-hidden">
       {/* Scroll indicator bar */}
@@ -28,9 +29,18 @@ export default function Landing() {
           <span className="font-bold text-lg text-white tracking-tight">SentinelAI</span>
         </Link>
 
-        <div className="flex items-center gap-4">
-          <Link to="/login" className="at-home__btn at-home__btn--solid text-xs py-2.5 px-5 font-semibold shadow-glow flex items-center gap-2">
-            <span>Sign In</span> <ArrowRight size={14} />
+        <nav className="hidden md:flex items-center gap-8 text-xs font-semibold text-slate-300">
+          <a href="#features" className="hover:text-cyan-400 transition-colors">Features</a>
+          <a href="#pricing" className="hover:text-cyan-400 transition-colors">Pricing & Plans</a>
+          <a href="#architecture" className="hover:text-cyan-400 transition-colors">Architecture</a>
+        </nav>
+
+        <div className="flex items-center gap-3">
+          <Link to="/login" className="text-xs font-semibold text-slate-300 hover:text-white px-3 py-2">
+            Sign In
+          </Link>
+          <Link to="/login?mode=register&plan=pro" className="at-home__btn at-home__btn--solid text-xs py-2.5 px-5 font-semibold shadow-glow flex items-center gap-2">
+            <span>Get Started</span> <ArrowRight size={14} />
           </Link>
         </div>
       </header>
@@ -208,14 +218,156 @@ export default function Landing() {
           </div>
         </div>
 
+        {/* Pricing Section */}
+        <div id="pricing" className="my-16 max-w-5xl mx-auto px-4 space-y-8">
+          <div className="text-center space-y-3">
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-cyan-500/10 border border-cyan-400/30 text-cyan-300 text-xs font-bold uppercase tracking-wider">
+              <Sparkles size={12} className="text-cyan-400" /> Transparent SaaS Pricing
+            </div>
+            <h2 className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight">
+              Choose Your SentinelAI Plan
+            </h2>
+            <p className="text-sm text-slate-400 max-w-xl mx-auto">
+              Subscribe to unlock autonomous AI code audits, Kali Linux vulnerability scans, continuous GitHub webhooks, and executive PDF reports.
+            </p>
+
+            {/* Monthly / Yearly Switch */}
+            <div className="flex items-center justify-center gap-3 pt-4">
+              <span className={`text-xs font-semibold ${interval === 'monthly' ? 'text-white' : 'text-slate-500'}`}>Monthly Billing</span>
+              <button
+                onClick={() => setInterval(interval === 'monthly' ? 'yearly' : 'monthly')}
+                className="w-12 h-6 rounded-full bg-slate-900 border border-white/20 p-0.5 relative transition-colors cursor-pointer"
+              >
+                <div
+                  className={`w-5 h-5 rounded-full bg-cyan-400 transition-transform duration-200 ${
+                    interval === 'yearly' ? 'translate-x-6' : 'translate-x-0'
+                  }`}
+                />
+              </button>
+              <span className={`text-xs font-semibold flex items-center gap-1.5 ${interval === 'yearly' ? 'text-white' : 'text-slate-500'}`}>
+                Yearly Billing
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-bold border border-emerald-500/30">
+                  Save 17%
+                </span>
+              </span>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+            {/* Pro Card */}
+            <div className="card p-8 border-cyan-500/50 bg-gradient-to-b from-slate-900/90 via-slate-900/80 to-cyan-950/30 shadow-2xl shadow-cyan-950/40 ring-1 ring-cyan-400/40 relative flex flex-col justify-between hover:scale-[1.02] transition-transform duration-300">
+              <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-0.5 rounded-full bg-gradient-to-r from-cyan-500 to-blue-500 text-slate-950 font-extrabold text-[10px] tracking-wider uppercase shadow-lg shadow-cyan-500/30 flex items-center gap-1">
+                <Sparkles size={10} className="fill-slate-950" /> Most Popular
+              </div>
+
+              <div className="space-y-6">
+                <div>
+                  <h3 className="text-xl font-extrabold text-white">SentinelAI Pro</h3>
+                  <div className="mt-3 flex items-baseline gap-1">
+                    <span className="text-4xl font-black text-white">${interval === 'yearly' ? '190' : '19'}</span>
+                    <span className="text-xs text-slate-400 font-medium">{interval === 'yearly' ? '/year' : '/month'}</span>
+                  </div>
+                  <p className="text-xs text-slate-400 mt-2">
+                    Ideal for active developers and software teams needing continuous audit automation.
+                  </p>
+                </div>
+
+                <div className="h-px bg-white/10" />
+
+                <ul className="space-y-3 text-xs text-slate-300">
+                  <li className="flex items-center gap-2.5">
+                    <CheckCircle2 size={16} className="text-cyan-400 shrink-0" />
+                    <span><strong>50 AI Code Audits</strong> / month</span>
+                  </li>
+                  <li className="flex items-center gap-2.5">
+                    <CheckCircle2 size={16} className="text-cyan-400 shrink-0" />
+                    <span><strong>5 Linked Repositories</strong> (Public & Private)</span>
+                  </li>
+                  <li className="flex items-center gap-2.5">
+                    <CheckCircle2 size={16} className="text-cyan-400 shrink-0" />
+                    <span>Continuous Webhooks (Push & PR triggers)</span>
+                  </li>
+                  <li className="flex items-center gap-2.5">
+                    <CheckCircle2 size={16} className="text-cyan-400 shrink-0" />
+                    <span>Automated Email PDF Delivery on every commit</span>
+                  </li>
+                  <li className="flex items-center gap-2.5">
+                    <CheckCircle2 size={16} className="text-cyan-400 shrink-0" />
+                    <span>AI Auto-Fix & Remediation Diffs</span>
+                  </li>
+                </ul>
+              </div>
+
+              <div className="pt-8">
+                <Link
+                  to={`/login?mode=register&plan=pro&interval=${interval}`}
+                  className="btn-primary w-full justify-center py-3.5 text-xs font-extrabold shadow-glow hover:scale-[1.01] transition-transform flex items-center gap-2"
+                >
+                  <span>Subscribe to SentinelAI Pro</span> <ArrowRight size={14} />
+                </Link>
+              </div>
+            </div>
+
+            {/* Enterprise Card */}
+            <div className="card p-8 border-white/10 bg-slate-950/70 hover:border-white/20 flex flex-col justify-between hover:scale-[1.02] transition-transform duration-300">
+              <div className="space-y-6">
+                <div>
+                  <h3 className="text-xl font-extrabold text-white">SentinelAI Enterprise</h3>
+                  <div className="mt-3 flex items-baseline gap-1">
+                    <span className="text-4xl font-black text-white">${interval === 'yearly' ? '790' : '79'}</span>
+                    <span className="text-xs text-slate-400 font-medium">{interval === 'yearly' ? '/year' : '/month'}</span>
+                  </div>
+                  <p className="text-xs text-slate-400 mt-2">
+                    Full continuous DevSecOps pipeline for organizations requiring unlimited audits & compliance.
+                  </p>
+                </div>
+
+                <div className="h-px bg-white/10" />
+
+                <ul className="space-y-3 text-xs text-slate-300">
+                  <li className="flex items-center gap-2.5">
+                    <CheckCircle2 size={16} className="text-emerald-400 shrink-0" />
+                    <span><strong>Unlimited AI Code Audits</strong></span>
+                  </li>
+                  <li className="flex items-center gap-2.5">
+                    <CheckCircle2 size={16} className="text-emerald-400 shrink-0" />
+                    <span><strong>Unlimited GitHub Repositories</strong></span>
+                  </li>
+                  <li className="flex items-center gap-2.5">
+                    <CheckCircle2 size={16} className="text-emerald-400 shrink-0" />
+                    <span>GitHub PR Bot Inline Code Review</span>
+                  </li>
+                  <li className="flex items-center gap-2.5">
+                    <CheckCircle2 size={16} className="text-emerald-400 shrink-0" />
+                    <span>Real-time Slack / Discord Webhook Alerts</span>
+                  </li>
+                  <li className="flex items-center gap-2.5">
+                    <CheckCircle2 size={16} className="text-emerald-400 shrink-0" />
+                    <span>Executive White-label PDF Reports & SLA</span>
+                  </li>
+                </ul>
+              </div>
+
+              <div className="pt-8">
+                <Link
+                  to={`/login?mode=register&plan=enterprise&interval=${interval}`}
+                  className="btn-secondary w-full justify-center py-3.5 text-xs font-extrabold border-white/20 hover:border-cyan-400/50 hover:text-cyan-300 transition-colors flex items-center gap-2"
+                >
+                  <span>Subscribe to Enterprise</span> <ArrowRight size={14} />
+                </Link>
+              </div>
+            </div>
+          </div>
+        </div>
+
         {/* CTA Section */}
         <div className="at-home__cta">
-          <h2 className="text-3xl font-bold text-white mb-3">Ready to Assessment Your Targets?</h2>
+          <h2 className="text-3xl font-bold text-white mb-3">Ready to Audit Your Targets?</h2>
           <p className="text-slate-400 max-w-xl mx-auto mb-6">
-            Log in to access your SentinelAI Pentest Suite dashboard, launch blackbox scans, or run whitebox code audits.
+            Log in to access your SentinelAI Pentest Suite dashboard, launch URL scans, or run GitHub continuous code audits.
           </p>
           <div className="flex justify-center gap-4">
-            <Link to="/login" className="at-home__btn at-home__btn--solid at-home__btn--hero">
+            <Link to="/login?mode=register&plan=pro" className="at-home__btn at-home__btn--solid at-home__btn--hero">
               Get Started Now <ArrowRight size={16} />
             </Link>
           </div>

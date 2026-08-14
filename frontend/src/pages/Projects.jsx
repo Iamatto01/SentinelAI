@@ -4,7 +4,6 @@ import { Loader2, Plus, Trash2, FolderKanban, X, Radar, Edit, Sparkles, External
 import { api } from '../lib/api.js'
 import { useAuth } from '../lib/AuthContext.jsx'
 import NewScanModal from '../components/NewScanModal.jsx'
-import RequestScanModal from '../components/RequestScanModal.jsx'
 
 const COVER_OPTIONS = [
   { id: '/project-covers/cyber_shield.png', label: 'Cyber Shield', desc: 'Futuristic dark neon digital shield' },
@@ -334,10 +333,10 @@ export default function Projects() {
       )}
 
       {reqScanModal && (
-        <RequestScanModal
+        <NewScanModal
           onClose={() => setReqScanModal(false)}
-          defaultProjectId={projects && projects.length > 0 ? projects[0].id : ''}
-          projects={projects || []}
+          initialProjectId={projects && projects.length > 0 ? projects[0].id : ''}
+          onStarted={(id) => { setReqScanModal(false); nav(`/app/scans/${id}`) }}
         />
       )}
     </div>

@@ -26,7 +26,8 @@ import * as msf from './exploits/msf-client.js'
 import { matchExploits, classifyRisk } from './exploits/registry.js'
 import { sendScanRequestNotification } from './email.js'
 import { GitHubClient, parseGitHubWebhook } from './integrations/github.js'
-import { PLANS, getUserSubscription, consumeScanQuota, activateSubscription, getPaymentHistory } from './billing.js'
+import { PLANS, getUserSubscription, consumeScanQuota, activateSubscription, adminUpdateClientSubscription, getAllClientsAdmin, getPaymentHistory } from './billing.js'
+import { requireRole } from './auth.js'
 
 // CORS: only whitelisted origins (config.corsOrigins from CLIENT_ORIGIN).
 // Non-browser clients (curl, server-to-server) carry no Origin header → allowed.
@@ -187,6 +188,61 @@ app.post('/api/auth/login', loginLimiter, (req, res) => {
   }
 
   return res.status(401).json({ error: 'invalid credentials' })
+})
+
+// Registration with plan selection & instant subscription
+app.post('/api/auth/register', loginLimiter, (req, res) => {
+  try {
+    const { username, email, password, planId = 'pro', billingInterval = 'monthly', paymentProvider = 'stripe' } = req.body || {}
+    const uName = (username || '').trim()
+    const uEmail = (email || '').trim()
+
+    if (!uName || !uEmail || !password) {
+      return res.status(400).json({ error: 'Username, email and password are required' })
+    }
+    if (password.length < 6) {
+      return res.status(400).json({ error: 'Password must be at least 6 characters' })
+    }
+
+    const existing = db.get(`SELECT id FROM users WHERE username = ? OR email = ?`, uName, uEmail)
+    if (existing) {
+      return res.status(400).json({ error: 'Username or email is already registered. Please sign in.' })
+    }
+
+    const userId = `usr_${randomUUID()}`
+    const now = new Date().toISOString()
+    const passwordHash = bcrypt.hashSync(password, 10)
+
+    db.run(
+      `INSERT INTO users (id, username, email, password_hash, role, created_at, last_login)
+       VALUES (?, ?, ?, ?, 'client', ?, ?)`,
+      userId, uName, uEmail, passwordHash, now, now
+    )
+
+    // Activate selected plan subscription
+    const targetPlanId = PLANS[planId] ? planId : 'pro'
+    const sub = activateSubscription({
+      userId,
+      planId: targetPlanId,
+      provider: paymentProvider,
+      interval: billingInterval,
+      referenceId: `reg_${randomUUID().slice(0, 10)}`
+    })
+
+    const user = { id: userId, username: uName, email: uEmail, role: 'client' }
+    const token = signToken(user)
+    audit(user.username, 'auth:register', `New client registered with ${sub.plan_name} (${billingInterval})`)
+
+    return res.status(201).json({
+      token,
+      user,
+      subscription: sub,
+      message: `Account created successfully with ${sub.plan_name}!`,
+    })
+  } catch (err) {
+    console.error('[auth:register error]:', err)
+    return res.status(500).json({ error: 'Registration failed: ' + err.message })
+  }
 })
 
 app.get('/api/users/me', requireAuth, (req, res) => {
@@ -412,9 +468,21 @@ app.post('/api/scan-requests', requireAuth, async (req, res) => {
 })
 
 app.post('/api/scans', requireAuth, async (req, res) => {
-  if (req.user?.role === 'client') {
-    return res.status(403).json({ error: 'Client users cannot launch scans directly. Please use Ask for New Scan.' })
+  const userId = req.user.sub || req.user.id
+
+  // Quota enforcement for non-admin users
+  if (req.user?.role !== 'admin') {
+    try {
+      consumeScanQuota(userId)
+    } catch (quotaErr) {
+      return res.status(402).json({
+        error: quotaErr.message,
+        upgradeRequired: true,
+        help: 'Please subscribe or upgrade your plan in Billing & Plans to continue scanning.'
+      })
+    }
   }
+
   const {
     target, projectId = null, mode = 'blackbox', targetType = 'url',
     template = 'standard', modules = [], objective = 'comprehensive', maxTools = 6,
@@ -422,17 +490,17 @@ app.post('/api/scans', requireAuth, async (req, res) => {
     dynamicTarget = '', dynamicModules = [],
   } = req.body || {}
 
-  if (mode === 'blackbox' && !target) return res.status(400).json({ error: 'target required for blackbox' })
-  if (mode === 'whitebox' && (!files || !files.length)) return res.status(400).json({ error: 'files required for whitebox' })
+  if (mode === 'blackbox' && !target) return res.status(400).json({ error: 'Target URL or hostname is required' })
+  if (mode === 'whitebox' && (!files || !files.length)) return res.status(400).json({ error: 'Source files are required for whitebox scan' })
 
   const id = `scan_${randomUUID()}`
   const now = new Date().toISOString()
-  db.run(`INSERT INTO scans (id, project_id, target, target_type, mode, status, template, modules, progress, created_at, started_at)
-          VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+  db.run(`INSERT INTO scans (id, project_id, target, target_type, mode, status, template, modules, progress, created_at, started_at, user_id)
+          VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
     id, projectId, target || '(whitebox)', targetType, mode, 'running', template,
-    JSON.stringify(modules), 0, now, now)
+    JSON.stringify(modules), 0, now, now, userId)
   const scan = db.get(`SELECT * FROM scans WHERE id = ?`, id)
-  audit(req.user.username, 'scan:start', `${mode} → ${target || 'codebase'}`)
+  audit(req.user.username, 'scan:start', `${mode} → ${target || 'codebase'} (by ${req.user.role})`)
   saveScanConfig(id, { target, targetType, mode, template, modules, objective, maxTools, files, language, focus, verify, depth, dynamicTarget, dynamicModules })
 
   // Run async (non-blocking)
@@ -1602,12 +1670,14 @@ app.get('/api/billing/plans', (req, res) => {
 
 // Get current user subscription & quota status
 app.get('/api/billing/subscription', requireAuth, (req, res) => {
-  const sub = getUserSubscription(req.user.id)
+  const userId = req.user.sub || req.user.id
+  const sub = getUserSubscription(userId)
   res.json(sub)
 })
 
 // Create checkout / Upgrade subscription plan
 app.post('/api/billing/checkout', requireAuth, (req, res) => {
+  const userId = req.user.sub || req.user.id
   const { planId, billingInterval = 'monthly', provider = 'stripe' } = req.body || {}
   if (!planId || !PLANS[planId]) return res.status(400).json({ error: 'Valid planId is required' })
 
@@ -1616,10 +1686,11 @@ app.post('/api/billing/checkout', requireAuth, (req, res) => {
 
   // For testing / simulation or instant activation:
   const updatedSub = activateSubscription({
-    userId: req.user.id,
+    userId,
     planId,
     amount,
     provider,
+    interval: billingInterval,
     referenceId: `ch_${randomUUID().slice(0, 16)}`,
   })
 
@@ -1633,8 +1704,50 @@ app.post('/api/billing/checkout', requireAuth, (req, res) => {
 
 // Payment transaction history
 app.get('/api/billing/history', requireAuth, (req, res) => {
-  const history = getPaymentHistory(req.user.id)
+  const userId = req.user.role === 'admin' ? null : (req.user.sub || req.user.id)
+  const history = getPaymentHistory(userId)
   res.json({ transactions: history })
+})
+
+// ── Admin Client Management API ──────────────────────────────────────────────
+app.get('/api/admin/clients', requireAuth, requireRole('admin'), (req, res) => {
+  try {
+    const clients = getAllClientsAdmin()
+    res.json({ clients })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+app.post('/api/admin/clients/:id/subscription', requireAuth, requireRole('admin'), (req, res) => {
+  try {
+    const { planId, quotaTotal, quotaUsed, status, extendDays } = req.body || {}
+    const updated = adminUpdateClientSubscription(req.params.id, { planId, quotaTotal, quotaUsed, status, extendDays })
+    audit(req.user.username, 'admin:client_update', `Updated client ${req.params.id} to ${updated.plan_name} (${updated.status})`)
+    res.json({ success: true, client: updated })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+app.get('/api/admin/overview', requireAuth, requireRole('admin'), (req, res) => {
+  try {
+    const totalUsers = db.get(`SELECT COUNT(*) as c FROM users WHERE role = 'client'`)?.c || 0
+    const activeSubs = db.get(`SELECT COUNT(*) as c FROM subscriptions WHERE status = 'active'`)?.c || 0
+    const totalScans = db.get(`SELECT COUNT(*) as c FROM scans`)?.c || 0
+    const totalFindings = db.get(`SELECT COUNT(*) as c FROM findings`)?.c || 0
+    const revenueSum = db.get(`SELECT SUM(amount) as s FROM payment_transactions WHERE status = 'succeeded'`)?.s || 0
+
+    res.json({
+      totalUsers,
+      activeSubs,
+      totalScans,
+      totalFindings,
+      revenueSum,
+    })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
 })
 
 // ── Dashboard ────────────────────────────────────────────────────────────────

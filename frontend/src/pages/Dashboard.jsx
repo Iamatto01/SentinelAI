@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Radar, Bug, FolderKanban, Activity, Loader2, ShieldAlert, Cpu, Sparkles, ArrowUpRight, Zap, CheckCircle2 } from 'lucide-react'
+import { Radar, Bug, FolderKanban, Activity, Loader2, ShieldAlert, Cpu, Sparkles, ArrowUpRight, Zap, CheckCircle2, GitBranch, CreditCard } from 'lucide-react'
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts'
 import { api } from '../lib/api.js'
 import StatCard from '../components/StatCard.jsx'
@@ -56,12 +56,81 @@ export default function Dashboard() {
         </div>
       </div>
 
+      {/* Quick Launch Action Cards (Direct URLs & GitHub) */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="card p-5 border-cyan-500/30 bg-gradient-to-b from-cyan-950/20 to-slate-950/60 hover:border-cyan-400/60 transition-all flex flex-col justify-between">
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="p-2 rounded-xl bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
+                <Radar size={18} />
+              </span>
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 font-bold border border-cyan-500/30 uppercase">
+                Blackbox
+              </span>
+            </div>
+            <h3 className="font-bold text-white text-sm">Scan Website URL</h3>
+            <p className="text-xs text-slate-400">
+              Run automated Kali toolchains (Nmap, Nuclei, Nikto, SQLmap, FFUF) against any live URL or IP.
+            </p>
+          </div>
+          <div className="pt-4 mt-2 border-t border-white/5">
+            <Link to="/app/scans" className="btn-primary text-xs py-2 w-full justify-center shadow-glow">
+              Launch URL Scan →
+            </Link>
+          </div>
+        </div>
+
+        <div className="card p-5 border-purple-500/30 bg-gradient-to-b from-purple-950/20 to-slate-950/60 hover:border-purple-400/60 transition-all flex flex-col justify-between">
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="p-2 rounded-xl bg-purple-500/10 text-purple-400 border border-purple-500/20">
+                <GitBranch size={18} />
+              </span>
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 font-bold border border-purple-500/30 uppercase">
+                Continuous CI/CD
+              </span>
+            </div>
+            <h3 className="font-bold text-white text-sm">GitHub Automation</h3>
+            <p className="text-xs text-slate-400">
+              Link private/public GitHub repositories for automatic audit on every Push & Pull Request.
+            </p>
+          </div>
+          <div className="pt-4 mt-2 border-t border-white/5">
+            <Link to="/app/github" className="btn-secondary text-xs py-2 w-full justify-center border-purple-500/30 text-purple-300 hover:text-white">
+              Connect Repository →
+            </Link>
+          </div>
+        </div>
+
+        <div className="card p-5 border-emerald-500/30 bg-gradient-to-b from-emerald-950/20 to-slate-950/60 hover:border-emerald-400/60 transition-all flex flex-col justify-between">
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="p-2 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                <CreditCard size={18} />
+              </span>
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-bold border border-emerald-500/30 uppercase">
+                Subscription
+              </span>
+            </div>
+            <h3 className="font-bold text-white text-sm">Billing & Quota Management</h3>
+            <p className="text-xs text-slate-400">
+              Check your remaining monthly audit quota, download invoices, or upgrade your plan.
+            </p>
+          </div>
+          <div className="pt-4 mt-2 border-t border-white/5">
+            <Link to="/app/billing" className="btn-secondary text-xs py-2 w-full justify-center border-emerald-500/30 text-emerald-300 hover:text-white">
+              View Billing & Quota →
+            </Link>
+          </div>
+        </div>
+      </div>
+
       {/* Vision UI Stat Cards Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="motion-fade-up motion-delay-1"><StatCard icon={FolderKanban} label="Active Projects" value={data.totals?.projects || 0} tone="purple" trend="+100%" /></div>
-        <div className="motion-fade-up motion-delay-2"><StatCard icon={Radar} label="Total Scans" value={data.totals?.scans || 0} tone="cyan" trend="+12%" /></div>
-        <div className="motion-fade-up motion-delay-3"><StatCard icon={Bug} label="Discovered Findings" value={data.totals?.findings || 0} tone="critical" sub={`${criticalCount} Critical Vulnerabilities`} /></div>
-        <div className="motion-fade-up motion-delay-4"><StatCard icon={Activity} label="Active Engine Scans" value={data.runningScans || 0} tone="emerald" trend="Live" /></div>
+        <div className="motion-fade-up motion-delay-1"><StatCard icon={FolderKanban} label="Total Scans Executed" value={data.totals?.scans || 0} tone="cyan" trend="+12%" /></div>
+        <div className="motion-fade-up motion-delay-2"><StatCard icon={Bug} label="Discovered Findings" value={data.totals?.findings || 0} tone="critical" sub={`${criticalCount} Critical Vulnerabilities`} /></div>
+        <div className="motion-fade-up motion-delay-3"><StatCard icon={Activity} label="Active Engine Scans" value={data.runningScans || 0} tone="emerald" trend="Live" /></div>
+        <div className="motion-fade-up motion-delay-4"><StatCard icon={Cpu} label="AI Agents Online" value="51" tone="purple" sub="Active Personas" /></div>
       </div>
 
       {/* Main Charts & Security Health Section */}

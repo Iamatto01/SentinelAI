@@ -18,6 +18,7 @@ import Exploits from './pages/Exploits.jsx'
 import ExploitCampaign from './pages/ExploitCampaign.jsx'
 import GitHubAutomation from './pages/GitHubAutomation.jsx'
 import Billing from './pages/Billing.jsx'
+import ClientsManagement from './pages/ClientsManagement.jsx'
 
 class ErrorBoundary extends React.Component {
   constructor(props) {
@@ -91,6 +92,7 @@ export default function App() {
         <Route path="/scans/:id" element={<RedirectScanDetail />} />
         <Route path="/findings" element={<Navigate to="/app/findings" replace />} />
         <Route path="/projects" element={<Navigate to="/app/projects" replace />} />
+        <Route path="/clients" element={<Navigate to="/app/clients" replace />} />
         <Route path="/monitoring" element={<Navigate to="/app/monitoring" replace />} />
         <Route path="/exploits" element={<Navigate to="/app/exploits" replace />} />
         <Route path="/integrations" element={<Navigate to="/app/integrations" replace />} />
@@ -102,6 +104,7 @@ export default function App() {
         <Route path="/app" element={<Protected><ScanProvider><AiProvider><Shell /></AiProvider></ScanProvider></Protected>}>
           <Route index element={<Navigate to="/app/dashboard" replace />} />
           <Route path="dashboard" element={<Dashboard />} />
+          <Route path="clients" element={<ClientsManagement />} />
           <Route path="scans" element={<Scans />} />
           <Route path="scans/:id" element={<ScanDetail />} />
           <Route path="findings" element={<Findings />} />
