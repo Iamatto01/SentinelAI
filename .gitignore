@@ -1,0 +1,33 @@
+# Environment and credentials
+.env
+.env.local
+.env.*.local
+
+# Node modules and build artifacts
+node_modules/
+dist/
+build/
+.next/
+.nuxt/
+
+# SQLite Databases & runtime output
+output/*.db
+output/*.db-wal
+output/*.db-shm
+output/*.pdf
+output/backups/
+*.db
+*.log
+hexstrike.log
+
+# Large tar archive backups
+*.tar.gz
+*.zip
+*.tar
+
+# OS & Editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp

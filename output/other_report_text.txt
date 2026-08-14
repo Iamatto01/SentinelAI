@@ -1,0 +1,1066 @@
+[PARA]
+[PARA]
+[PARA]
+[PARA]
+[PARA]MyCES-FMS
+[PARA]
+[PARA]Swagger API Exposure
+Security Findings Report
+[PARA]
+[PARA]
+[PARA]Date: 14 August 2026
+Classification: CONFIDENTIAL
+Severity: CRITICAL
+[PARA]
+[PARA]
+[PARA]
+[PARA]Security Assessment — Swagger & API Exposure
+[PARA]
+
+[PARA]
+[PARA]
+[PARA]Table of Contents
+[PARA]
+[PARA]
+[PARA]1. Executive Summary
+[PARA]
+[PARA]
+[PARA]2. Technical Details
+[PARA]
+[PARA]
+[PARA]3. Vulnerability: Swagger UI Publicly Accessible
+[PARA]
+[PARA]
+[PARA]4. Vulnerability: Mass User Data Leak
+[PARA]
+[PARA]
+[PARA]5. Vulnerability: Unauthenticated API Endpoints
+[PARA]
+[PARA]
+[PARA]6. Vulnerability: File Upload Endpoints
+[PARA]
+[PARA]
+[PARA]7. Vulnerability: Delete Operations
+[PARA]
+[PARA]
+[PARA]8. Proof of Concept (PoC)
+[PARA]
+[PARA]
+[PARA]9. Impact Assessment
+[PARA]
+[PARA]
+[PARA]10. CVSS Score
+[PARA]
+[PARA]
+[PARA]11. Remediation
+[PARA]
+[PARA]
+[PARA]Appendix A: Complete Endpoint Listing
+[PARA]
+[PARA]
+[PARA]Appendix B: Evidence / Screenshots
+[PARA]
+
+[PARA]
+[PARA]
+[PARA]1. Executive Summary
+[PARA]During a security assessment of the MyCES-FMS (Facility Management System) infrastructure, the production backend API server was discovered to have a publicly accessible Swagger UI at the following URL:
+[PARA]https://aziz.myces-fms.com/api
+[PARA]The Swagger UI exposes the complete API documentation for the NestJS backend, revealing 1,705 API endpoints covering all modules of the system including authentication, user management, HR, finance, compliance, facility management, and more.
+[PARA]Critical findings include:
+[PARA]
+[PARA]
+[PARA]1,705 API endpoints fully documented and publicly accessible
+[PARA]
+[PARA]
+[PARA]7,740 user records leaked via an unauthenticated endpoint
+[PARA]
+[PARA]
+[PARA]1,744 password hashes exposed (crackable offline)
+[PARA]
+[PARA]
+[PARA]84 national ID (IC) numbers exposed
+[PARA]
+[PARA]
+[PARA]7,184 phone numbers exposed
+[PARA]
+[PARA]
+[PARA]83 file upload endpoints with no authentication guard
+[PARA]
+[PARA]
+[PARA]103 DELETE operations exposed
+[PARA]
+[PARA]
+[PARA]Administrator credentials discovered via weak password
+[PARA]
+[PARA]
+[PARA]Full system compromise possible with a single API call
+[PARA]
+
+[PARA]
+[PARA]
+[PARA]2. Technical Details
+[PARA]Target URL
+[PARA]https://aziz.myces-fms.com
+[PARA]Swagger UI
+[PARA]https://aziz.myces-fms.com/api
+[PARA]Swagger JSON
+[PARA]https://aziz.myces-fms.com/api-json
+[PARA]IP Address
+[PARA]54.255.251.129
+[PARA]Backend Framework
+[PARA]NestJS (Node.js)
+[PARA]Swagger Library
+[PARA]@nestjs/swagger v6.3.0
+[PARA]Database
+[PARA]PostgreSQL
+[PARA]Total Endpoints
+[PARA]1,705
+[PARA]
+[PARA]
+[PARA]
+[PARA]Endpoint Breakdown
+[PARA]GET
+[PARA]707
+[PARA]POST
+[PARA]873
+[PARA]PUT
+[PARA]36
+[PARA]PATCH
+[PARA]89
+[PARA]DELETE
+[PARA]103
+[PARA]
+[PARA]
+[PARA]
+[PARA]
+[PARA]
+[PARA]Discovery Method
+[PARA]The Swagger endpoint was discovered through source code analysis of the frontend application (FE_Web/src/boot/axios.js), which revealed the production API base URL as "https://aziz.myces-fms.com/". The NestJS source code in Aziz/nest-auth/src/main.ts confirmed the Swagger module is configured at the "/api" path.
+[PARA]
+
+[PARA]
+[PARA]
+[PARA]3. Vulnerability: Swagger UI Publicly Accessible
+[PARA]
+[PARA]
+[PARA]CVSS Score
+[PARA]CVSS Version
+[PARA]3.1
+[PARA]Vector String
+[PARA]CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H
+[PARA]Base Score
+[PARA]9.8 (CRITICAL)
+[PARA]Attack Vector
+[PARA]Network
+[PARA]Attack Complexity
+[PARA]Low
+[PARA]Privileges Required
+[PARA]None
+[PARA]User Interaction
+[PARA]None
+[PARA]Impact
+[PARA]Confidentiality: HIGH, Integrity: HIGH, Availability: HIGH
+[PARA]
+[PARA]
+[PARA]
+[PARA]
+[PARA]
+[PARA]Description
+[PARA]The Swagger UI is deployed to the production environment without any access control. It provides an interactive interface to explore and test all 1,705 API endpoints. An attacker can browse the entire API surface, understand request/response schemas, and execute API calls directly from the browser.
+[PARA]
+[PARA]
+[PARA]Affected Modules
+[PARA]
+[PARA]
+[PARA]Auth (User management, registration, password reset)
+[PARA]
+[PARA]
+[PARA]HR (Leave, claims, employee documents, requisitions)
+[PARA]
+[PARA]
+[PARA]Facility Management (PPM, work orders, equipment, inventory)
+[PARA]
+[PARA]
+[PARA]Finance (Bills, sales, claims)
+[PARA]
+[PARA]
+[PARA]Compliance (Licenses, certifications, agreements)
+[PARA]
+[PARA]
+[PARA]Human Resource (Org charts, manpower, training, personnel)
+[PARA]
+[PARA]
+[PARA]File System (Upload, download, delete, directory scan)
+[PARA]
+[PARA]
+[PARA]CSS Submission (Reporting, deletion)
+[PARA]
+[PARA]
+[PARA]Attendance (Selfie upload, profile)
+[PARA]
+[PARA]
+[PARA]Waste Management (Generation, consignment notes)
+[PARA]
+[PARA]
+[PARA]Transport & Delivery
+[PARA]
+[PARA]
+[PARA]RFID Management
+[PARA]
+[PARA]
+[PARA]News & Notifications
+[PARA]
+[PARA]
+[PARA]Reporting & KPIs
+[PARA]
+[PARA]
+[PARA]Google Drive Integration
+[PARA]
+
+[PARA]
+[PARA]
+[PARA]4. Vulnerability: Mass User Data Leak
+[PARA]
+[PARA]
+[PARA]CVSS Score
+[PARA]CVSS Version
+[PARA]3.1
+[PARA]Vector String
+[PARA]CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N
+[PARA]Base Score
+[PARA]7.5 (HIGH)
+[PARA]Attack Vector
+[PARA]Network
+[PARA]Attack Complexity
+[PARA]Low
+[PARA]Privileges Required
+[PARA]None
+[PARA]User Interaction
+[PARA]None
+[PARA]Impact
+[PARA]Confidentiality: HIGH
+[PARA]
+[PARA]
+[PARA]
+[PARA]
+[PARA]
+[PARA]Description
+[PARA]The endpoint POST /noauth/findUser/withCondition accepts arbitrary query conditions and returns full user records without requiring any authentication. This endpoint is designed for public access (the "noauth" prefix) but leaks sensitive data.
+[PARA]
+[PARA]
+[PARA]Data Exposed
+[PARA]Total Users Leaked
+[PARA]7,740
+[PARA]With Password Hash
+[PARA]1,744
+[PARA]With IC Number (National ID)
+[PARA]84
+[PARA]With Email Address
+[PARA]1,935
+[PARA]With Phone Number
+[PARA]7,184
+[PARA]Fields per record
+[PARA]id, name, IC, email, password hash, phone, designation, department, rate, OT rates, image_file, etc.
+[PARA]Admin Accounts Exposed
+[PARA]Super Admin (ID:1), Ahmad admin (ID:2)
+[PARA]
+[PARA]
+[PARA]
+[PARA]
+[PARA]
+[PARA]Sample Leaked Records
+[PARA]ID: 1 | Name: Super Admin | Email: super@gmail.com
+ID: 2 | Name: Ahmad admin | Email: admin@gmail.com | Phone: 60196861364 | Role: Facility Manager
+ID: 3 | Name: Syauqi | Email: tech@gmail.com | Phone: 60196861364 | Role: Wireman PW4
+ID: 4 | Name: Nur Afifuddin | Email: user@gmail.com | Phone: 601156204173 | Role: Supervisor
+ID: 5 | Name: Hammizan Aziz | Email: tech2@gmail.com | Phone: 60104385247 | Role: Technician
+[PARA]
+
+[PARA]
+[PARA]
+[PARA]5. Vulnerability: Unauthenticated API Endpoints
+[PARA]The Swagger specification declares ZERO security requirements for all 1,705 endpoints. While some endpoints have runtime guards (returning 403 when no valid session cookie is present), several critical endpoints are truly unprotected:
+[PARA]
+[PARA]
+[PARA]Public (NoAuth) Endpoints
+[PARA]POST /noauth/login — Login with email/password
+POST /noauth/findUser/withCondition — Query users with arbitrary conditions
+POST /noauth/registerAduan — Register complaint
+GET /noauth/loginAduan/{IC} — Login using IC number only
+POST /noauth/employee/set-password — Set employee password (requires token)
+GET /noauth/employee/verify-setup-token/{token} — Verify setup token
+[PARA]
+[PARA]
+[PARA]Auth Endpoints Without Swagger Security Declaration
+[PARA]POST /auth/register — Create new user (runtime guard: 403)
+POST /auth/reset — Reset user password (runtime guard: 403)
+POST /auth/changepassword — Change password (runtime guard: 403)
+POST /auth/delete — Delete user
+POST /auth/usertype/addtype — Create user type
+POST /auth/usertype/deletetype — Delete user type
+POST /auth/addfeature — Create feature
+POST /auth/deletefeat — Delete feature
+POST /auth/deleteper — Delete permission
+POST /auth/editper — Edit permission
+POST /auth/user-company-role — Assign company role
+POST /auth/switch-company — Switch company context
+GET /auth/user/getall — Get all users (runtime guard: 403)
+[PARA]
+
+[PARA]
+[PARA]
+[PARA]6. Vulnerability: File Upload Endpoints
+[PARA]83 file upload endpoints were identified in the Swagger specification. These endpoints accept file uploads for various purposes including Excel imports, images, documents, and system files. Without proper authentication and file type validation, these endpoints are susceptible to malicious file uploads leading to Remote Code Execution (RCE).
+[PARA]
+[PARA]
+[PARA]Critical File Upload Endpoints
+[PARA]
+[PARA]
+[PARA]POST /auth/excel — Excel upload for auth module
+[PARA]
+[PARA]
+[PARA]POST /file_system/upload_file — Direct file system upload
+[PARA]
+[PARA]
+[PARA]POST /file_system/new_folder — Create new folder
+[PARA]
+[PARA]
+[PARA]POST /file_system/delete/{id} — Delete file/folder
+[PARA]
+[PARA]
+[PARA]POST /case/attachFile — Attach file to case
+[PARA]
+[PARA]
+[PARA]POST /equipment/uploadeqimg — Upload equipment image
+[PARA]
+[PARA]
+[PARA]POST /equipment/asset/excel — Excel upload for assets
+[PARA]
+[PARA]
+[PARA]POST /inventory/uploadattachment/{companyId} — Inventory attachment
+[PARA]
+[PARA]
+[PARA]POST /news/uploadmulti — Multiple file upload for news
+[PARA]
+[PARA]
+[PARA]POST /humanresource/uploadOrgchart — Upload org chart
+[PARA]
+[PARA]
+[PARA]POST /humanresource/uploadManpower — Upload manpower data
+[PARA]
+[PARA]
+[PARA]POST /humanresource/uploadTraining — Upload training docs
+[PARA]
+[PARA]
+[PARA]POST /Compliance/uploadLicense — Upload compliance license
+[PARA]
+[PARA]
+[PARA]POST /hr/employee-docs/upload — HR employee document upload
+[PARA]
+[PARA]
+[PARA]POST /hr/employee-docs/bulk-upload — Bulk employee document upload
+[PARA]
+
+[PARA]
+[PARA]
+[PARA]7. Vulnerability: Delete Operations
+[PARA]103 DELETE endpoints were identified. These allow deletion of critical business data including user records, reports, daily records, HR documents, compliance documents, vehicles, drivers, bins, and more. While some have runtime guards, the Swagger specification declares none.
+[PARA]
+[PARA]
+[PARA]Critical Delete Endpoints
+[PARA]
+[PARA]
+[PARA]DELETE /report-checklist-template/{id} — Delete report template
+[PARA]
+[PARA]
+[PARA]DELETE /dailyRecord/byId/{id} — Delete daily record
+[PARA]
+[PARA]
+[PARA]DELETE /humanresource/deleteFiles — Delete HR files
+[PARA]
+[PARA]
+[PARA]DELETE /company_details/deleteFiles — Delete company files
+[PARA]
+[PARA]
+[PARA]DELETE /Compliance/deleteFiles — Delete compliance files
+[PARA]
+[PARA]
+[PARA]DELETE /bin/delete/{id} — Delete bin
+[PARA]
+[PARA]
+[PARA]DELETE /vehicle/delete/{id} — Delete vehicle
+[PARA]
+[PARA]
+[PARA]DELETE /driver/delete/{id} — Delete driver
+[PARA]
+[PARA]
+[PARA]DELETE /consignmentnote/delete/{id} — Delete consignment note
+[PARA]
+[PARA]
+[PARA]DELETE /monthly-checklist/{id}/file — Delete checklist file
+[PARA]
+[PARA]
+[PARA]DELETE /hr/leave/policy/user-groups/{id} — Delete leave policy
+[PARA]
+[PARA]
+[PARA]DELETE /css-submission/delete/{id} — Delete CSS submission
+[PARA]
+
+[PARA]
+[PARA]
+[PARA]8. Proof of Concept (PoC)
+[PARA]
+[PARA]
+[PARA]PoC 1: Swagger UI Access
+[PARA]Navigate to: https://aziz.myces-fms.com/api
+[PARA]Result: Full Swagger UI with 1,705 endpoints accessible without authentication.
+[PARA]
+[PARA]
+[PARA]PoC 2: Mass User Data Leak
+[PARA]Command:
+curl -X POST "https://aziz.myces-fms.com/noauth/findUser/withCondition" \
+  -H "Content-Type: application/json" \
+  -d '{"IC":"900101010101"}' -k
+
+Result: 7,740 user records returned including password hashes, IC numbers, emails, and phone numbers.
+[PARA]
+[PARA]
+[PARA]PoC 3: Administrator Login
+[PARA]Command:
+curl -X POST "https://aziz.myces-fms.com/noauth/login" \
+  -H "Content-Type: application/json" \
+  -d '{"email":"admin@gmail.com","password":"password"}' -k -c cookie.txt
+
+Result: Login successful as "admin" user type. Session cookie obtained.
+[PARA]
+[PARA]
+[PARA]PoC 4: Authenticated API Access
+[PARA]After login, all API endpoints become accessible with the session cookie:
+curl -X GET "https://aziz.myces-fms.com/auth/user/getall" -k -b cookie.txt
+
+This grants full administrative access to the system.
+[PARA]
+[PARA]
+[PARA]PoC 5: Swagger JSON Download
+[PARA]Command:
+curl -X GET "https://aziz.myces-fms.com/api-json" -k -o swagger.json
+
+Result: 631 KB Swagger JSON file downloaded containing the complete API specification.
+[PARA]
+
+[PARA]
+[PARA]
+[PARA]9. Impact Assessment
+[PARA]
+[PARA]
+[PARA]Confidentiality Impact
+[PARA]• 7,740 user PII records exposed (names, IC numbers, emails, phones)
+• 1,744 password hashes available for offline cracking
+• Complete API documentation reveals all business logic and data structures
+• Company structure, departments, roles, and permissions fully enumerated
+[PARA]
+[PARA]
+[PARA]Integrity Impact
+[PARA]• Administrator account compromised (weak password "password")
+• Ability to create, modify, or delete users, roles, and permissions
+• Ability to upload arbitrary files to the server
+• Ability to modify business-critical data (PPM, work orders, inventory, HR)
+• 103 DELETE endpoints available for data destruction
+[PARA]
+[PARA]
+[PARA]Availability Impact
+[PARA]• Mass deletion of records possible via DELETE endpoints
+• File system operations can delete or corrupt files
+• Potential for DoS through resource-intensive API calls
+[PARA]
+[PARA]
+[PARA]Business Impact
+[PARA]• Regulatory non-compliance (PDPA 2010 — Personal Data Protection Act Malaysia)
+• Reputational damage
+• Potential legal liability
+• Loss of customer/partner trust
+• Operational disruption if data is deleted or corrupted
+[PARA]
+
+[PARA]
+[PARA]
+[PARA]10. CVSS Score Summary
+[PARA]Vulnerability
+[PARA]CVSS Score
+[PARA]Severity
+[PARA]CWE
+[PARA]Swagger UI Public Exposure
+[PARA]9.8
+[PARA]CRITICAL
+[PARA]CWE-200 / CWE-749
+[PARA]Mass User Data Leak
+[PARA]7.5
+[PARA]HIGH
+[PARA]CWE-200 / CWE-359
+[PARA]File Upload Without Auth
+[PARA]8.8
+[PARA]HIGH
+[PARA]CWE-434
+[PARA]
+
+[PARA]
+[PARA]
+[PARA]11. Remediation
+[PARA]
+[PARA]
+[PARA]Immediate Actions (within 24 hours)
+[PARA]
+[PARA]
+[PARA]DISABLE Swagger UI in production immediately. Add environment check in main.ts:
+[PARA]
+[PARA]
+[PARA]  if (process.env.NODE_ENV !== "production") { SwaggerModule.setup("api", app, document); }
+[PARA]
+[PARA]
+[PARA]FIREWALL aziz.myces-fms.com to only allow whitelisted IP addresses
+[PARA]
+[PARA]
+[PARA]CHANGE the administrator password immediately (currently "password")
+[PARA]
+[PARA]
+[PARA]ROTATE all user passwords — 1,744 password hashes have been exposed
+[PARA]
+[PARA]
+[PARA]BLOCK the /noauth/findUser/withCondition endpoint or require authentication
+[PARA]
+[PARA]
+[PARA]Short-term Actions (within 1 week)
+[PARA]
+[PARA]
+[PARA]Implement proper authentication guards on ALL API endpoints
+[PARA]
+[PARA]
+[PARA]Add @ApiBearerAuth() or @ApiCookieAuth() decorators to Swagger configuration
+[PARA]
+[PARA]
+[PARA]Conduct a full audit of file upload endpoints — implement file type validation, size limits, and malware scanning
+[PARA]
+[PARA]
+[PARA]Review all DELETE endpoints — ensure proper authorization checks
+[PARA]
+[PARA]
+[PARA]Implement rate limiting on all API endpoints
+[PARA]
+[PARA]
+[PARA]Enable proper CORS configuration with specific origins only
+[PARA]
+[PARA]
+[PARA]Add CSP headers to the API responses
+[PARA]
+[PARA]
+[PARA]Implement audit logging for all sensitive operations
+[PARA]
+[PARA]
+[PARA]Long-term Actions
+[PARA]
+[PARA]
+[PARA]Implement API gateway with authentication and authorization
+[PARA]
+[PARA]
+[PARA]Deploy Web Application Firewall (WAF) in front of the API
+[PARA]
+[PARA]
+[PARA]Conduct regular penetration testing
+[PARA]
+[PARA]
+[PARA]Implement secrets management (no hardcoded credentials)
+[PARA]
+[PARA]
+[PARA]Set up monitoring and alerting for unusual API activity
+[PARA]
+[PARA]
+[PARA]Implement proper password policy (minimum complexity, rotation)
+[PARA]
+[PARA]
+[PARA]Consider implementing Multi-Factor Authentication (MFA)
+[PARA]
+[PARA]
+[PARA]Data classification and PII handling policy review
+[PARA]
+
+[PARA]
+[PARA]
+[PARA]Appendix A: Complete Endpoint Listing
+[PARA]The full Swagger JSON specification (631 KB) is available at:
+https://aziz.myces-fms.com/api-json
+
+The following is a summary of all API tags/modules discovered:
+[PARA]
+[PARA]
+[PARA]APD Global Var
+[PARA]
+[PARA]
+[PARA]APD List
+[PARA]
+[PARA]
+[PARA]API
+[PARA]
+[PARA]
+[PARA]Activity Log
+[PARA]
+[PARA]
+[PARA]Apd Record
+[PARA]
+[PARA]
+[PARA]Appraisal
+[PARA]
+[PARA]
+[PARA]Area
+[PARA]
+[PARA]
+[PARA]Area Applicable Inspection
+[PARA]
+[PARA]
+[PARA]Asset Group
+[PARA]
+[PARA]
+[PARA]Asset Parameter
+[PARA]
+[PARA]
+[PARA]Asset Parameter Record
+[PARA]
+[PARA]
+[PARA]Asset Status
+[PARA]
+[PARA]
+[PARA]Attendance
+[PARA]
+[PARA]
+[PARA]Attendance Settings
+[PARA]
+[PARA]
+[PARA]Auth
+[PARA]
+[PARA]
+[PARA]BIN
+[PARA]
+[PARA]
+[PARA]Biomed
+[PARA]
+[PARA]
+[PARA]Blueprint
+[PARA]
+[PARA]
+[PARA]BookingCaseDate
+[PARA]
+[PARA]
+[PARA]Bug Ticket
+[PARA]
+[PARA]
+[PARA]CSS Question
+[PARA]
+[PARA]
+[PARA]CSS Submission
+[PARA]
+[PARA]
+[PARA]Case
+[PARA]
+[PARA]
+[PARA]Case History
+[PARA]
+[PARA]
+[PARA]Case Status
+[PARA]
+[PARA]
+[PARA]Case Type
+[PARA]
+[PARA]
+[PARA]Category
+[PARA]
+[PARA]
+[PARA]ChatBot AI
+[PARA]
+[PARA]
+[PARA]Clean Linen Base Required
+[PARA]
+[PARA]
+[PARA]Clean Linen Records
+[PARA]
+[PARA]
+[PARA]Clean Linen Reports
+[PARA]
+[PARA]
+[PARA]Company
+[PARA]
+[PARA]
+[PARA]Company Detail
+[PARA]
+[PARA]
+[PARA]Company Running No.
+[PARA]
+[PARA]
+[PARA]Complaint Feedback
+[PARA]
+[PARA]
+[PARA]Compliance
+[PARA]
+[PARA]
+[PARA]Consignement Note
+[PARA]
+[PARA]
+[PARA]Construction WOrk Progress
+[PARA]
+[PARA]
+[PARA]Construction Work
+[PARA]
+[PARA]
+[PARA]DCA Applicable Task
+[PARA]
+[PARA]
+[PARA]DCA Record
+[PARA]
+[PARA]
+[PARA]DCA Summary
+[PARA]
+[PARA]
+[PARA]DRIVER
+[PARA]
+[PARA]
+[PARA]Daily Record
+[PARA]
+[PARA]
+[PARA]Deduction
+[PARA]
+[PARA]
+[PARA]Defect
+[PARA]
+[PARA]
+[PARA]Delivery Schedule
+[PARA]
+[PARA]
+[PARA]Delivery Schedule Line
+[PARA]
+[PARA]
+[PARA]Department
+[PARA]
+[PARA]
+[PARA]Eq Brand
+[PARA]
+[PARA]
+[PARA]Eq Class
+[PARA]
+[PARA]
+[PARA]Eq Status
+[PARA]
+[PARA]
+[PARA]Eq Type
+[PARA]
+[PARA]
+[PARA]Eq Type Requirement
+[PARA]
+[PARA]
+[PARA]Equipment
+[PARA]
+[PARA]
+[PARA]Equipment External
+[PARA]
+[PARA]
+[PARA]Equipment History
+[PARA]
+[PARA]
+[PARA]Equipment Model
+[PARA]
+[PARA]
+[PARA]Event Target
+[PARA]
+[PARA]
+[PARA]Events
+[PARA]
+[PARA]
+[PARA]FEMS Matrix
+[PARA]
+[PARA]
+[PARA]Fault Code
+[PARA]
+[PARA]
+[PARA]File System
+[PARA]
+[PARA]
+[PARA]Fleet Assignments
+[PARA]
+[PARA]
+[PARA]Fleet Details
+[PARA]
+[PARA]
+[PARA]Fleet Fuel Logs
+[PARA]
+[PARA]
+[PARA]General
+[PARA]
+[PARA]
+[PARA]Geofence Location
+[PARA]
+[PARA]
+[PARA]Group Company
+[PARA]
+[PARA]
+[PARA]Group List
+[PARA]
+[PARA]
+[PARA]Human Resource
+[PARA]
+[PARA]
+[PARA]Inventory
+[PARA]
+[PARA]
+[PARA]Inventory Price History
+[PARA]
+[PARA]
+[PARA]Inventory Subtype
+[PARA]
+[PARA]
+[PARA]Inventory Usage
+[PARA]
+[PARA]
+[PARA]JI Form
+[PARA]
+[PARA]
+[PARA]JI Record Item
+[PARA]
+[PARA]
+[PARA]JI Summary
+[PARA]
+[PARA]
+[PARA]KPI APD
+[PARA]
+[PARA]
+[PARA]KPI APD KKM
+[PARA]
+[PARA]
+[PARA]KPI List
+[PARA]
+[PARA]
+[PARA]Linen Distribution
+[PARA]
+[PARA]
+[PARA]Linen Items
+[PARA]
+[PARA]
+[PARA]Linen Variance
+[PARA]
+[PARA]
+[PARA]MDA
+[PARA]
+[PARA]
+[PARA]Maintenance
+[PARA]
+[PARA]
+[PARA]Manpower
+[PARA]
+[PARA]
+[PARA]Manufacture
+[PARA]
+[PARA]
+[PARA]Mobile Attendance
+[PARA]
+[PARA]
+[PARA]Monthly Checklist
+[PARA]
+[PARA]
+[PARA]News
+[PARA]
+[PARA]
+[PARA]No Auth
+[PARA]
+[PARA]
+[PARA]Notification APD
+[PARA]
+[PARA]
+[PARA]Notifications
+[PARA]
+[PARA]
+[PARA]OFFSITEFACILITY
+[PARA]
+[PARA]
+[PARA]OTP Verification
+[PARA]
+[PARA]
+[PARA]Overtime
+[PARA]
+[PARA]
+[PARA]PPM
+[PARA]
+[PARA]
+[PARA]PPM Checklist
+[PARA]
+[PARA]
+[PARA]PPM Visit Plan
+[PARA]
+[PARA]
+[PARA]Panel
+[PARA]
+[PARA]
+[PARA]Panel Type
+[PARA]
+[PARA]
+[PARA]Problem Template
+[PARA]
+[PARA]
+[PARA]Project
+[PARA]
+[PARA]
+[PARA]Project Execution
+[PARA]
+[PARA]
+[PARA]QC
+[PARA]
+[PARA]
+[PARA]Rating
+[PARA]
+[PARA]
+[PARA]Rental
+[PARA]
+[PARA]
+[PARA]RentalDetails
+[PARA]
+[PARA]
+[PARA]RentalPricing
+[PARA]
+[PARA]
+[PARA]Repair Record
+[PARA]
+[PARA]
+[PARA]Report Checklist Template
+[PARA]
+[PARA]
+[PARA]Reporting
+[PARA]
+[PARA]
+[PARA]Reservation
+[PARA]
+[PARA]
+[PARA]Reservation Feedback
+[PARA]
+[PARA]
+[PARA]SCM Request
+[PARA]
+[PARA]
+[PARA]Service Contract
+[PARA]
+[PARA]
+[PARA]Shift
+[PARA]
+[PARA]
+[PARA]Shift Definition
+[PARA]
+[PARA]
+[PARA]Soiled Records
+[PARA]
+[PARA]
+[PARA]Soiled_Reports
+[PARA]
+[PARA]
+[PARA]Sub Area
+[PARA]
+[PARA]
+[PARA]Sub Task
+[PARA]
+[PARA]
+[PARA]System Downtime
+[PARA]
+[PARA]
+[PARA]Task Type
+[PARA]
+[PARA]
+[PARA]Technician
+[PARA]
+[PARA]
+[PARA]Temp PPM
+[PARA]
+[PARA]
+[PARA]Tools
+[PARA]
+[PARA]
+[PARA]Transfer
+[PARA]
+[PARA]
+[PARA]UMDNS
+[PARA]
+[PARA]
+[PARA]User Token
+[PARA]
+[PARA]
+[PARA]VEHICLE
+[PARA]
+[PARA]
+[PARA]VO Status
+[PARA]
+[PARA]
+[PARA]Variation
+[PARA]
+[PARA]
+[PARA]Vendor
+[PARA]
+[PARA]
+[PARA]Visitor
+[PARA]
+[PARA]
+[PARA]Visitor Pass
+[PARA]
+[PARA]
+[PARA]Waste Generation
+[PARA]
+[PARA]
+[PARA]Workday Groups
+[PARA]
+[PARA]
+[PARA]Workspace
+[PARA]
+[PARA]
+[PARA]Worktrade
+[PARA]
+[PARA]Total API modules (tags): 141
+[PARA]Total API endpoints: 1,705
+[PARA]
+
+[PARA]
+[PARA]
+[PARA]Appendix B: Evidence / Screenshots
+[PARA]
+[PARA]
+[PARA]Screenshot 1: Swagger UI Main Page
+[PARA]URL: https://aziz.myces-fms.com/api — 1,705 endpoints exposed publicly.
+[PARA]
+[SCREENSHOT IMAGE HERE]
+
+[PARA]
+[PARA]
+[PARA]
+[PARA]Screenshot 2: PoC #1 — SQL Injection (Boolean Blind)
+[PARA]Extracting user emails, password hashes, and roles via SQL injection oracle.
+[PARA]
+[SCREENSHOT IMAGE HERE]
+
+[PARA]
+[PARA]
+[PARA]
+[PARA]Screenshot 3: PoC #2 — Unrestricted File Upload
+[PARA]PHP file upload accepted by Multer — no fileFilter validation.
+[PARA]
+[SCREENSHOT IMAGE HERE]
+
+[PARA]
+[PARA]
+[PARA]
+[PARA]Screenshot 4: PoC #4 — Authentication Bypass
+[PARA]No JWT cookie sent — read AND write access without authentication via @Roles("noauth").
+[PARA]
+[SCREENSHOT IMAGE HERE]
+
+[PARA]
+[PARA]
+[PARA]
+[PARA]Screenshot 5: PoC #5 — JWT Forgery
+[PARA]Forged superadmin JWT using hardcoded secret "secret" — bypasses all authentication.
+[PARA]
+[SCREENSHOT IMAGE HERE]
+
+[PARA]
+[PARA]
+[PARA]

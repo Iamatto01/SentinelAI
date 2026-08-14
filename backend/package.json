@@ -1,0 +1,24 @@
+{
+  "name": "fyp2-backend",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Orchestration plane — delegates tool execution to Hexstrike, reasoning to AI agents, PoC to PayloadsAllTheThings RAG",
+  "scripts": {
+    "dev": "node --env-file=../.env src/index.js",
+    "start": "node --env-file=../.env src/index.js",
+    "index:payloads": "node --env-file=../.env scripts/index-payloads.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^3.0.2",
+    "better-sqlite3": "^11.10.0",
+    "cors": "^2.8.5",
+    "express": "^4.19.2",
+    "express-rate-limit": "^8.6.0",
+    "jsonwebtoken": "^9.0.2",
+    "nodemailer": "^9.0.4",
+    "pdfkit": "^0.17.2",
+    "socket.io": "^4.8.1",
+    "swagger-ui-express": "^5.0.1"
+  }
+}

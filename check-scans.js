@@ -1,0 +1,10 @@
+const Database = require('better-sqlite3')
+const db = new Database('../output/fyp2.db', { readonly: true })
+const id = 'scan_d8d71991-4f88-467e-8d21-5abd318aec87'
+const s = db.prepare('SELECT status, progress, whitebox_meta FROM scans WHERE id=?').get(id)
+console.log('STATUS:', s.status, 'progress:', s.progress)
+const meta = JSON.parse(s.whitebox_meta || '{}')
+console.log('totalFiles:', meta.totalFiles)
+console.log('--- PASSES ---')
+;(meta.passes || []).forEach(p => console.log(`  [${p.status}] ${p.tool} (${p.type}): ${p.findings} findings${p.error ? ' ERR: ' + p.error : ''}`))
+db.close()
