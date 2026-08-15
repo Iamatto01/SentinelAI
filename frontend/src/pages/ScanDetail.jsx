@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { Loader2, Square, FileDown, ArrowLeft, Terminal, Bug, Pause, Play, Network, FileCode2, Clock, CheckCircle2, XCircle, ChevronDown, ChevronRight, RefreshCw } from 'lucide-react'
+import { Loader2, Square, FileDown, ArrowLeft, Terminal, Bug, Pause, Play, Network, FileCode2, Clock, CheckCircle2, XCircle, ChevronDown, ChevronRight, RefreshCw, Volume2 } from 'lucide-react'
 import { api } from '../lib/api.js'
 import { useScanContext } from '../lib/ScanContext.jsx'
 import { subscribeScan } from '../lib/socket.js'
