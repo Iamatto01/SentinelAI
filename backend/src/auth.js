@@ -9,7 +9,10 @@ export function authMiddleware(req, res, next) {
   if (token) {
     try {
       const payload = jwt.verify(token, config.jwt.secret, { issuer: config.jwt.issuer })
-      req.user = payload
+      req.user = {
+        ...payload,
+        id: payload.id || payload.sub,
+      }
     } catch { /* invalid token — leave req.user undefined */ }
   }
   next()
@@ -30,7 +33,7 @@ export function requireRole(...roles) {
 
 export function signToken(user) {
   return jwt.sign(
-    { sub: user.id, username: user.username, role: user.role, email: user.email || null, projectId: user.projectId || user.project_id || null },
+    { sub: user.id, id: user.id, username: user.username, role: user.role, email: user.email || null, projectId: user.projectId || user.project_id || null },
     config.jwt.secret,
     { issuer: config.jwt.issuer, expiresIn: '12h' }
   )

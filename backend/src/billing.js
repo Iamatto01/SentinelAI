@@ -225,6 +225,68 @@ export function getAllClientsAdmin() {
 }
 
 /**
+ * Get detailed customer folder data for Admin Panel inspection
+ */
+export function getClientDetailsAdmin(userId) {
+  const user = db.get(`SELECT id, username, email, role, created_at, last_login FROM users WHERE id = ?`, userId)
+  if (!user) throw new Error('Client user not found')
+
+  const subscription = getUserSubscription(userId)
+  const github = db.get(`SELECT github_username, created_at as connected_at FROM github_integrations WHERE user_id = ?`, userId)
+  const repos = db.all(`SELECT * FROM github_repos WHERE user_id = ? ORDER BY created_at DESC`, userId)
+
+  // Client Projects
+  const projects = db.all(`
+    SELECT p.*,
+           (SELECT COUNT(*) FROM scans sc WHERE sc.project_id = p.id) as scan_count,
+           (SELECT COUNT(*) FROM findings f WHERE f.scan_id IN (SELECT id FROM scans WHERE project_id = p.id)) as finding_count
+    FROM projects p
+    WHERE p.client_id = ? OR p.client = ? OR p.client = ? OR p.id IN (SELECT project_id FROM scans WHERE user_id = ?)
+    ORDER BY p.updated_at DESC
+  `, userId, user.username, user.email, userId)
+
+  // Client Scans
+  const scans = db.all(`
+    SELECT s.*,
+           p.name as project_name,
+           (SELECT COUNT(*) FROM findings f WHERE f.scan_id = s.id) as findings_count,
+           (SELECT COUNT(*) FROM findings f WHERE f.scan_id = s.id AND f.severity = 'critical') as critical_count,
+           (SELECT COUNT(*) FROM findings f WHERE f.scan_id = s.id AND f.severity = 'high') as high_count
+    FROM scans s
+    LEFT JOIN projects p ON p.id = s.project_id
+    WHERE s.user_id = ? OR s.project_id IN (SELECT id FROM projects WHERE client_id = ? OR client = ? OR client = ?)
+    ORDER BY s.created_at DESC
+  `, userId, userId, user.username, user.email)
+
+  // Severity summary across all client scans
+  const findings = db.all(`
+    SELECT f.severity, COUNT(*) as count
+    FROM findings f
+    WHERE f.scan_id IN (
+      SELECT id FROM scans WHERE user_id = ? OR project_id IN (SELECT id FROM projects WHERE client_id = ? OR client = ? OR client = ?)
+    )
+    GROUP BY f.severity
+  `, userId, userId, user.username, user.email)
+
+  const severityCounts = { critical: 0, high: 0, medium: 0, low: 0, info: 0 }
+  findings.forEach(row => {
+    if (severityCounts[row.severity] !== undefined) {
+      severityCounts[row.severity] = row.count
+    }
+  })
+
+  return {
+    user,
+    subscription,
+    github: github ? { ...github, repos } : null,
+    projects,
+    scans,
+    severityCounts,
+    totalFindings: Object.values(severityCounts).reduce((a, b) => a + b, 0),
+  }
+}
+
+/**
  * Get payment transaction history
  */
 export function getPaymentHistory(userId) {
@@ -233,3 +295,4 @@ export function getPaymentHistory(userId) {
   }
   return db.all(`SELECT p.*, u.username, u.email FROM payment_transactions p LEFT JOIN users u ON u.id = p.user_id ORDER BY p.created_at DESC LIMIT 100`)
 }
+

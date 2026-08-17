@@ -55,6 +55,8 @@ export function getDb() {
 
 function migrate(d) {
   try { d.exec("ALTER TABLE projects ADD COLUMN cover TEXT") } catch {}
+  try { d.exec("ALTER TABLE projects ADD COLUMN client_id TEXT") } catch {}
+  try { d.exec("ALTER TABLE projects ADD COLUMN user_id TEXT") } catch {}
   try { d.exec("ALTER TABLE scans ADD COLUMN token_usage TEXT DEFAULT '{}'") } catch {}
 
   d.exec(`
@@ -152,6 +154,19 @@ function migrate(d) {
     UNIQUE(category, file)
   );
   CREATE INDEX IF NOT EXISTS idx_payload_cat ON payload_index(category);
+
+  CREATE TABLE IF NOT EXISTS skills_index (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    subdomain TEXT,
+    description TEXT,
+    tags TEXT,
+    frameworks TEXT,
+    file TEXT NOT NULL,
+    body TEXT,
+    UNIQUE(name)
+  );
+  CREATE INDEX IF NOT EXISTS idx_skills_sub ON skills_index(subdomain);
 
   CREATE TABLE IF NOT EXISTS audit (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

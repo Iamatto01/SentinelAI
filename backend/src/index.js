@@ -12,7 +12,7 @@ import { config } from './config.js'
 import * as db from './db.js'
 import { authMiddleware, requireAuth, signToken, getUser } from './auth.js'
 import { UnifiedPipeline } from './pipeline.js'
-import { hexstrike, payloadsRag } from './integrations/index.js'
+import { hexstrike, payloadsRag, skillsRag } from './integrations/index.js'
 import { agentRegistry } from './ai/agent-registry.js'
 import { aiEngine } from './ai/ai-engine.js'
 import { aiFeedbackLoop } from './ai/ai-feedback-loop.js'
@@ -27,9 +27,10 @@ import * as msf from './exploits/msf-client.js'
 import { matchExploits, classifyRisk } from './exploits/registry.js'
 import { sendScanRequestNotification } from './email.js'
 import { GitHubClient, parseGitHubWebhook } from './integrations/github.js'
-import { PLANS, getUserSubscription, consumeScanQuota, activateSubscription, adminUpdateClientSubscription, getAllClientsAdmin, getPaymentHistory } from './billing.js'
+import { PLANS, getUserSubscription, consumeScanQuota, activateSubscription, adminUpdateClientSubscription, getAllClientsAdmin, getClientDetailsAdmin, getPaymentHistory } from './billing.js'
 import { requireRole } from './auth.js'
 import * as kaliControl from './kali-control.js'
+import { queueManager } from './queue.js'
 
 // CORS: only whitelisted origins (config.corsOrigins from CLIENT_ORIGIN).
 // Non-browser clients (curl, server-to-server) carry no Origin header → allowed.
@@ -119,6 +120,18 @@ try {
     console.log(`[bootstrap] RAG index ready: ${r.indexed} docs`)
   }
 } catch (e) { console.warn('[bootstrap] RAG index build skipped:', e.message) }
+
+// build cybersecurity skills index if empty
+try {
+  const st = skillsRag.skillsIndexStatus()
+  if (st.installed && st.skills === 0) {
+    console.log('[bootstrap] building Cybersecurity Skills index (817-skill corpus)...')
+    const r = skillsRag.buildSkillsIndex((lvl, msg) => console.log('[skills-rag] ' + msg))
+    console.log('[bootstrap] skills index ready: ' + r.indexed + ' skills')
+    const cat = skillsRag.writeSkillsCatalog()
+    if (cat.written) console.log('[bootstrap] skills catalog written: ' + cat.count + ' entries -> ' + cat.path)
+  }
+} catch (e) { console.warn('[bootstrap] skills index build skipped:', e.message) }
 
 const audit = (actor, action, detail) =>
   db.run(`INSERT INTO audit (actor, action, detail, ts) VALUES (?,?,?,?)`, actor || 'system', action, detail || '', new Date().toISOString())
@@ -395,30 +408,19 @@ app.delete('/api/projects/:id/credentials/:credId', requireAuth, (req, res) => {
 app.get('/api/scans', requireAuth, (req, res) => {
   try {
     if (req.user?.role === 'client') {
-      if (req.user.projectId) {
-        const scans = db.all(`
-          SELECT s.*, (SELECT COUNT(*) FROM findings f WHERE f.scan_id = s.id) AS findings_count
-          FROM scans s WHERE s.project_id = ? ORDER BY s.created_at DESC LIMIT 200
-        `, req.user.projectId)
-        return res.json(scans || [])
-      }
+      const userId = req.user.sub || req.user.id
       const userEmail = (req.user.email || '').toLowerCase()
       const username = (req.user.username || '').toLowerCase()
-      const allProjs = db.all(`SELECT * FROM projects`)
-      const matchProjs = allProjs.filter((p) => {
-        const c = (p.client || '').toLowerCase()
-        const n = (p.name || '').toLowerCase()
-        return (userEmail && c.includes(userEmail)) || (username && c.includes(username)) || c.includes('myces') || n.includes('fms')
-      })
-      const projIds = matchProjs.map(p => p.id)
-      if (projIds.length > 0) {
-        const placeholders = projIds.map(() => '?').join(',')
-        const scans = db.all(`
-          SELECT s.*, (SELECT COUNT(*) FROM findings f WHERE f.scan_id = s.id) AS findings_count
-          FROM scans s WHERE s.project_id IN (${placeholders}) ORDER BY s.created_at DESC LIMIT 200
-        `, ...projIds)
-        return res.json(scans || [])
-      }
+      const scans = db.all(`
+        SELECT s.*, (SELECT COUNT(*) FROM findings f WHERE f.scan_id = s.id) AS findings_count
+        FROM scans s
+        WHERE s.user_id = ?
+           OR s.project_id IN (
+             SELECT id FROM projects WHERE client_id = ? OR LOWER(client) LIKE ? OR LOWER(client) LIKE ?
+           )
+        ORDER BY s.created_at DESC LIMIT 200
+      `, userId, userId, `%${username}%`, `%${userEmail}%`)
+      return res.json(scans || [])
     }
     const allScans = db.all(`
       SELECT s.*, (SELECT COUNT(*) FROM findings f WHERE f.scan_id = s.id) AS findings_count
@@ -494,12 +496,24 @@ app.post('/api/scan-requests', requireAuth, async (req, res) => {
 })
 
 app.post('/api/scans', requireAuth, async (req, res) => {
-  const userId = req.user.sub || req.user.id
+  const authUserId = req.user.sub || req.user.id
+  const {
+    target, projectId = null, mode = 'blackbox', targetType = 'url',
+    template = 'standard', modules = [], objective = 'comprehensive', maxTools = 6,
+    files = [], language = '', focus = '', verify = true, depth = 'standard',
+    dynamicTarget = '', dynamicModules = [],
+    targetUserId = null, deductQuota = true,
+  } = req.body || {}
 
-  // Quota enforcement for non-admin users
+  let effectiveUserId = authUserId
+  if (req.user?.role === 'admin' && targetUserId) {
+    effectiveUserId = targetUserId
+  }
+
+  // Quota enforcement for non-admin users or if admin specified client quota deduction
   if (req.user?.role !== 'admin') {
     try {
-      consumeScanQuota(userId)
+      consumeScanQuota(authUserId)
     } catch (quotaErr) {
       return res.status(402).json({
         error: quotaErr.message,
@@ -507,14 +521,13 @@ app.post('/api/scans', requireAuth, async (req, res) => {
         help: 'Please subscribe or upgrade your plan in Billing & Plans to continue scanning.'
       })
     }
+  } else if (targetUserId && (deductQuota === true || deductQuota === 'true')) {
+    try {
+      consumeScanQuota(targetUserId)
+    } catch (quotaErr) {
+      console.warn(`[admin scan] Client ${targetUserId} quota deduction notice: ${quotaErr.message}`)
+    }
   }
-
-  const {
-    target, projectId = null, mode = 'blackbox', targetType = 'url',
-    template = 'standard', modules = [], objective = 'comprehensive', maxTools = 6,
-    files = [], language = '', focus = '', verify = true, depth = 'standard',
-    dynamicTarget = '', dynamicModules = [],
-  } = req.body || {}
 
   if (mode === 'blackbox' && !target) return res.status(400).json({ error: 'Target URL or hostname is required' })
   if (mode === 'whitebox' && (!files || !files.length)) return res.status(400).json({ error: 'Source files are required for whitebox scan' })
@@ -528,17 +541,17 @@ app.post('/api/scans', requireAuth, async (req, res) => {
 
   // Validate userId exists in DB to prevent foreign key constraint violations
   let validUserId = null
-  if (userId) {
-    const u = db.get(`SELECT id FROM users WHERE id = ?`, userId)
+  if (effectiveUserId) {
+    const u = db.get(`SELECT id FROM users WHERE id = ?`, effectiveUserId)
     if (u) {
       validUserId = u.id
     } else {
       try {
         db.run(
           `INSERT INTO users (id, username, email, role, password_hash, created_at) VALUES (?, ?, ?, 'client', 'managed', ?)`,
-          userId, req.user.username || 'client', req.user.email || null, new Date().toISOString()
+          effectiveUserId, req.user.username || 'client', req.user.email || null, new Date().toISOString()
         )
-        validUserId = userId
+        validUserId = effectiveUserId
       } catch {
         validUserId = null
       }
@@ -549,31 +562,25 @@ app.post('/api/scans', requireAuth, async (req, res) => {
   const now = new Date().toISOString()
   db.run(`INSERT INTO scans (id, project_id, target, target_type, mode, status, template, modules, progress, created_at, started_at, user_id)
           VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
-    id, validProjectId, target || '(whitebox)', targetType, mode, 'running', template,
+    id, validProjectId, target || '(whitebox)', targetType, mode, 'queued', template,
     JSON.stringify(modules), 0, now, now, validUserId)
   const scan = db.get(`SELECT * FROM scans WHERE id = ?`, id)
-  audit(req.user.username, 'scan:start', `${mode} → ${target || 'codebase'} (by ${req.user.role})`)
-  saveScanConfig(id, { target, targetType, mode, template, modules, objective, maxTools, files, language, focus, verify, depth, dynamicTarget, dynamicModules })
+  audit(req.user.username, 'scan:start', `${mode} → ${target || 'codebase'} (by ${req.user.role}${targetUserId ? ` for client ${targetUserId}` : ''})`)
+  const scanConfig = { target, targetType, mode, template, modules, objective, maxTools, files, language, focus, verify, depth, dynamicTarget, dynamicModules, targetUserId, deductQuota }
+  saveScanConfig(id, scanConfig)
 
-  // Run async (non-blocking)
-  setImmediate(async () => {
-    try {
-      if (mode === 'whitebox') await pipeline.runWhitebox(scan, { files, language, focus, verify, depth, dynamicTarget, dynamicModules })
-      else await pipeline.runBlackbox(scan, { modules, objective, maxTools, verify, depth })
-    } catch (e) {
-      if (e.message === 'SCAN_STOPPED') return // already set to 'stopped' by the /stop endpoint
-      pipeline.log(id, 'error', `Pipeline error: ${e.message}`)
-      pipeline.finish(id, 'failed')
-    }
-  })
+  // Enqueue job into Queue Worker Pool (runs immediately if slot free, or queues if busy)
+  const queueResult = await queueManager.enqueue(scan, scanConfig, pipeline)
 
-  res.status(201).json({ scan })
+  res.status(201).json({ scan, queue: queueResult })
 })
 
 app.post('/api/scans/:id/stop', requireAuth, (req, res) => {
   pipeline.stopScan(req.params.id) // set stopped flag so loops abort
   db.run(`UPDATE scans SET status = 'stopped', finished_at = ? WHERE id = ?`, new Date().toISOString(), req.params.id)
   audit(req.user.username, 'scan:stop', req.params.id)
+  // Dequeue next waiting scan when current one stops
+  setImmediate(() => queueManager.dequeueNext(pipeline))
   res.json({ ok: true })
 })
 
@@ -640,26 +647,17 @@ app.post('/api/scans/:id/re-run', requireAuth, async (req, res) => {
 
   db.run(`INSERT INTO scans (id, project_id, target, target_type, mode, status, template, modules, progress, risk_score, created_at, started_at)
           VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
-    id, old.project_id, old.target, old.target_type, mode, 'running', old.template,
+    id, old.project_id, old.target, old.target_type, mode, 'queued', old.template,
     JSON.stringify(modules), 0, 0, now, now)
 
   const scan = db.get(`SELECT * FROM scans WHERE id = ?`, id)
   audit(req.user.username, 'scan:re-run', `${scan.target} (${id})`)
-  // Carry the config forward so the new scan is itself re-runnable.
-  saveScanConfig(id, { ...cfg, mode, modules })
+  const scanConfig = { ...cfg, mode, modules, files: whiteboxFiles, dynamicTarget: cfg.dynamicTarget || '', dynamicModules: cfg.dynamicModules || [] }
+  saveScanConfig(id, scanConfig)
 
-  setImmediate(async () => {
-    try {
-      if (mode === 'whitebox') await pipeline.runWhitebox(scan, { ...baseOpts, files: whiteboxFiles, dynamicTarget: cfg.dynamicTarget || '', dynamicModules: cfg.dynamicModules || [] })
-      else await pipeline.runBlackbox(scan, baseOpts)
-    } catch (e) {
-      if (e.message === 'SCAN_STOPPED') return
-      pipeline.log(id, 'error', `Pipeline error: ${e.message}`)
-      pipeline.finish(id, 'failed')
-    }
-  })
+  const queueResult = await queueManager.enqueue(scan, scanConfig, pipeline)
 
-  res.status(201).json({ scan })
+  res.status(201).json({ scan, queue: queueResult })
 })
 
 /**
@@ -782,11 +780,38 @@ app.get('/api/filesystem/browse', requireAuth, async (req, res) => {
 })
 
 app.post('/api/scans/whitebox-folder', requireAuth, async (req, res) => {
+  const authUserId = req.user.sub || req.user.id
   const {
     folders = [], projectId = null, language = '', focus = '', verify = true,
     maxFiles = 10000, maxBytes = 50_000_000, depth = 'standard',
     dynamicTarget = '', dynamicModules = [],
+    targetUserId = null, deductQuota = true,
   } = req.body || {}
+
+  let effectiveUserId = authUserId
+  if (req.user?.role === 'admin' && targetUserId) {
+    effectiveUserId = targetUserId
+  }
+
+  // Quota enforcement
+  if (req.user?.role !== 'admin') {
+    try {
+      consumeScanQuota(authUserId)
+    } catch (quotaErr) {
+      return res.status(402).json({
+        error: quotaErr.message,
+        upgradeRequired: true,
+        help: 'Please subscribe or upgrade your plan in Billing & Plans to continue scanning.'
+      })
+    }
+  } else if (targetUserId && (deductQuota === true || deductQuota === 'true')) {
+    try {
+      consumeScanQuota(targetUserId)
+    } catch (quotaErr) {
+      console.warn(`[admin whitebox] Client ${targetUserId} quota deduction notice: ${quotaErr.message}`)
+    }
+  }
+
   const list = Array.isArray(folders) ? folders : [folders]
   if (!list.length) return res.status(400).json({ error: 'folders required (array of {dir, prefix?} or paths)' })
 
@@ -815,16 +840,28 @@ app.post('/api/scans/whitebox-folder', requireAuth, async (req, res) => {
   })
   if (!files.length) return res.status(400).json({ error: 'no source files collected', stats })
 
+  let validProjectId = null
+  if (projectId) {
+    const p = db.get(`SELECT id FROM projects WHERE id = ?`, projectId)
+    if (p) validProjectId = p.id
+  }
+
+  let validUserId = null
+  if (effectiveUserId) {
+    const u = db.get(`SELECT id FROM users WHERE id = ?`, effectiveUserId)
+    if (u) validUserId = u.id
+  }
+
   const id = `scan_${randomUUID()}`
   const now = new Date().toISOString()
   const targetLabel = normalized.map(f => f.prefix).join(' + ')
-  db.run(`INSERT INTO scans (id, project_id, target, target_type, mode, status, template, modules, progress, created_at, started_at)
-          VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
-    id, projectId, targetLabel, 'code', 'whitebox', 'running', 'folder',
-    JSON.stringify(['folder-walker']), 0, now, now)
+  db.run(`INSERT INTO scans (id, project_id, target, target_type, mode, status, template, modules, progress, created_at, started_at, user_id)
+          VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+    id, validProjectId, targetLabel, 'code', 'whitebox', 'running', 'folder',
+    JSON.stringify(['folder-walker']), 0, now, now, validUserId)
   const scan = db.get(`SELECT * FROM scans WHERE id = ?`, id)
-  audit(req.user.username, 'scan:start', `whitebox-folder → ${targetLabel} (${files.length} files)`)
-  saveScanConfig(id, { mode: 'whitebox', source: 'folder', folders: normalized, language, focus, verify, depth, maxFiles, maxBytes, dynamicTarget, dynamicModules })
+  audit(req.user.username, 'scan:start', `whitebox-folder → ${targetLabel} (${files.length} files, by ${req.user.role}${targetUserId ? ` for client ${targetUserId}` : ''})`)
+  saveScanConfig(id, { mode: 'whitebox', source: 'folder', folders: normalized, language, focus, verify, depth, maxFiles, maxBytes, dynamicTarget, dynamicModules, targetUserId, deductQuota })
 
   pipeline.log(id, 'info', `📂 Folder walker collected ${files.length} files (${JSON.stringify(stats.collected || files.length)} used, stats: ${JSON.stringify(stats).slice(0, 300)})`)
 
@@ -1226,6 +1263,18 @@ app.post('/api/payloads/reindex', requireAuth, (req, res) => {
 })
 app.get('/api/payloads/search', requireAuth, (req, res) => {
   res.json(payloadsRag.retrievePayloads(req.query.q || '', { limit: Number(req.query.limit) || 6 }))
+})
+
+// -- Skills RAG (cybersecurity playbooks) --
+app.get('/api/skills/status', requireAuth, (req, res) => res.json(skillsRag.skillsIndexStatus()))
+app.post('/api/skills/reindex', requireAuth, (req, res) => {
+  const r = skillsRag.buildSkillsIndex()
+  const cat = skillsRag.writeSkillsCatalog()
+  audit(req.user.username, 'skills:reindex', r.indexed + ' skills')
+  res.json({ ...r, catalog: cat })
+})
+app.get('/api/skills/search', requireAuth, (req, res) => {
+  res.json(skillsRag.retrieveSkills(req.query.q || '', { limit: Number(req.query.limit) || 2, includeBody: req.query.body === 'true' }))
 })
 
 // ── AI Feedback Loop (Dynamic Self-Correction) ──────────────────────────────
@@ -1875,6 +1924,32 @@ app.get('/api/admin/clients', requireAuth, requireRole('admin'), (req, res) => {
   try {
     const clients = getAllClientsAdmin()
     res.json({ clients })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+app.get('/api/admin/clients/:id/details', requireAuth, requireRole('admin'), (req, res) => {
+  try {
+    const details = getClientDetailsAdmin(req.params.id)
+    res.json(details)
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+app.post('/api/admin/clients/:id/projects', requireAuth, requireRole('admin'), (req, res) => {
+  try {
+    const { name, description = '', scope = '', cover = '', riskLevel = 'medium' } = req.body || {}
+    if (!name) return res.status(400).json({ error: 'Project name is required' })
+    const user = db.get(`SELECT username, email FROM users WHERE id = ?`, req.params.id)
+    const clientLabel = user ? `${user.username} (${user.email || ''})` : 'Client'
+    const id = `proj_${randomUUID()}`
+    const now = new Date().toISOString()
+    db.run(`INSERT INTO projects (id, name, client, description, scope, cover, risk_level, status, created_at, updated_at, client_id, user_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+      id, name, clientLabel, description, scope, cover, riskLevel, 'active', now, now, req.params.id, req.params.id)
+    audit(req.user.username, 'admin:create_client_project', `${name} for client ${req.params.id}`)
+    res.status(201).json(db.get(`SELECT * FROM projects WHERE id = ?`, id))
   } catch (err) {
     res.status(500).json({ error: err.message })
   }

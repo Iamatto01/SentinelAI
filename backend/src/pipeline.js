@@ -2252,37 +2252,65 @@ export class UnifiedPipeline {
     this._tokenAcc?.delete(scanId)
 
     // ── AUTOMATED PDF REPORT & EMAIL DISPATCH ──
-    if (status === 'completed' && (scan.email_notify || scan.trigger_source?.startsWith('github'))) {
+    if (status === 'completed') {
       setImmediate(async () => {
         try {
+          // Resolve recipient email from scan metadata, client owner, project, or environment
+          let userEmail = scan.email_notify || null
+          if (!userEmail && scan.user_id) {
+            const userRow = db.get(`SELECT email FROM users WHERE id = ?`, scan.user_id)
+            if (userRow?.email) userEmail = userRow.email
+          }
+          if (!userEmail && scan.project_id) {
+            const projUser = db.get(`SELECT u.email FROM projects p JOIN users u ON u.id = p.client_id WHERE p.id = ?`, scan.project_id)
+            if (projUser?.email) userEmail = projUser.email
+          }
+          if (!userEmail) {
+            userEmail = process.env.NOTIFICATION_EMAIL || 'muhammadsaifudinmj@gmail.com'
+          }
+
           const { generateReport } = await import('./report.js')
           const { sendScanAuditReportEmail } = await import('./email.js')
           const scanFindings = db.all(`SELECT * FROM findings WHERE scan_id = ? ORDER BY CASE severity WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 ELSE 4 END`, scanId)
           
-          this.log(scanId, 'info', `📄 Auto-generating PDF audit report for email notification...`)
+          this.log(scanId, 'info', `📄 Auto-generating Executive PDF audit report for email notification...`)
           await generateReport(scanId, 'info', 'all', 'full')
           const path = (await import('node:path')).default
           const { config } = await import('./config.js')
           const pdfPath = path.join(config.outputDir, `report-${scanId}.pdf`)
           
-          const userEmail = scan.email_notify || process.env.NOTIFICATION_EMAIL || 'muhammadsaifudinmj@gmail.com'
-          this.log(scanId, 'info', `📧 Dispatching audit report email to ${userEmail}...`)
+          this.log(scanId, 'info', `📧 Dispatching audit report & attached PDF to ${userEmail}...`)
           
-          await sendScanAuditReportEmail({
+          const emailRes = await sendScanAuditReportEmail({
             userEmail,
             scan,
             findings: scanFindings,
             pdfPath,
             repoName: scan.repo_name || scan.target,
-            triggerSource: scan.trigger_source || 'automation',
+            triggerSource: scan.trigger_source || 'pentest-suite',
             commitHash: scan.commit_hash,
           })
-          this.log(scanId, 'info', `✅ Audit report email successfully delivered to ${userEmail}`)
+          
+          if (emailRes.success) {
+            this.log(scanId, 'info', `✅ Audit report email successfully delivered to ${userEmail} (PDF attached)`)
+          } else {
+            this.log(scanId, 'warn', `⚠️ Email dispatch notice: ${emailRes.error || 'Check SMTP configuration'}`)
+          }
         } catch (err) {
           this.log(scanId, 'warn', `⚠️ Auto email dispatch notice: ${err.message}`)
         }
       })
     }
+
+    // ── DEQUEUE NEXT JOB FROM QUEUE WORKER POOL ──
+    setImmediate(async () => {
+      try {
+        const { queueManager } = await import('./queue.js')
+        await queueManager.dequeueNext(this)
+      } catch (qErr) {
+        console.warn(`[pipeline] Dequeue trigger notice: ${qErr.message}`)
+      }
+    })
   }
 
   /** Auto-exploit hook: launches a campaign for verified high/critical findings. */

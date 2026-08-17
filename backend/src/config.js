@@ -81,6 +81,10 @@ export const config = {
     indexPath: resolveDir(process.env.PAYLOADS_INDEX, path.join(PROJECT_ROOT, 'output', 'payloads-index.json')),
   },
 
+  skills: {
+    dir: resolveDir(process.env.SKILLS_DIR, path.join(PROJECT_ROOT, 'knowledge', 'skills')),
+  },
+
   outputDir: path.join(PROJECT_ROOT, 'output'),
   dbPath: path.join(PROJECT_ROOT, 'output', 'fyp2.db'),
 

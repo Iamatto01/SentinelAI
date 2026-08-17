@@ -1,5 +1,6 @@
 import { llm } from './llm-client.js'
 import { agentRegistry } from './agent-registry.js'
+import { retrieveSkills } from '../integrations/skills-rag.js'
 
 /**
  * AIEngine — the reasoning core. Routes each finding to the right specialist
@@ -55,6 +56,20 @@ export class AIEngine {
     const agentName = targetType === 'code' ? 'code-auditor' : this.agents.routeFinding(finding)
     const rawPersona = this.agents.prompt(agentName)
     const persona = this._sanitizePersona(rawPersona)
+
+    // Skills RAG: lazy-load only the relevant practitioner playbooks from the
+    // 817-skill corpus (index.md pattern — never inject the whole library).
+    let skillsBlock = ''
+    try {
+      const skillQuery = [finding.title, finding.cweId, finding.owaspCategory, (finding.description || '').slice(0, 100)]
+        .filter(Boolean).join(' ')
+      const res = retrieveSkills(skillQuery, { limit: 2, includeBody: true })
+      if (res.found) {
+        skillsBlock = `\n\nREFERENCE PLAYBOOKS (senior-analyst workflows from the cybersecurity skills library — follow their verification methodology where relevant):\n` +
+          res.skills.map((s, i) => `--- PLAYBOOK ${i + 1}: ${s.name} (${s.subdomain}) ---\n${(s.body || s.description || '').slice(0, 4000)}`).join('\n\n')
+      }
+    } catch { /* skills RAG unavailable — non-fatal */ }
+
     const system = persona
       ? `${persona}\n\nYou are a security verification specialist. Verify this finding with PRECISION. Only confirm TRUE positive when evidence clearly shows exploitable vulnerability. Default to FALSE positive when evidence is ambiguous or only shows configuration without exploitation path. Respond ONLY with JSON.`
       : 'You are a security verification specialist. Verify with PRECISION. Only confirm when evidence is clear. Respond ONLY with JSON.'
@@ -74,7 +89,7 @@ Rules:
 
 FINDING:
 ${JSON.stringify({ title: finding.title, severity: finding.severity, cweId: finding.cweId, description: finding.description, evidence: finding.evidence }, null, 2)}
-
+${skillsBlock}
 Respond with JSON:
 {"is_true_positive": boolean, "confidence": 0-100, "evidence_tier": "observed|validated|needs-validation|exploited", "severity_adjusted": "critical|high|medium|low|info", "reasoning": "one sentence grounded in the evidence", "remediation": "concrete fix"}`
 
