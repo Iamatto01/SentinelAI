@@ -92,6 +92,21 @@ export default function Scans() {
       })
   }
 
+  async function handleResume(id, e) {
+    if (e) e.stopPropagation()
+    setActionBusy(id)
+    try {
+      await api.resumeScan(id)
+      fetchScans()
+      nav(`/app/scans/${id}`)
+    } catch (err2) {
+      alert(`Resume failed: ${err2.message}`)
+    } finally {
+      setActionBusy(null)
+      setActiveMenu(null)
+    }
+  }
+
   async function handleDelete(id, e) {
     if (e) e.stopPropagation()
     if (!window.confirm('Are you sure you want to delete this scan and all its findings?')) return
@@ -253,6 +268,14 @@ export default function Scans() {
                             ref={menuRef}
                             className={`absolute right-5 ${isBottomRow ? 'bottom-10' : 'top-12'} z-50 w-48 rounded-xl glass-deep border border-white/20 shadow-2xl p-1.5 space-y-1 text-left backdrop-blur-2xl`}
                           >
+                            {(s.status === 'interrupted' || s.status === 'paused') && (
+                              <button
+                                onClick={(e) => handleResume(s.id, e)}
+                                className="w-full flex items-center gap-2 px-3 py-2 text-xs text-amber-300 hover:bg-amber-500/10 rounded-lg transition-colors font-semibold"
+                              >
+                                <Play size={14} className="text-amber-400" /> Resume Scan
+                              </button>
+                            )}
                             {!isClient && (
                               <button
                                 onClick={(e) => handleReRun(s.id, e)}
@@ -267,6 +290,14 @@ export default function Scans() {
                             >
                               <FileDown size={14} className="text-emerald-400" /> Download Report
                             </button>
+                            {!isClient && (
+                              <button
+                                onClick={(e) => handleDelete(s.id, e)}
+                                className="w-full flex items-center gap-2 px-3 py-2 text-xs text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors font-semibold"
+                              >
+                                <Trash2 size={14} className="text-rose-400" /> Delete Scan
+                              </button>
+                            )}
 
                           </div>
                         )}

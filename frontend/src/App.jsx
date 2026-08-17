@@ -19,6 +19,7 @@ import ExploitCampaign from './pages/ExploitCampaign.jsx'
 import GitHubAutomation from './pages/GitHubAutomation.jsx'
 import Billing from './pages/Billing.jsx'
 import ClientsManagement from './pages/ClientsManagement.jsx'
+import KaliControl from './pages/KaliControl.jsx'
 
 class ErrorBoundary extends React.Component {
   constructor(props) {
@@ -98,12 +99,14 @@ export default function App() {
         <Route path="/integrations" element={<Navigate to="/app/integrations" replace />} />
         <Route path="/github" element={<Navigate to="/app/github" replace />} />
         <Route path="/billing" element={<Navigate to="/app/billing" replace />} />
+        <Route path="/kali-control" element={<Navigate to="/app/kali-control" replace />} />
         <Route path="/settings" element={<Navigate to="/app/settings" replace />} />
 
         {/* Main Protected Application */}
         <Route path="/app" element={<Protected><ScanProvider><AiProvider><Shell /></AiProvider></ScanProvider></Protected>}>
           <Route index element={<Navigate to="/app/dashboard" replace />} />
           <Route path="dashboard" element={<Dashboard />} />
+          <Route path="kali-control" element={<KaliControl />} />
           <Route path="clients" element={<ClientsManagement />} />
           <Route path="scans" element={<Scans />} />
           <Route path="scans/:id" element={<ScanDetail />} />

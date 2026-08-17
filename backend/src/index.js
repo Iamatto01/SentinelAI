@@ -29,6 +29,7 @@ import { sendScanRequestNotification } from './email.js'
 import { GitHubClient, parseGitHubWebhook } from './integrations/github.js'
 import { PLANS, getUserSubscription, consumeScanQuota, activateSubscription, adminUpdateClientSubscription, getAllClientsAdmin, getPaymentHistory } from './billing.js'
 import { requireRole } from './auth.js'
+import * as kaliControl from './kali-control.js'
 
 // CORS: only whitelisted origins (config.corsOrigins from CLIENT_ORIGIN).
 // Non-browser clients (curl, server-to-server) carry no Origin header → allowed.
@@ -847,12 +848,111 @@ app.post('/api/scans/:id/pause', requireAuth, (req, res) => {
   res.json({ ok: true, status: 'paused' })
 })
 
-app.post('/api/scans/:id/resume', requireAuth, (req, res) => {
-  pipeline.resumeScan(req.params.id)
-  db.run(`UPDATE scans SET status = 'running' WHERE id = ?`, req.params.id)
-  pipeline.log(req.params.id, 'info', '▶ Scan resumed by user')
-  audit(req.user.username, 'scan:resume', req.params.id)
+app.post('/api/scans/:id/resume', requireAuth, async (req, res) => {
+  const scan = db.get(`SELECT * FROM scans WHERE id = ?`, req.params.id)
+  if (!scan) return res.status(404).json({ error: 'Scan not found' })
+
+  // If scan is already running, return
+  if (scan.status === 'running') {
+    return res.json({ ok: true, status: 'running', message: 'Scan is already running' })
+  }
+
+  // If scan was just in-memory paused (and controller still active)
+  if (pipeline._ctl(scan.id).paused) {
+    pipeline.resumeScan(scan.id)
+    db.run(`UPDATE scans SET status = 'running', finished_at = NULL WHERE id = ?`, scan.id)
+    pipeline.log(scan.id, 'info', '▶ Scan resumed by user')
+    audit(req.user.username, 'scan:resume', scan.id)
+    return res.json({ ok: true, status: 'running' })
+  }
+
+  // If scan was interrupted (server reboot/crash/stopped), re-launch pipeline with saved config
+  let cfg = {}
+  try { cfg = JSON.parse(db.get(`SELECT config FROM scan_configs WHERE scan_id = ?`, scan.id)?.config || '{}') } catch { }
+
+  const mode = cfg.mode || scan.mode || 'blackbox'
+  const modules = Array.isArray(cfg.modules) ? cfg.modules : (() => { try { return JSON.parse(scan.modules || '[]') } catch { return [] } })()
+  const baseOpts = {
+    modules,
+    objective: cfg.objective || 'comprehensive',
+    maxTools: cfg.maxTools || 6,
+    verify: cfg.verify !== false,
+    depth: cfg.depth || 'standard',
+    language: cfg.language || '',
+    focus: cfg.focus || '',
+  }
+
+  db.run(`UPDATE scans SET status = 'running', finished_at = NULL WHERE id = ?`, scan.id)
+  pipeline.log(scan.id, 'info', '▶ Resuming scan from interruption point. Preserving all existing findings...')
+  audit(req.user.username, 'scan:resume-interrupted', scan.id)
+
+  setImmediate(async () => {
+    try {
+      if (mode === 'whitebox') {
+        const whiteboxFiles = Array.isArray(cfg.files) ? cfg.files : []
+        await pipeline.runWhitebox(scan, { ...baseOpts, files: whiteboxFiles, dynamicTarget: cfg.dynamicTarget || '', dynamicModules: cfg.dynamicModules || [] })
+      } else {
+        await pipeline.runBlackbox(scan, baseOpts)
+      }
+    } catch (e) {
+      if (e.message === 'SCAN_STOPPED') return
+      pipeline.log(scan.id, 'error', `Pipeline error: ${e.message}`)
+      pipeline.finish(scan.id, 'failed')
+    }
+  })
+
   res.json({ ok: true, status: 'running' })
+})
+
+// ── Kali Linux Remote Control Center ─────────────────────────────────────────
+app.get('/api/kali/system-info', requireAuth, requireRole('admin'), async (req, res) => {
+  try {
+    const info = await kaliControl.getSystemInfo()
+    res.json(info)
+  } catch (e) {
+    res.status(500).json({ error: e.message })
+  }
+})
+
+app.post('/api/kali/exec', requireAuth, requireRole('admin'), async (req, res) => {
+  try {
+    const { command, timeout } = req.body || {}
+    audit(req.user.username, 'kali:exec', (command || '').slice(0, 150))
+    const result = await kaliControl.executeCommand(command, timeout)
+    res.json(result)
+  } catch (e) {
+    res.status(400).json({ error: e.message })
+  }
+})
+
+app.post('/api/kali/service', requireAuth, requireRole('admin'), async (req, res) => {
+  try {
+    const { service, action } = req.body || {}
+    audit(req.user.username, 'kali:service', `${service} -> ${action}`)
+    const result = await kaliControl.manageService(service, action)
+    res.json(result)
+  } catch (e) {
+    res.status(400).json({ error: e.message })
+  }
+})
+
+app.get('/api/kali/tools', requireAuth, requireRole('admin'), async (req, res) => {
+  try {
+    const result = await kaliControl.auditTools()
+    res.json(result)
+  } catch (e) {
+    res.status(500).json({ error: e.message })
+  }
+})
+
+app.post('/api/kali/tools/install', requireAuth, requireRole('admin'), async (req, res) => {
+  try {
+    audit(req.user.username, 'kali:tools-install', 'all')
+    const result = kaliControl.triggerToolsInstall()
+    res.json(result)
+  } catch (e) {
+    res.status(500).json({ error: e.message })
+  }
 })
 
 // ── Findings ─────────────────────────────────────────────────────────────────

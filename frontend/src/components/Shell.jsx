@@ -4,7 +4,7 @@ import {
   LayoutDashboard, Radar, Bug, FolderKanban, Plug, LogOut, Shield, Plus,
   Hexagon, Activity, Settings as SettingsIcon, Crosshair, Menu, X,
   ChevronLeft, ChevronRight, Search, Bell, Sparkles, GitBranch, CreditCard,
-  Users, AlertTriangle, ArrowRight, Lock, CheckCircle2, Zap
+  Users, AlertTriangle, ArrowRight, Lock, CheckCircle2, Zap, Terminal
 } from 'lucide-react'
 import { useAuth } from '../lib/AuthContext.jsx'
 import { api } from '../lib/api.js'
@@ -23,6 +23,7 @@ export default function Shell() {
   const [subscription, setSubscription] = useState(null)
   const [loadingSub, setLoadingSub] = useState(true)
 
+  // Strict Role Check: Admin vs Client
   const isAdmin = user?.role === 'admin'
   const isClient = user?.role === 'client'
   const isExpanded = pinned || isHovered
@@ -40,6 +41,7 @@ export default function Shell() {
 
   const adminNav = [
     { to: '/app/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+    { to: '/app/kali-control', label: 'Kali Control', icon: Terminal },
     { to: '/app/clients', label: 'Clients', icon: Users },
     { to: '/app/scans', label: 'All Scans', icon: Radar },
     { to: '/app/github', label: 'GitHub Auto', icon: GitBranch },

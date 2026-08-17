@@ -140,9 +140,13 @@ export default function ScanDetail() {
         </div>
         <div className="flex flex-wrap items-center gap-2 max-w-full">
           {running && <button onClick={pause} className="btn-ghost"><Pause size={15} /> Pause</button>}
-          {paused && <button onClick={resume} className="btn-primary"><Play size={15} /> Resume</button>}
+          {(paused || scan.status === 'interrupted') && (
+            <button onClick={resume} className="btn-primary shadow-glow">
+              <Play size={15} /> Resume Scan
+            </button>
+          )}
           {(running || paused) && <button onClick={stop} className="btn-danger"><Square size={15} /> Stop</button>}
-          {!running && !paused && (
+          {!running && !paused && scan.status !== 'interrupted' && (
             <>
               <button 
                 onClick={playAudioBriefing} 
