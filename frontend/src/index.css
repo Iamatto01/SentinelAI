@@ -212,3 +212,80 @@ body {
   animation: pulse-glow 3s ease-in-out infinite;
 }
 
+/* ═══ Day Mode / Night Body Support ═══ */
+body.night { color-scheme: dark; }
+
+body.day-mode {
+  color-scheme: light;
+  color: #0f172a;
+  background:
+    radial-gradient(circle at 15% 15%, rgba(0, 242, 254, 0.10) 0%, transparent 40%),
+    radial-gradient(circle at 85% 20%, rgba(0, 117, 255, 0.10) 0%, transparent 45%),
+    radial-gradient(circle at 50% 80%, rgba(121, 40, 202, 0.07) 0%, transparent 50%),
+    #eef2f7;
+  background-attachment: fixed;
+}
+
+/* Glass surfaces → light glass */
+body.day-mode .glass {
+  background: linear-gradient(127.09deg, rgba(255, 255, 255, 0.92) 19.41%, rgba(241, 245, 249, 0.82) 76.65%);
+  border-color: rgba(15, 23, 42, 0.10);
+  box-shadow: 0 20px 40px -15px rgba(15, 23, 42, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+body.day-mode .glass-soft {
+  background: linear-gradient(127.09deg, rgba(255, 255, 255, 0.88) 19.41%, rgba(248, 250, 252, 0.78) 76.65%);
+  border-color: rgba(15, 23, 42, 0.08);
+  box-shadow: 0 10px 25px -8px rgba(15, 23, 42, 0.10), inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+body.day-mode .glass-deep {
+  background: rgba(255, 255, 255, 0.95);
+  border-color: rgba(15, 23, 42, 0.10);
+}
+
+/* Text utilities → dark ink */
+body.day-mode .text-white,
+body.day-mode .text-slate-100,
+body.day-mode .text-slate-200 { color: #0f172a !important; }
+body.day-mode .text-slate-300,
+body.day-mode .text-slate-400 { color: #475569 !important; }
+body.day-mode .text-slate-500 { color: #64748b !important; }
+
+/* Accent readability on light surfaces */
+body.day-mode .text-cyan-300 { color: #0e7490 !important; }
+body.day-mode .text-cyan-400 { color: #0891b2 !important; }
+
+/* Keep code blocks / terminals dark with light text */
+body.day-mode pre,
+body.day-mode .terminal,
+body.day-mode .terminal * { color: #cbd5e1 !important; }
+body.day-mode pre.text-slate-300,
+body.day-mode pre.text-slate-400,
+body.day-mode pre.text-slate-500 { color: #94a3b8 !important; }
+
+/* Dark ink surfaces → light */
+body.day-mode .bg-slate-950 { background-color: #f8fafc !important; }
+body.day-mode .bg-slate-950\/80 { background-color: rgba(248, 250, 252, 0.92) !important; }
+body.day-mode .bg-black\/60,
+body.day-mode .bg-black\/50,
+body.day-mode .bg-black\/40,
+body.day-mode .bg-black\/30,
+body.day-mode .bg-black\/20 { background-color: rgba(15, 23, 42, 0.05) !important; }
+
+/* Borders → subtle dark */
+body.day-mode .border-white\/20,
+body.day-mode .border-white\/15,
+body.day-mode .border-white\/10 { border-color: rgba(15, 23, 42, 0.10) !important; }
+body.day-mode .border-white\/5 { border-color: rgba(15, 23, 42, 0.06) !important; }
+body.day-mode .border-white\/\[0\.08\] { border-color: rgba(15, 23, 42, 0.08) !important; }
+
+/* Hover washes → dark tint */
+body.day-mode .hover\:bg-white\/10:hover,
+body.day-mode .hover\:bg-white\/\[0\.06\]:hover,
+body.day-mode .hover\:bg-white\/5:hover { background-color: rgba(15, 23, 42, 0.05) !important; }
+
+/* Scrollbars → light */
+body.day-mode * { scrollbar-color: rgba(15, 23, 42, 0.18) transparent; }
+body.day-mode *::-webkit-scrollbar-thumb { background: rgba(15, 23, 42, 0.18); }
+body.day-mode *::-webkit-scrollbar-thumb:hover { background: rgba(15, 23, 42, 0.30); }
+
+

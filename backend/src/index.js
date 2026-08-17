@@ -36,9 +36,10 @@ import * as kaliControl from './kali-control.js'
 // Local frontend on any localhost/127.0.0.1 port (vite dev 517x, preview 417x) is always allowed —
 // the backend itself binds to localhost, so this never widens remote attack surface.
 const LOCAL_ORIGIN_RE = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/
+const LAN_ORIGIN_RE = /^https?:\/\/(192\.168\.\d{1,3}\.\d{1,3}|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3})(:\d+)?$/
 const corsOptions = {
   origin(origin, cb) {
-    if (!origin || config.corsOrigins.includes(origin) || config.corsOrigins.includes('*') || origin.endsWith('sentinelai.studio') || LOCAL_ORIGIN_RE.test(origin)) return cb(null, true)
+    if (!origin || config.corsOrigins.includes(origin) || config.corsOrigins.includes('*') || origin.endsWith('sentinelai.studio') || LOCAL_ORIGIN_RE.test(origin) || LAN_ORIGIN_RE.test(origin)) return cb(null, true)
     return cb(new Error(`CORS blocked: ${origin}`))
   },
   credentials: true,
@@ -1568,9 +1569,11 @@ app.get('/api/audit', requireAuth, (req, res) => {
 // ── GitHub Automation & Repository Management ─────────────────────────────────
 
 // Get user's connected GitHub integration status
+// Get user's connected GitHub integration status
 app.get('/api/github/status', requireAuth, (req, res) => {
-  const integration = db.get(`SELECT id, github_username, avatar_url, created_at, updated_at FROM github_integrations WHERE user_id = ?`, req.user.id)
-  const trackedCount = db.get(`SELECT COUNT(*) c FROM github_repos WHERE user_id = ?`, req.user.id)?.c || 0
+  const userId = req.user?.id || req.user?.sub
+  const integration = db.get(`SELECT id, github_username, avatar_url, created_at, updated_at FROM github_integrations WHERE user_id = ?`, userId)
+  const trackedCount = db.get(`SELECT COUNT(*) c FROM github_repos WHERE user_id = ?`, userId)?.c || 0
   res.json({
     connected: !!integration,
     integration: integration || null,
@@ -1583,23 +1586,26 @@ app.post('/api/github/connect', requireAuth, async (req, res) => {
   const { token } = req.body || {}
   if (!token || !token.trim()) return res.status(400).json({ error: 'GitHub Personal Access Token is required' })
 
+  const userId = req.user?.id || req.user?.sub
+  if (!userId) return res.status(401).json({ error: 'User identification failed. Please re-login.' })
+
   try {
     const client = new GitHubClient(token.trim())
     const profile = await client.verifyToken()
     
     const now = new Date().toISOString()
-    const existing = db.get(`SELECT id FROM github_integrations WHERE user_id = ?`, req.user.id)
+    const existing = db.get(`SELECT id FROM github_integrations WHERE user_id = ?`, userId)
     if (existing) {
       db.run(
         `UPDATE github_integrations SET github_username = ?, access_token = ?, avatar_url = ?, updated_at = ? WHERE user_id = ?`,
-        profile.login, token.trim(), profile.avatar_url, now, req.user.id
+        profile.login, token.trim(), profile.avatar_url, now, userId
       )
     } else {
       const id = `gh_${randomUUID().slice(0, 12)}`
       db.run(
         `INSERT INTO github_integrations (id, user_id, github_username, access_token, avatar_url, created_at, updated_at)
          VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        id, req.user.id, profile.login, token.trim(), profile.avatar_url, now, now
+        id, userId, profile.login, token.trim(), profile.avatar_url, now, now
       )
     }
 
@@ -1612,20 +1618,22 @@ app.post('/api/github/connect', requireAuth, async (req, res) => {
 
 // Disconnect GitHub integration
 app.delete('/api/github/disconnect', requireAuth, (req, res) => {
-  db.run(`DELETE FROM github_integrations WHERE user_id = ?`, req.user.id)
+  const userId = req.user?.id || req.user?.sub
+  db.run(`DELETE FROM github_integrations WHERE user_id = ?`, userId)
   audit(req.user.username, 'github:disconnect', 'Unlinked GitHub account')
   res.json({ success: true })
 })
 
 // List user's GitHub repositories and merge tracking state
 app.get('/api/github/repos', requireAuth, async (req, res) => {
-  const integration = db.get(`SELECT access_token FROM github_integrations WHERE user_id = ?`, req.user.id)
+  const userId = req.user?.id || req.user?.sub
+  const integration = db.get(`SELECT access_token FROM github_integrations WHERE user_id = ?`, userId)
   if (!integration) return res.status(400).json({ error: 'GitHub is not connected yet. Please connect your GitHub account.' })
 
   try {
     const client = new GitHubClient(integration.access_token)
     const remoteRepos = await client.listRepositories(1, 100)
-    const trackedRows = db.all(`SELECT * FROM github_repos WHERE user_id = ?`, req.user.id)
+    const trackedRows = db.all(`SELECT * FROM github_repos WHERE user_id = ?`, userId)
     const trackedMap = new Map(trackedRows.map(r => [r.full_name, r]))
 
     const merged = remoteRepos.map(repo => {
@@ -1653,8 +1661,9 @@ app.post('/api/github/repos/track', requireAuth, (req, res) => {
   const { repoFullName, repoUrl, defaultBranch = 'main', isPrivate = false, isTracked = true, autoScanPush = 1, autoScanPr = 1, emailReport = 1 } = req.body || {}
   if (!repoFullName) return res.status(400).json({ error: 'repoFullName required' })
 
+  const userId = req.user?.id || req.user?.sub
   const now = new Date().toISOString()
-  const existing = db.get(`SELECT id FROM github_repos WHERE user_id = ? AND full_name = ?`, req.user.id, repoFullName)
+  const existing = db.get(`SELECT id FROM github_repos WHERE user_id = ? AND full_name = ?`, userId, repoFullName)
 
   if (!isTracked) {
     if (existing) db.run(`DELETE FROM github_repos WHERE id = ?`, existing.id)
@@ -1671,7 +1680,7 @@ app.post('/api/github/repos/track', requireAuth, (req, res) => {
     db.run(
       `INSERT INTO github_repos (id, user_id, full_name, repo_url, default_branch, is_private, auto_scan_push, auto_scan_pr, email_report, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      id, req.user.id, repoFullName, repoUrl || `https://github.com/${repoFullName}`, defaultBranch, isPrivate ? 1 : 0, autoScanPush ? 1 : 0, autoScanPr ? 1 : 0, emailReport ? 1 : 0, now, now
+      id, userId, repoFullName, repoUrl || `https://github.com/${repoFullName}`, defaultBranch, isPrivate ? 1 : 0, autoScanPush ? 1 : 0, autoScanPr ? 1 : 0, emailReport ? 1 : 0, now, now
     )
   }
 
@@ -1683,14 +1692,16 @@ app.post('/api/github/scan', requireAuth, async (req, res) => {
   const { repoFullName, branch = 'main' } = req.body || {}
   if (!repoFullName) return res.status(400).json({ error: 'repoFullName required' })
 
+  const userId = req.user?.id || req.user?.sub
+
   // 1. Quota Verification & Consumption
   try {
-    consumeScanQuota(req.user.id)
+    consumeScanQuota(userId)
   } catch (quotaErr) {
     return res.status(402).json({ error: quotaErr.message, upgradeRequired: true })
   }
 
-  const integration = db.get(`SELECT access_token FROM github_integrations WHERE user_id = ?`, req.user.id)
+  const integration = db.get(`SELECT access_token FROM github_integrations WHERE user_id = ?`, userId)
   if (!integration) return res.status(400).json({ error: 'GitHub is not connected' })
 
   const [owner, repo] = repoFullName.split('/')
@@ -1717,7 +1728,7 @@ app.post('/api/github/scan', requireAuth, async (req, res) => {
     // Update tracked repo last scan info
     db.run(
       `UPDATE github_repos SET last_scan_id = ?, last_scan_at = ? WHERE user_id = ? AND full_name = ?`,
-      scanId, now, req.user.id, repoFullName
+      scanId, now, userId, repoFullName
     )
 
     const scan = db.get(`SELECT * FROM scans WHERE id = ?`, scanId)
