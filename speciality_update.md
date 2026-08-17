@@ -13,7 +13,7 @@
 3. [Unified Pipeline Architecture](#3-unified-pipeline-architecture)
 4. [Autonomous Exploitation Engine](#4-autonomous-exploitation-engine)
 5. [Professional PDF Report Generation](#5-professional-pdf-report-generation)
-6. [PayloadsAllTheThings RAG Knowledge Base](#6-payloadsallthethings-rag-knowledge-base)
+6. [Dual RAG Knowledge Bases (Payloads + 817 Skills)](#6-dual-rag-knowledge-bases)
 7. [OWASP 2025 Top 10 Mapping](#7-owasp-2025-top-10-mapping)
 8. [Multi-Provider LLM with Fallback](#8-multi-provider-llm-with-fallback)
 9. [Real-Time Live Streaming](#9-real-time-live-streaming)
@@ -33,7 +33,7 @@ SentinelAI is not just another vulnerability scanner. It is a **complete autonom
 |---|---|---|
 | **Tool Engine** | Hexstrike-AI (100+ security tools) | Nmap, Nuclei, SQLMap, Dalfox, Katana, Subfinder, HTTPx, WPScan, Nikto, and more — orchestrated via REST |
 | **Reasoning Layer** | 50 Specialist AI Agent Personas | Each vulnerability type is routed to a dedicated expert agent (SQLi specialist, XSS specialist, AD attacker, cloud security expert, etc.) |
-| **Knowledge Base** | PayloadsAllTheThings (FTS5-indexed) | 201 PoC documents across 47 categories, retrieved in milliseconds via full-text search |
+| **Knowledge Base** | Dual RAG: PayloadsAllTheThings (201 PoC docs) + Cybersecurity Skills (817 practitioner playbooks) | Both FTS5-indexed, retrieved in milliseconds via full-text search |
 | **Exploitation Engine** | Autonomous Exploitation Orchestrator (AEO) | Automatically launches exploit campaigns against verified high/critical findings — with risk-gated approval |
 | **Report Engine** | PDFKit Professional Reports | Multi-section PDF reports with severity charts, PoC procedures, CVSS breakdowns, and remediation guidance |
 | **Platform** | Node.js + Express + Socket.IO + SQLite | Local-first, no cloud DB required, real-time WebSocket streaming |
@@ -41,6 +41,8 @@ SentinelAI is not just another vulnerability scanner. It is a **complete autonom
 ### What Makes This System WOW
 
 - **50 AI Agents** — Not one generic AI, but 50 specialist personas, each an expert in a specific attack domain
+- **Dual RAG Knowledge** — 201 PoC documents + 817 practitioner playbooks, both FTS5-indexed with BM25 ranking
+- **AI Self-Correction** — A feedback loop that catches 10 error types in AI output and re-prompts until clean
 - **Autonomous Exploitation** — Finds vulnerabilities AND automatically exploits them (with human approval for high-risk actions)
 - **Post-Exploitation Engine** — After gaining access: persistence, lateral movement, credential harvesting, data exfiltration
 - **Real-Time Everything** — Live terminal output, live findings stream, live exploit progress — all via WebSocket
@@ -132,6 +134,23 @@ After verification, the AI generates a **structured Proof of Concept** for each 
 ### Global AI Chat Widget
 
 A floating AI chat widget is available on **every page** — users can ask security questions, request explanations of findings, or get remediation advice from any of the 50 specialist agents at any time.
+
+### AI Feedback Loop — Dynamic Self-Correction
+
+Every AI-generated finding passes through a **self-correcting feedback loop** before being stored:
+
+```
+AI Finding → AIFeedbackLoop.selfCorrect()
+  → Review for 10 error types:
+      generic_poc, missing_steps, missing_command, missing_payload,
+      missing_impact, severity_mismatch, hallucinated_path,
+      generic_remediation, thin_description, missing_code_evidence
+  → If errors found: re-prompt AI with error context (max 2 retries)
+  → Corrected finding replaces the original
+  → Learned "prompt adjustments" persisted to DB (per-agent)
+```
+
+The system **learns from its own mistakes**: recurring error patterns become reusable prompt adjustments that improve future scans — visible in the UI via the AI Feedback Panel (correction rate, review log, learned adjustments).
 
 ---
 
@@ -226,6 +245,7 @@ The system includes a comprehensive exploit registry mapping vulnerability types
 | **Path Traversal** | File read → Config extraction | Credential loot |
 | **SSRF** | Internal scan → Cloud metadata | Credential loot |
 | **JWT Attacks** | Token forge → Auth bypass | Lateral movement |
+| **cPanel Auth Bypass (CVE-2026-41940)** | 5-stage detection chain: token leak probe → session validation → forced browsing → privilege check → impact confirmation | Detection-only (no destructive action) |
 | **+ many more** | | |
 
 ### Post-Exploitation Engine
@@ -308,7 +328,11 @@ Info-level reconnaissance findings (subdomains, open ports, server headers) are 
 
 ---
 
-## 6. PayloadsAllTheThings RAG Knowledge Base
+## 6. Dual RAG Knowledge Bases
+
+The platform fuses **two independent retrieval-augmented generation (RAG) corpora**, both indexed in SQLite FTS5 with BM25 ranking and millisecond retrieval.
+
+### 6.1 PayloadsAllTheThings RAG (PoC Corpus)
 
 ### FTS5 Full-Text Search Index
 
@@ -334,6 +358,46 @@ Finding "SQL Injection in /login"
 ### Supported Vulnerability Categories (47)
 
 SQL Injection, XSS, Command Injection, SSTI, SSRF, CSRF, LFI/RFI, Path Traversal, File Upload, XXE, IDOR, JWT, NoSQL Injection, LDAP Injection, XPath Injection, Open Redirect, CORS, GraphQL, Deserialization, Prototype Pollution, Race Condition, Request Smuggling, Prompt Injection, WebSocket, OAuth, SAML, CRLF, Type Juggling, Business Logic, Account Takeover, Clickjacking, Zip Slip, API Key Leaks, Web Cache Deception, and more.
+
+### 6.2 Cybersecurity Skills RAG (817 Practitioner Playbooks)
+
+A second RAG corpus built from the **Anthropic-Cybersecurity-Skills** collection (Apache-2.0): **817 practitioner-grade SKILL.md playbooks** across **46 subdomains**, each with YAML frontmatter (name, description, tags) and a structured workflow body (When to Use / Prerequisites / Workflow / Key Concepts / Tools / Common Scenarios / Output Format).
+
+**Lazy-Load Architecture (index.md pattern)**
+
+Instead of flooding the AI context with 817 skills, the system uses a catalog-first pattern:
+
+```
+knowledge/skills/index.md   ← generated catalog (817 entries grouped by subdomain)
+        │
+        ▼  human/AI browses catalog only
+FTS5 retrieval (on-demand)  ← query = finding title + CWE + OWASP + description
+        │
+        ▼  top-2 relevant skills only
+DeepSeek verify prompt      ← each playbook body capped at 4KB
+```
+
+**Precision Retrieval**
+
+- **Tiered query strategy** — full AND → pairwise AND → OR fallback, so multi-word queries like "cpanel auth bypass" match precisely instead of loosely
+- **BM25 column weights** — name (8.0) > tags (4.0) > description (3.0) > subdomain (2.0) > frameworks (1.0) > body (0.5): a skill *named* after the technique always outranks one that merely mentions it
+- **Stopword filtering + token length > 2** — removes noise tokens
+- **LIKE fallback** — if FTS5 returns nothing, a substring search on name/description/tags guarantees graceful degradation
+
+**Framework Mappings (6 frameworks per skill)**
+
+Every skill carries mappings to **MITRE ATT&CK v19.1, NIST CSF 2.0, MITRE ATLAS, D3FEND, NIST AI RMF, and MITRE F3** — enabling framework-aligned retrieval for compliance-oriented workflows.
+
+**Integration Points**
+
+| Point | Behavior |
+|---|---|
+| **AI Verification** | `verifyFinding()` injects the top-2 relevant playbooks into the DeepSeek prompt as "REFERENCE PLAYBOOKS" — the specialist agent verifies findings with senior-analyst workflows at hand |
+| **Bootstrap** | Index auto-builds on first boot when `skills_index` is empty |
+| **API** | `GET /api/skills/status`, `GET /api/skills/search?q=`, `POST /api/skills/reindex` |
+| **Catalog** | `writeSkillsCatalog()` regenerates `knowledge/skills/index.md` after every reindex |
+
+**Verified retrieval examples**: "sql injection" → `exploiting-sql-injection-vulnerabilities`; "cpanel auth bypass" → `bypassing-authentication-with-forced-browsing`; "IDOR" → IDOR + BOLA skills; "nmap" → `nmap-advanced`.
 
 ---
 
@@ -606,14 +670,15 @@ The Scan Detail page is the most feature-rich page in the platform:
 | **Stripe** | Payment processing |
 | **SMTP** | Email notifications |
 
-### Database Schema (18 tables)
+### Database Schema (22 tables)
 
 ```
 users, projects, scans, findings, logs, payload_index, payload_fts,
+skills_index, skills_fts,
 audit, monitors, monitor_events, finding_notes, cve_cache,
 exploit_campaigns, exploit_steps, exploit_loot, exploit_approvals,
 github_integrations, github_repos, scan_configs, subscriptions,
-payment_transactions
+payment_transactions, ai_prompt_adjustments, ai_feedback_reviews
 ```
 
 ---
@@ -624,17 +689,20 @@ payment_transactions
 |---|---|
 | Specialist AI Agents | 50 |
 | Security Tools (via Hexstrike) | 100+ |
-| RAG Knowledge Documents | 201 |
+| RAG Knowledge Documents | 201 PoC + 817 skills |
+| RAG Skill Subdomains | 46 |
 | Vulnerability Categories (PoC) | 47 |
+| Framework Mappings per Skill | 6 (ATT&CK, NIST CSF, ATLAS, D3FEND, AI RMF, F3) |
 | OWASP 2025 Categories | 10 + OTH |
 | CWE Mappings | 100+ |
-| REST API Endpoints | 86+ |
-| Database Tables | 21 |
+| REST API Endpoints | 90+ |
+| Database Tables | 22 |
 | Frontend Pages | 15 |
 | Frontend Components | 10 |
 | LLM Providers | 4 (with failover) |
 | Exploit Techniques | 15+ registered |
 | Post-Exploit Actions | 5 categories |
+| AI Self-Correction Error Types | 10 |
 
 ---
 
