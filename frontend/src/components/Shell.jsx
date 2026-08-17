@@ -276,9 +276,6 @@ export default function Shell() {
               </Link>
             )}
 
-            <div className="chip bg-cyan-500/15 text-cyan-300 border-cyan-400/30 text-xs px-3 py-1 font-bold flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" /> Hexstrike REST Engine Active
-            </div>
           </div>
         </header>
 

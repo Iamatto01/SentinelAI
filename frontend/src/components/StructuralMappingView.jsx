@@ -43,8 +43,10 @@ export default function StructuralMappingView({ scan, findings, logs, onClose, o
   const [selectedCluster, setSelectedCluster] = useState(null)
   const [isFullscreen, setIsFullscreen] = useState(false)
 
-  // Node drag state
+  // Node drag & drag threshold state
   const [draggingNodeId, setDraggingNodeId] = useState(null)
+  const isNodeDraggedRef = useRef(false)
+  const storageKey = `sentinel_map_pos_${scan?.id || 'default'}`
 
   // Positions ref — survives re-renders, mutated by drag
   const posRef = useRef({})          // { [nodeId]: { x, y } }
@@ -179,6 +181,19 @@ export default function StructuralMappingView({ scan, findings, logs, onClose, o
     if (layoutKeyRef.current === topoKey) return
     layoutKeyRef.current = topoKey
 
+    // Restore saved positions from localStorage if available
+    try {
+      const saved = localStorage.getItem(storageKey)
+      if (saved) {
+        const parsed = JSON.parse(saved)
+        if (parsed && typeof parsed === 'object' && Object.keys(parsed).length > 0) {
+          posRef.current = parsed
+          setTick((t) => t + 1)
+          return
+        }
+      }
+    } catch { /* fallback to calculation */ }
+
     const el = containerRef.current
     const width = el ? el.clientWidth : 1200
     const height = el ? el.clientHeight : 750
@@ -303,7 +318,7 @@ export default function StructuralMappingView({ scan, findings, logs, onClose, o
     posRef.current = pos
     setTransform({ scale: effectiveScale, x: autoX, y: autoY })
     setTick((t) => t + 1) // force re-render with final positions
-  }, [nodes, links, topoKey])
+  }, [nodes, links, topoKey, storageKey])
 
   // Helper: get position for a node id
   const getPos = useCallback((id) => posRef.current[id] || { x: 0, y: 0 }, [])
@@ -327,6 +342,7 @@ export default function StructuralMappingView({ scan, findings, logs, onClose, o
 
   const handleMouseMove = useCallback((e) => {
     if (draggingNodeId) {
+      isNodeDraggedRef.current = true
       // Node drag — update posRef and bump tick
       const el = containerRef.current
       if (!el) return
@@ -347,21 +363,30 @@ export default function StructuralMappingView({ scan, findings, logs, onClose, o
   }, [draggingNodeId, isPanning, transform.x, transform.y, transform.scale])
 
   const handleMouseUp = useCallback(() => {
+    if (draggingNodeId) {
+      try {
+        localStorage.setItem(storageKey, JSON.stringify(posRef.current))
+      } catch {}
+    }
     setIsPanning(false)
     setDraggingNodeId(null)
-  }, [])
+  }, [draggingNodeId, storageKey])
 
   // Node drag start
   const handleNodeMouseDown = useCallback((e, n) => {
     e.stopPropagation()
     e.preventDefault()
+    isNodeDraggedRef.current = false
     setDraggingNodeId(n.id)
   }, [])
 
-  // Zoom controls
+  // Zoom & Reset controls
   const zoomIn = () => setTransform((p) => ({ ...p, scale: Math.min(p.scale * 1.25, 5) }))
   const zoomOut = () => setTransform((p) => ({ ...p, scale: Math.max(p.scale / 1.25, 0.08) }))
-  const resetView = () => {
+  const resetLayout = () => {
+    try {
+      localStorage.removeItem(storageKey)
+    } catch {}
     layoutKeyRef.current = ''
     posRef.current = {}
     setTick((t) => t + 1)
@@ -434,11 +459,11 @@ export default function StructuralMappingView({ scan, findings, logs, onClose, o
                 <ZoomOut size={18} />
               </button>
               <button
-                onClick={resetView}
-                className="p-2 rounded-lg text-slate-300 hover:text-white hover:bg-white/10 transition-colors border-l border-slate-700/60 ml-1"
-                title="Reset View & Simulation"
+                onClick={resetLayout}
+                className="px-2.5 py-1.5 rounded-lg text-xs font-semibold text-cyan-300 hover:text-white bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/30 transition-colors flex items-center gap-1 ml-1"
+                title="Reset Saved Node Positions & Re-run Layout"
               >
-                <RotateCw size={18} />
+                <RotateCw size={14} /> Reset Layout
               </button>
             </div>
 
@@ -505,6 +530,10 @@ export default function StructuralMappingView({ scan, findings, logs, onClose, o
                       onMouseLeave={() => setHoveredNode(null)}
                       onMouseDown={(e) => handleNodeMouseDown(e, n)}
                       onClick={() => {
+                        if (isNodeDraggedRef.current) {
+                          isNodeDraggedRef.current = false
+                          return
+                        }
                         if (n.type === 'finding' && n.findingData && onSelectFinding) {
                           onSelectFinding(n.findingData)
                         } else if (n.type === 'cluster') {

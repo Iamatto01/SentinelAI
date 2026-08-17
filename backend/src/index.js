@@ -97,16 +97,16 @@ try {
   }
 } catch (e) { console.warn('[bootstrap] Interrupted scan recovery notice:', e.message) }
 
-// seed admin
-let adminUser = getUser('muhammadsaifudinmj@gmail.com') || getUser('admin')
+// seed admin user admin@sentinelai.com with password 'kali'
+let adminUser = getUser('admin@sentinelai.com') || getUser('admin') || getUser('muhammadsaifudinmj@gmail.com')
 if (!adminUser) {
   db.run(`INSERT INTO users (id, username, email, password_hash, role, created_at) VALUES (?,?,?,?,?,?)`,
-    `usr_${randomUUID()}`, 'admin', 'muhammadsaifudinmj@gmail.com', bcrypt.hashSync(config.defaultAdminPassword, 10), 'admin', new Date().toISOString())
-  console.log('[bootstrap] default admin user created')
+    `usr_${randomUUID()}`, 'admin', 'admin@sentinelai.com', bcrypt.hashSync('kali', 10), 'admin', new Date().toISOString())
+  console.log('[bootstrap] default admin user created (admin@sentinelai.com / kali)')
 } else {
-  // Always ensure email and password match requested credentials
-  db.run(`UPDATE users SET email = ?, password_hash = ? WHERE id = ?`,
-    'muhammadsaifudinmj@gmail.com', bcrypt.hashSync('kali', 10), adminUser.id)
+  // Always ensure email, role, and password match requested admin credentials
+  db.run(`UPDATE users SET email = ?, role = 'admin', password_hash = ? WHERE id = ?`,
+    'admin@sentinelai.com', bcrypt.hashSync('kali', 10), adminUser.id)
 }
 // build payload index if empty
 try {

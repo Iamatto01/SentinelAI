@@ -258,9 +258,9 @@ export default function FindingDetailDrawer({ finding, onClose, onStatusChange, 
   ]
 
   return (
-    <div className="fixed inset-0 z-[70] flex justify-end glass-overlay" onClick={onClose}>
-      <div className="w-full max-w-xl h-full glass !rounded-none !rounded-l-3xl border-l border-white/10 overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-        <div className="sticky top-0 z-10 glass-deep border-b border-white/10 p-5">
+    <div className="fixed inset-0 z-[70] flex items-center justify-end p-0 sm:p-4 glass-overlay" onClick={onClose}>
+      <div className="w-full max-w-xl max-h-[92vh] flex flex-col glass sm:rounded-3xl border border-white/15 shadow-2xl overflow-hidden" onClick={(e) => e.stopPropagation()}>
+        <div className="sticky top-0 z-10 glass-deep border-b border-white/10 p-5 shrink-0">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
               <h2 className="text-lg font-bold text-slate-100 leading-snug">{finding.title}</h2>
@@ -268,15 +268,6 @@ export default function FindingDetailDrawer({ finding, onClose, onStatusChange, 
             </div>
             <div className="flex items-center gap-2 shrink-0">
               <SeverityBadge severity={finding.severity} onChange={onSeverityChange} />
-              {onDelete && (
-                <button
-                  onClick={() => onDelete(finding.id)}
-                  title="Delete finding"
-                  className="p-1 rounded text-slate-500 hover:text-sev-critical hover:bg-sev-critical/10 transition-colors"
-                >
-                  <Trash2 size={17} />
-                </button>
-              )}
               <button onClick={onClose} className="text-slate-500 hover:text-slate-200"><X size={20} /></button>
             </div>
           </div>
@@ -296,7 +287,7 @@ export default function FindingDetailDrawer({ finding, onClose, onStatusChange, 
           </div>
         </div>
 
-        <div className="p-5 space-y-4">
+        <div className="p-5 space-y-4 overflow-y-auto flex-1">
           {tab === 'overview' && (
             <>
               <div className="flex flex-wrap gap-2 text-[11px]">

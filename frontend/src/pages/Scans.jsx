@@ -267,17 +267,7 @@ export default function Scans() {
                             >
                               <FileDown size={14} className="text-emerald-400" /> Download Report
                             </button>
-                            {!isClient && (
-                              <>
-                                <div className="border-t border-white/10 my-1" />
-                                <button
-                                  onClick={(e) => handleDelete(s.id, e)}
-                                  className="w-full flex items-center gap-2 px-3 py-2 text-xs text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors font-semibold"
-                                >
-                                  <Trash2 size={14} /> Delete Scan
-                                </button>
-                              </>
-                            )}
+
                           </div>
                         )}
                       </td>

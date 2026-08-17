@@ -100,9 +100,10 @@ export default function Billing() {
             <button
               onClick={loadData}
               disabled={loading}
-              className="btn-secondary text-xs py-2 px-3.5 flex items-center gap-1.5 self-start md:self-auto"
+              className="btn-primary text-xs py-2.5 px-4 font-extrabold shadow-glow flex items-center gap-2 self-start md:self-auto hover:scale-105 transition-transform"
             >
-              <RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> Refresh Plan
+              <RefreshCw size={15} className={loading ? 'animate-spin' : ''} />
+              <span>Refresh Plan</span>
             </button>
           )}
         </div>
@@ -221,7 +222,7 @@ export default function Billing() {
               className={`card p-7 flex flex-col justify-between relative transition-all duration-300 border ${
                 plan.popular
                   ? 'border-cyan-500/50 bg-gradient-to-b from-slate-900/90 via-slate-900/80 to-cyan-950/30 shadow-2xl shadow-cyan-950/40 ring-1 ring-cyan-400/40'
-                  : 'border-white/10 bg-slate-950/60 hover:border-white/20'
+                  : 'border-cyan-500/30 bg-slate-950/80 hover:border-cyan-400/50 shadow-xl'
               }`}
             >
               {plan.popular && (
@@ -262,17 +263,15 @@ export default function Billing() {
               {/* Action Button */}
               <div className="pt-8">
                 {isCurrent ? (
-                  <div className="w-full py-2.5 rounded-xl bg-white/5 border border-white/10 text-center text-xs font-bold text-slate-400 cursor-default">
+                  <div className="w-full py-3 rounded-xl bg-white/5 border border-white/10 text-center text-xs font-bold text-slate-400 cursor-default">
                     Current Active Plan
                   </div>
                 ) : (
                   <button
                     onClick={() => handleOpenCheckout(plan)}
-                    className={`w-full py-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-all ${
-                      plan.popular ? 'btn-primary shadow-glow' : 'btn-secondary'
-                    }`}
+                    className="btn-primary w-full py-3 rounded-xl font-extrabold text-xs flex items-center justify-center gap-2 shadow-glow hover:scale-[1.02] transition-all bg-gradient-to-r from-cyan-500 via-blue-600 to-indigo-600 text-slate-950 cursor-pointer"
                   >
-                    <Zap size={14} /> Upgrade to {plan.name}
+                    <Zap size={15} className="fill-slate-950" /> Upgrade to {plan.name}
                   </button>
                 )}
               </div>

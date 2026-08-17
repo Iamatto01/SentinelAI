@@ -386,13 +386,6 @@ export default function Findings() {
                     {exploitingId === f.id ? <Loader2 size={14} className="animate-spin" /> : <Crosshair size={14} />}
                   </button>
                   <SeverityBadge severity={f.severity} />
-                  <button
-                    onClick={(e) => { e.stopPropagation(); remove(f.id) }}
-                    title="Delete finding"
-                    className="p-1.5 rounded-xl text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 transition-colors"
-                  >
-                    <Trash2 size={15} />
-                  </button>
                 </div>
               </div>
 
