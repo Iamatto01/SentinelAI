@@ -7,6 +7,11 @@ export default defineConfig({
     host: true,
     port: 5173,
     allowedHosts: ['sentinelai.studio', 'localhost'],
+    headers: {
+      'Cache-Control': 'no-store, no-cache, must-revalidate',
+      'Pragma': 'no-cache',
+      'Expires': '0',
+    },
     proxy: {
       '/api': { target: 'http://localhost:5000', changeOrigin: true },
       '/socket.io': { target: 'http://localhost:5000', ws: true, changeOrigin: true },

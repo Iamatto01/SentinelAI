@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { useNavigate, useLocation, Link } from 'react-router-dom'
 import {
-  ArrowLeft, Loader2, KeyRound, User, EyeOff, Sparkles,
+  ArrowLeft, Loader2, KeyRound, User, Eye, EyeOff, Sparkles,
   Mail, Check, AlertCircle
 } from 'lucide-react'
 import InspectorLogo from '../components/InspectorLogo.jsx'
@@ -238,7 +238,7 @@ export default function Login() {
                 className="absolute right-3 p-1 rounded-lg hover:bg-white/10 text-slate-400 hover:text-cyan-300 transition-colors focus:outline-none"
                 title={showPassword ? 'Hide password' : 'Reveal password'}
               >
-                {showPassword ? <EyeCursorTracker /> : <EyeOff size={16} className="text-slate-400" />}
+                {showPassword ? <Eye size={16} className="text-cyan-400" /> : <EyeOff size={16} className="text-slate-400" />}
               </button>
             </div>
           </div>
