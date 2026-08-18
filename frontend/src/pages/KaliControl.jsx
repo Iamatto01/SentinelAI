@@ -21,6 +21,7 @@ import {
   DownloadCloud,
   Layers,
   Zap,
+  Bot,
 } from 'lucide-react'
 import { api } from '../lib/api.js'
 
@@ -39,7 +40,16 @@ export default function KaliControl() {
     { type: 'sys', text: '=== Kali Linux Remote Control Console Initialized ===' },
     { type: 'sys', text: 'Type a shell command below or click a preset button to execute directly on the Kali host.' },
   ])
-  const termEndRef = useRef(null)
+  const termContainerRef = useRef(null)
+
+  // AI chatbox state
+  const [aiInput, setAiInput] = useState('')
+  const [aiBusy, setAiBusy] = useState(false)
+  const [aiMessages, setAiMessages] = useState([
+    { role: 'assistant', text: 'Hi! Tell me what you want to do on this Kali box in plain English (e.g. "check latest storage usage") and I will draft the command for you to review and run.' },
+  ])
+  const [pendingCmd, setPendingCmd] = useState(null) // { command, explanation, risk }
+  const aiChatRef = useRef(null)
 
   useEffect(() => {
     loadData()
@@ -48,8 +58,16 @@ export default function KaliControl() {
   }, [])
 
   useEffect(() => {
-    termEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    if (termContainerRef.current) {
+      termContainerRef.current.scrollTop = termContainerRef.current.scrollHeight
+    }
   }, [history])
+
+  useEffect(() => {
+    if (aiChatRef.current) {
+      aiChatRef.current.scrollTop = aiChatRef.current.scrollHeight
+    }
+  }, [aiMessages, pendingCmd, aiBusy])
 
   async function loadData() {
     setLoading(true)
@@ -118,6 +136,47 @@ export default function KaliControl() {
     } finally {
       setTermBusy(false)
     }
+  }
+
+  // ── AI Chatbox handlers ──
+  async function handleAiAsk(e) {
+    e.preventDefault()
+    const msg = aiInput.trim()
+    if (!msg || aiBusy) return
+    setAiInput('')
+    setAiBusy(true)
+    setPendingCmd(null)
+    setAiMessages((prev) => [...prev, { role: 'user', text: msg }])
+
+    try {
+      const convoHistory = aiMessages
+        .filter((m) => m.text)
+        .slice(-6)
+        .map((m) => ({ role: m.role, content: m.text }))
+      const suggestion = await api.kaliSuggest(msg, convoHistory)
+      setPendingCmd(suggestion)
+      setAiMessages((prev) => [
+        ...prev,
+        { role: 'assistant', text: suggestion.explanation || 'Here is the command I suggest:' },
+      ])
+    } catch (e2) {
+      setAiMessages((prev) => [...prev, { role: 'assistant', text: `⚠ ${e2.message}`, error: true }])
+    } finally {
+      setAiBusy(false)
+    }
+  }
+
+  async function handleRunSuggested() {
+    if (!pendingCmd || termBusy) return
+    setAiMessages((prev) => [...prev, { role: 'assistant', text: `▶ Running: ${pendingCmd.command}` }])
+    setPendingCmd(null)
+    await handleExec(pendingCmd.command)
+  }
+
+  function handleDiscardSuggested() {
+    if (!pendingCmd) return
+    setAiMessages((prev) => [...prev, { role: 'assistant', text: `✕ Discarded: ${pendingCmd.command}` }])
+    setPendingCmd(null)
   }
 
   async function handleInstallAllTools() {
@@ -457,7 +516,7 @@ export default function KaliControl() {
           </div>
 
           {/* Terminal Output Window */}
-          <div className="terminal h-72 overflow-y-auto bg-slate-950 border border-cyan-500/20 rounded-xl p-4 font-mono text-xs space-y-1.5 select-text">
+          <div ref={termContainerRef} className="terminal h-72 overflow-y-auto bg-slate-950 border border-cyan-500/20 rounded-xl p-4 font-mono text-xs space-y-1.5 select-text">
             {history.map((item, idx) => (
               <div key={idx} className="leading-relaxed break-words whitespace-pre-wrap">
                 {item.type === 'cmd' && <span className="text-cyan-300 font-bold">{item.text}</span>}
@@ -471,7 +530,6 @@ export default function KaliControl() {
                 <Loader2 size={14} className="animate-spin" /> Executing command on Kali host...
               </div>
             )}
-            <div ref={termEndRef} />
           </div>
 
           {/* Command Input Bar */}
@@ -504,6 +562,99 @@ export default function KaliControl() {
             </button>
           </form>
         </div>
+      </div>
+
+      {/* AI Command Chatbox */}
+      <div className="card p-5 border border-cyan-500/25 bg-slate-950/80 space-y-4">
+        <div className="flex items-center justify-between border-b border-white/10 pb-3">
+          <h3 className="font-bold text-white text-sm flex items-center gap-2">
+            <Bot size={16} className="text-cyan-400" /> AI Command Assistant
+          </h3>
+          <span className="text-[10px] font-mono text-slate-400">Natural language → command → review → run</span>
+        </div>
+
+        {/* Chat messages */}
+        <div ref={aiChatRef} className="h-56 overflow-y-auto space-y-2.5 pr-1">
+          {aiMessages.map((m, idx) => (
+            <div key={idx} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+              <div
+                className={`max-w-[85%] px-3.5 py-2 rounded-2xl text-xs leading-relaxed ${
+                  m.role === 'user'
+                    ? 'bg-cyan-500/20 border border-cyan-400/30 text-cyan-50 rounded-br-sm'
+                    : m.error
+                      ? 'bg-rose-500/10 border border-rose-500/30 text-rose-200 rounded-bl-sm'
+                      : 'bg-slate-900/80 border border-white/10 text-slate-200 rounded-bl-sm'
+                }`}
+              >
+                {m.text}
+              </div>
+            </div>
+          ))}
+
+          {aiBusy && (
+            <div className="flex justify-start">
+              <div className="bg-slate-900/80 border border-white/10 text-slate-300 px-3.5 py-2 rounded-2xl rounded-bl-sm text-xs flex items-center gap-2">
+                <Loader2 size={12} className="animate-spin text-cyan-400" /> Thinking of the right command...
+              </div>
+            </div>
+          )}
+
+          {/* Pending command preview card */}
+          {pendingCmd && (
+            <div className="flex justify-start">
+              <div className="max-w-[92%] w-full rounded-2xl rounded-bl-sm border border-cyan-400/40 bg-cyan-950/30 overflow-hidden">
+                <div className="px-3.5 pt-2.5 pb-2 flex items-center justify-between gap-2">
+                  <span className="text-[10px] uppercase font-bold text-cyan-300 tracking-wider">Proposed Command</span>
+                  <span
+                    className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                      pendingCmd.risk === 'high'
+                        ? 'bg-rose-500/15 text-rose-300 border-rose-500/40'
+                        : pendingCmd.risk === 'medium'
+                          ? 'bg-amber-500/15 text-amber-300 border-amber-500/40'
+                          : 'bg-emerald-500/15 text-emerald-300 border-emerald-500/40'
+                    }`}
+                  >
+                    risk: {pendingCmd.risk}
+                  </span>
+                </div>
+                <div className="mx-3.5 mb-2.5 bg-slate-950 border border-white/10 rounded-lg px-3 py-2 font-mono text-xs text-cyan-200 break-all select-text">
+                  $ {pendingCmd.command}
+                </div>
+                <div className="flex items-center gap-2 px-3.5 pb-3">
+                  <button
+                    onClick={handleRunSuggested}
+                    disabled={termBusy}
+                    className="btn-primary text-[11px] py-1.5 px-3.5 flex items-center gap-1.5"
+                  >
+                    {termBusy ? <Loader2 size={12} className="animate-spin" /> : <Play size={12} />} Run on Kali
+                  </button>
+                  <button onClick={handleDiscardSuggested} className="btn-ghost text-[11px] py-1.5 px-3.5">
+                    Discard
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Input */}
+        <form onSubmit={handleAiAsk} className="flex items-center gap-2 pt-1">
+          <input
+            type="text"
+            value={aiInput}
+            onChange={(e) => setAiInput(e.target.value)}
+            placeholder='Ask in plain English (e.g. "check latest storage usage")...'
+            disabled={aiBusy}
+            className="input flex-1 text-xs"
+          />
+          <button
+            type="submit"
+            disabled={aiBusy || !aiInput.trim()}
+            className="btn-primary text-xs py-2.5 px-4 shadow-glow flex items-center gap-1.5"
+          >
+            {aiBusy ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />} Ask AI
+          </button>
+        </form>
       </div>
 
       {/* Security Tools Matrix */}

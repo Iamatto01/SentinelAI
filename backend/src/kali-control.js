@@ -1,6 +1,7 @@
 import os from 'node:os'
 import { spawn, exec } from 'node:child_process'
 import { promisify } from 'node:util'
+import { llm } from './ai/llm-client.js'
 
 const execAsync = promisify(exec)
 
@@ -174,6 +175,94 @@ export async function executeCommand(command, timeout = 30000) {
 
   const result = await runCmd(command, timeout)
   return result
+}
+
+/**
+ * AI Chatbox: translate a natural-language request into a single Kali shell
+ * command. Returns { command, explanation, risk } for the operator to review
+ * and approve before execution via /api/kali/exec.
+ */
+export async function suggestKaliCommand(message, history = []) {
+  if (!message || typeof message !== 'string' || !message.trim()) {
+    throw new Error('Message is required')
+  }
+  if (!llm.isConfigured()) {
+    throw new Error('No AI provider configured — set an API key in Settings')
+  }
+
+  const ctx = history.slice(-6).map(h => `${h.role}: ${h.content}`).join('\n')
+  const prompt = `${ctx ? ctx + '\n' : ''}user: ${message}
+
+You are the command planner for a Kali Linux pentest box. Convert the user's natural-language request into ONE ready-to-run shell command.
+
+Rules:
+1. Output a SINGLE command (or a short one-line pipeline). No multi-line scripts, no interactive commands (no nano/vim/top/less), no commands requiring TTY input.
+2. Prefer read-only/diagnostic commands (df, free, ss, ps, ip, ls, cat, tail, systemctl status, journalctl, docker ps, nmap -sV without exploitation flags).
+3. If the request is destructive (rm, mkfs, dd, shutdown, service restart), still provide the command but set risk to "high".
+4. Add sensible limits to verbose output: pipe through head/tail (e.g. "tail -n 20", "head -n 50") where appropriate.
+5. If the request is impossible as one command or not security/host-related, set command to "" and explain why.
+
+Respond ONLY with JSON:
+{
+  "command": "the exact shell command to run",
+  "explanation": "one short sentence explaining what this command does",
+  "risk": "low" | "medium" | "high"
+}`
+
+  const system = 'You are a precise Kali Linux operations assistant. You output strict JSON only — no markdown fences, no prose outside JSON.'
+  const raw = await llm.analyze(prompt, {
+    system,
+    context: { operation: 'kali-command-suggest', agent: 'recon-advisor' },
+    useFast: true,
+    maxTokens: 1000,
+    timeoutMs: 45000,
+  })
+
+  // Reasoning models may emit thinking/prose before (or instead of) the JSON — clean aggressively
+  const cleaned = String(raw)
+    .replace(/<think>[\s\S]*?<\/think>/gi, '') // strip reasoning blocks
+    .replace(/^```(json)?/i, '')
+    .replace(/```/g, '')
+    .trim()
+
+  let parsed
+  try {
+    parsed = JSON.parse(cleaned)
+  } catch {
+    // Scan for a JSON object anywhere in the response (greedy first, then flat objects)
+    const candidates = []
+    const greedy = cleaned.match(/\{[\s\S]*\}/)
+    if (greedy) candidates.push(greedy[0])
+    for (const m of cleaned.matchAll(/\{[^{}]*\}/g)) candidates.push(m[0])
+    for (const c of candidates) {
+      try {
+        parsed = JSON.parse(c)
+        break
+      } catch { /* try next candidate */ }
+    }
+    if (!parsed) {
+      // Last resort: look for a line that actually looks like a shell command
+      const cmdLine = cleaned.split('\n').map((l) => l.trim()).find((l) => l
+        && !/[.?!]$/.test(l)
+        && /^(apt|apt-get|dpkg|df|free|ss|ps|ip|ifconfig|ls|cat|tail|head|systemctl|journalctl|service|docker|nmap|who|w|uname|uptime|du|id|last|netstat|crontab|grep|find|which|curl|wget|echo|date|vmstat|iostat|lsof|getent|passwd|chage|ufw|iptables|fail2ban-client)\b/.test(l))
+      if (cmdLine) {
+        parsed = { command: cmdLine, explanation: 'Parsed from AI free-text response', risk: 'medium' }
+      } else {
+        throw new Error('AI could not produce a command for this request')
+      }
+    }
+  }
+
+  const command = String(parsed.command || '').trim()
+  if (!command) {
+    throw new Error(parsed.explanation || 'AI declined to produce a command for this request')
+  }
+
+  return {
+    command,
+    explanation: parsed.explanation || '',
+    risk: ['low', 'medium', 'high'].includes(parsed.risk) ? parsed.risk : 'medium',
+  }
 }
 
 /** Manage Kali Services */

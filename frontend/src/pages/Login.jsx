@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { useNavigate, useLocation, Link } from 'react-router-dom'
 import {
-  ArrowLeft, Loader2, ShieldCheck, KeyRound, User, EyeOff, Sparkles,
-  Mail, Check, AlertCircle, Zap, Star
+  ArrowLeft, Loader2, KeyRound, User, EyeOff, Sparkles,
+  Mail, Check, AlertCircle
 } from 'lucide-react'
 import InspectorLogo from '../components/InspectorLogo.jsx'
 import { useAuth } from '../lib/AuthContext.jsx'
@@ -73,6 +73,13 @@ export default function Login() {
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
 
+  // Force empty inputs on initial load to prevent browser autofill hijack
+  useEffect(() => {
+    setUsername('')
+    setPassword('')
+    setEmail('')
+  }, [mode])
+
   async function submit(e) {
     e.preventDefault()
     setErr('')
@@ -96,7 +103,16 @@ export default function Login() {
         nav('/app/dashboard', { replace: true })
       }
     } catch (e2) {
-      setErr(e2.message || (mode === 'login' ? 'Login failed' : 'Registration failed'))
+      const errMsg = e2.message || ''
+      if (mode === 'login') {
+        if (e2.status === 401 || errMsg.toLowerCase().includes('invalid') || errMsg.toLowerCase().includes('credential') || errMsg.toLowerCase().includes('failed (401)')) {
+          setErr('Username or password is invalid')
+        } else {
+          setErr(errMsg || 'Username or password is invalid')
+        }
+      } else {
+        setErr(errMsg || 'Registration failed')
+      }
       setBusy(false)
     }
   }
@@ -117,13 +133,13 @@ export default function Login() {
       <div className="absolute bottom-1/3 left-1/2 -translate-x-1/2 translate-y-1/2 w-[500px] h-[500px] bg-purple-600/15 rounded-full blur-[120px] pointer-events-none" />
 
       {/* Main Centered Login / Register Container */}
-      <div className="w-full max-w-lg relative z-10 my-auto motion-fade-up">
+      <div className="w-full max-w-md relative z-10 my-auto motion-fade-up">
         {/* Header Logo & Title */}
         <div className="flex flex-col items-center mb-6 text-center">
           <div className="relative mb-3 group">
             <div className="absolute -inset-3 rounded-full bg-gradient-to-r from-cyan-400 via-blue-600 to-purple-600 opacity-60 blur-xl group-hover:opacity-90 transition duration-500" />
             <div className="relative">
-              <InspectorLogo size={58} />
+              <InspectorLogo size={52} />
             </div>
           </div>
           <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">SentinelAI</h1>
@@ -159,17 +175,26 @@ export default function Login() {
         </div>
 
         {/* Vision UI Form Card */}
-        <form onSubmit={submit} className="glass rounded-3xl border border-white/20 p-6 sm:p-7 shadow-2xl space-y-4 relative">
+        <form
+          onSubmit={submit}
+          autoComplete="off"
+          className="glass rounded-3xl border border-white/20 p-6 sm:p-7 shadow-2xl space-y-4 relative bg-slate-950/75"
+        >
+          {/* Hidden Dummy Inputs to prevent Chrome/Edge from autofilling saved credentials */}
+          <input type="text" name="fakeusernameremembered" style={{ display: 'none' }} tabIndex={-1} autoComplete="off" />
+          <input type="password" name="fakepasswordremembered" style={{ display: 'none' }} tabIndex={-1} autoComplete="off" />
+
           <div className="space-y-1">
             <label className="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
               <User size={13} className="text-cyan-400" /> Username
             </label>
             <input
+              name="sentinel_auth_user"
               className="input py-2.5 text-sm text-slate-100 placeholder-slate-500 focus:border-cyan-400 transition-all"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
-              autoComplete="username"
-              placeholder="Enter username"
+              placeholder="Username"
+              autoComplete="new-password"
               required
             />
           </div>
@@ -180,12 +205,13 @@ export default function Login() {
                 <Mail size={13} className="text-cyan-400" /> Email Address
               </label>
               <input
+                name="sentinel_auth_email"
                 type="email"
                 className="input py-2.5 text-sm text-slate-100 placeholder-slate-500 focus:border-cyan-400 transition-all"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                autoComplete="email"
                 placeholder="you@company.com"
+                autoComplete="off"
                 required
               />
             </div>
@@ -197,12 +223,13 @@ export default function Login() {
             </label>
             <div className="relative flex items-center">
               <input
+                name="sentinel_auth_pass"
                 type={showPassword ? 'text' : 'password'}
                 className="input py-2.5 pr-11 text-sm text-slate-100 placeholder-slate-500 focus:border-cyan-400 transition-all"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
                 placeholder="••••••••"
+                autoComplete="new-password"
                 required
               />
               <button
@@ -282,7 +309,7 @@ export default function Login() {
           <button
             type="submit"
             disabled={busy}
-            className="btn-primary w-full justify-center py-3 text-xs font-extrabold shadow-glow hover:scale-[1.01] active:scale-[0.99] transition-all cursor-pointer"
+            className="btn-primary w-full justify-center py-3 text-xs font-extrabold shadow-glow hover:scale-[1.01] active:scale-[0.99] transition-all cursor-pointer mt-2"
           >
             {busy && <Loader2 size={15} className="animate-spin" />}
             {busy

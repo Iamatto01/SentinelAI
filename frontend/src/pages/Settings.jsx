@@ -1,10 +1,12 @@
 import React, { useEffect, useState } from 'react'
-import { Loader2, Save, KeyRound, UserCircle, CheckCircle2, Database, Bell, Building2, Moon, Upload, Sparkles } from 'lucide-react'
+import { Loader2, Save, KeyRound, UserCircle, CheckCircle2, Database, Bell, Building2, Moon, Upload, Sparkles, Image, Eye, Sliders, RefreshCw, Layers } from 'lucide-react'
 import { api } from '../lib/api.js'
 import { useAuth } from '../lib/AuthContext.jsx'
+import { useTheme } from '../lib/ThemeContext.jsx'
 
 export default function Settings() {
   const { user, setUser } = useAuth()
+  const { theme, setTheme, blur, setBlur, opacity, setOpacity, isStatic, setIsStatic, randomizeNow, wallpapers, activeWallpaper } = useTheme()
   const [email, setEmail] = useState('')
   const [pw, setPw] = useState({ currentPassword: '', newPassword: '', confirm: '' })
   const [msg, setMsg] = useState('')
@@ -77,18 +79,15 @@ export default function Settings() {
       setTestResults(prev => ({ ...prev, [provider]: { error: err.message, loading: false } }))
     }
   }
-  
-  function saveNotifs(e) { e.preventDefault(); setMsg('Notification preferences saved.'); setErr('') }
-  function saveBranding(e) { e.preventDefault(); setMsg('Company branding updated.'); setErr('') }
 
   return (
-    <div className="space-y-8 motion-fade-up">
+    <div className="space-y-8 motion-fade-up pb-12">
       <div className="flex flex-col gap-2 pb-4 border-b border-white/10">
         <h1 className="text-3xl font-extrabold text-white tracking-tight">
           System & Account Settings
         </h1>
         <p className="text-xs text-slate-400 max-w-xl">
-          Configure profile details, AI provider API keys, security credentials, and platform notifications.
+          Configure AI dynamic wallpapers, profile details, AI provider API keys, security credentials, and platform notifications.
         </p>
       </div>
 
@@ -96,6 +95,177 @@ export default function Settings() {
       {err && <div className="card p-4 text-rose-400 text-xs font-bold flex items-center gap-3 border-rose-500/30 bg-rose-500/10">{err}</div>}
 
       <div className="space-y-8 max-w-5xl">
+        {/* AI DYNAMIC WALLPAPER & BACKGROUND STUDIO */}
+        <div className="card p-6 space-y-6 border-cyan-500/30 bg-slate-900/60 shadow-2xl relative overflow-hidden">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-white/10 pb-4">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <div className="p-2 rounded-xl bg-gradient-to-tr from-cyan-500/20 to-purple-500/20 border border-cyan-400/40 text-cyan-300">
+                  <Sparkles size={20} />
+                </div>
+                <h3 className="text-lg font-extrabold text-white">AI Dynamic Wallpaper & Background Studio</h3>
+                <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 border border-cyan-400/30">
+                  AI Generated
+                </span>
+              </div>
+              <p className="text-xs text-slate-400">
+                Choose your desired background aesthetic, enable random AI backgrounds on every visit, or customize blur and opacity.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={randomizeNow}
+              className="btn-primary flex items-center gap-2 text-xs self-start sm:self-auto shadow-glow"
+            >
+              <RefreshCw size={14} className="animate-spin-slow" />
+              <span>Roll Random AI Background</span>
+            </button>
+          </div>
+
+          {/* Wallpaper Selection Grid */}
+          <div className="space-y-3">
+            <label className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-2">
+              <Image size={14} className="text-cyan-400" /> Select Background Theme
+            </label>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5">
+              {wallpapers.map((w) => {
+                const isActive = theme === w.id
+                return (
+                  <button
+                    key={w.id}
+                    type="button"
+                    onClick={() => setTheme(w.id)}
+                    className={`relative rounded-2xl overflow-hidden border text-left p-3 flex flex-col justify-between h-28 transition-all duration-300 group ${
+                      isActive
+                        ? 'border-cyan-400 shadow-[0_0_15px_rgba(0,242,254,0.35)] ring-2 ring-cyan-400/50 bg-cyan-950/40 scale-[1.02]'
+                        : 'border-white/10 bg-slate-950/60 hover:border-white/30 hover:scale-[1.01]'
+                    }`}
+                  >
+                    {/* Background Preview Thumbnail */}
+                    {w.preview && (
+                      <div
+                        className="absolute inset-0 bg-cover bg-center opacity-30 group-hover:opacity-45 transition-opacity"
+                        style={{ backgroundImage: `url(${w.preview})` }}
+                      />
+                    )}
+                    <div className="absolute inset-0 bg-gradient-to-t from-slate-950/90 via-slate-950/40 to-transparent" />
+
+                    <div className="relative z-10 flex items-center justify-between w-full">
+                      <span className="text-[10px] font-extrabold uppercase px-1.5 py-0.5 rounded bg-black/60 text-cyan-300 border border-white/10 backdrop-blur-md">
+                        {w.id === 'random_ai' ? 'Dynamic' : w.id === 'static_dark' ? 'Static' : 'AI'}
+                      </span>
+                      {isActive && (
+                        <div className="w-5 h-5 rounded-full bg-cyan-400 text-slate-950 flex items-center justify-center shadow-md">
+                          <CheckCircle2 size={13} className="text-slate-950" />
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="relative z-10 space-y-0.5">
+                      <p className="text-xs font-bold text-white group-hover:text-cyan-300 transition-colors leading-tight">
+                        {w.name}
+                      </p>
+                      <p className="text-[10px] text-slate-400 line-clamp-1">
+                        {w.desc}
+                      </p>
+                    </div>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+
+          {/* Background Customizer Sliders & Toggles */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-5 pt-2 border-t border-white/10">
+            {/* Blur Control */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-slate-300 font-semibold flex items-center gap-1.5">
+                  <Eye size={13} className="text-cyan-400" /> Background Blur
+                </span>
+                <span className="text-cyan-300 font-bold font-mono">{blur}px</span>
+              </div>
+              <div className="flex items-center gap-2">
+                {[0, 4, 8, 16].map((b) => (
+                  <button
+                    key={b}
+                    type="button"
+                    onClick={() => setBlur(b)}
+                    className={`flex-1 py-1.5 rounded-xl text-xs font-bold border transition-all ${
+                      blur === b
+                        ? 'bg-cyan-500/20 text-cyan-300 border-cyan-400'
+                        : 'bg-white/5 text-slate-400 border-white/10 hover:border-white/20'
+                    }`}
+                  >
+                    {b === 0 ? 'Sharp' : b === 4 ? 'Soft' : b === 8 ? 'Glass' : 'Deep'}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Opacity Control */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-slate-300 font-semibold flex items-center gap-1.5">
+                  <Sliders size={13} className="text-cyan-400" /> Wallpaper Opacity
+                </span>
+                <span className="text-cyan-300 font-bold font-mono">{opacity}%</span>
+              </div>
+              <div className="flex items-center gap-2">
+                {[20, 35, 50, 75].map((op) => (
+                  <button
+                    key={op}
+                    type="button"
+                    onClick={() => setOpacity(op)}
+                    className={`flex-1 py-1.5 rounded-xl text-xs font-bold border transition-all ${
+                      opacity === op
+                        ? 'bg-cyan-500/20 text-cyan-300 border-cyan-400'
+                        : 'bg-white/5 text-slate-400 border-white/10 hover:border-white/20'
+                    }`}
+                  >
+                    {op}%
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Static vs Animated Mode Toggle */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-slate-300 font-semibold flex items-center gap-1.5">
+                  <Layers size={13} className="text-cyan-400" /> Animation Mode
+                </span>
+                <span className="text-cyan-300 font-bold">{isStatic ? 'Static Wallpaper' : 'Particle Canvas'}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsStatic(true)}
+                  className={`flex-1 py-1.5 rounded-xl text-xs font-bold border transition-all ${
+                    isStatic
+                      ? 'bg-cyan-500/20 text-cyan-300 border-cyan-400'
+                      : 'bg-white/5 text-slate-400 border-white/10 hover:border-white/20'
+                  }`}
+                >
+                  Static
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsStatic(false)}
+                  className={`flex-1 py-1.5 rounded-xl text-xs font-bold border transition-all ${
+                    !isStatic
+                      ? 'bg-cyan-500/20 text-cyan-300 border-cyan-400'
+                      : 'bg-white/5 text-slate-400 border-white/10 hover:border-white/20'
+                  }`}
+                >
+                  Animated ✨
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
         {/* USER PROFILE & SECURITY CREDENTIALS */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
           <form onSubmit={saveProfile} className="card p-6 space-y-5 hover:border-cyan-400/40 transition-all duration-300 flex flex-col justify-between">

@@ -21,17 +21,8 @@
   font-family: 'Bricolage Grotesque', 'Segoe UI', sans-serif;
   position: relative;
   overflow-x: hidden;
-  perspective: 1200px;
-}
-
-
-
-.at-home__ambient-canvas {
-  position: fixed;
-  inset: 0;
-  z-index: -1;
-  opacity: 0.36;
-  pointer-events: none;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
 .at-home__scroll-bar {
@@ -52,41 +43,33 @@
   inset: 0;
   pointer-events: none;
   z-index: 0;
-}
-
-.at-home__spotlight {
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  z-index: 0;
-  mix-blend-mode: screen;
-  opacity: 0.92;
+  transform: translateZ(0);
 }
 
 .at-home__grid {
   background-image:
-    linear-gradient(to right, rgba(255, 255, 255, 0.045) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(255, 255, 255, 0.045) 1px, transparent 1px);
+    linear-gradient(to right, rgba(255, 255, 255, 0.04) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.04) 1px, transparent 1px);
   background-size: 70px 70px;
-  -webkit-mask-image: radial-gradient(circle at center, black 28%, transparent 82%);
-  mask-image: radial-gradient(circle at center, black 28%, transparent 82%);
-  opacity: 0.7;
+  -webkit-mask-image: radial-gradient(circle at center, black 30%, transparent 80%);
+  mask-image: radial-gradient(circle at center, black 30%, transparent 80%);
+  opacity: 0.6;
 }
 
 .at-home__noise {
-  background-image: radial-gradient(rgba(255, 255, 255, 0.08) 0.7px, transparent 0.7px);
+  background-image: radial-gradient(rgba(255, 255, 255, 0.06) 0.7px, transparent 0.7px);
   background-size: 4px 4px;
-  opacity: 0.06;
+  opacity: 0.04;
 }
 
 .at-home__blob {
   position: fixed;
   border-radius: 999px;
-  filter: blur(40px);
-  opacity: 0.42;
+  filter: blur(50px);
+  opacity: 0.3;
   pointer-events: none;
   z-index: 0;
-  animation: atBlobDrift 15s ease-in-out infinite;
+  transform: translateZ(0);
 }
 
 .at-home__blob--a {
@@ -257,7 +240,7 @@
 .at-home__content {
   width: min(1200px, calc(100% - 2.6rem));
   margin: 0 auto;
-  padding: 2.2rem 0 4.4rem;
+  padding: 2.2rem 0 1.2rem;
   display: grid;
   grid-template-columns: 1.05fr 0.95fr;
   gap: 2.6rem;
@@ -287,18 +270,19 @@
 
 .at-home__title {
   margin: 0;
-  font-family: 'Syne', sans-serif;
-  font-size: clamp(2.2rem, 5.2vw, 4.9rem);
-  line-height: 0.94;
-  letter-spacing: -0.03em;
+  font-family: 'Bricolage Grotesque', 'Inter', -apple-system, sans-serif;
+  font-size: clamp(2.2rem, 4.2vw, 3.8rem);
+  font-weight: 900;
+  line-height: 1.12;
+  letter-spacing: -0.025em;
 }
 
 .at-home__subtitle {
   margin: 0;
   max-width: 55ch;
   color: var(--at-muted);
-  font-size: clamp(0.95rem, 1.5vw, 1.12rem);
-  line-height: 1.66;
+  font-size: clamp(0.92rem, 1.3vw, 1.05rem);
+  line-height: 1.6;
 }
 
 .at-home__metrics {

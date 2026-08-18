@@ -5,7 +5,8 @@ import * as db from './db.js'
 /** JWT auth middleware (populates req.user if a valid Bearer token present). */
 export function authMiddleware(req, res, next) {
   const h = req.headers.authorization || ''
-  const token = h.startsWith('Bearer ') ? h.slice(7) : (req.query?.token || null)
+  // Authorization header only — tokens in query strings leak into logs/history
+  const token = h.startsWith('Bearer ') ? h.slice(7) : null
   if (token) {
     try {
       const payload = jwt.verify(token, config.jwt.secret, { issuer: config.jwt.issuer })

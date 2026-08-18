@@ -50,8 +50,8 @@ export default function Dashboard() {
               <Activity size={14} className="mr-1.5" /> {data.runningScans} Scans Running
             </span>
           )}
-          <Link to="/app/scans" className="btn-primary text-xs py-2 px-4 shadow-glow flex items-center gap-1.5">
-            <Zap size={14} /> New Assessment
+          <Link to="/app/findings" className="btn-primary text-xs py-2 px-4 shadow-glow flex items-center gap-1.5">
+            <Bug size={14} /> Vulnerability Findings
           </Link>
         </div>
       </div>

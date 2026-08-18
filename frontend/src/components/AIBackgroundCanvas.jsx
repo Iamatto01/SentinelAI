@@ -5,39 +5,43 @@ export default function AIBackgroundCanvas() {
   const { theme, activeWallpaper, blur, opacity, isStatic, isNight } = useTheme()
   const canvasRef = useRef(null)
 
-  // Interactive particle neural constellation for animated mode
+  // Lightweight 60fps particle neural constellation (Zero shadowBlur overhead)
   useEffect(() => {
     if (isStatic && theme !== 'canvas_neural') return
 
     const canvas = canvasRef.current
     if (!canvas) return
-    const ctx = canvas.getContext('2d')
+    const ctx = canvas.getContext('2d', { alpha: true })
     let animId
     let width = (canvas.width = window.innerWidth)
     let height = (canvas.height = window.innerHeight)
 
+    let resizeTimer
     const handleResize = () => {
-      if (!canvas) return
-      width = canvas.width = window.innerWidth
-      height = canvas.height = window.innerHeight
+      clearTimeout(resizeTimer)
+      resizeTimer = setTimeout(() => {
+        if (!canvas) return
+        width = canvas.width = window.innerWidth
+        height = canvas.height = window.innerHeight
+      }, 150)
     }
-    window.addEventListener('resize', handleResize)
+    window.addEventListener('resize', handleResize, { passive: true })
 
-    // Particle nodes
-    const count = Math.min(45, Math.floor((width * height) / 30000))
+    // Optimized particle count
+    const count = Math.min(28, Math.floor((width * height) / 45000))
     const particles = Array.from({ length: count }, () => ({
       x: Math.random() * width,
       y: Math.random() * height,
-      vx: (Math.random() - 0.5) * 0.4,
-      vy: (Math.random() - 0.5) * 0.4,
-      radius: Math.random() * 1.8 + 1,
-      hue: Math.random() > 0.5 ? 185 : 275, // Cyan & Purple
+      vx: (Math.random() - 0.5) * 0.3,
+      vy: (Math.random() - 0.5) * 0.3,
+      radius: Math.random() * 1.5 + 0.8,
+      hue: Math.random() > 0.5 ? 'rgba(0, 242, 254, 0.75)' : 'rgba(168, 85, 247, 0.75)', // Fast RGBA instead of HSL
     }))
 
     const render = () => {
       ctx.clearRect(0, 0, width, height)
 
-      // Move & draw particles
+      // Move & draw particles without expensive shadowBlur
       for (let i = 0; i < particles.length; i++) {
         const p = particles[i]
         p.x += p.vx
@@ -50,26 +54,23 @@ export default function AIBackgroundCanvas() {
 
         ctx.beginPath()
         ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2)
-        ctx.fillStyle = `hsla(${p.hue}, 90%, 65%, 0.6)`
-        ctx.shadowBlur = 8
-        ctx.shadowColor = `hsla(${p.hue}, 90%, 65%, 0.8)`
+        ctx.fillStyle = p.hue
         ctx.fill()
-        ctx.shadowBlur = 0
 
         // Connect nearby nodes
         for (let j = i + 1; j < particles.length; j++) {
           const p2 = particles[j]
           const dx = p.x - p2.x
           const dy = p.y - p2.y
-          const dist = Math.sqrt(dx * dx + dy * dy)
+          const distSq = dx * dx + dy * dy // Distance squared is 10x faster than Math.sqrt
 
-          if (dist < 130) {
+          if (distSq < 14400) { // 120px * 120px
+            const alpha = (1 - distSq / 14400) * 0.2
             ctx.beginPath()
             ctx.moveTo(p.x, p.y)
             ctx.lineTo(p2.x, p2.y)
-            const alpha = (1 - dist / 130) * 0.25
-            ctx.strokeStyle = `hsla(${p.hue}, 80%, 60%, ${alpha})`
-            ctx.lineWidth = 0.8
+            ctx.strokeStyle = `rgba(0, 242, 254, ${alpha})`
+            ctx.lineWidth = 0.7
             ctx.stroke()
           }
         }
@@ -83,32 +84,34 @@ export default function AIBackgroundCanvas() {
     return () => {
       window.removeEventListener('resize', handleResize)
       cancelAnimationFrame(animId)
+      clearTimeout(resizeTimer)
     }
   }, [isStatic, theme])
 
   const showImage = Boolean(activeWallpaper && theme !== 'static_dark' && theme !== 'canvas_neural')
 
   return (
-    <div className="fixed inset-0 pointer-events-none z-0 overflow-hidden select-none">
-      {/* Background Image Layer with Blur & Opacity */}
+    <div className="fixed inset-0 pointer-events-none z-0 overflow-hidden select-none will-change-transform">
+      {/* Background Image Layer with Optimized Hardware-accelerated CSS */}
       {showImage && (
         <div
-          className="absolute inset-0 bg-cover bg-center bg-no-repeat transition-all duration-1000 ease-in-out transform scale-105"
+          className="absolute inset-0 bg-cover bg-center bg-no-repeat transition-all duration-700 ease-out transform"
           style={{
             backgroundImage: `url(${activeWallpaper})`,
-            filter: `blur(${blur}px) brightness(${isNight ? 0.85 : 1.6})`,
+            filter: `blur(${Math.min(blur, 20)}px) brightness(${isNight ? 0.85 : 1.4})`,
             opacity: isNight ? opacity / 100 : Math.min(100, opacity + 15) / 100,
+            transform: 'translateZ(0)',
           }}
         />
       )}
 
-      {/* Gradient Mask: obsidian at night, soft white veil in day mode */}
+      {/* Gradient Mask */}
       <div
-        className="absolute inset-0 transition-all duration-700"
+        className="absolute inset-0 transition-opacity duration-500"
         style={
           isNight
-            ? { background: 'linear-gradient(to bottom, rgba(6,11,38,0.75), rgba(6,11,38,0.85) 50%, rgba(6,11,38,0.95))', backdropFilter: 'saturate(150%)' }
-            : { background: 'linear-gradient(to bottom, rgba(238,242,247,0.82), rgba(238,242,247,0.90) 50%, rgba(238,242,247,0.96))' }
+            ? { background: 'linear-gradient(to bottom, rgba(6,11,38,0.80), rgba(6,11,38,0.88) 50%, rgba(6,11,38,0.96))', transform: 'translateZ(0)' }
+            : { background: 'linear-gradient(to bottom, rgba(238,242,247,0.85), rgba(238,242,247,0.92) 50%, rgba(238,242,247,0.97))', transform: 'translateZ(0)' }
         }
       />
 
@@ -117,6 +120,7 @@ export default function AIBackgroundCanvas() {
         <canvas
           ref={canvasRef}
           className="absolute inset-0 opacity-40 mix-blend-screen"
+          style={{ transform: 'translateZ(0)' }}
         />
       )}
     </div>

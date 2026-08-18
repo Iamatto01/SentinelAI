@@ -15,13 +15,14 @@ html, body {
 }
 
 body {
-  @apply text-slate-100 font-sans antialiased;
+  @apply text-slate-100 font-sans antialiased bg-[#060b26];
   background:
     radial-gradient(circle at 15% 15%, rgba(0, 242, 254, 0.14) 0%, transparent 40%),
     radial-gradient(circle at 85% 20%, rgba(0, 117, 255, 0.16) 0%, transparent 45%),
     radial-gradient(circle at 50% 80%, rgba(121, 40, 202, 0.12) 0%, transparent 50%),
     #060b26;
-  background-attachment: fixed;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
 
@@ -81,6 +82,18 @@ body {
   .btn-danger:hover { background: rgba(244, 63, 94, 0.25); box-shadow: 0 0 18px rgba(244, 63, 94, 0.3); }
 
   /* ── Vision Forms & Inputs ────────────────────────────────────────── */
+  input::-ms-reveal,
+  input::-ms-clear {
+    display: none !important;
+    width: 0 !important;
+    height: 0 !important;
+  }
+  input::-webkit-credentials-auto-fill-button,
+  input::-webkit-contacts-auto-fill-button {
+    visibility: hidden !important;
+    display: none !important;
+    pointer-events: none !important;
+  }
   .input {
     @apply w-full rounded-xl px-3.5 py-2.5 text-sm text-slate-100 placeholder-slate-500 border border-white/10 focus:outline-none focus:border-cyan-400 focus:ring-2 focus:ring-cyan-500/20 transition-all duration-200;
     background: rgba(15, 21, 53, 0.6);

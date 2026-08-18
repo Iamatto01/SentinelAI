@@ -3,6 +3,7 @@ import { Routes, Route, Navigate, useLocation, useParams } from 'react-router-do
 import { useAuth } from './lib/AuthContext.jsx'
 import { ScanProvider } from './lib/ScanContext.jsx'
 import { AiProvider } from './lib/AiContext.jsx'
+import { ThemeProvider } from './lib/ThemeContext.jsx'
 import Shell from './components/Shell.jsx'
 import Landing from './pages/Landing.jsx'
 import Login from './pages/Login.jsx'
@@ -83,48 +84,50 @@ function Protected({ children }) {
 export default function App() {
   return (
     <ErrorBoundary>
-      <Routes>
-        <Route path="/" element={<Landing />} />
-        <Route path="/login" element={<Login />} />
-        
-        {/* Top-level aliases for direct URL navigation */}
-        <Route path="/dashboard" element={<Navigate to="/app/dashboard" replace />} />
-        <Route path="/scans" element={<Navigate to="/app/scans" replace />} />
-        <Route path="/scans/:id" element={<RedirectScanDetail />} />
-        <Route path="/findings" element={<Navigate to="/app/findings" replace />} />
-        <Route path="/projects" element={<Navigate to="/app/projects" replace />} />
-        <Route path="/clients" element={<Navigate to="/app/clients" replace />} />
-        <Route path="/monitoring" element={<Navigate to="/app/monitoring" replace />} />
-        <Route path="/exploits" element={<Navigate to="/app/exploits" replace />} />
-        <Route path="/integrations" element={<Navigate to="/app/integrations" replace />} />
-        <Route path="/github" element={<Navigate to="/app/github" replace />} />
-        <Route path="/billing" element={<Navigate to="/app/billing" replace />} />
-        <Route path="/kali-control" element={<Navigate to="/app/kali-control" replace />} />
-        <Route path="/settings" element={<Navigate to="/app/settings" replace />} />
+      <ThemeProvider>
+        <Routes>
+          <Route path="/" element={<Landing />} />
+          <Route path="/login" element={<Login />} />
+          
+          {/* Top-level aliases for direct URL navigation */}
+          <Route path="/dashboard" element={<Navigate to="/app/dashboard" replace />} />
+          <Route path="/scans" element={<Navigate to="/app/scans" replace />} />
+          <Route path="/scans/:id" element={<RedirectScanDetail />} />
+          <Route path="/findings" element={<Navigate to="/app/findings" replace />} />
+          <Route path="/projects" element={<Navigate to="/app/projects" replace />} />
+          <Route path="/clients" element={<Navigate to="/app/clients" replace />} />
+          <Route path="/monitoring" element={<Navigate to="/app/monitoring" replace />} />
+          <Route path="/exploits" element={<Navigate to="/app/exploits" replace />} />
+          <Route path="/integrations" element={<Navigate to="/app/integrations" replace />} />
+          <Route path="/github" element={<Navigate to="/app/github" replace />} />
+          <Route path="/billing" element={<Navigate to="/app/billing" replace />} />
+          <Route path="/kali-control" element={<Navigate to="/app/kali-control" replace />} />
+          <Route path="/settings" element={<Navigate to="/app/settings" replace />} />
 
-        {/* Main Protected Application */}
-        <Route path="/app" element={<Protected><ScanProvider><AiProvider><Shell /></AiProvider></ScanProvider></Protected>}>
-          <Route index element={<Navigate to="/app/dashboard" replace />} />
-          <Route path="dashboard" element={<Dashboard />} />
-          <Route path="kali-control" element={<KaliControl />} />
-          <Route path="clients" element={<ClientsManagement />} />
-          <Route path="scans" element={<Scans />} />
-          <Route path="scans/:id" element={<ScanDetail />} />
-          <Route path="findings" element={<Findings />} />
-          <Route path="projects" element={<Projects />} />
-          <Route path="monitoring" element={<Monitoring />} />
-          <Route path="github" element={<GitHubAutomation />} />
-          <Route path="billing" element={<Billing />} />
-          <Route path="integrations" element={<Integrations />} />
-          <Route path="exploits" element={<Exploits />} />
-          <Route path="exploits/:id" element={<ExploitCampaign />} />
-          <Route path="settings" element={<Settings />} />
+          {/* Main Protected Application */}
+          <Route path="/app" element={<Protected><ScanProvider><AiProvider><Shell /></AiProvider></ScanProvider></Protected>}>
+            <Route index element={<Navigate to="/app/dashboard" replace />} />
+            <Route path="dashboard" element={<Dashboard />} />
+            <Route path="kali-control" element={<KaliControl />} />
+            <Route path="clients" element={<ClientsManagement />} />
+            <Route path="scans" element={<Scans />} />
+            <Route path="scans/:id" element={<ScanDetail />} />
+            <Route path="findings" element={<Findings />} />
+            <Route path="projects" element={<Projects />} />
+            <Route path="monitoring" element={<Monitoring />} />
+            <Route path="github" element={<GitHubAutomation />} />
+            <Route path="billing" element={<Billing />} />
+            <Route path="integrations" element={<Integrations />} />
+            <Route path="exploits" element={<Exploits />} />
+            <Route path="exploits/:id" element={<ExploitCampaign />} />
+            <Route path="settings" element={<Settings />} />
+            <Route path="*" element={<Navigate to="/app/dashboard" replace />} />
+          </Route>
+
+          {/* Global Catch-all Redirect */}
           <Route path="*" element={<Navigate to="/app/dashboard" replace />} />
-        </Route>
-
-        {/* Global Catch-all Redirect */}
-        <Route path="*" element={<Navigate to="/app/dashboard" replace />} />
-      </Routes>
+        </Routes>
+      </ThemeProvider>
     </ErrorBoundary>
   )
 }

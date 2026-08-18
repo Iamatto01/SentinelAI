@@ -71,7 +71,7 @@ const toHost = (t) => {
  * Native tool definitions: binary name, argument builder, and whether we need
  * to strip the scheme (host tools) or keep it (URL tools).
  */
-const NATIVE_TOOLS = {
+export const NATIVE_TOOLS = {
   subfinder: {
     bin: 'subfinder',
     args: (t) => ['-d', toHost(t), '-silent'],
@@ -229,6 +229,20 @@ export async function nativeToolsStatus() {
   return status
 }
 
+/**
+ * Run a raw shell command string (bash -c) with the same PATH extras / timeout
+ * handling as runNativeTool. Used by the exploit orchestrator for tools that
+ * have no NATIVE_TOOLS mapping (hydra, hashcat, responder, crackmapexec,
+ * impacket scripts, …) where the registry already stores the full arg-string.
+ */
+export async function runNativeCommand(command, { timeout = TIMEOUT_MS } = {}) {
+  if (!command || typeof command !== 'string') {
+    return { success: false, error: 'no command provided' }
+  }
+  const result = await run('bash', ['-c', command], { timeout })
+  return { ...result, command }
+}
+
 /** Run a native tool by module name. */
 export async function runNativeTool(moduleName, target) {
   const def = NATIVE_TOOLS[moduleName]
@@ -281,4 +295,4 @@ export async function runNativeTool(moduleName, target) {
   return { ...result, tool: moduleName, bin, args: args.join(' ') }
 }
 
-export default { nativeToolsStatus, runNativeTool, NATIVE_TOOLS }
+export default { nativeToolsStatus, runNativeTool, runNativeCommand, NATIVE_TOOLS }

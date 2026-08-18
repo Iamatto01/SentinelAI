@@ -454,10 +454,10 @@ function ProjectDetail({ project, onClose, onDelete, onEdit, onLaunchScan, nav }
                   />
                   <input
                     className="input text-xs"
-                    placeholder="Password"
+                    placeholder={editingCred ? 'New Password (blank = keep current)' : 'Password'}
                     value={credForm.password}
                     onChange={(e) => setCredForm({ ...credForm, password: e.target.value })}
-                    required
+                    required={!editingCred}
                   />
                 </div>
                 <input
@@ -483,13 +483,13 @@ function ProjectDetail({ project, onClose, onDelete, onEdit, onLaunchScan, nav }
                   <div key={c.id} className="flex items-center justify-between p-2.5 rounded-lg bg-black/40 border border-white/5 text-xs">
                     <div className="space-y-0.5">
                       <p className="font-mono font-semibold text-cyan-300">{c.email}</p>
-                      <p className="font-mono text-slate-400">Password: <span className="text-slate-200">{c.password}</span> {c.note && <span className="text-slate-500 font-sans">({c.note})</span>}</p>
+                      <p className="font-mono text-slate-400">Password: <span className="text-slate-500">•••••••• (hashed)</span> {c.note && <span className="text-slate-500 font-sans">({c.note})</span>}</p>
                     </div>
                     <div className="flex items-center gap-1.5">
                       <button
                         onClick={() => {
                           setEditingCred(c)
-                          setCredForm({ email: c.email, password: c.password, note: c.note || '' })
+                          setCredForm({ email: c.email, password: '', note: c.note || '' })
                         }}
                         className="p-1 text-slate-400 hover:text-cyan-300"
                         title="Edit credential"

@@ -118,12 +118,15 @@ export const api = {
 
   // ── Admin Panel ──
   adminClients: () => apiFetch('/api/admin/clients'),
+  adminClientDetails: (id) => apiFetch(`/api/admin/clients/${id}/details`),
+  adminCreateClientProject: (id, body) => apiFetch(`/api/admin/clients/${id}/projects`, { method: 'POST', body }),
   adminUpdateClientSubscription: (id, body) => apiFetch(`/api/admin/clients/${id}/subscription`, { method: 'POST', body }),
   adminOverview: () => apiFetch('/api/admin/overview'),
 
   // ── Kali Linux Remote Control ──
   kaliSystemInfo: () => apiFetch('/api/kali/system-info'),
   kaliExec: (command, timeout) => apiFetch('/api/kali/exec', { method: 'POST', body: { command, timeout } }),
+  kaliSuggest: (message, history) => apiFetch('/api/kali/suggest', { method: 'POST', body: { message, history } }),
   kaliServiceAction: (service, action) => apiFetch('/api/kali/service', { method: 'POST', body: { service, action } }),
   kaliTools: () => apiFetch('/api/kali/tools'),
   kaliToolsInstall: () => apiFetch('/api/kali/tools/install', { method: 'POST' }),

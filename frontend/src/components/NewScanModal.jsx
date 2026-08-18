@@ -1,14 +1,24 @@
 import React, { useEffect, useState } from 'react'
-import { X, Globe, FileCode2, Loader2, FolderOpen, ChevronRight, ChevronUp, Plus, Trash2, Code2, ShieldCheck, Swords } from 'lucide-react'
+import {
+  X, Globe, FileCode2, Loader2, FolderOpen, ChevronRight, ChevronUp, Plus,
+  Trash2, Code2, ShieldCheck, Swords, User, Zap, Check, CheckCircle2
+} from 'lucide-react'
 import { api } from '../lib/api.js'
 
 const BLACKBOX_MODULES = ['nmap', 'httpx', 'whatweb', 'wafw00f', 'subfinder', 'amass', 'dnsbrute', 'katana', 'ffuf', 'gobuster', 'nikto', 'nuclei', 'sqlmap', 'dalfox', 'arjun', 'wpscan']
 
-export default function NewScanModal({ onClose, onStarted, initialProjectId = '', initialTarget = '' }) {
+export default function NewScanModal({ onClose, onStarted, initialProjectId = '', initialTarget = '', initialClientId = '' }) {
   const [mode, setMode] = useState('blackbox')
   const [whiteboxMode, setWhiteboxMode] = useState('folder') // 'folder' | 'paste'
   const [projectId, setProjectId] = useState(initialProjectId)
   const [projects, setProjects] = useState([])
+  const [clients, setClients] = useState([])
+  const [targetClientId, setTargetClientId] = useState(initialClientId)
+  const [deductQuota, setDeductQuota] = useState(true)
+  const [showCreateFolder, setShowCreateFolder] = useState(false)
+  const [newFolderName, setNewFolderName] = useState('')
+  const [creatingFolder, setCreatingFolder] = useState(false)
+
   const [target, setTarget] = useState(initialTarget)
   const [objective, setObjective] = useState('offensive')
   const [modules, setModules] = useState(BLACKBOX_MODULES) // all ticked
@@ -44,6 +54,7 @@ export default function NewScanModal({ onClose, onStarted, initialProjectId = ''
 
   useEffect(() => {
     api.projects().then((data) => setProjects(data || [])).catch(() => {})
+    api.adminClients().then((res) => setClients(res.clients || [])).catch(() => {})
     loadRoots()
   }, [])
 
@@ -79,8 +90,41 @@ export default function NewScanModal({ onClose, onStarted, initialProjectId = ''
     setFolderPaths((p) => p.filter((x) => x !== path))
   }
 
+  async function handleCreateFolder() {
+    if (!newFolderName.trim()) return
+    setCreatingFolder(true)
+    try {
+      const clientName = selectedClientObj?.username || ''
+      const res = await api.createProject({ name: newFolderName.trim(), client: clientName })
+      if (res && res.id) {
+        setProjects((prev) => [res, ...prev])
+        setProjectId(res.id)
+        setNewFolderName('')
+        setShowCreateFolder(false)
+      }
+    } catch (e) {
+      setErr(e.message || 'Failed to create folder')
+    } finally {
+      setCreatingFolder(false)
+    }
+  }
+
   const toggle = (m) => setModules((p) => (p.includes(m) ? p.filter((x) => x !== m) : [...p, m]))
   const toggleDynamic = (m) => setDynamicModules((p) => (p.includes(m) ? p.filter((x) => x !== m) : [...p, m]))
+
+  // Filter projects if a client is selected
+  const selectedClientObj = clients.find(c => c.id === targetClientId)
+  const filteredProjects = projects.filter(p => {
+    if (!targetClientId) return true
+    if (p.client_id === targetClientId || p.user_id === targetClientId) return true
+    if (selectedClientObj) {
+      const u = (selectedClientObj.username || '').toLowerCase()
+      const e = (selectedClientObj.email || '').toLowerCase()
+      const pc = (p.client || '').toLowerCase()
+      if (pc.includes(u) || (e && pc.includes(e))) return true
+    }
+    return true
+  })
 
   async function submit(e) {
     e.preventDefault()
@@ -91,7 +135,17 @@ export default function NewScanModal({ onClose, onStarted, initialProjectId = ''
       let res
       if (mode === 'blackbox') {
         if (!target.trim()) throw new Error('Enter a target URL or host')
-        body = { mode, projectId: projectId || null, target: target.trim(), objective, modules, verify, depth }
+        body = {
+          mode,
+          projectId: projectId || null,
+          targetUserId: targetClientId || null,
+          deductQuota,
+          target: target.trim(),
+          objective,
+          modules,
+          verify,
+          depth,
+        }
         res = await api.startScan(body)
       } else if (whiteboxMode === 'folder') {
         if (!folderPaths.length) throw new Error('Add at least one folder to scan')
@@ -99,6 +153,8 @@ export default function NewScanModal({ onClose, onStarted, initialProjectId = ''
         body = {
           folders: folderPaths.map((dir) => ({ dir, prefix: dir.split(/[\\/]/).pop() || dir })),
           projectId: projectId || null,
+          targetUserId: targetClientId || null,
+          deductQuota,
           language,
           focus: 'security',
           verify,
@@ -111,7 +167,17 @@ export default function NewScanModal({ onClose, onStarted, initialProjectId = ''
         res = await api.startWhiteboxFolder(body)
       } else {
         if (!code.trim()) throw new Error('Paste source code to audit')
-        body = { mode, projectId: projectId || null, files: [{ path: filename || 'snippet.txt', content: code }], language, focus: 'security', verify, depth }
+        body = {
+          mode,
+          projectId: projectId || null,
+          targetUserId: targetClientId || null,
+          deductQuota,
+          files: [{ path: filename || 'snippet.txt', content: code }],
+          language,
+          focus: 'security',
+          verify,
+          depth,
+        }
         res = await api.startScan(body)
       }
       onStarted(res.scan.id)
@@ -122,51 +188,169 @@ export default function NewScanModal({ onClose, onStarted, initialProjectId = ''
   }
 
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center glass-overlay p-4" onClick={onClose}>
-      <div className="card w-full max-w-2xl max-h-[90vh] overflow-auto glass-in" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between border-b border-white/10 px-6 py-4">
-          <h2 className="text-lg font-semibold text-slate-100">New Assessment</h2>
-          <button onClick={onClose} className="text-slate-500 hover:text-slate-200"><X size={20} /></button>
+    <div className="fixed inset-0 z-50 grid place-items-center glass-overlay p-4 overflow-y-auto" onClick={onClose}>
+      <div className="card w-full max-w-2xl max-h-[90vh] overflow-auto glass-in my-auto shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between border-b border-white/10 px-6 py-4 bg-slate-900/80">
+          <div className="flex items-center gap-2">
+            <div className="p-1.5 rounded-lg bg-cyan-500/20 text-cyan-400">
+              <Zap size={18} />
+            </div>
+            <h2 className="text-lg font-bold text-slate-100">New Security Assessment</h2>
+          </div>
+          <button onClick={onClose} className="text-slate-500 hover:text-slate-200 cursor-pointer"><X size={20} /></button>
         </div>
 
         <form onSubmit={submit} className="p-6 space-y-5">
+          {/* Scan Type Mode Switcher */}
           <div className="grid grid-cols-2 gap-3">
             <button type="button" onClick={() => setMode('blackbox')}
-              className={`glass-soft p-4 text-left transition-all duration-200 ${mode === 'blackbox' ? 'border-accent/50 glass-glow' : 'hover:border-white/20'}`}>
-              <Globe className={mode === 'blackbox' ? 'text-accent' : 'text-slate-500'} size={22} />
-              <p className="mt-2 font-semibold text-slate-100">Blackbox</p>
-              <p className="text-xs text-slate-500">External target via Hexstrike engine</p>
+              className={`p-4 rounded-2xl border text-left transition-all duration-200 cursor-pointer ${mode === 'blackbox' ? 'border-cyan-400 bg-cyan-500/15 shadow-glow ring-1 ring-cyan-400' : 'border-white/10 bg-slate-900/60 hover:border-white/20'}`}>
+              <Globe className={mode === 'blackbox' ? 'text-cyan-400' : 'text-slate-500'} size={22} />
+              <p className="mt-2 font-bold text-slate-100">Blackbox Assessment</p>
+              <p className="text-xs text-slate-400">External web & network target via Hexstrike engine</p>
             </button>
             <button type="button" onClick={() => setMode('whitebox')}
-              className={`glass-soft p-4 text-left transition-all duration-200 ${mode === 'whitebox' ? 'border-accent/50 glass-glow' : 'hover:border-white/20'}`}>
-              <FileCode2 className={mode === 'whitebox' ? 'text-accent' : 'text-slate-500'} size={22} />
-              <p className="mt-2 font-semibold text-slate-100">Whitebox</p>
-              <p className="text-xs text-slate-500">Source code audit via code-auditor agent</p>
+              className={`p-4 rounded-2xl border text-left transition-all duration-200 cursor-pointer ${mode === 'whitebox' ? 'border-cyan-400 bg-cyan-500/15 shadow-glow ring-1 ring-cyan-400' : 'border-white/10 bg-slate-900/60 hover:border-white/20'}`}>
+              <FileCode2 className={mode === 'whitebox' ? 'text-cyan-400' : 'text-slate-500'} size={22} />
+              <p className="mt-2 font-bold text-slate-100">Whitebox Code Audit</p>
+              <p className="text-xs text-slate-400">Source code AST audit via Code Auditor specialist agent</p>
             </button>
           </div>
 
-          <div>
-            <label className="label">Project (Optional)</label>
-            <select className="input" value={projectId} onChange={(e) => setProjectId(e.target.value)}>
-              <option value="">-- No Project (Standalone Assessment) --</option>
-              {projects.map((p) => (
-                <option key={p.id} value={p.id}>
-                  📁 {p.name} {p.client ? `(${p.client})` : ''}
-                </option>
-              ))}
-            </select>
+          {/* Client & Project Assignment Block */}
+          <div className="p-4 rounded-2xl bg-slate-950/75 border border-white/10 space-y-3">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
+                <User size={14} className="text-cyan-400" /> Assign to Client & Project Folder
+              </label>
+              {targetClientId && (
+                <span className="text-[10px] text-cyan-300 font-mono">
+                  Client: {selectedClientObj?.username || targetClientId}
+                </span>
+              )}
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {/* Client Selection (For Admins) */}
+              {clients.length > 0 && (
+                <div>
+                  <label className="text-[11px] font-semibold text-slate-400 block mb-1">Target Client Account</label>
+                  <select
+                    className="input text-xs w-full"
+                    value={targetClientId}
+                    onChange={(e) => {
+                      setTargetClientId(e.target.value)
+                      setProjectId('')
+                    }}
+                  >
+                    <option value="">-- Personal / No Client Assignment --</option>
+                    {clients.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        👤 {c.username} ({c.email || c.plan_name || 'Client'})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {/* Project Selection */}
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-[11px] font-semibold text-slate-400">Project Folder (Optional)</label>
+                  <button
+                    type="button"
+                    onClick={() => setShowCreateFolder(!showCreateFolder)}
+                    className="text-[10px] text-cyan-400 hover:text-cyan-300 font-bold flex items-center gap-1 hover:underline cursor-pointer"
+                  >
+                    <Plus size={11} /> {showCreateFolder ? 'Cancel' : 'New Folder'}
+                  </button>
+                </div>
+
+                {showCreateFolder && (
+                  <div className="flex items-center gap-2 mb-2 p-2 rounded-xl bg-cyan-950/30 border border-cyan-500/30 animate-in fade-in">
+                    <input
+                      type="text"
+                      value={newFolderName}
+                      onChange={(e) => setNewFolderName(e.target.value)}
+                      placeholder="Folder name (e.g. Production Web)..."
+                      className="input text-xs !py-1.5 flex-1"
+                      autoFocus
+                      onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleCreateFolder() } }}
+                    />
+                    <button
+                      type="button"
+                      disabled={creatingFolder || !newFolderName.trim()}
+                      onClick={handleCreateFolder}
+                      className="btn-primary text-[11px] !py-1.5 px-3 whitespace-nowrap"
+                    >
+                      {creatingFolder ? <Loader2 size={12} className="animate-spin" /> : 'Create'}
+                    </button>
+                  </div>
+                )}
+
+                <select
+                  className="input text-xs w-full"
+                  value={projectId}
+                  onChange={(e) => setProjectId(e.target.value)}
+                >
+                  <option value="">-- No Project (Standalone Assessment) --</option>
+                  {filteredProjects.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      📁 {p.name} {p.client ? `(${p.client})` : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {/* Quota Deduction Option (When client is selected) */}
+            {targetClientId && (
+              <div className="pt-2 border-t border-white/10 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <span className="text-[11px] text-slate-300 font-semibold">Quota Billing for Client:</span>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setDeductQuota(true)}
+                    className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-all cursor-pointer ${
+                      deductQuota
+                        ? 'border-cyan-400 bg-cyan-500/20 text-cyan-300'
+                        : 'border-white/10 bg-slate-900 text-slate-400'
+                    }`}
+                  >
+                    ⚡ Pakai Quota Client
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDeductQuota(false)}
+                    className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-all cursor-pointer ${
+                      !deductQuota
+                        ? 'border-emerald-400 bg-emerald-500/20 text-emerald-300'
+                        : 'border-white/10 bg-slate-900 text-slate-400'
+                    }`}
+                  >
+                    🛡️ Free Admin Audit
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
 
           {mode === 'blackbox' ? (
             <>
               <div>
-                <label className="label">Target</label>
-                <input className="input" placeholder="https://example.com or 192.168.1.10" value={target} onChange={(e) => setTarget(e.target.value)} />
+                <label className="label text-xs font-bold text-slate-200">Target URL / Hostname *</label>
+                <input
+                  className="input text-xs w-full"
+                  placeholder="https://example.com or 192.168.1.10"
+                  value={target}
+                  onChange={(e) => setTarget(e.target.value)}
+                  required
+                />
               </div>
 
               {/* 2 Simplified Objectives */}
               <div>
-                <label className="label">Scan Objective</label>
+                <label className="label text-xs font-bold text-slate-200">Scan Objective</label>
                 <div className="grid grid-cols-2 gap-3 mt-1.5">
                   <div
                     onClick={() => {
@@ -174,17 +358,17 @@ export default function NewScanModal({ onClose, onStarted, initialProjectId = ''
                       setDepth('standard')
                       setModules(BLACKBOX_MODULES)
                     }}
-                    className={`p-4 rounded-xl border cursor-pointer transition-all ${
+                    className={`p-3.5 rounded-xl border cursor-pointer transition-all ${
                       objective === 'comprehensive'
                         ? 'bg-cyan-500/15 border-cyan-500/60 ring-2 ring-cyan-500/30'
-                        : 'bg-ink-800/80 border-slate-700/60 hover:border-slate-500'
+                        : 'bg-slate-900/80 border-slate-700/60 hover:border-slate-500'
                     }`}
                   >
                     <div className="flex items-center gap-2 mb-1">
-                      <ShieldCheck className={objective === 'comprehensive' ? 'text-cyan-400' : 'text-slate-400'} size={20} />
-                      <span className="font-bold text-sm text-slate-100">Normal</span>
+                      <ShieldCheck className={objective === 'comprehensive' ? 'text-cyan-400' : 'text-slate-400'} size={18} />
+                      <span className="font-bold text-xs text-slate-100">Normal</span>
                     </div>
-                    <p className="text-xs text-slate-400 leading-relaxed">
+                    <p className="text-[11px] text-slate-400 leading-relaxed">
                       Standard vulnerability scanning across <strong>all 16 modules</strong> with stealth & web checks.
                     </p>
                   </div>
@@ -195,258 +379,172 @@ export default function NewScanModal({ onClose, onStarted, initialProjectId = ''
                       setDepth('offensive')
                       setModules(BLACKBOX_MODULES)
                     }}
-                    className={`p-4 rounded-xl border cursor-pointer transition-all ${
+                    className={`p-3.5 rounded-xl border cursor-pointer transition-all ${
                       objective === 'offensive'
                         ? 'bg-red-500/15 border-red-500/60 ring-2 ring-red-500/30'
-                        : 'bg-ink-800/80 border-slate-700/60 hover:border-slate-500'
+                        : 'bg-slate-900/80 border-slate-700/60 hover:border-slate-500'
                     }`}
                   >
                     <div className="flex items-center gap-2 mb-1">
-                      <Swords className={objective === 'offensive' ? 'text-red-400' : 'text-slate-400'} size={20} />
-                      <span className="font-bold text-sm text-slate-100">⚔️ Offensive</span>
+                      <Swords className={objective === 'offensive' ? 'text-red-400' : 'text-slate-400'} size={18} />
+                      <span className="font-bold text-xs text-slate-100">⚔️ Offensive</span>
                     </div>
-                    <p className="text-xs text-slate-400 leading-relaxed">
+                    <p className="text-[11px] text-slate-400 leading-relaxed">
                       Max aggression across <strong>ALL modules</strong> — NSE vulns, deep SQLi, XSS cookie steals & cred checks.
                     </p>
                   </div>
                 </div>
               </div>
+
               <div>
-                <div className="flex items-center justify-between">
-                  <label className="label">Modules ({modules.length}/{BLACKBOX_MODULES.length})</label>
-                  <button type="button" onClick={() => setModules(modules.length === BLACKBOX_MODULES.length ? [] : BLACKBOX_MODULES)}
-                    className="text-[11px] text-accent hover:text-accent/80">
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="label text-xs font-bold text-slate-200">Modules ({modules.length}/{BLACKBOX_MODULES.length})</label>
+                  <button
+                    type="button"
+                    onClick={() => setModules(modules.length === BLACKBOX_MODULES.length ? [] : BLACKBOX_MODULES)}
+                    className="text-[11px] text-cyan-400 hover:underline cursor-pointer"
+                  >
                     {modules.length === BLACKBOX_MODULES.length ? 'untick all' : 'tick all'}
                   </button>
                 </div>
-                <div className="flex flex-wrap gap-2">
+                <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto p-2.5 rounded-xl bg-slate-950/60 border border-white/10">
                   {BLACKBOX_MODULES.map((m) => (
-                    <button type="button" key={m} onClick={() => toggle(m)}
-                      className={`chip border transition-colors ${modules.includes(m) ? 'bg-accent/15 text-accent border-accent/50' : 'bg-ink-800 text-slate-500 border-ink-600 hover:text-slate-300'}`}>
+                    <button
+                      key={m}
+                      type="button"
+                      onClick={() => toggle(m)}
+                      className={`text-[10px] px-2 py-0.5 rounded-md uppercase font-mono transition-all cursor-pointer ${
+                        modules.includes(m)
+                          ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 font-bold'
+                          : 'bg-white/5 text-slate-500 border border-white/5'
+                      }`}
+                    >
                       {m}
                     </button>
                   ))}
                 </div>
-                <p className="mt-2 text-[11px] text-slate-500">Comprehensive/offensive auto-ticks every module. Untick any to skip them.</p>
               </div>
             </>
           ) : (
             <>
-              {/* Whitebox mode toggle */}
-              <div className="flex gap-2 border-b border-white/10 pb-3">
-                <button type="button" onClick={() => setWhiteboxMode('folder')}
-                  className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${whiteboxMode === 'folder' ? 'bg-accent/15 text-accent border border-accent/40' : 'bg-ink-800 text-slate-500 border border-ink-600 hover:text-slate-300'}`}>
-                  <FolderOpen size={16} /> Scan Folder
+              {/* Whitebox Mode Switcher */}
+              <div className="flex rounded-xl bg-slate-900 p-1 border border-white/10">
+                <button
+                  type="button"
+                  onClick={() => setWhiteboxMode('folder')}
+                  className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                    whiteboxMode === 'folder'
+                      ? 'bg-cyan-500 text-slate-950 shadow-md'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  <FolderOpen size={13} className="inline mr-1" /> Local Folders
                 </button>
-                <button type="button" onClick={() => setWhiteboxMode('paste')}
-                  className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${whiteboxMode === 'paste' ? 'bg-accent/15 text-accent border border-accent/40' : 'bg-ink-800 text-slate-500 border border-ink-600 hover:text-slate-300'}`}>
-                  <Code2 size={16} /> Paste Code
+                <button
+                  type="button"
+                  onClick={() => setWhiteboxMode('paste')}
+                  className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                    whiteboxMode === 'paste'
+                      ? 'bg-cyan-500 text-slate-950 shadow-md'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  <Code2 size={13} className="inline mr-1" /> Paste Snippet
                 </button>
               </div>
 
               {whiteboxMode === 'folder' ? (
-                <>
+                <div className="space-y-3">
+                  {/* Selected Folders List */}
                   <div>
-                    <label className="label">Browse Server Folders</label>
-                    <div className="glass-soft p-3 rounded-lg space-y-2 max-h-56 overflow-auto">
-                      {/* Roots */}
-                      {!browseCurrent && (
-                        <div>
-                          <p className="text-xs text-slate-500 mb-2">Allowed roots:</p>
-                          {browseRoots.map((r) => (
-                            <button type="button" key={r.path} onClick={() => browseTo(r.path)}
-                              className="flex items-center gap-2 w-full text-left px-2 py-1.5 rounded hover:bg-white/5 text-sm text-slate-300">
-                              <FolderOpen size={14} className="text-amber-400" />
-                              <span className="font-mono text-xs truncate">{r.path}</span>
-                            </button>
-                          ))}
-                        </div>
-                      )}
-
-                      {/* Current dir header */}
-                      {browseCurrent && (
-                        <div className="flex items-center justify-between gap-2 pb-2 border-b border-white/10">
-                          <div className="flex items-center gap-2 min-w-0">
-                            <FolderOpen size={14} className="text-amber-400 shrink-0" />
-                            <span className="font-mono text-xs text-slate-300 truncate">{browseCurrent}</span>
-                          </div>
-                          <button type="button" onClick={() => addFolder(browseCurrent)}
-                            className="btn-ghost text-xs px-2 py-1 shrink-0 flex items-center gap-1">
-                            <Plus size={12} /> Add
-                          </button>
-                        </div>
-                      )}
-
-                      {/* Parent */}
-                      {browseParent && (
-                        <button type="button" onClick={() => browseTo(browseParent)}
-                          className="flex items-center gap-2 w-full text-left px-2 py-1.5 rounded hover:bg-white/5 text-sm text-slate-400">
-                          <ChevronUp size={14} /> ..
-                        </button>
-                      )}
-
-                      {/* Subdirs */}
-                      {browseDirs.map((d) => (
-                        <div key={d.path} className="flex items-center justify-between gap-1 group">
-                          <button type="button" onClick={() => browseTo(d.path)}
-                            className="flex items-center gap-2 flex-1 text-left px-2 py-1.5 rounded hover:bg-white/5 text-sm text-slate-300 min-w-0">
-                            <ChevronRight size={14} className="text-slate-500 shrink-0" />
-                            <span className="truncate">{d.name}</span>
-                          </button>
-                          <button type="button" onClick={() => addFolder(d.path)}
-                            className="opacity-0 group-hover:opacity-100 text-accent hover:text-accent/80 px-1 transition-opacity">
-                            <Plus size={14} />
-                          </button>
-                        </div>
-                      ))}
-                      {browseLoading && <p className="text-xs text-slate-500 px-2 py-1">Loading…</p>}
-                    </div>
-                  </div>
-
-                  {/* Selected folders */}
-                  {folderPaths.length > 0 && (
-                    <div>
-                      <label className="label">Selected Folders ({folderPaths.length})</label>
-                      <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-slate-200 block mb-1">Folders to Audit ({folderPaths.length})</label>
+                    {folderPaths.length === 0 ? (
+                      <p className="text-[11px] text-slate-500 italic">No folders added yet. Pick one below.</p>
+                    ) : (
+                      <div className="space-y-1.5 max-h-28 overflow-y-auto">
                         {folderPaths.map((p) => (
-                          <div key={p} className="flex items-center justify-between gap-2 glass-soft px-3 py-2 rounded-lg">
-                            <span className="font-mono text-xs text-slate-300 truncate">{p}</span>
-                            <button type="button" onClick={() => removeFolder(p)} className="text-slate-500 hover:text-sev-critical shrink-0">
-                              <Trash2 size={14} />
+                          <div key={p} className="flex items-center justify-between p-2 rounded-xl bg-slate-900 border border-white/10 text-xs font-mono text-cyan-300">
+                            <span className="truncate">{p}</span>
+                            <button type="button" onClick={() => removeFolder(p)} className="text-rose-400 hover:text-rose-300 p-1 cursor-pointer">
+                              <Trash2 size={13} />
                             </button>
                           </div>
                         ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Manual path input */}
-                  <div>
-                    <label className="label">Or enter path manually</label>
-                    <div className="flex gap-2">
-                      <input className="input font-mono text-xs" placeholder="/root/FYP2PROJECT/backend"
-                        value={browsePath} onChange={(e) => setBrowsePath(e.target.value)}
-                        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); browseTo(browsePath) } }} />
-                      <button type="button" onClick={() => browseTo(browsePath)} className="btn-ghost text-xs px-3">Go</button>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="label">Language (hint)</label>
-                      <select className="input" value={language} onChange={(e) => setLanguage(e.target.value)}>
-                        {['javascript', 'typescript', 'python', 'php', 'java', 'go', 'ruby', 'csharp', 'auto'].map((l) => <option key={l}>{l}</option>)}
-                      </select>
-                    </div>
-                    <div>
-                      <label className="label">Scan Depth</label>
-                      <select className="input" value={scanDepth} onChange={(e) => setScanDepth(e.target.value)}>
-                        {Object.entries(SCAN_DEPTHS).map(([k, d]) => (
-                          <option key={k} value={k}>{d.label}</option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="label">Audit Aggression</label>
-                    <select className="input" value={depth} onChange={(e) => setDepth(e.target.value)}>
-                      <option value="standard">Standard — single AI audit pass</option>
-                      <option value="offensive">⚔️ Offensive — 3-pass audit (injection / auth+secrets / logic) + pattern scanner</option>
-                    </select>
-                  </div>
-                  <p className="text-[11px] text-slate-500">
-                    {SCAN_DEPTHS[scanDepth].desc}. Files are read directly from server disk (no upload/copy) —
-                    the walker auto-skips node_modules, .git, dist, build, .env, lockfiles, and other non-source files.
-                    {depth === 'offensive' ? ' Offensive mode runs a fast pattern scanner (secrets, dangerous functions) + 3 specialist AI passes.' : ''}
-                  </p>
-
-                  {/* ── Dynamic Verification (Hybrid Whitebox) ── */}
-                  <div className="glass-soft p-4 rounded-xl border border-amber-500/30 mt-3">
-                    <div className="flex items-center gap-2 mb-3">
-                      <Swords size={16} className="text-amber-400" />
-                      <span className="font-semibold text-sm text-amber-300">Dynamic Verification (Hybrid Mode)</span>
-                      <span className="text-[10px] text-amber-700 bg-amber-500/10 px-1.5 py-0.5 rounded">Optional</span>
-                    </div>
-                    <p className="text-xs text-slate-400 mb-3">
-                      After source analysis, run blackbox tools against a live target to confirm vulnerabilities with runtime evidence.
-                    </p>
-                    <div>
-                      <label className="label">Target URL</label>
-                      <input className="input font-mono text-xs" placeholder="https://your-app.com or 192.168.1.10"
-                        value={dynamicTarget} onChange={(e) => setDynamicTarget(e.target.value)} />
-                    </div>
-                    {dynamicTarget.trim() && (
-                      <div className="mt-3">
-                        <div className="flex items-center justify-between">
-                          <label className="label">Dynamic Modules ({dynamicModules.length}/{DYNAMIC_MODULES.length})</label>
-                          <button type="button" onClick={() => setDynamicModules(dynamicModules.length === DYNAMIC_MODULES.length ? [] : DYNAMIC_MODULES)}
-                            className="text-[11px] text-accent hover:text-accent/80">
-                            {dynamicModules.length === DYNAMIC_MODULES.length ? 'untick all' : 'tick all'}
-                          </button>
-                        </div>
-                        <div className="flex flex-wrap gap-2">
-                          {DYNAMIC_MODULES.map((m) => (
-                            <button type="button" key={m} onClick={() => toggleDynamic(m)}
-                              className={`chip border transition-colors ${dynamicModules.includes(m) ? 'bg-amber-500/15 text-amber-300 border-amber-500/40' : 'bg-ink-800 text-slate-500 border-ink-600 hover:text-slate-300'}`}>
-                              {m}
-                            </button>
-                          ))}
-                        </div>
                       </div>
                     )}
                   </div>
-                </>
+
+                  {/* Folder Browser */}
+                  <div className="p-3 rounded-xl bg-slate-950/60 border border-white/10 space-y-2">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="font-bold text-slate-300">Server Directory Browser</span>
+                      {browseParent && (
+                        <button type="button" onClick={() => browseTo(browseParent)} className="text-[11px] text-cyan-400 hover:underline cursor-pointer flex items-center gap-0.5">
+                          <ChevronUp size={12} /> Up to Parent
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="max-h-36 overflow-y-auto space-y-1 text-xs font-mono">
+                      {browseDirs.map((d) => (
+                        <div key={d.path} className="flex items-center justify-between p-1.5 rounded-lg hover:bg-white/5">
+                          <button type="button" onClick={() => browseTo(d.path)} className="text-left text-slate-300 hover:text-cyan-300 truncate cursor-pointer flex items-center gap-1.5">
+                            <FolderOpen size={13} className="text-cyan-400 shrink-0" />
+                            <span>{d.name}</span>
+                          </button>
+                          <button type="button" onClick={() => addFolder(d.path)} className="btn-secondary !py-0.5 !px-2 text-[10px] cursor-pointer">
+                            + Add
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
               ) : (
-                <>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="label">Filename</label>
-                      <input className="input" value={filename} onChange={(e) => setFilename(e.target.value)} />
-                    </div>
-                    <div>
-                      <label className="label">Language</label>
-                      <select className="input" value={language} onChange={(e) => setLanguage(e.target.value)}>
-                        {['javascript', 'typescript', 'python', 'php', 'java', 'go', 'ruby', 'csharp'].map((l) => <option key={l}>{l}</option>)}
-                      </select>
-                    </div>
-                  </div>
+                <div className="space-y-3">
                   <div>
-                    <label className="label">Source code</label>
-                    <textarea className="input font-mono text-xs h-44 resize-y" placeholder="Paste source code here…" value={code} onChange={(e) => setCode(e.target.value)} />
+                    <label className="text-xs font-bold text-slate-200 block mb-1">Source Code</label>
+                    <textarea
+                      className="input text-xs w-full h-36 font-mono"
+                      placeholder="// Paste code here..."
+                      value={code}
+                      onChange={(e) => setCode(e.target.value)}
+                    />
                   </div>
-                </>
+                </div>
               )}
             </>
           )}
 
-          <label className="flex items-center gap-2.5 text-sm text-slate-300 cursor-pointer">
-            <input type="checkbox" checked={verify} onChange={(e) => setVerify(e.target.checked)}
-              className="h-4 w-4 rounded border-ink-600 bg-ink-800 text-accent focus:ring-accent/40" />
-            AI agent verification (reduce false positives)
+          {/* AI Verification Checkbox */}
+          <label className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer pt-1">
+            <input
+              type="checkbox"
+              checked={verify}
+              onChange={(e) => setVerify(e.target.checked)}
+              className="rounded border-white/20 text-cyan-500 focus:ring-0"
+            />
+            <span>Enable DeepSeek AI Specialist Agent Verification</span>
           </label>
 
           {err && (
-            <div className="rounded-xl bg-rose-500/10 border border-rose-500/40 p-4 text-xs text-rose-300 space-y-2">
-              <p className="font-semibold">{err}</p>
-              {(err.includes('quota') || err.includes('subscription') || err.includes('expired') || err.includes('paid')) && (
-                <div className="pt-2">
-                  <a
-                    href="/app/billing"
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-cyan-500 text-slate-950 font-bold hover:bg-cyan-400 transition-colors"
-                  >
-                    <span>Upgrade / Renew Plan in Billing</span> →
-                  </a>
-                </div>
-              )}
+            <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-xs text-red-300 flex items-center gap-2">
+              <X size={14} className="text-red-400 shrink-0" />
+              <span>{err}</span>
             </div>
           )}
 
-          <div className="flex justify-end gap-3 pt-1">
-            <button type="button" onClick={onClose} className="btn-ghost">Cancel</button>
-            <button type="submit" disabled={busy} className="btn-primary">
-              {busy ? <Loader2 size={16} className="animate-spin" /> : null}
-              {busy ? 'Launching…' : `Launch ${mode === 'blackbox' ? 'Scan' : whiteboxMode === 'folder' ? 'Folder Audit' : 'Code Audit'}`}
+          <div className="flex justify-end gap-2 pt-3 border-t border-white/10">
+            <button type="button" onClick={onClose} className="btn-secondary text-xs py-2 px-4 cursor-pointer">
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={busy}
+              className="btn-primary text-xs py-2 px-5 cursor-pointer shadow-glow bg-gradient-to-r from-cyan-500 to-blue-600"
+            >
+              {busy && <Loader2 size={14} className="animate-spin" />}
+              {busy ? 'Starting Assessment...' : 'Launch Assessment'}
             </button>
           </div>
         </form>

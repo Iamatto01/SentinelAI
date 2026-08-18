@@ -76,14 +76,10 @@ fi
 
 log "[3/4] Starting Cloudflare tunnel..."
 if command -v cloudflared &> /dev/null; then
-  pkill -f "cloudflared tunnel" 2>/dev/null || true
+  pkill -f "tunnel.*run sentinelai" 2>/dev/null || true
   sleep 1
-  nohup bash -c 'while true; do
-    cloudflared tunnel --protocol http2 run sentinelai 2>&1
-    echo "[$(date)] Cloudflare tunnel exited, restarting in 5s..." >> /home/kali/cloudflared.log
-    sleep 5
-  done' > "$LOG_DIR/cloudflared.log" 2>&1 &
-  log "  ✓ Cloudflare tunnel started (auto-restart enabled)"
+  nohup cloudflared tunnel --edge-ip-version 4 run sentinelai > "$LOG_DIR/cloudflared.log" 2>&1 &
+  log "  ✓ Cloudflare tunnel started"
 else
   log "[3/4] ⚠ cloudflared not installed — tunnel unavailable"
 fi

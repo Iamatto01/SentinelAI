@@ -2,7 +2,6 @@ import { randomUUID } from 'node:crypto'
 import { hexstrike, payloadsRag } from './integrations/index.js'
 import { runNativeTool } from './integrations/native-tools.js'
 import { aiEngine } from './ai/ai-engine.js'
-import { aiFeedbackLoop } from './ai/ai-feedback-loop.js'
 import { enrichWithOwasp } from './owasp.js'
 import * as db from './db.js'
 
@@ -43,8 +42,6 @@ export class UnifiedPipeline {
     this.io = io
     // scanId -> { paused: bool, pauseWaiters: [] } — runtime control flags
     this.control = new Map()
-    // scanId -> { urls[], tools[], subdomains[], endpoints[], target, startTime }
-    this._blackboxMeta = new Map()
   }
 
   emit(scanId, event, data) {
@@ -109,26 +106,15 @@ export class UnifiedPipeline {
     let f = enrichWithOwasp(rawFinding)
     // 2. RAG PoC cross-reference
     try { f = payloadsRag.crossReference(f) } catch { /* non-fatal */ }
-    // 3. Severity sanity check — prevent AI from over-classifying low-impact findings
-    f = enforceSeverityBounds(f)
-    // 4. AI verification (specialist-routed)
+    // 3. AI verification (specialist-routed)
     let verdict = null
     if (verify) {
       try {
         const v = await aiEngine.verifyFinding(f, targetType)
         verdict = v
         if (!v.isTruePositive) {
-          // Code candidates already contain exact file/line evidence from the
-          // deterministic scanner or the specialist audit. Keep them visible
-          // as needs-validation when the secondary verifier is conservative;
-          // otherwise a provider/model change can make an entire codebase
-          // appear clean without any evidence being lost.
-          if (targetType !== 'code') {
-            this.log(scanId, 'info', `🤖 [${v.agent}] discarded false positive: ${f.title}`)
-            return null
-          }
-          f.evidence = { ...(f.evidence || {}), aiRejected: true, validationTier: 'needs-validation' }
-          this.log(scanId, 'info', `🤖 [${v.agent}] retained code candidate for validation: ${f.title}`)
+          this.log(scanId, 'info', `🤖 [${v.agent}] discarded false positive: ${f.title}`)
+          return null
         }
         if (v.refined) f = v.refined
         if (v.evidenceTier) f.evidence = { ...(f.evidence || {}), aiEvidenceTier: v.evidenceTier }
@@ -155,51 +141,6 @@ export class UnifiedPipeline {
     }
     f.evidence = { ...f.evidence, fingerprint, sources: [f.module || 'unknown'] }
 
-    // ── AI PoC GENERATION: Generate a specific, working exploit PoC ──
-    // After verification, ask the AI to generate a tailored exploit for this
-    // specific finding. This produces copy-pasteable attack commands instead
-    // of generic category-based text.
-    if (verdict?.isTruePositive || targetType === 'code') {
-      try {
-        const aiPoc = await aiEngine.generateExploitPoc(f, targetType)
-        if (aiPoc && (aiPoc.attackCommand || aiPoc.pocPayload)) {
-          // Merge AI PoC with existing RAG PoC references
-          const existingPoc = f.poc || {}
-          f.poc = {
-            ...existingPoc,
-            aiGenerated: true,
-            source: 'ai-generated',
-            pocPayload: aiPoc.pocPayload,
-            attackCommand: aiPoc.attackCommand,
-            exploitSteps: aiPoc.exploitSteps,
-            impact: aiPoc.impact,
-            prerequisites: aiPoc.prerequisites,
-          }
-          this.log(scanId, 'info', `⚔️ AI PoC generated for: ${f.title}`)
-        }
-      } catch (e) {
-        this.log(scanId, 'warn', `⚠️ AI PoC generation failed for "${f.title}": ${e.message}`)
-      }
-    }
-
-    // ── AI FEEDBACK LOOP: Dynamic self-correction ──
-    // Review the AI's output for errors; if found, re-prompt the AI to fix them.
-    // This creates the loop: AI → finding → review → error? → re-prompt → corrected finding
-    try {
-      const correction = await aiFeedbackLoop.selfCorrect(
-        f, targetType,
-        (sid, lvl, msg) => this.log(sid, lvl, msg),
-        scanId
-      )
-      if (correction.corrected) {
-        f = correction.finding
-        this.log(scanId, 'info', `🔄 AI feedback loop corrected finding: ${f.title}`)
-      }
-      aiFeedbackLoop.logReview(scanId, null, correction.reviewLog, correction.corrected)
-    } catch (e) {
-      this.log(scanId, 'warn', `⚠️ AI feedback loop error: ${e.message}`)
-    }
-
     const id = `fnd_${randomUUID()}`
     const now = new Date().toISOString()
     try {
@@ -224,8 +165,7 @@ export class UnifiedPipeline {
       }
 
       return stored
-    } catch (e) {
-      this.log(scanId, 'warn', `⚠ DB insert failed for finding "${f.title}": ${e.message}`)
+    } catch {
       return null
     }
   }
@@ -233,53 +173,10 @@ export class UnifiedPipeline {
   // ── BLACKBOX ───────────────────────────────────────────────────────────────
   async runBlackbox(scan, { modules = [], objective = 'comprehensive', maxTools = 6, verify = true, depth = 'standard' } = {}) {
     const scanId = scan.id
-    // Reset & start token tracking for this scan
-    this._startTokenTracking(scanId)
     const target = scan.target
     this._currentTarget = target
     this.log(scanId, 'info', `▶ Blackbox scan started on ${target} (depth=offensive — all probes active)`)
     this.progress(scanId, 2)
-
-    // ── Blackbox metadata tracking (mirrors whiteboxMeta for UI) ──
-    const meta = {
-      startTime: new Date().toISOString(),
-      urls: [],           // all URLs discovered/crawled
-      tools: [],          // tools executed with status + timing
-      subdomains: [],     // subdomains discovered
-      endpoints: [],      // parameterized endpoints found
-      target,
-    }
-    this._blackboxMeta.set(scanId, meta)
-
-    const _saveMeta = () => {
-      try {
-        const m = this._blackboxMeta.get(scanId)
-        if (m) db.run(`UPDATE scans SET blackbox_meta = ? WHERE id = ?`, JSON.stringify(m), scanId)
-      } catch { /* non-fatal */ }
-    }
-    // Helper to add a URL to the meta list (deduplicated, capped at 500)
-    const _addUrl = (url) => {
-      if (!url || typeof url !== 'string') return
-      const u = url.replace(/#.*$/, '').trim()
-      if (!u || u.length < 5) return
-      if (!meta.urls.includes(u)) {
-        meta.urls.push(u)
-        if (meta.urls.length > 500) meta.urls = meta.urls.slice(-500)
-      }
-    }
-    const _addTool = (tool, status, durationMs, error) => {
-      meta.tools.push({ tool, status, durationMs: durationMs || 0, error: error || null })
-      _saveMeta()
-    }
-    // Override _collectUrls to also populate meta
-    const origCollectUrls = this._collectUrls.bind(this)
-    this._collectUrls = (sid, urls) => {
-      origCollectUrls(sid, urls)
-      if (sid === scanId && Array.isArray(urls)) {
-        for (const u of urls) _addUrl(u)
-      }
-    }
-    _saveMeta()
 
     const engine = await hexstrike.engineStatus()
     if (!engine.available) {
@@ -292,7 +189,6 @@ export class UnifiedPipeline {
     // Always audit HTTP security headers + sensitive paths first (fast, high-signal).
     // HexStrike tools do not cover these, so run the native checks regardless of engine.
     await this.auditHttpBaseline(scanId, scan.target, { verify, targetType: scan.target_type })
-    _addUrl(/^https?:\/\//i.test(target) ? target : `https://${target}`)
     this.progress(scanId, 8)
 
     // Skip wpscan if the target is not WordPress (saves ~2 min + avoids Ruby errors).
@@ -322,7 +218,7 @@ export class UnifiedPipeline {
         // internal checks already covered by auditHttpBaseline, not NATIVE_TOOLS).
         await this.runNativeBlackbox(scan, {
           verify,
-          modules: ['nmap', 'whatweb', 'wafw00f', 'nikto', 'ffuf', 'gobuster', 'katana', 'nuclei', 'arjun', 'dalfox', 'wpscan'],
+          modules: ['nmap', 'whatweb', 'nikto', 'ffuf', 'katana', 'nuclei', 'arjun', 'dalfox'],
         })
         return
       }
@@ -345,18 +241,9 @@ export class UnifiedPipeline {
         if (mod === 'ffuf') {
           params.wordlist = '/usr/share/seclists/Discovery/Web-Content/raft-medium-words.txt'
         }
-        this.log(scanId, 'info', `▶ Running tool: ${mod} [offensive]${mapping.nativeOnly ? ' (native)' : ''}`)
-        const t0 = Date.now()
-        let res
-        if (mapping.nativeOnly) {
-          // No HexStrike endpoint exists — run native directly.
-          res = { success: false, error: 'native-only tool', _skipHex: true }
-        } else {
-          res = await hexstrike.runTool(mapping.tool, params)
-        }
-        const t1 = Date.now()
-        const finalStatus = await this.processToolOutput(scanId, mod, res, { verify, targetType: scan.target_type })
-        _addTool(mod, finalStatus, t1 - t0, res?.error || null)
+        this.log(scanId, 'info', `▶ Running tool: ${mod} [offensive]`)
+        const res = await hexstrike.runTool(mapping.tool, params)
+        await this.processToolOutput(scanId, mod, res, { verify, targetType: scan.target_type })
         done++
         // Tool phase spans 12% → 70%; injection chaining + offensive stages take the rest.
         this.progress(scanId, 12 + (done / modules.length) * 58)
@@ -371,12 +258,10 @@ export class UnifiedPipeline {
 
     // ── OFFENSIVE STAGES (always active) ──
     await this._probeServiceVulns(scanId, target, { verify })
-    this.progress(scanId, 75)
-    await this._probeAdvancedAttackVectors(scanId, target, { verify })
-    this.progress(scanId, 82)
+    this.progress(scanId, 78)
     await this._discoverLoginSurfaces(scanId, target, { verify })
     await this._matchOffsecPayloads(scanId)
-    this.progress(scanId, 88)
+    this.progress(scanId, 85)
 
     // ── RESPONSE BODY SCANNING ──
     await this._scanResponseBodies(scanId, target, { verify })
@@ -390,296 +275,10 @@ export class UnifiedPipeline {
   }
 
   /**
-   * OFFENSIVE: advanced attack vector probes — SSTI, XXE, CSRF, JWT analysis,
-   * GraphQL introspection, Host Header injection, Open Redirect, CRLF injection,
-   * HTTP Request Smuggling, CORS misconfiguration (deep check).
-   * These are the attacks that basic scanners miss.
+   * OFFENSIVE: service-level vulnerability probing on open ports.
+   * Uses nmap NSE scripts for concrete CVEs (heartbleed, ms17-010, ftp-anon,
+   * smb-vuln, ssl-poodle) against the target's open services.
    */
-  async _probeAdvancedAttackVectors(scanId, target, { verify } = {}) {
-    const base = /^https?:\/\//i.test(target) ? target : `https://${target}`
-    this.log(scanId, 'info', `⚔️ Advanced attack vectors: SSTI / XXE / CSRF / JWT / GraphQL / Host Header / CRLF / Smuggling...`)
-
-    // ── SSTI (Server-Side Template Injection) probes ──
-    const sstiPayloads = [
-      { name: 'Jinja2/Twig', payload: '{{7*7}}', expect: '49' },
-      { name: 'Jinja2', payload: '{{config}}', expect: 'Config' },
-      { name: 'Twig', payload: '{{_self.env.registerUndefinedFilterCallback("exec")}}', expect: null },
-      { name: 'EJS', payload: '<%= 7*7 %>', expect: '49' },
-      { name: 'ERB', payload: '<%= 7*7 %>', expect: '49' },
-      { name: 'FreeMarker', payload: '${7*7}', expect: '49' },
-      { name: 'Velocity', payload: '#set($x=7*7)${x}', expect: '49' },
-      { name: 'Smarty', payload: '{php}echo 7*7;{/php}', expect: '49' },
-      { name: 'Handlebars', payload: '{{constructor.constructor("return 7*7")()}}', expect: null },
-    ]
-    // Collect parameterized URLs for SSTI testing
-    const urls = this._urlPool?.get(scanId) ? [...this._urlPool.get(scanId)].slice(0, 10) : [base]
-    for (const url of urls) {
-      if (!/\?[^=]+=/.test(url)) continue
-      await this.waitIfPaused(scanId)
-      for (const ssti of sstiPayloads) {
-        try {
-          const testUrl = url.replace(/([?&])([^=]+)=([^&]*)/, `$1$2=${encodeURIComponent(ssti.payload)}`)
-          const res = await fetch(testUrl, { redirect: 'follow', signal: AbortSignal.timeout(8000) })
-          const body = await res.text()
-          if (ssti.expect && body.includes(ssti.expect)) {
-            await this.ingestFinding(scanId, {
-              title: `SSTI (${ssti.name}) — template injection confirmed`,
-              severity: 'critical',
-              cweId: 'CWE-1336',
-              owaspCategory: 'A03:2021-Injection',
-              description: `Server-Side Template Injection (${ssti.name}) confirmed at ${url}. Payload "${ssti.payload}" returned "${ssti.expect}" in the response. This allows arbitrary code execution on the server.`,
-              remediation: 'Never pass user input directly to template render functions. Use a sandboxed template engine, or sanitize input before rendering.',
-              module: 'advanced:ssti',
-              evidence: { url, payload: ssti.payload, engine: ssti.name, response: body.slice(0, 300) },
-            }, { verify })
-            this.log(scanId, 'info', `⚔️ SSTI (${ssti.name}) CONFIRMED at ${url}`)
-            break // one confirmed SSTI per URL is enough
-          }
-        } catch { /* skip */ }
-      }
-    }
-
-    // ── XXE (XML External Entity) probes ──
-    const xxePayloads = [
-      { name: 'Basic XXE', contentType: 'application/xml', body: `<?xml version="1.0"?><!DOCTYPE foo [<!ENTITY xxe SYSTEM "file:///etc/passwd">]><root>&xxe;</root>`, expect: /root:/ },
-      { name: 'XXE via SVG', contentType: 'image/svg+xml', body: `<?xml version="1.0"?><!DOCTYPE foo [<!ENTITY xxe SYSTEM "file:///etc/hostname">]><svg xmlns="http://www.w3.org/2000/svg">&xxe;</svg>`, expect: null },
-      { name: 'XXE Billion Laughs', contentType: 'application/xml', body: `<?xml version="1.0"?><!DOCTYPE lolz [<!ENTITY lol "lol"><!ENTITY lol2 "&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;"><!ENTITY lol3 "&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;">]><root>&lol3;</root>`, expect: null },
-    ]
-    for (const xxe of xxePayloads) {
-      await this.waitIfPaused(scanId)
-      try {
-        const res = await fetch(base, {
-          method: 'POST',
-          headers: { 'Content-Type': xxe.contentType },
-          body: xxe.body,
-          signal: AbortSignal.timeout(10000),
-        })
-        const body = await res.text()
-        if (xxe.expect && xxe.expect.test(body)) {
-          await this.ingestFinding(scanId, {
-            title: `XXE (${xxe.name}) — XML External Entity injection confirmed`,
-            severity: 'critical',
-            cweId: 'CWE-611',
-            owaspCategory: 'A05:2021-Security Misconfiguration',
-            description: `XML External Entity injection confirmed at ${base}. The server processed an external entity reference and returned file contents. This allows reading arbitrary files from the server and performing SSRF.`,
-            remediation: 'Disable external entity processing in the XML parser. Set FEATURE_SECURE_PROCESSING=true (Java), libxml_disable_entity_loader(true) (PHP), or use defusedxml (Python).',
-            module: 'advanced:xxe',
-            evidence: { url: base, payload: xxe.body.slice(0, 200), response: body.slice(0, 300) },
-          }, { verify })
-          this.log(scanId, 'info', `⚔️ XXE (${xxe.name}) CONFIRMED at ${base}`)
-          break
-        }
-      } catch { /* skip */ }
-    }
-
-    // ── CSRF token validation check ──
-    // Only flag POST/PUT/DELETE forms (GET forms like search bars don't need CSRF)
-    // Skip SPAs — React/Vue/Angular handle CSRF via JS headers, not HTML tokens
-    await this.waitIfPaused(scanId)
-    try {
-      const res = await fetch(base, { redirect: 'follow', signal: AbortSignal.timeout(10000) })
-      const body = await res.text()
-      const hasCsrfToken = /csrf|_token|xsrf|__RequestVerificationToken|nonce/i.test(body)
-      const isSpa = /id="(root|app|__next)"/.test(body) || /React|Vue|Angular|__NEXT_DATA__/.test(body)
-      const formMatches = body.match(/<form[\s\S]*?<\/form>/gi) || []
-      const statefulForms = formMatches.filter(f => {
-        const method = (f.match(/method\s*=\s*["']([^"']+)["']/i) || [])[1] || 'get'
-        return /post|put|delete|patch/i.test(method)
-      })
-      if (statefulForms.length && !hasCsrfToken && !isSpa) {
-        await this.ingestFinding(scanId, {
-          title: 'CSRF: State-changing forms without CSRF token protection',
-          severity: 'medium',
-          cweId: 'CWE-352',
-          owaspCategory: 'A01:2021-Broken Access Control',
-          description: `${statefulForms.length} POST/PUT/DELETE form(s) found at ${base} without CSRF tokens. Attackers can craft malicious pages that make authenticated requests on behalf of victims.`,
-          remediation: 'Add anti-CSRF tokens to all state-changing forms. For SPAs, use SameSite=Strict cookies + custom request headers.',
-          module: 'advanced:csrf',
-          evidence: { url: base, statefulForms: statefulForms.length },
-        }, { verify })
-        this.log(scanId, 'info', '⚔️ CSRF: state-changing forms without tokens detected')
-      }
-    } catch { /* skip */ }
-
-    // ── JWT analysis (check for none algorithm, weak secrets, etc.) ──
-    await this.waitIfPaused(scanId)
-    try {
-      // First, look for JWT in cookies, localStorage, or Authorization headers in responses
-      const res = await fetch(base, { redirect: 'follow', signal: AbortSignal.timeout(10000) })
-      const body = await res.text()
-      const headers = Object.fromEntries(res.headers.entries())
-      const jwtRe = /eyJ[a-zA-Z0-9_-]{8,}\.eyJ[a-zA-Z0-9_-]{8,}\.[a-zA-Z0-9_\-]{8,}/g
-      const jwts = [...(body.matchAll(jwtRe) || []), ...((headers['set-cookie'] || '').matchAll(jwtRe) || [])].map(m => m[0])
-      if (jwts.length) {
-        for (const token of [...new Set(jwts)].slice(0, 3)) {
-          try {
-            const parts = token.split('.')
-            const header = JSON.parse(Buffer.from(parts[0], 'base64').toString())
-            const payload = JSON.parse(Buffer.from(parts[1], 'base64').toString())
-            const issues = []
-            if (header.alg === 'none') issues.push('JWT uses "none" algorithm — ACCEPTS UNSIGNED TOKENS')
-            if (header.alg === 'HS256' && !header.typ) issues.push('JWT HS256 without explicit typ — may be vulnerable to algorithm confusion')
-            if (payload.exp && payload.exp * 1000 < Date.now()) issues.push('JWT is expired')
-            if (!payload.exp) issues.push('JWT has no expiration — token is valid forever')
-            if (payload.iat && (Date.now() / 1000 - payload.iat) > 86400 * 30) issues.push('JWT issued >30 days ago — excessive lifetime')
-            if (issues.length) {
-              await this.ingestFinding(scanId, {
-                title: `JWT security issues: ${issues.slice(0, 2).join('; ')}`,
-                severity: header.alg === 'none' ? 'critical' : 'medium',
-                cweId: header.alg === 'none' ? 'CWE-347' : 'CWE-345',
-                owaspCategory: 'A02:2021-Cryptographic Failures',
-                description: `JWT token found at ${base} with ${issues.length} security issues: ${issues.join(' | ')}. Header: ${JSON.stringify(header)}`,
-                remediation: 'Enforce a specific algorithm (RS256/ES256), require exp claim with short TTL (<24h), and reject "none" algorithm tokens.',
-                module: 'advanced:jwt',
-                evidence: { url: base, header: JSON.stringify(header), payload: JSON.stringify(payload).slice(0, 200), issues },
-              }, { verify })
-              this.log(scanId, 'info', `⚔️ JWT issues found: ${issues.join(', ')}`)
-            }
-          } catch { /* malformed JWT */ }
-        }
-      }
-    } catch { /* skip */ }
-
-    // ── GraphQL introspection probe ──
-    const graphqlPaths = ['/graphql', '/graphiql', '/api/graphql', '/v1/graphql', '/query', '/gql']
-    for (const gqlPath of graphqlPaths) {
-      await this.waitIfPaused(scanId)
-      const gqlUrl = `${base.replace(/\/$/, '')}${gqlPath}`
-      try {
-        const res = await fetch(gqlUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ query: '{ __schema { types { name } } }' }),
-          signal: AbortSignal.timeout(8000),
-        })
-        const body = await res.text()
-        if (body.includes('__schema') && body.includes('types')) {
-          await this.ingestFinding(scanId, {
-            title: 'GraphQL introspection enabled — full API schema exposed',
-            severity: 'medium',
-            cweId: 'CWE-200',
-            owaspCategory: 'A05:2021-Security Misconfiguration',
-            description: `GraphQL introspection is enabled at ${gqlUrl}. Attackers can enumerate the entire API schema, including all types, queries, mutations, and fields. This is a blueprint for targeted attacks.`,
-            remediation: 'Disable GraphQL introspection in production. Use persisted queries or a query whitelist.',
-            module: 'advanced:graphql',
-            evidence: { url: gqlUrl, schema: body.slice(0, 500) },
-          }, { verify })
-          this.log(scanId, 'info', `⚔️ GraphQL introspection ENABLED at ${gqlUrl}`)
-          // Also try to get the schema SDL via /graphql?sdl
-          discoveredUrls.push(gqlUrl)
-          break
-        }
-      } catch { /* skip */ }
-    }
-
-    // ── Host Header injection probe ──
-    await this.waitIfPaused(scanId)
-    try {
-      const evilHost = 'evil.attacker.com'
-      const res = await fetch(base, {
-        redirect: 'follow',
-        headers: { 'Host': evilHost, 'X-Forwarded-Host': evilHost },
-        signal: AbortSignal.timeout(10000),
-      })
-      const body = await res.text()
-      if (body.includes(evilHost)) {
-        await this.ingestFinding(scanId, {
-          title: 'Host Header injection — reflected in response',
-          severity: 'medium',
-          cweId: 'CWE-644',
-          owaspCategory: 'A05:2021-Security Misconfiguration',
-          description: `The server reflects the Host header in responses. Attackers can poison caches, bypass security controls, or perform password reset poisoning by injecting a malicious Host header.`,
-          remediation: 'Validate the Host header against a whitelist. Use absolute URLs in redirects and password reset links.',
-          module: 'advanced:host-header',
-          evidence: { url: base, injectedHost: evilHost, response: body.slice(0, 300) },
-        }, { verify })
-        this.log(scanId, 'info', `⚔️ Host Header injection reflected at ${base}`)
-      }
-    } catch { /* skip */ }
-
-    // ── Open Redirect probe ──
-    await this.waitIfPaused(scanId)
-    try {
-      const redirectTarget = 'https://evil.attacker.com'
-      const testUrls = [
-        `${base.replace(/\/$/, '')}?redirect=${encodeURIComponent(redirectTarget)}`,
-        `${base.replace(/\/$/, '')}?url=${encodeURIComponent(redirectTarget)}`,
-        `${base.replace(/\/$/, '')}?next=${encodeURIComponent(redirectTarget)}`,
-        `${base.replace(/\/$/, '')}?return=${encodeURIComponent(redirectTarget)}`,
-        `${base.replace(/\/$/, '')}?goto=${encodeURIComponent(redirectTarget)}`,
-        `${base.replace(/\/$/, '')}?returnUrl=${encodeURIComponent(redirectTarget)}`,
-        `${base.replace(/\/$/, '')}?callback=${encodeURIComponent(redirectTarget)}`,
-      ]
-      for (const testUrl of testUrls) {
-        try {
-          const res = await fetch(testUrl, { redirect: 'manual', signal: AbortSignal.timeout(8000) })
-          const location = res.headers.get('location') || ''
-          if (res.status >= 300 && res.status < 400 && location.includes(redirectTarget)) {
-            await this.ingestFinding(scanId, {
-              title: `Open Redirect — ${testUrl.slice(0, 100)}`,
-              severity: 'medium',
-              cweId: 'CWE-601',
-              owaspCategory: 'A01:2021-Broken Access Control',
-              description: `The server redirects to a user-controlled URL. Attackers can use this for phishing — crafting a URL that looks like your domain but redirects to a malicious login page.`,
-              remediation: 'Validate redirect URLs against a whitelist. Never redirect to user-supplied absolute URLs.',
-              module: 'advanced:open-redirect',
-              evidence: { url: testUrl, redirectsTo: location },
-            }, { verify })
-            this.log(scanId, 'info', `⚔️ Open Redirect at ${testUrl}`)
-            break
-          }
-        } catch { /* skip */ }
-      }
-    } catch { /* skip */ }
-
-    // ── CRLF injection probe ──
-    await this.waitIfPaused(scanId)
-    try {
-      const crlfPayload = 'test%0d%0aSet-Cookie:%20crlftest=injected%0d%0a'
-      const testUrl = `${base.replace(/\/$/, '')}?q=${crlfPayload}`
-      const res = await fetch(testUrl, { redirect: 'follow', signal: AbortSignal.timeout(8000) })
-      const setCookie = res.headers.get('set-cookie') || ''
-      if (setCookie.includes('crlftest')) {
-        await this.ingestFinding(scanId, {
-          title: 'CRLF injection — HTTP response splitting',
-          severity: 'high',
-          cweId: 'CWE-113',
-          owaspCategory: 'A03:2021-Injection',
-          description: `CRLF injection confirmed at ${base}. The server reflects user input in HTTP headers, allowing attackers to inject arbitrary headers (Set-Cookie, Location, etc.) or split the response.`,
-          remediation: 'Validate and sanitize all user input before including it in HTTP headers. Strip CR/LF characters from header values.',
-          module: 'advanced:crlf',
-          evidence: { url: testUrl, injectedCookie: setCookie },
-        }, { verify })
-        this.log(scanId, 'info', `⚔️ CRLF injection CONFIRMED at ${base}`)
-      }
-    } catch { /* skip */ }
-
-    // ── HTTP Request Smuggling probe (CL.TE / TE.CL) ──
-    // This is a lightweight probe — a full smuggling test requires raw sockets.
-    // We detect if the server uses a proxy that may be vulnerable.
-    await this.waitIfPaused(scanId)
-    try {
-      // Send a request with conflicting Content-Length and Transfer-Encoding
-      const smugglingBody = '0\r\n\r\nGET /__smuggling_probe__ HTTP/1.1\r\nHost: smuggling-test\r\n\r\n'
-      const res = await fetch(base, {
-        method: 'POST',
-        headers: {
-          'Content-Length': String(smugglingBody.length + 20),
-          'Transfer-Encoding': 'chunked',
-        },
-        body: smugglingBody,
-        signal: AbortSignal.timeout(8000),
-      })
-      // HTTP Request Smuggling requires raw socket verification to confirm.
-      // A server returning < 500 to a malformed request is NOT evidence of smuggling —
-      // virtually every server does this. Only log for informational purposes.
-      if (res.status < 400) {
-        this.log(scanId, 'info', '⚔️ HTTP Smuggling probe: server accepted conflicting headers — needs raw socket verification (not a confirmed finding)')
-      }
-    } catch { /* skip */ }
-
-    this.log(scanId, 'info', '⚔️ Advanced attack vectors complete')
-  }
   async _probeServiceVulns(scanId, target, { verify } = {}) {
     const host = (() => {
       try { return new URL(/^https?:\/\//i.test(target) ? target : `https://${target}`).hostname }
@@ -806,24 +405,19 @@ export class UnifiedPipeline {
           }
         }
 
-        // Internal IP disclosure — skip JS/CSS bundles (SPA bundles contain IP
-        // patterns in minified code, source maps, and webpack config)
-        const contentType = headers['content-type'] || ''
-        const isCodeBundle = /javascript|css|json/i.test(contentType) || /\.(js|css|json|map)$/i.test(url)
-        if (!isCodeBundle) {
-          const ipMatches = body.match(/(?:10\.\d{1,3}|172\.(?:1[6-9]|2\d|3[01])|192\.168)\.\d{1,3}\.\d{1,3}/g)
-          if (ipMatches?.length) {
-            await this.ingestFinding(scanId, {
-              title: `Internal IP disclosure (${new Set(ipMatches).size} unique)`,
-              severity: 'low',
-              cweId: 'CWE-200',
-              owaspCategory: 'A05:2021-Security Misconfiguration',
-              description: `Internal IP addresses found in response body at ${url}: ${[...new Set(ipMatches)].slice(0, 5).join(', ')}. Helps attackers map internal network.`,
-              remediation: 'Remove internal IPs from public-facing responses.',
-              module: 'response-body-scan',
-              evidence: { url, ips: [...new Set(ipMatches)].slice(0, 10) },
-            }, { verify })
-          }
+        // Internal IP disclosure
+        const ipMatches = body.match(/(?:10\.\d{1,3}|172\.(?:1[6-9]|2\d|3[01])|192\.168)\.\d{1,3}\.\d{1,3}/g)
+        if (ipMatches?.length) {
+          await this.ingestFinding(scanId, {
+            title: `Internal IP disclosure (${new Set(ipMatches).size} unique)`,
+            severity: 'medium',
+            cweId: 'CWE-200',
+            owaspCategory: 'A05:2021-Security Misconfiguration',
+            description: `Internal IP addresses found in response body at ${url}: ${[...new Set(ipMatches)].slice(0, 5).join(', ')}. Helps attackers map internal network.`,
+            remediation: 'Remove internal IPs from public-facing responses.',
+            module: 'response-body-scan',
+            evidence: { url, ips: [...new Set(ipMatches)].slice(0, 10) },
+          }, { verify })
         }
 
         // Stack traces / debug info
@@ -899,12 +493,9 @@ export class UnifiedPipeline {
       }
 
       // CORS / Access-Control-Allow-Origin
-      // Skip if already emitted by auditHttpBaseline for this scan
-      if (!this._corsEmitted) this._corsEmitted = new Set()
       const acao = headers['access-control-allow-origin'] || ''
       const acac = headers['access-control-allow-credentials'] || ''
-      if (acao === '*' && !this._corsEmitted.has(scanId)) {
-        this._corsEmitted.add(scanId)
+      if (acao === '*') {
         await this.ingestFinding(scanId, {
           title: `CORS: Access-Control-Allow-Origin: *`,
           severity: 'low',
@@ -915,8 +506,7 @@ export class UnifiedPipeline {
           module: 'cors-audit',
           evidence: { url: base, acao, acac },
         }, { verify })
-      } else if (acao && acao !== 'null' && acac === 'true' && !this._corsEmitted.has(scanId)) {
-        this._corsEmitted.add(scanId)
+      } else if (acao && acao !== 'null' && acac === 'true') {
         await this.ingestFinding(scanId, {
           title: `CORS with credentials enabled — ${acao}`,
           severity: 'medium',
@@ -1099,15 +689,9 @@ export class UnifiedPipeline {
     if (!subs.size) {
       this.log(scanId, 'info', '🔎 No additional subdomains discovered')
     } else {
-      const subList = [...subs].sort()
-      // ── Track subdomains in blackboxMeta ──
-      const meta = this._blackboxMeta?.get(scanId)
-      if (meta) {
-        meta.subdomains = subList.slice(0, 200)
-        try { db.run(`UPDATE scans SET blackbox_meta = ? WHERE id = ?`, JSON.stringify(meta), scanId) } catch { /* non-fatal */ }
-      }
       this.log(scanId, 'info', `🔎 Discovered ${subs.size} subdomains: ${[...subs].slice(0, 10).join(', ')}${subs.size > 10 ? '…' : ''}`)
       // ONE consolidated finding instead of N individual spam findings
+      const subList = [...subs].sort()
       await this.ingestFinding(scanId, {
         title: `Subdomain enumeration — ${subs.size} subdomains discovered`,
         severity: 'info',
@@ -1230,40 +814,6 @@ export class UnifiedPipeline {
     this._currentTarget = target
     this.log(scanId, 'info', `⚡ Running Native Scanner Engine on ${target}...`)
 
-    // ── Blackbox metadata tracking (mirrors whiteboxMeta for UI) ──
-    const meta = {
-      startTime: new Date().toISOString(),
-      urls: [/^https?:\/\//i.test(target) ? target : `https://${target}`],
-      tools: [],
-      subdomains: [],
-      endpoints: [],
-      target,
-    }
-    this._blackboxMeta.set(scanId, meta)
-    const _saveMeta = () => {
-      try {
-        const m = this._blackboxMeta.get(scanId)
-        if (m) db.run(`UPDATE scans SET blackbox_meta = ? WHERE id = ?`, JSON.stringify(m), scanId)
-      } catch { /* non-fatal */ }
-    }
-    const _addUrl = (url) => {
-      if (!url || typeof url !== 'string') return
-      const u = url.replace(/#.*$/, '').trim()
-      if (!u || u.length < 5) return
-      if (!meta.urls.includes(u)) {
-        meta.urls.push(u)
-        if (meta.urls.length > 500) meta.urls = meta.urls.slice(-500)
-      }
-    }
-    const origCollectUrls = this._collectUrls.bind(this)
-    this._collectUrls = (sid, urls) => {
-      origCollectUrls(sid, urls)
-      if (sid === scanId && Array.isArray(urls)) {
-        for (const u of urls) _addUrl(u)
-      }
-    }
-    _saveMeta()
-
     // Always run baseline headers + sensitive paths
     await this.auditHttpBaseline(scanId, target, { verify, targetType: scan.target_type })
     this.progress(scanId, 12)
@@ -1274,43 +824,24 @@ export class UnifiedPipeline {
     }
     this.progress(scanId, 25)
 
-    // Run native tools in parallel batches (bounded concurrency, like auditCode)
-    // Default: full offensive stack — recon (nmap, whatweb, wafw00f), web crawl (katana, ffuf, gobuster),
-    // vuln scan (nuclei, nikto), parameter discovery (arjun), XSS probe (dalfox), tech (sslscan, wpscan).
-    const tools = modules.length ? modules : ['nmap', 'whatweb', 'wafw00f', 'nikto', 'ffuf', 'gobuster', 'katana', 'nuclei', 'arjun', 'dalfox', 'wpscan']
-    const uniqueTools = [...new Set(tools)]
-    const CONCURRENCY = Math.min(config.scan.maxConcurrency || 3, uniqueTools.length)
-    let toolCursor = 0
-    let completedTools = 0
-
-    this.log(scanId, 'info', `🔀 Running ${uniqueTools.length} native tools with ${CONCURRENCY} parallel workers`)
-
-    const toolWorker = async (workerId) => {
-      const wid = workerId + 1
-      while (toolCursor < uniqueTools.length) {
-        const idx = toolCursor++
-        const tool = uniqueTools[idx]
-        await this.waitIfPaused(scanId)
-        const t0 = Date.now()
-        this.log(scanId, 'info', `  ├─ T${wid} ▶ ${tool}`)
-        try {
-          const res = await runNativeTool(tool, target)
-          const ms = Date.now() - t0
-          const status = await this.processToolOutput(scanId, tool, res, { verify, targetType: scan.target_type })
-          this.log(scanId, 'info', `  │  T${wid} ✅ ${tool} completed (${(ms / 1000).toFixed(1)}s)`)
-          completedTools++
-          this.progress(scanId, 25 + (completedTools / uniqueTools.length) * 35)
-        } catch (e) {
-          const ms = Date.now() - t0
-          this.log(scanId, 'warn', `  │  T${wid} ⚠️ ${tool} failed: ${e.message} (${(ms / 1000).toFixed(1)}s)`)
-          completedTools++
-          this.progress(scanId, 25 + (completedTools / uniqueTools.length) * 35)
-        }
+    // Run native tools in parallel batches
+    // Default: full offensive stack — recon (nmap, whatweb), web crawl (katana, ffuf),
+    // vuln scan (nuclei, nikto), parameter discovery (arjun), XSS probe (dalfox).
+    // dalfox also runs again in chainInjectionTests with discovered URLs.
+    const tools = modules.length ? modules : ['nmap', 'whatweb', 'nikto', 'ffuf', 'katana', 'nuclei', 'arjun', 'dalfox']
+    let done = 0
+    for (const tool of [...new Set(tools)]) {
+      await this.waitIfPaused(scanId)
+      this.log(scanId, 'info', `▶ Native tool: ${tool}`)
+      try {
+        const res = await runNativeTool(tool, target)
+        await this.processToolOutput(scanId, tool, res, { verify, targetType: scan.target_type })
+      } catch (e) {
+        this.log(scanId, 'warn', `Native tool ${tool} error: ${e.message}`)
       }
+      done++
+      this.progress(scanId, 25 + (done / tools.length) * 35)
     }
-
-    await Promise.all(Array.from({ length: CONCURRENCY }, (_, i) => toolWorker(i)))
-    this.log(scanId, 'info', `🔀 Native tools complete: ${completedTools}/${uniqueTools.length} tools finished`)
 
     // Injection chaining (dalfox/sqlmap on discovered URLs)
     await this.chainInjectionTests(scanId, { verify, targetType: scan.target_type, offensive: true })
@@ -1318,23 +849,19 @@ export class UnifiedPipeline {
 
     // Service-level CVE probing (nmap NSE scripts on open ports)
     await this._probeServiceVulns(scanId, target, { verify })
-    this.progress(scanId, 68)
-
-    // Advanced attack vectors (SSTI, XXE, CSRF, JWT, GraphQL, Host Header, etc.)
-    await this._probeAdvancedAttackVectors(scanId, target, { verify })
-    this.progress(scanId, 76)
+    this.progress(scanId, 72)
 
     // Login surface discovery (admin panels, default creds)
     await this._discoverLoginSurfaces(scanId, target, { verify })
-    this.progress(scanId, 80)
+    this.progress(scanId, 78)
 
     // OffSec payload matching against discovered endpoints
     await this._matchOffsecPayloads(scanId)
-    this.progress(scanId, 84)
+    this.progress(scanId, 82)
 
     // Response body scanning
     await this._scanResponseBodies(scanId, target, { verify })
-    this.progress(scanId, 90)
+    this.progress(scanId, 88)
 
     // Cookie + CORS audit
     await this._auditCookiesCors(scanId, target, { verify })
@@ -1350,18 +877,7 @@ export class UnifiedPipeline {
   async auditHttpBaseline(scanId, target, { verify, targetType = 'url' } = {}) {
     const targetUrl = /^https?:\/\//i.test(target) ? target : `https://${target}`
 
-    // Deduplicate across multiple auditHttpBaseline calls (main target + subdomains)
-    if (!this._headerAudited) this._headerAudited = new Map()
-    const audited = this._headerAudited.get(scanId) || new Set()
-    this._headerAudited.set(scanId, audited)
-    const isFirstAudit = !audited.has('__any__')
-    audited.add(targetUrl)
-    audited.add('__any__')
-
-    // 1. Audit HTTP Security Headers (only emit ONCE per scan, not per subdomain)
-    if (!isFirstAudit) {
-      this.log(scanId, 'info', `⏭ Skipping duplicate header audit for ${targetUrl} (already audited primary target)`)
-    }
+    // 1. Audit HTTP Security Headers (deduplicated per scan: one consolidated finding)
     try {
       this.log(scanId, 'info', `▶ Auditing Security Headers on ${targetUrl}...`)
       let res
@@ -1543,8 +1059,7 @@ export class UnifiedPipeline {
     } // end if (!isSpaCatchAll)
   }
 
-  /** Parse raw tool stdout into structured findings (heuristic + severity extraction).
-   *  Returns the final status string: 'ok' | 'failed' | 'skipped' | 'unavailable'. */
+  /** Parse raw tool stdout into structured findings (heuristic + severity extraction). */
   async processToolOutput(scanId, tool, res, { verify, targetType } = {}) {
     const hexFailed = !res || res.success === false
     const hexOut = hexFailed ? '' : `${res.stdout || ''}\n${res.stderr || ''}`.trim()
@@ -1559,12 +1074,12 @@ export class UnifiedPipeline {
       this._collectUrls(scanId, discoveredUrls)
       if (!findings.length) {
         this.log(scanId, 'info', `[${tool}] no actionable findings${discoveredUrls.length ? ` (${discoveredUrls.length} URLs queued for chaining)` : ''}`)
-        return 'ok'
+        return
       }
       for (const f of findings) {
         await this.ingestFinding(scanId, { ...f, module: `hexstrike:${tool}` }, { verify, targetType })
       }
-      return 'ok'
+      return
     }
 
     // HexStrike failed, returned 404, or produced no output → try native execution.
@@ -1577,24 +1092,23 @@ export class UnifiedPipeline {
       // Surface the REAL error (exit code + stderr tail) not 'undefined'
       const detail = native.error || `exit ${native.code ?? '?'}${native.stderr ? ` — ${native.stderr.split('\n').slice(-2).join(' | ')}` : ''}`
       this.log(scanId, 'warn', `Tool ${tool} failed natively: ${detail}`)
-      return 'failed'
+      return
     }
     const nativeOut = `${native.stdout || ''}\n${native.stderr || ''}`.trim()
     if (!nativeOut) {
       this.log(scanId, 'warn', `Tool ${tool} produced no output natively (exit ${native.code ?? 0}, cmd: ${native.bin || tool} ${native.args || ''})`)
-      return 'ok'
+      return
     }
     this.log(scanId, 'info', `[native:${tool}] ${nativeOut.split('\n').length} lines of output`)
     const { findings, discoveredUrls } = extractFindingsFromOutput(tool, nativeOut, this._currentTarget || '')
     this._collectUrls(scanId, discoveredUrls)
     if (!findings.length) {
       this.log(scanId, 'info', `[native:${tool}] no actionable findings${discoveredUrls.length ? ` (${discoveredUrls.length} URLs queued for chaining)` : ''}`)
-      return 'ok'
+      return
     }
     for (const f of findings) {
       await this.ingestFinding(scanId, { ...f, module: `native:${tool}` }, { verify, targetType })
     }
-    return 'ok'
   }
 
   /** Store discovered parameterized URLs for the injection-chaining stage. */
@@ -1613,21 +1127,14 @@ export class UnifiedPipeline {
   }
 
   // ── WHITEBOX ───────────────────────────────────────────────────────────────
-  async runWhitebox(scan, { files = [], language = '', focus = '', verify = true, depth = 'standard', dynamicTarget = '', dynamicModules = [] } = {}) {
+  async runWhitebox(scan, { files = [], language = '', focus = '', verify = true, depth = 'standard' } = {}) {
     const scanId = scan.id
-    // Reset & start token tracking for this scan
-    this._startTokenTracking(scanId)
-    // ALWAYS full offensive: pattern scanner + 5 specialist AI passes + optional dynamic verification
+    // ALWAYS full offensive: pattern scanner + 3 specialist AI passes
     this.log(scanId, 'info', `▶ Whitebox static analysis started (${files.length} files, depth=offensive)`)
     if (!files.length) {
       this.log(scanId, 'warn', 'No source files provided for whitebox analysis')
       this.finish(scanId, 'failed')
       return
-    }
-
-    const hasDynamic = !!(dynamicTarget && dynamicTarget.trim())
-    if (hasDynamic) {
-      this.log(scanId, 'info', `🌐 Hybrid mode: dynamic verification against ${dynamicTarget}${dynamicModules.length ? ` (modules: ${dynamicModules.join(', ')})` : ''}`)
     }
 
     // ── Structured whitebox metadata for the "Audit Details" section ──
@@ -1666,14 +1173,11 @@ export class UnifiedPipeline {
       }
       this.progress(scanId, 15)
 
-      // 5 specialist AI audit passes — each covers specific OWASP Top 10 (2025)
-      // categories. Processed in parallel (5 concurrent workers in auditCode)
+      // 3 specialist AI audit passes — always runs
       const passes = [
-        { tag: 'A05-injection', focus: `${focus || 'security'} — A05:2025 Injection. SQLi, NoSQLi, command injection, XSS (reflected/stored/DOM), template injection (SSTI), LDAP injection, XPath injection, unsafe eval/exec/Function(), deserialization. Trace user input to dangerous sinks.` },
-        { tag: 'A01-access-misconfig', focus: `${focus || 'security'} — A01:2025 Broken Access Control + A02:2025 Security Misconfiguration. IDOR, missing @UseGuards/@Roles, privilege escalation, CORS wildcard, missing security headers (HSTS/CSP/X-Frame), debug endpoints, verbose errors, directory listing, default credentials, exposed .env/git.` },
-        { tag: 'A04-A07-crypto-auth', focus: `${focus || 'security'} — A04:2025 Cryptographic Failures + A07:2025 Authentication Failures. Hardcoded secrets/keys/passwords, weak hash (MD5/SHA1), weak ciphers, JWT misuse (none alg, long expiry, weak secret), missing MFA, session fixation, credential stuffing.` },
-        { tag: 'A06-A08-design-integrity', focus: `${focus || 'security'} — A06:2025 Insecure Design + A08:2025 Software/Data Integrity Failures. Missing rate limiting, missing input validation, unsafe deserialization (pickle/yaml.load), prototype pollution, missing integrity checks, insecure defaults.` },
-        { tag: 'A03-A09-A10-OTH-components-logging-ssrf', focus: `${focus || 'security'} — A03:2025 Software Supply Chain + A09:2025 Logging Failures + A10:2025 Exceptional Conditions + OTH. Outdated deps, known CVE patterns, sensitive data logged (passwords/tokens/secrets), missing audit logging, SSRF via user-controlled URLs (fetch/axios/requests), unhandled exceptions leaking stack traces, path traversal, XXE.` },
+        { tag: 'injection', focus: `${focus || 'security'} — focus EXCLUSIVELY on injection flaws: SQL injection, command injection, XSS, template injection, LDAP/XPath injection, unsafe eval/exec/deserialization. Trace user input to sinks.` },
+        { tag: 'auth-secrets', focus: `${focus || 'security'} — focus EXCLUSIVELY on broken authentication, session management, JWT misuse, hardcoded credentials/secrets/API keys, weak crypto, insecure password storage, missing rate limiting.` },
+        { tag: 'logic-config', focus: `${focus || 'security'} — focus EXCLUSIVELY on business-logic flaws, broken access control (IDOR, missing authz checks), SSRF, path traversal, file upload, CORS misconfiguration, security headers, debug endpoints left enabled.` },
       ]
 
       // AI passes span 15% → 97%
@@ -1687,12 +1191,10 @@ export class UnifiedPipeline {
 
         const aiPassStart = Date.now()
         try {
-          // Safety timeout of 1800 seconds (30 min) per AI pass. The audit now
-          // covers the complete collected source set rather than an accidental
-          // 50-file subset.
-          const passLog = (level, msg) => this.log(scanId, level, msg)
-          const passPromise = aiEngine.auditCode(files, { language, focus: p.focus, log: passLog })
-          const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Pass timed out after 1800s')), 1800000))
+          // Safety timeout of 120 seconds per AI pass to ensure scan never hangs.
+          // Large codebases (100+ files) need more time for LLM analysis.
+          const passPromise = aiEngine.auditCode(files, { language, focus: p.focus })
+          const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Pass timed out after 120s')), 120000))
           const { agent, findings } = await Promise.race([passPromise, timeoutPromise])
           const aiMs = Date.now() - aiPassStart
 
@@ -1702,17 +1204,15 @@ export class UnifiedPipeline {
           let done = 0
           for (const f of findings) {
             await this.waitIfPaused(scanId)
-            // Resolve truncated file paths against the full file list
-            const fullPath = resolveFilePath(f.file, files)
             const stored = await this.ingestFinding(scanId, {
               title: f.title,
               severity: f.severity,
               cweId: f.cwe,
               owaspCategory: f.owasp,
-              description: `${f.description}${fullPath ? ` (in ${fullPath}${f.line ? `:${f.line}` : ''})` : ''}`,
+              description: `${f.description}${f.file ? ` (in ${f.file}${f.line ? `:${f.line}` : ''})` : ''}`,
               remediation: f.remediation,
               module: `code-audit:${agent}:${p.tag}`,
-              evidence: { file: fullPath, line: f.line, code: f.evidence },
+              evidence: { file: f.file, line: f.line, code: f.evidence },
             }, { verify, targetType: 'code' })
             if (stored) totalStored++
             done++
@@ -1724,75 +1224,6 @@ export class UnifiedPipeline {
           whiteboxMeta.passes.push({ tool: 'AI engine', type: p.tag, findings: 0, durationMs: aiMs, status: 'failed', error: e.message })
           _saveWhiteboxMeta()
         }
-      }
-
-      // ── DYNAMIC VERIFICATION PHASE (hybrid mode) ──
-      // When a live target is provided, run blackbox-style tools against it
-      // to confirm code-level findings with runtime evidence.
-      if (hasDynamic) {
-        this.log(scanId, 'info', `🌐 Dynamic verification phase starting against ${dynamicTarget}`)
-        this.progress(scanId, 90)
-
-        const dynModules = dynamicModules.length
-          ? dynamicModules
-          : ['nmap', 'nikto', 'nuclei', 'ffuf', 'whatweb', 'katana', 'arjun', 'dalfox']
-
-        // 1. HTTP baseline (headers + sensitive paths)
-        const baselineStart = Date.now()
-        await this.auditHttpBaseline(scanId, dynamicTarget, { verify, targetType: 'url' })
-        whiteboxMeta.passes.push({ tool: 'HTTP Baseline', type: 'dynamic', findings: 0, durationMs: Date.now() - baselineStart, status: 'completed' })
-        _saveWhiteboxMeta()
-
-        // 2. Run dynamic tools
-        const engine = await hexstrike.engineStatus()
-        let dynToolCount = 0
-        for (const mod of dynModules) {
-          await this.waitIfPaused(scanId)
-          const mapping = hexstrike.MODULE_TOOL_MAP[mod]
-          if (!mapping) {
-            this.log(scanId, 'warn', `⏭ Unknown dynamic module: ${mod}`)
-            continue
-          }
-          const params = mapping.params(dynamicTarget)
-          if (mod === 'nmap') {
-            params.scan_type = '-sCV --script vuln'
-            params.additional_args = '-T4 -Pn --script-timeout 3m'
-          }
-          if (mod === 'ffuf') {
-            params.wordlist = '/usr/share/seclists/Discovery/Web-Content/raft-medium-words.txt'
-          }
-          this.log(scanId, 'info', `🌐 Dynamic tool: ${mod}`)
-          const t0 = Date.now()
-          let res = engine.available && !mapping.nativeOnly
-            ? await hexstrike.runTool(mapping.tool, params)
-            : { success: false, error: 'native-only or engine offline', _skipHex: true }
-          const t1 = Date.now()
-          const finalStatus = await this.processToolOutput(scanId, mod, res, { verify, targetType: 'url' })
-          whiteboxMeta.passes.push({ tool: mod, type: 'dynamic', findings: 0, durationMs: t1 - t0, status: finalStatus || 'completed', error: res?.error || null })
-          _saveWhiteboxMeta()
-          dynToolCount++
-          this.progress(scanId, 90 + (dynToolCount / dynModules.length) * 7)
-        }
-
-        // 3. Injection chaining (feed discovered URLs into dalfox + sqlmap)
-        await this.chainInjectionTests(scanId, { verify, targetType: 'url', offensive: true })
-        whiteboxMeta.passes.push({ tool: 'Injection Chaining', type: 'dynamic', findings: 0, durationMs: 0, status: 'completed' })
-        _saveWhiteboxMeta()
-        this.progress(scanId, 98)
-
-        // 4. Advanced attack vectors
-        await this._probeAdvancedAttackVectors(scanId, dynamicTarget, { verify })
-        whiteboxMeta.passes.push({ tool: 'Advanced Attack Vectors', type: 'dynamic', findings: 0, durationMs: 0, status: 'completed' })
-        _saveWhiteboxMeta()
-
-        // 5. OffSec payload matching against collected responses
-        await this._matchOffsecPayloads(scanId)
-        await this._scanResponseBodies(scanId, dynamicTarget, { verify })
-        await this._auditCookiesCors(scanId, dynamicTarget, { verify })
-        whiteboxMeta.passes.push({ tool: 'Payload Matching + Response Scan', type: 'dynamic', findings: 0, durationMs: 0, status: 'completed' })
-        _saveWhiteboxMeta()
-
-        this.log(scanId, 'info', `✅ Dynamic verification phase complete`)
       }
 
       this.progress(scanId, 100)
@@ -1838,13 +1269,11 @@ export class UnifiedPipeline {
       try { db.run(`UPDATE scans SET whitebox_meta = ? WHERE id = ?`, JSON.stringify(existingMeta), scanId) } catch { }
     }
 
-    // Map of all 5 pass definitions (same as runWhitebox)
+    // Map of all 3 pass definitions
     const ALL_PASSES = {
-      'A03-injection': { tag: 'A03-injection', focus: `${focus || 'security'} — A03: Injection. SQLi, NoSQLi, command injection, XSS (reflected/stored/DOM), template injection (SSTI), LDAP injection, XPath injection, unsafe eval/exec/Function(), deserialization. Trace user input to dangerous sinks.` },
-      'A01-A05-access-misconfig': { tag: 'A01-A05-access-misconfig', focus: `${focus || 'security'} — A01: Broken Access Control + A05: Security Misconfiguration. IDOR, missing @UseGuards/@Roles, privilege escalation, CORS wildcard, missing security headers (HSTS/CSP/X-Frame), debug endpoints, verbose errors, directory listing, default credentials.` },
-      'A02-A07-crypto-auth': { tag: 'A02-A07-crypto-auth', focus: `${focus || 'security'} — A02: Cryptographic Failures + A07: Authentication Failures. Hardcoded secrets/keys/passwords, weak hash (MD5/SHA1), weak ciphers, JWT misuse (none alg, long expiry, weak secret), missing MFA, session fixation, credential stuffing.` },
-      'A04-A08-design-integrity': { tag: 'A04-A08-design-integrity', focus: `${focus || 'security'} — A04: Insecure Design + A08: Software Integrity Failures. Missing rate limiting, missing input validation, unsafe deserialization (pickle/yaml.load), prototype pollution, missing integrity checks, insecure defaults.` },
-      'A06-A09-A10-components-logging-ssrf': { tag: 'A06-A09-A10-components-logging-ssrf', focus: `${focus || 'security'} — A06: Vulnerable Components + A09: Logging Failures + A10: SSRF. Outdated deps, known CVE patterns, sensitive data logged (passwords/tokens/secrets), missing audit logging, SSRF via user-controlled URLs (fetch/axios/requests).` },
+      'injection': { tag: 'injection', focus: `${focus || 'security'} — focus EXCLUSIVELY on injection flaws: SQL injection, command injection, XSS, template injection, LDAP/XPath injection, unsafe eval/exec/deserialization. Trace user input to sinks.` },
+      'auth-secrets': { tag: 'auth-secrets', focus: `${focus || 'security'} — focus EXCLUSIVELY on broken authentication, session management, JWT misuse, hardcoded credentials/secrets/API keys, weak crypto, insecure password storage, missing rate limiting.` },
+      'logic-config': { tag: 'logic-config', focus: `${focus || 'security'} — focus EXCLUSIVELY on business-logic flaws, broken access control (IDOR, missing authz checks), SSRF, path traversal, file upload, CORS misconfiguration, security headers, debug endpoints left enabled.` },
     }
 
     try {
@@ -1891,8 +1320,8 @@ export class UnifiedPipeline {
 
         const aiPassStart = Date.now()
         try {
-          const passPromise = aiEngine.auditCode(files, { language, focus: p.focus, log: (level, msg) => this.log(scanId, level, msg) })
-          const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Pass timed out after 900s')), 900000))
+          const passPromise = aiEngine.auditCode(files, { language, focus: p.focus })
+          const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Pass timed out after 120s')), 120000))
           const { agent, findings } = await Promise.race([passPromise, timeoutPromise])
           const aiMs = Date.now() - aiPassStart
 
@@ -1905,17 +1334,15 @@ export class UnifiedPipeline {
           let done = 0
           for (const f of findings) {
             await this.waitIfPaused(scanId)
-            // Resolve truncated file paths against the full file list
-            const fullPath = resolveFilePath(f.file, files)
             const stored = await this.ingestFinding(scanId, {
               title: f.title,
               severity: f.severity,
               cweId: f.cwe,
               owaspCategory: f.owasp,
-              description: `${f.description}${fullPath ? ` (in ${fullPath}${f.line ? `:${f.line}` : ''})` : ''}`,
+              description: `${f.description}${f.file ? ` (in ${f.file}${f.line ? `:${f.line}` : ''})` : ''}`,
               remediation: f.remediation,
               module: `code-audit:${agent}:${p.tag}`,
-              evidence: { file: fullPath, line: f.line, code: f.evidence },
+              evidence: { file: f.file, line: f.line, code: f.evidence },
             }, { verify, targetType: 'code' })
             if (stored) totalStored++
             done++
@@ -2017,6 +1444,20 @@ export class UnifiedPipeline {
     } catch (e) {
       this.log(scanId, 'error', `Retry blackbox warning: ${e.message}`)
       this.finish(scanId, 'completed')
+    }
+  }
+
+  /**
+   * Retry failed passes in a whitebox code audit scan.
+   */
+  async retryFailedWhitebox(scan, opts = {}) {
+    const scanId = scan.id
+    this.log(scanId, 'info', `🔁 Retrying whitebox scan on ${scan.target}...`)
+    try {
+      await this.runWhiteboxAudit(scan, opts)
+    } catch (e) {
+      this.log(scanId, 'error', `Retry whitebox failed: ${e.message}`)
+      this.finish(scanId, 'failed')
     }
   }
 
@@ -2141,7 +1582,7 @@ export class UnifiedPipeline {
       const content = String(f.content || '')
       const lines = content.split('\n')
       const seen = new Set()
-      for (let i = 0; i < lines.length; i++) {
+      for (let i = 0; i < lines.length && findings.length < 500; i++) {
         const line = lines[i]
         if (!line || line.trim().startsWith('//') && !/[:=]/.test(line)) continue
         for (const r of RULES) {
@@ -2163,60 +1604,15 @@ export class UnifiedPipeline {
             module: 'pattern-scan',
             evidence: { file: f.path, line: i + 1, code: line.trim().slice(0, 300) },
           })
-          // Allow multiple rules to match the same line.
-          // Old 'break' meant only the first matching rule won — later rules
-          // (like the dedicated eval() rule) were silently skipped when a
-          // broader rule (like command-exec-with-user-input) matched first.
+          break // one rule per line is enough
         }
       }
     }
     return findings
   }
 
-  /**
-   * Start per-scan token usage tracking. Called at the beginning of every scan.
-   * Accumulates prompt_tokens, completion_tokens, total_tokens, and model name.
-   */
-  _startTokenTracking(scanId) {
-    // Initialize accumulator for this scan
-    if (!this._tokenAcc) this._tokenAcc = new Map()
-    this._tokenAcc.set(scanId, { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0, models: {} })
-
-    // Wire the LLM usage callback (only once)
-    if (!this._tokenWired) {
-      this._tokenWired = true
-      aiEngine.llm.setUsageCallback(({ usage, model, context }) => {
-        if (!usage) return
-        // Accumulate to all active scans (usually only one at a time)
-        for (const [sid, acc] of (this._tokenAcc || new Map())) {
-          acc.prompt_tokens += usage.prompt_tokens || 0
-          acc.completion_tokens += usage.completion_tokens || 0
-          acc.total_tokens += usage.total_tokens || 0
-          if (model) {
-            acc.models[model] = (acc.models[model] || 0) + (usage.total_tokens || 0)
-          }
-          // Periodically persist to DB (every ~5000 tokens)
-          if (acc.total_tokens % 5000 < (usage.total_tokens || 0)) {
-            this._saveTokenUsage(sid)
-          }
-        }
-      })
-    }
-  }
-
-  /** Persist accumulated token usage for a scan to the DB. */
-  _saveTokenUsage(scanId) {
-    const acc = this._tokenAcc?.get(scanId)
-    if (!acc) return
-    try {
-      db.run(`UPDATE scans SET token_usage = ? WHERE id = ?`, JSON.stringify(acc), scanId)
-    } catch { /* non-fatal */ }
-  }
-
   /** Compute final risk score + persist status. */
   finish(scanId, status) {
-    // Save accumulated token usage before finishing
-    this._saveTokenUsage(scanId)
     const findings = db.all(`SELECT severity FROM findings WHERE scan_id = ?`, scanId)
     const counts = { critical: 0, high: 0, medium: 0, low: 0, info: 0 }
     for (const f of findings) counts[f.severity] = (counts[f.severity] || 0) + 1
@@ -2231,86 +1627,40 @@ export class UnifiedPipeline {
     // Release per-scan runtime state so Maps don't grow unbounded.
     this.control.delete(scanId)
     this._lastProgressEmit?.delete(scanId)
-    // Finalise blackboxMeta: copy all URLs from _urlPool into meta before cleanup
-    const meta = this._blackboxMeta?.get(scanId)
-    if (meta) {
-      const pool = this._urlPool?.get(scanId)
-      if (pool) {
-        for (const u of pool) {
-          if (!meta.urls.includes(u)) {
-            meta.urls.push(u)
-            if (meta.urls.length > 500) meta.urls = meta.urls.slice(-500)
-          }
-        }
-      }
-      meta.endTime = new Date().toISOString()
-      meta.totalUrls = meta.urls.length
-      try { db.run(`UPDATE scans SET blackbox_meta = ? WHERE id = ?`, JSON.stringify(meta), scanId) } catch { /* non-fatal */ }
-    }
-    this._blackboxMeta?.delete(scanId)
     this._urlPool?.delete(scanId)
-    this._tokenAcc?.delete(scanId)
 
     // ── AUTOMATED PDF REPORT & EMAIL DISPATCH ──
-    if (status === 'completed') {
+    if (status === 'completed' && (scan.email_notify || scan.trigger_source?.startsWith('github'))) {
       setImmediate(async () => {
         try {
-          // Resolve recipient email from scan metadata, client owner, project, or environment
-          let userEmail = scan.email_notify || null
-          if (!userEmail && scan.user_id) {
-            const userRow = db.get(`SELECT email FROM users WHERE id = ?`, scan.user_id)
-            if (userRow?.email) userEmail = userRow.email
-          }
-          if (!userEmail && scan.project_id) {
-            const projUser = db.get(`SELECT u.email FROM projects p JOIN users u ON u.id = p.client_id WHERE p.id = ?`, scan.project_id)
-            if (projUser?.email) userEmail = projUser.email
-          }
-          if (!userEmail) {
-            userEmail = process.env.NOTIFICATION_EMAIL || 'muhammadsaifudinmj@gmail.com'
-          }
-
           const { generateReport } = await import('./report.js')
           const { sendScanAuditReportEmail } = await import('./email.js')
           const scanFindings = db.all(`SELECT * FROM findings WHERE scan_id = ? ORDER BY CASE severity WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 ELSE 4 END`, scanId)
           
-          this.log(scanId, 'info', `📄 Auto-generating Executive PDF audit report for email notification...`)
+          this.log(scanId, 'info', `📄 Auto-generating PDF audit report for email notification...`)
           await generateReport(scanId, 'info', 'all', 'full')
           const path = (await import('node:path')).default
           const { config } = await import('./config.js')
           const pdfPath = path.join(config.outputDir, `report-${scanId}.pdf`)
           
-          this.log(scanId, 'info', `📧 Dispatching audit report & attached PDF to ${userEmail}...`)
+          const userEmail = scan.email_notify || process.env.NOTIFICATION_EMAIL || 'muhammadsaifudinmj@gmail.com'
+          this.log(scanId, 'info', `📧 Dispatching audit report email to ${userEmail}...`)
           
-          const emailRes = await sendScanAuditReportEmail({
+          await sendScanAuditReportEmail({
             userEmail,
             scan,
             findings: scanFindings,
             pdfPath,
             repoName: scan.repo_name || scan.target,
-            triggerSource: scan.trigger_source || 'pentest-suite',
+            triggerSource: scan.trigger_source || 'automation',
             commitHash: scan.commit_hash,
           })
-          
-          if (emailRes.success) {
-            this.log(scanId, 'info', `✅ Audit report email successfully delivered to ${userEmail} (PDF attached)`)
-          } else {
-            this.log(scanId, 'warn', `⚠️ Email dispatch notice: ${emailRes.error || 'Check SMTP configuration'}`)
-          }
+          this.log(scanId, 'info', `✅ Audit report email successfully delivered to ${userEmail}`)
         } catch (err) {
           this.log(scanId, 'warn', `⚠️ Auto email dispatch notice: ${err.message}`)
         }
       })
     }
-
-    // ── DEQUEUE NEXT JOB FROM QUEUE WORKER POOL ──
-    setImmediate(async () => {
-      try {
-        const { queueManager } = await import('./queue.js')
-        await queueManager.dequeueNext(this)
-      } catch (qErr) {
-        console.warn(`[pipeline] Dequeue trigger notice: ${qErr.message}`)
-      }
-    })
   }
 
   /** Auto-exploit hook: launches a campaign for verified high/critical findings. */
@@ -2343,109 +1693,6 @@ function cleanText(txt) {
     .replace(/\x1B\[[0-9;]*[a-zA-Z]/g, '')
     .replace(/\r/g, '')
     .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F\u00A0]/g, ' ')
-}
-
-/**
- * Enforce maximum severity bounds for well-known low-impact finding categories.
- * AI often over-classifies these — e.g., console.log as "critical" or missing
- * rate limiting as "high". This function caps severity at the correct level.
- */
-function enforceSeverityBounds(finding) {
-  const sevRank = { info: 0, low: 1, medium: 2, high: 3, critical: 4 }
-  const title = (finding.title || '').toLowerCase()
-  const desc = (finding.description || '').toLowerCase()
-  const text = `${title} ${desc}`
-  const current = finding.severity || 'medium'
-
-  // ── CAP: LOW severity at most ──
-  const lowPatterns = [
-    /console\.log/i,                                         // debug logging
-    /missing rate limit/i,                                   // missing rate limiting
-    /rate limiting/i,                                        // rate limiting
-    /missing.*(?:captcha|brute.?force)/i,                   // missing CAPTCHA
-    /commented.?out/i,                                       // commented-out code
-    /debug.*(?:endpoint|mode|flag)/i,                        // debug endpoints
-    /version.*disclos/i,                                     // version disclosure
-    /banner.*disclos/i,                                      // banner disclosure
-    /technology.*stack/i,                                    // tech stack disclosure
-    /test.*(?:file|code|config)/i,                           // test files
-    /console\.(?:warn|error|info|debug|trace)/i,             // any console method
-    /debug log/i,                                            // debug logging
-    /log.*sensitive/i,                                       // logging (unless actual secrets)
-    /missing.*(?:audit.*log|logging)/i,                      // missing audit logging
-    /(?:insufficient|weak).*password.*policy/i,              // password policy
-    /no.*(?:captcha|rate)/i,                                 // no rate limiting/captcha
-    /missing.*(?:csrf|CORS)/i,                               // missing CSRF/CORS (unless wildcard)
-  ]
-  for (const re of lowPatterns) {
-    if (re.test(text) && sevRank[current] > sevRank.low) {
-      return { ...finding, severity: 'low' }
-    }
-  }
-
-  // ── CAP: MEDIUM severity at most ──
-  const mediumPatterns = [
-    /missing.*(?:security.*header|HSTS|CSP|X-Frame|X-Content|Referrer|Permissions)/i,
-    /weak.*(?:crypto|cipher|hash|algorithm)/i,               // weak crypto
-    /MD5|SHA1/i,                                             // weak hash
-    /Math\.random/i,                                         // weak random
-    /(?:unsafe|weak).*deserial/i,                            // unsafe deserialization (unless proven exploitable)
-    /missing.*(?:input.*validation|sanitiz)/i,               // missing input validation
-    /error.*(?:message|stack).*leak/i,                       // error disclosure
-    /directory.*listing/i,                                   // directory listing
-    /default.*(?:credential|password)/i,                     // default credentials
-    /unrestricted.*file.*upload/i,                           // unrestricted upload (unless proven)
-    /CORS.*(?:wildcard|misconfig)/i,                         // CORS misconfiguration
-    /open.*redirect/i,                                       // open redirect
-    /missing.*auth.*(?:guard|middleware|check)/i,            // missing auth guard (unless proven bypass)
-  ]
-  for (const re of mediumPatterns) {
-    if (re.test(text) && sevRank[current] > sevRank.medium) {
-      return { ...finding, severity: 'medium' }
-    }
-  }
-
-  // ── CAP: HIGH severity at most (never let these become critical) ──
-  const highPatterns = [
-    /hardcoded.*(?:secret|key|password|token|credential)/i,  // hardcoded secrets (critical only if actual prod values)
-    /SQL.*injection.*(?:ORM|TypeORM|Prisma|Sequelize)/i,     // ORM SQL injection (critical only if raw string concat)
-    /(?:XSS|cross.?site.*script)/i,                          // XSS (critical only if stored + no CSP)
-    /(?:path|directory).*traversal/i,                        // path traversal
-    /SSRF/i,                                                 // SSRF
-    /IDOR|insecure.*direct.*object/i,                        // IDOR
-    /authentication.*(?:bypass|failure)/i,                   // auth issues
-    /session.*(?:fixation|hijack)/i,                         // session issues
-    /JWT.*(?:none|weak|missing)/i,                           // JWT issues
-  ]
-  for (const re of highPatterns) {
-    if (re.test(text) && sevRank[current] > sevRank.high) {
-      return { ...finding, severity: 'high' }
-    }
-  }
-
-  return finding
-}
-
-/** Resolve a truncated file path from AI findings against the full file list.
- *  AI sometimes returns 'src/utils/fileUpload.js' when the actual path is
- *  'Aziz/src/utils/fileUpload.js'. This matches by suffix to find the full path. */
-function resolveFilePath(reportedPath, files) {
-  if (!reportedPath) return null
-  // If the path already matches a file exactly, return it as-is
-  for (const f of files) {
-    if (f.path === reportedPath) return reportedPath
-  }
-  // Try suffix matching: find the file whose path ends with the reported path
-  const normalized = reportedPath.replace(/\\/g, '/')
-  let best = null
-  for (const f of files) {
-    const fp = f.path.replace(/\\/g, '/')
-    if (fp.endsWith('/' + normalized) || fp === normalized) {
-      // Prefer the shortest match (most specific folder prefix)
-      if (!best || fp.length < best.length) best = fp
-    }
-  }
-  return best || reportedPath // fallback to whatever the AI returned
 }
 
 /** Heuristic extraction of findings from raw tool output. Grounded, no hallucination. */
@@ -2600,54 +1847,17 @@ function extractFindingsFromOutput(tool, output, target = '') {
   }
 
   // ── subfinder / amass / dnsbrute: one subdomain per line ──
-  if (tool === 'subfinder' || tool === 'amass' || tool === 'dnsbrute' || tool === 'dnsrecon') {
+  if (tool === 'subfinder' || tool === 'amass' || tool === 'dnsbrute') {
     const seen = new Set()
     for (const line of lines) {
-      // gobuster dns: "Found: subdomain.example.com" or plain "subdomain.example.com"
-      let h = ''
-      const foundMatch = line.match(/Found:\s*([a-z0-9.-]+\.[a-z]{2,})/i)
-      if (foundMatch) { h = foundMatch[1].toLowerCase() }
-      else {
-        const m = line.match(/([a-z0-9.-]+\.[a-z]{2,})/i)
-        if (m) h = m[1].toLowerCase()
-      }
-      if (!h) continue
-      // filter out the target itself and wildcards
+      const m = line.match(/([a-z0-9.-]+\.[a-z]{2,})/i)
+      if (!m) continue
+      const h = m[1].toLowerCase()
       if (seen.has(h)) continue
       seen.add(h)
       push(`Subdomain: ${h}`, 'info', h, { url: `https://${h}` })
     }
     if (findings.length) return { findings: findings.slice(0, 50), discoveredUrls }
-  }
-
-  // ── gobuster dir: directory brute-force results ──
-  // Output: "/path           (Status: 200) [Size: 1234]" or "[Status: 200, Size: 1234] /path"
-  if (tool === 'gobuster') {
-    const gobusterPaths = []
-    for (const line of lines) {
-      // Go-style: /path (Status: 200)
-      const m1 = line.match(/^(\/\S+)\s+\(Status:\s*(\d{3})\)/)
-      // Alternative: [Status: 200, Size: 1234] /path
-      const m2 = line.match(/\[Status:\s*(\d{3}).*?\]\s+(\/\S+)/)
-      const path = m1 ? m1[1] : m2 ? m2[2] : null
-      const status = m1 ? m1[2] : m2 ? m2[1] : null
-      if (path && path.length > 1 && !path.includes('FUZZ')) {
-        gobusterPaths.push({ path, status: status || '200' })
-      }
-    }
-    if (gobusterPaths.length) {
-      const base = (target || '').replace(/\/$/, '')
-      for (const p of gobusterPaths) discoveredUrls.push(`${base}${p.path.startsWith('/') ? '' : '/'}${p.path}`)
-      const interesting = gobusterPaths.filter(p => /admin|backup|config|\.git|\.env|api|dashboard|login|phpmyadmin|debug|internal|swagger|actuator|graphql/i.test(p.path))
-      const others = gobusterPaths.filter(p => !/admin|backup|config|\.git|\.env|api|dashboard|login|phpmyadmin|debug|internal|swagger|actuator|graphql/i.test(p.path))
-      for (const p of interesting.slice(0, 10)) {
-        push(`gobuster: Discovered ${p.path} (HTTP ${p.status})`, /admin|backup|\.git|\.env|config/i.test(p.path) ? 'medium' : 'low', `gobuster discovered ${p.path} with HTTP status ${p.status}`)
-      }
-      if (others.length) {
-        push(`gobuster: ${others.length} additional paths discovered`, 'info', `Paths: ${others.slice(0, 5).map(p => p.path).join(', ')}${others.length > 5 ? '...' : ''}`)
-      }
-    }
-    if (findings.length) return { findings: findings.slice(0, 30), discoveredUrls }
   }
 
   // ── httpx: HTTP probe results (ProjectDiscovery JSONL or plain status lines) ──
@@ -2688,49 +1898,6 @@ function extractFindingsFromOutput(tool, output, target = '') {
       if (/parameters found|param.*found|GET:|POST:/i.test(line) && !/testing|probing/i.test(line)) {
         push(`arjun: ${line.trim().slice(0, 140)}`, 'low', line.trim())
       }
-    }
-    if (findings.length) return { findings: findings.slice(0, 30), discoveredUrls }
-  }
-
-  // ── whatweb: technology fingerprinting ──
-  // whatweb output: "http://target [200 OK] Tech1[version], Tech2[version], ..."
-  if (tool === 'whatweb') {
-    // Collect all technologies found across all lines
-    const techs = new Set()
-    let targetUrl = ''
-    let httpStatus = ''
-    for (const line of lines) {
-      const t = line.trim()
-      if (!t) continue
-      // Extract URL and status from the beginning
-      const urlMatch = t.match(/^(https?:\/\/\S+)\s+\[(\d{3}[^\]]*)\]/)
-      if (urlMatch) {
-        if (!targetUrl) targetUrl = urlMatch[1]
-        if (!httpStatus) httpStatus = urlMatch[2]
-      }
-      // Extract individual technologies: Name[version] or Name
-      const techMatches = t.matchAll(/([A-Z][\w-]+(?:\[[^\]]*\])?)/g)
-      for (const m of techMatches) {
-        const tech = m[1].trim()
-        if (tech && !/^(OK|Found|Moved|Forbidden|Unauthorized|Redirect)/i.test(tech) && tech.length > 1) {
-          techs.add(tech)
-        }
-      }
-    }
-    if (techs.size > 0) {
-      const techList = [...techs].sort()
-      // Interesting/risky technologies to highlight
-      const risky = techList.filter(t => /apache|nginx|iis|tomcat|php|wordpress|jquery|bootstrap|laravel|django|flask|node|react|angular|jquery-migrate/i.test(t.toLowerCase()))
-      const outdated = techList.filter(t => /jquery[/\[]1\.|jquery[/\[]2\.|php[/\[]5\.|php[/\[]7\.[0-2]|apache[/\[]2\.[0-2]|openssl[/\[]1\.[01]|tls[/\[]1\.[01]/i.test(t))
-      if (outdated.length) {
-        push(`Outdated technology detected: ${outdated.join(', ')}`, 'medium', `Outdated components: ${outdated.join(', ')}. These may have known vulnerabilities.`, { cweId: 'CWE-1104' })
-      }
-      if (risky.length) {
-        push(`Technology stack: ${risky.join(', ')}${techList.length > risky.length ? ` (+${techList.length - risky.length} more)` : ''}`, 'info', `Detected technologies: ${techList.join(', ')}`)
-      } else {
-        push(`Technology fingerprint: ${techList.length} components detected`, 'info', `Detected technologies: ${techList.join(', ')}`)
-      }
-      if (targetUrl) discoveredUrls.push(targetUrl)
     }
     if (findings.length) return { findings: findings.slice(0, 30), discoveredUrls }
   }

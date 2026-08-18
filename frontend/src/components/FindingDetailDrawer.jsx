@@ -153,7 +153,16 @@ export default function FindingDetailDrawer({ finding, onClose, onStatusChange, 
     setExploitError('')
     try {
       const result = await api.launchExploitCampaign(finding.id)
-      setExploitCampaign(result)
+      if (!result.campaignId && !result.campaign) {
+        setExploitError('No exploit strategy matched this finding.')
+        return
+      }
+      // Launch returns a flat {campaignId} — fetch the full campaign (steps, approvals)
+      // so the UI can render Start/Approve controls immediately.
+      const full = result.campaign
+        ? result // already-exists response is already full
+        : await api.exploitCampaign(result.campaignId)
+      setExploitCampaign(full)
       setExploitCheck(prev => prev ? { ...prev, ...result } : result)
       setTab('exploit')
     } catch (e) {
@@ -428,6 +437,16 @@ export default function FindingDetailDrawer({ finding, onClose, onStatusChange, 
                             <Play size={12} /> Start
                           </button>
                         )}
+                        {/* Legacy stuck campaigns: awaiting_approval with no gated step pending — allow restart */}
+                        {exploitCampaign.campaign?.status === 'awaiting_approval' &&
+                          !(exploitCampaign.steps || []).some(s => s.status === 'awaiting_approval') && (
+                          <button
+                            onClick={() => startCampaign(exploitCampaign.campaign.id)}
+                            className="btn-primary text-xs flex items-center gap-1"
+                          >
+                            <Play size={12} /> Start
+                          </button>
+                        )}
                         {exploitCampaign.campaign?.status === 'running' && (
                           <button
                             onClick={() => pauseCampaign(exploitCampaign.campaign.id)}
@@ -458,54 +477,70 @@ export default function FindingDetailDrawer({ finding, onClose, onStatusChange, 
 
                   {/* Step Timeline */}
                   {exploitCampaign.steps?.length > 0 && (
-                    <div className="space-y-2">
-                      <p className="text-[11px] uppercase tracking-wider text-slate-500 font-semibold">Attack Steps</p>
+                    <div className="space-y-3">
+                      <p className="text-[11px] uppercase tracking-wider text-slate-400 font-bold">Attack Steps</p>
                       {exploitCampaign.steps.map((step) => (
-                        <div key={step.id} className={`rounded-lg border p-3 ${
-                          step.status === 'success' ? 'border-green-500/20 bg-green-500/5' :
-                          step.status === 'failed' ? 'border-red-500/20 bg-red-500/5' :
-                          step.status === 'awaiting_approval' ? 'border-amber-500/30 bg-amber-500/5' :
-                          step.status === 'running' ? 'border-blue-500/20 bg-blue-500/5' :
-                          'border-slate-700/50 bg-slate-800/20'
+                        <div key={step.id} className={`rounded-xl border p-3.5 transition-colors ${
+                          step.status === 'success' ? 'border-emerald-500/30 bg-emerald-500/5' :
+                          step.status === 'failed' ? 'border-rose-500/30 bg-rose-500/5' :
+                          step.status === 'awaiting_approval' ? 'border-amber-500/40 bg-amber-500/10' :
+                          step.status === 'running' ? 'border-blue-500/30 bg-blue-500/5' :
+                          'border-white/10 bg-white/[0.02]'
                         }`}>
-                          <div className="flex items-center gap-2">
-                            {step.status === 'success' ? <CheckCircle size={14} className="text-green-400" /> :
-                             step.status === 'failed' ? <XCircle size={14} className="text-red-400" /> :
-                             step.status === 'awaiting_approval' ? <AlertTriangle size={14} className="text-amber-400" /> :
-                             step.status === 'running' ? <Loader2 size={14} className="text-blue-400 animate-spin" /> :
-                             <Clock size={14} className="text-slate-500" />}
-                            <span className="text-xs font-medium text-slate-300">
-                              Step {step.step_order}: {step.step_type}
-                            </span>
-                            <span className="text-[11px] text-slate-500">({step.tool_name})</span>
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div className="flex items-center gap-2">
+                              {step.status === 'success' ? <CheckCircle size={15} className="text-emerald-400 shrink-0" /> :
+                               step.status === 'failed' ? <XCircle size={15} className="text-rose-400 shrink-0" /> :
+                               step.status === 'awaiting_approval' ? <AlertTriangle size={15} className="text-amber-400 shrink-0 animate-bounce" /> :
+                               step.status === 'running' ? <Loader2 size={15} className="text-cyan-400 animate-spin shrink-0" /> :
+                               <Clock size={15} className="text-slate-500 shrink-0" />}
+                              <span className="text-xs font-bold text-slate-100">
+                                Step #{step.step_order}: {step.step_type}
+                              </span>
+                              {step.tool_name && (
+                                <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/5 border border-white/10 text-slate-400 font-mono">
+                                  {step.tool_name}
+                                </span>
+                              )}
+                            </div>
+                            {step.status === 'awaiting_approval' && (
+                              <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 font-bold border border-amber-500/30">
+                                Approval Needed
+                              </span>
+                            )}
                           </div>
 
                           {step.command && (
-                            <pre className="mt-2 text-[11px] text-slate-400 font-mono bg-black/30 rounded p-2 overflow-auto max-h-20">
-                              {step.command}
-                            </pre>
+                            <div className="mt-2.5">
+                              <pre className="text-[11px] text-cyan-300 font-mono bg-black/60 border border-white/10 rounded-xl p-3 overflow-x-auto max-h-32 whitespace-pre-wrap break-all break-words select-text">
+                                {(() => { try { return JSON.stringify(JSON.parse(step.command), null, 2) } catch { return step.command } })()}
+                              </pre>
+                            </div>
                           )}
 
                           {step.output && (
-                            <pre className="mt-2 text-[11px] text-slate-400 font-mono bg-black/30 rounded p-2 overflow-auto max-h-32">
-                              {(() => { try { return JSON.stringify(JSON.parse(step.output), null, 2) } catch { return step.output } })()}
-                            </pre>
+                            <div className="mt-2.5">
+                              <span className="text-[10px] uppercase font-bold text-slate-400 block mb-1">Execution Output:</span>
+                              <pre className="text-[11px] text-slate-300 font-mono bg-slate-950 border border-white/10 rounded-xl p-3 overflow-x-auto max-h-48 whitespace-pre-wrap break-all break-words select-text">
+                                {(() => { try { return JSON.stringify(JSON.parse(step.output), null, 2) } catch { return step.output } })()}
+                              </pre>
+                            </div>
                           )}
 
                           {/* Approval buttons */}
                           {step.status === 'awaiting_approval' && (
-                            <div className="flex gap-2 mt-3">
+                            <div className="flex flex-wrap gap-2 mt-3.5">
                               <button
                                 onClick={() => approveExploitStep(step.id)}
-                                className="btn-primary text-xs !bg-green-600 hover:!bg-green-500 flex items-center gap-1"
+                                className="btn-primary text-xs py-1.5 px-3.5 !bg-emerald-600 hover:!bg-emerald-500 flex items-center gap-1.5 font-bold shadow-glow"
                               >
-                                <CheckCircle size={12} /> Approve
+                                <CheckCircle size={13} /> Approve
                               </button>
                               <button
                                 onClick={() => denyExploitStep(step.id)}
-                                className="btn-secondary text-xs !border-red-500/30 !text-red-400 hover:!bg-red-500/10 flex items-center gap-1"
+                                className="btn-secondary text-xs py-1.5 px-3.5 !border-rose-500/40 !text-rose-300 hover:!bg-rose-500/20 flex items-center gap-1.5 font-bold"
                               >
-                                <XCircle size={12} /> Deny
+                                <XCircle size={13} /> Deny
                               </button>
                             </div>
                           )}
@@ -516,15 +551,15 @@ export default function FindingDetailDrawer({ finding, onClose, onStatusChange, 
 
                   {/* Loot */}
                   {exploitCampaign.loot?.length > 0 && (
-                    <div className="space-y-2">
-                      <p className="text-[11px] uppercase tracking-wider text-slate-500 font-semibold">Loot Collected</p>
+                    <div className="space-y-3">
+                      <p className="text-[11px] uppercase tracking-wider text-slate-400 font-bold">Loot Collected</p>
                       {exploitCampaign.loot.map((l) => (
-                        <div key={l.id} className="rounded-lg border border-yellow-500/20 bg-yellow-500/5 p-3">
+                        <div key={l.id} className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-3.5">
                           <div className="flex items-center gap-2">
-                            <Bug size={14} className="text-yellow-400" />
-                            <span className="text-xs text-slate-300">{l.label || l.loot_type}</span>
+                            <Bug size={15} className="text-amber-400 shrink-0" />
+                            <span className="text-xs font-bold text-slate-200">{l.label || l.loot_type}</span>
                           </div>
-                          <pre className="mt-2 text-[11px] text-slate-400 font-mono bg-black/30 rounded p-2 overflow-auto max-h-24">
+                          <pre className="mt-2.5 text-[11px] text-amber-200 font-mono bg-black/60 border border-white/10 rounded-xl p-3 overflow-x-auto max-h-36 whitespace-pre-wrap break-all break-words select-text">
                             {(() => { try { return JSON.stringify(JSON.parse(l.data), null, 2) } catch { return l.data } })()}
                           </pre>
                         </div>

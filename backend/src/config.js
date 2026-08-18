@@ -74,6 +74,12 @@ export const config = {
     timeoutMs: Number(process.env.MSF_TIMEOUT_MS || 120000),
   },
 
+  github: {
+    // When set, the /api/github/webhook endpoint requires a valid
+    // X-Hub-Signature-256 HMAC. When unset, only loopback/LAN requests pass.
+    webhookSecret: (process.env.GITHUB_WEBHOOK_SECRET || '').trim(),
+  },
+
   agentsDir: resolveDir(process.env.AGENTS_DIR, path.join(PROJECT_ROOT, 'agents')),
 
   payloads: {

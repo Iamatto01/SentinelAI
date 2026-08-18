@@ -11,9 +11,12 @@ import { api } from '../lib/api.js'
 import NewScanModal from './NewScanModal.jsx'
 import InspectorLogo from './InspectorLogo.jsx'
 import AIChatWidget from './AIChatWidget.jsx'
+import AIBackgroundCanvas from './AIBackgroundCanvas.jsx'
+import { useTheme } from '../lib/ThemeContext.jsx'
 
 export default function Shell() {
   const { user, logout } = useAuth()
+  const { randomizeNow } = useTheme()
   const nav = useNavigate()
   const location = useLocation()
   const [showNew, setShowNew] = useState(false)
@@ -27,6 +30,7 @@ export default function Shell() {
   const isAdmin = user?.role === 'admin'
   const isClient = user?.role === 'client'
   const isExpanded = pinned || isHovered
+  const showLabels = isExpanded || mobileOpen
 
   // Load subscription status to enforce strict paywall
   useEffect(() => {
@@ -86,7 +90,9 @@ export default function Shell() {
   }
 
   return (
-    <div className="min-h-screen grid-bg relative selection:bg-cyan-500 selection:text-slate-950">
+    <div className="min-h-screen relative selection:bg-cyan-500 selection:text-slate-950">
+      {/* AI Dynamic Background Layer */}
+      <AIBackgroundCanvas />
       {/* Expired / Inactive Subscription Alert Banner */}
       {isSubscriptionExpired && (
         <div className="sticky top-0 z-50 bg-gradient-to-r from-amber-600 via-rose-600 to-red-600 text-white px-4 py-2 text-xs font-bold shadow-xl flex items-center justify-between">
@@ -149,10 +155,10 @@ export default function Shell() {
         }`}
       >
         {/* Sidebar Brand Header */}
-        <div className={`flex items-center h-16 border-b border-white/10 transition-all duration-300 ${!isExpanded ? 'lg:justify-center lg:px-2 px-4 justify-between' : 'justify-between px-4'}`}>
+        <div className={`flex items-center h-16 border-b border-white/10 transition-all duration-300 ${!showLabels ? 'lg:justify-center lg:px-2 px-4 justify-between' : 'justify-between px-4'}`}>
           <div className="flex items-center gap-2.5 min-w-0">
             <InspectorLogo size={32} />
-            {isExpanded && (
+            {showLabels && (
               <div className="min-w-0 animate-in fade-in duration-200">
                 <p className="text-sm font-extrabold text-white tracking-tight truncate">SentinelAI</p>
                 <p className="text-[9px] uppercase tracking-widest text-cyan-400 font-bold truncate flex items-center gap-1">
@@ -163,13 +169,6 @@ export default function Shell() {
           </div>
 
           <div className="flex items-center gap-1">
-            <button
-              onClick={() => setPinned(!pinned)}
-              title={pinned ? "Unpin sidebar" : "Pin sidebar expanded"}
-              className="hidden lg:flex items-center justify-center p-1.5 rounded-xl text-slate-400 hover:bg-white/10 hover:text-cyan-300 transition-colors"
-            >
-              {pinned ? <ChevronLeft size={18} className="text-cyan-400" /> : <ChevronRight size={18} />}
-            </button>
             <button
               onClick={() => setMobileOpen(false)}
               className="lg:hidden p-1.5 text-slate-400 hover:text-white rounded-lg"
@@ -184,10 +183,10 @@ export default function Shell() {
           <button
             onClick={handleScanButtonClick}
             title={isSubscriptionExpired ? "Subscribe to Launch Scans" : "Launch New Security Audit"}
-            className={`btn-primary w-full justify-center ${!isExpanded ? 'lg:!px-0' : ''}`}
+            className={`btn-primary w-full justify-center ${!showLabels ? 'lg:!px-0' : ''}`}
           >
             {isSubscriptionExpired ? <Lock size={16} /> : <Plus size={16} />}
-            {isExpanded && <span>{isSubscriptionExpired ? 'Subscribe to Scan' : 'Launch Scan'}</span>}
+            {showLabels && <span>{isSubscriptionExpired ? 'Subscribe to Scan' : 'Launch Scan'}</span>}
           </button>
         </div>
 
@@ -199,11 +198,11 @@ export default function Shell() {
               <NavLink
                 key={to}
                 to={to}
-                title={!isExpanded ? label : undefined}
+                title={!showLabels ? label : undefined}
                 onClick={() => setMobileOpen(false)}
                 className={({ isActive }) =>
                   `flex items-center gap-3.5 rounded-2xl py-2.5 text-sm font-semibold transition-all duration-200 ${
-                    !isExpanded ? 'lg:justify-center lg:px-0 px-3' : 'px-3.5'
+                    !showLabels ? 'lg:justify-center lg:px-0 px-3' : 'px-3.5'
                   } ${
                     isActive
                       ? 'bg-gradient-to-r from-cyan-500/25 to-blue-600/25 text-cyan-300 border border-cyan-400/40 glass-glow'
@@ -216,7 +215,7 @@ export default function Shell() {
                 <div className={`p-1.5 rounded-xl transition-colors ${location.pathname.startsWith(to) ? 'bg-cyan-500 text-slate-950' : 'bg-white/5 text-slate-300'}`}>
                   {isLocked ? <Lock size={16} className="text-amber-400" /> : <Icon size={16} />}
                 </div>
-                {isExpanded && (
+                {showLabels && (
                   <span className="truncate flex items-center justify-between flex-1">
                     <span>{label}</span>
                     {isLocked && <Lock size={12} className="text-amber-400" />}
@@ -229,8 +228,8 @@ export default function Shell() {
 
         {/* User Info Footer */}
         <div className="p-3 border-t border-white/10">
-          <div className={`flex items-center rounded-2xl glass-soft py-2.5 ${!isExpanded ? 'lg:justify-center lg:px-0 px-3 justify-between' : 'justify-between px-3'}`}>
-            {isExpanded && (
+          <div className={`flex items-center rounded-2xl glass-soft py-2.5 ${!showLabels ? 'lg:justify-center lg:px-0 px-3 justify-between' : 'justify-between px-3'}`}>
+            {showLabels && (
               <div className="min-w-0 pr-2">
                 <p className="text-sm font-bold text-slate-100 truncate">{user?.username}</p>
                 <p className="text-[10px] uppercase tracking-wider font-extrabold text-cyan-400">{user?.role}</p>
@@ -277,6 +276,7 @@ export default function Shell() {
                 </span>
               </Link>
             )}
+
 
           </div>
         </header>
