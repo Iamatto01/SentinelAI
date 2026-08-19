@@ -24,7 +24,10 @@ class DiscordBot {
   async start(gateway) {
     this.gateway = gateway
     const token = config.channels?.discord?.token
-    if (!token) return
+    if (!token) {
+      console.warn('[Channels] Discord bot skipped: DISCORD_BOT_TOKEN not provided')
+      return
+    }
     const [meRes, gwRes] = await Promise.all([
       fetch(`${API_BASE}/users/@me`, { headers: { authorization: `Bot ${token}` } }),
       fetch(`${API_BASE}/gateway/bot`, { headers: { authorization: `Bot ${token}` } }),
@@ -91,6 +94,7 @@ class DiscordBot {
       if (isMentioned) {
         cleanText = cleanText.replace(new RegExp(`<@!?${this.applicationId}>`, 'g'), '').trim()
       }
+      if (!cleanText) cleanText = '/start'
 
       const channelId = d.channel_id
       const senderInfo = {
@@ -114,13 +118,21 @@ class DiscordBot {
 
   stopHeartbeat() { if (this.heartbeatTimer) clearInterval(this.heartbeatTimer) }
 
-  sendWs(obj) { try { this.ws?.send(JSON.stringify(obj)) } catch { } }
+  sendWs(obj) {
+    try {
+      if (this.ws?.readyState === 1) {
+        this.ws.send(JSON.stringify(obj))
+      }
+    } catch { }
+  }
 
   async sendTo(channelId, text) {
+    const token = config.channels?.discord?.token
+    if (!token) return
     for (const chunk of String(text).match(/[\s\S]{1,1900}(\s|$)/g) || [String(text)]) {
       await fetch(`${API_BASE}/channels/${channelId}/messages`, {
         method: 'POST',
-        headers: { authorization: `Bot ${config.channels?.discord?.token}`, 'content-type': 'application/json' },
+        headers: { authorization: `Bot ${token}`, 'content-type': 'application/json' },
         body: JSON.stringify({ content: chunk }),
       }).catch(e => console.warn(`[Discord] send failed: ${e.message}`))
     }

@@ -246,7 +246,7 @@ class ChannelGateway {
     if (this.started) return
     this.started = true
 
-    if (config.channels?.telegram?.enabled && config.channels.telegram.token) {
+    if (config.channels?.telegram?.token) {
       try {
         await telegramBot.start(this)
         this.channels.push(telegramBot)
@@ -256,7 +256,7 @@ class ChannelGateway {
       }
     }
 
-    if (config.channels?.discord?.enabled && config.channels.discord.token) {
+    if (config.channels?.discord?.token) {
       try {
         await discordBot.start(this)
         this.channels.push(discordBot)

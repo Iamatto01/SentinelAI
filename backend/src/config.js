@@ -103,9 +103,11 @@ export const config = {
   channels: {
     telegram: {
       token: (process.env.TELEGRAM_BOT_TOKEN || '').trim(),
+      enabled: Boolean((process.env.TELEGRAM_BOT_TOKEN || '').trim()),
     },
     discord: {
       token: (process.env.DISCORD_BOT_TOKEN || '').trim(),
+      enabled: Boolean((process.env.DISCORD_BOT_TOKEN || '').trim()),
     },
   },
 }
