@@ -73,7 +73,8 @@ class ChannelGateway {
 
     // ── NOT PAIRED FLOW ──────────────────────────────────────────────────────
     if (!pairing || !pairedUser) {
-      if (name === 'start' || !cmd.startsWith('/')) {
+      if (!cmd.startsWith('/')) return
+    if (name === 'start') {
         // Generate or fetch existing pending pairing code
         let pending = db.get(
           "SELECT * FROM telegram_pairings WHERE platform = ? AND chat_id = ? AND status = 'pending' ORDER BY created_at DESC LIMIT 1",

@@ -78,11 +78,37 @@ class DiscordBot {
       this.resumeUrl = d.resume_gateway_url
       console.log(`[Channels] Discord gateway ready as @${d.user.username}`)
     } else if (op === 0 && t === 'MESSAGE_CREATE') {
-      // Ignore own messages and non-command text.
-      if (d.author?.id === this.applicationId || !d.content) return
+      // 1. Ignore messages from ANY bot (including Sentinel MLBB, GitHub bot, or itself)
+      if (d.author?.bot || d.author?.id === this.applicationId || !d.content) return
+
+      const rawContent = String(d.content || '').trim()
+      const botMention = `<@${this.applicationId}>`
+      const botMentionNick = `<@!${this.applicationId}>`
+      const isMentioned = rawContent.includes(botMention) || rawContent.includes(botMentionNick)
+      const isDirectCommand = rawContent.startsWith('/') || rawContent.startsWith('!')
+
+      // 2. In server/guild channels, ONLY respond if the message starts with / or explicitly mentions THIS bot.
+      // If user is chatting normally or mentioning another bot (@Sentinel MLBB), completely ignore it!
+      if (!isDirectCommand && !isMentioned && d.guild_id) {
+        return
+      }
+
+      let cleanText = rawContent
+      if (isMentioned) {
+        cleanText = cleanText.replace(new RegExp(`<@!?${this.applicationId}>`, 'g'), '').trim()
+        if (!cleanText.startsWith('/') && !cleanText.startsWith('!')) cleanText = `/${cleanText}`
+      }
+      if (cleanText.startsWith('!')) {
+        cleanText = `/${cleanText.slice(1)}`
+      }
+
       const channelId = d.channel_id
-      if (!this.pending.includes(channelId)) this.pending.push(channelId)
-      this.gateway.handleCommand('discord', channelId, d.content, (reply) => this.sendTo(channelId, reply)).catch(() => { })
+      const senderInfo = {
+        senderName: d.author?.global_name || d.author?.username || 'Discord User',
+        username: d.author?.username || ''
+      }
+
+      this.gateway.handleCommand('discord', channelId, cleanText, (reply) => this.sendTo(channelId, reply), senderInfo).catch(() => { })
     } else if (op === 7) { // RECONNECT requested
       this.ws?.close()
     } else if (op === 9) { // Invalid session — fresh IDENTIFY
