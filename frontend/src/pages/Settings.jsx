@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { Loader2, Save, KeyRound, UserCircle, CheckCircle2, Database, Bell, Building2, Moon, Upload, Sparkles, Image, Eye, Sliders, RefreshCw, Layers } from 'lucide-react'
+import { Loader2, Save, KeyRound, UserCircle, CheckCircle2, Database, Bell, Building2, Moon, Upload, Sparkles, Image, Eye, Sliders, RefreshCw, Layers, Send, ExternalLink, ShieldCheck, Unlink } from 'lucide-react'
 import { api } from '../lib/api.js'
 import { useAuth } from '../lib/AuthContext.jsx'
 import { useTheme } from '../lib/ThemeContext.jsx'
@@ -23,9 +23,19 @@ export default function Settings() {
   const [testResults, setTestResults] = useState({})
   const [notifs, setNotifs] = useState({ scanFinish: true, criticalAlert: true, dnd: false })
   const [branding, setBranding] = useState({ companyName: '', logo: '' })
+  const [teleStatus, setTeleStatus] = useState(null)
+  const [pairCode, setPairCode] = useState('')
+  const [teleLoading, setTeleLoading] = useState(false)
+  const [teleMsg, setTeleMsg] = useState('')
+  const [teleErr, setTeleErr] = useState('')
+
+  const loadTeleStatus = () => {
+    api.telegramPairing().then(setTeleStatus).catch(() => {})
+  }
 
   useEffect(() => {
     api.me().then((u) => setEmail(u.email || '')).catch(() => {})
+    loadTeleStatus()
     if (isAdmin) {
       api.aiProviders().then((data) => {
         const p = data.providers || []
@@ -40,6 +50,35 @@ export default function Settings() {
       }).catch(() => {})
     }
   }, [isAdmin])
+
+  async function handlePairTelegram(e) {
+    e.preventDefault()
+    setTeleMsg(''); setTeleErr(''); setTeleLoading(true)
+    try {
+      const res = await api.pairTelegram(pairCode)
+      setTeleMsg(res.message || 'Telegram account paired successfully!')
+      setPairCode('')
+      loadTeleStatus()
+    } catch (err) {
+      setTeleErr(err.message || 'Failed to pair Telegram account')
+    } finally {
+      setTeleLoading(false)
+    }
+  }
+
+  async function handleUnpairTelegram() {
+    if (!window.confirm('Adakah anda pasti mahu memutuskan sambungan Telegram daripada akaun ini?')) return
+    setTeleMsg(''); setTeleErr(''); setTeleLoading(true)
+    try {
+      const res = await api.unpairTelegram()
+      setTeleMsg(res.message || 'Telegram unlinked successfully.')
+      loadTeleStatus()
+    } catch (err) {
+      setTeleErr(err.message || 'Failed to unlink Telegram')
+    } finally {
+      setTeleLoading(false)
+    }
+  }
 
   async function saveProfile(e) {
     e.preventDefault(); setMsg(''); setErr('')
@@ -294,6 +333,102 @@ export default function Settings() {
             </div>
             <div className="flex justify-end pt-4"><button type="submit" className="btn-primary text-xs w-full sm:w-auto"><Save size={15} /> Update Password</button></div>
           </form>
+        </div>
+
+        {/* TELEGRAM BOT ACCOUNT PAIRING */}
+        <div className="card p-6 space-y-5 border-cyan-500/30 bg-slate-900/60 shadow-2xl relative overflow-hidden">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-white/10 pb-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-cyan-500/20 border border-cyan-400/30 flex items-center justify-center text-cyan-400">
+                <Send size={20} />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-white flex items-center gap-2">
+                  Telegram Bot & Real-Time Alerts
+                  {teleStatus?.paired ? (
+                    <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                      Connected
+                    </span>
+                  ) : (
+                    <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                      Not Paired
+                    </span>
+                  )}
+                </h3>
+                <p className="text-xs text-slate-400">
+                  Sambungkan akaun anda dengan <span className="text-cyan-400 font-mono">@{teleStatus?.botUsername || 'sentinelai_telebot'}</span> untuk menerima laporan dan melancarkan imbasan terus dari Telegram.
+                </p>
+              </div>
+            </div>
+
+            <a
+              href={`https://t.me/${teleStatus?.botUsername || 'sentinelai_telebot'}`}
+              target="_blank"
+              rel="noreferrer"
+              className="btn-ghost text-xs flex items-center gap-1.5 self-start sm:self-auto"
+            >
+              <ExternalLink size={13} /> Buka Telegram Bot
+            </a>
+          </div>
+
+          {teleMsg && <div className="p-3 text-xs font-semibold text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 rounded-xl">{teleMsg}</div>}
+          {teleErr && <div className="p-3 text-xs font-semibold text-rose-400 bg-rose-500/10 border border-rose-500/30 rounded-xl">{teleErr}</div>}
+
+          {teleStatus?.paired ? (
+            <div className="p-4 rounded-xl bg-cyan-950/30 border border-cyan-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2 text-xs font-bold text-white">
+                  <ShieldCheck size={16} className="text-emerald-400" />
+                  Akaun Telegram Disambungkan
+                </div>
+                <div className="text-xs text-slate-400">
+                  Chat ID: <span className="font-mono text-cyan-300">{teleStatus.pairing?.chatId}</span> | Nama: <span className="text-slate-200">{teleStatus.pairing?.senderName || 'Telegram User'}</span>
+                </div>
+                <div className="text-[11px] text-slate-500">
+                  Disambungkan pada: {new Date(teleStatus.pairing?.approvedAt || Date.now()).toLocaleString()}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={handleUnpairTelegram}
+                disabled={teleLoading}
+                className="btn-ghost text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 text-xs flex items-center gap-1.5 self-start sm:self-auto border border-rose-500/20"
+              >
+                {teleLoading ? <Loader2 size={13} className="animate-spin" /> : <Unlink size={13} />}
+                Putuskan Sambungan (Unlink)
+              </button>
+            </div>
+          ) : (
+            <form onSubmit={handlePairTelegram} className="space-y-4">
+              <div className="p-4 rounded-xl bg-slate-950/40 border border-white/10 space-y-3">
+                <div className="text-xs text-slate-300">
+                  <strong className="text-cyan-400">Langkah 1:</strong> Buka bot di Telegram: <a href={`https://t.me/${teleStatus?.botUsername || 'sentinelai_telebot'}`} target="_blank" rel="noreferrer" className="text-cyan-400 underline font-semibold">@{teleStatus?.botUsername || 'sentinelai_telebot'}</a> dan taip <code className="bg-black/40 px-1.5 py-0.5 rounded text-cyan-300 font-mono">/start</code> untuk terima kod 6-digit anda.
+                </div>
+                <div className="text-xs text-slate-300">
+                  <strong className="text-cyan-400">Langkah 2:</strong> Masukkan kod 6-digit tersebut di bawah dan klik <strong>Approve & Connect</strong>:
+                </div>
+                <div className="flex flex-col sm:flex-row gap-3 pt-1">
+                  <input
+                    type="text"
+                    maxLength={10}
+                    placeholder="Contoh: 141053"
+                    value={pairCode}
+                    onChange={(e) => setPairCode(e.target.value)}
+                    className="input font-mono tracking-widest text-center text-sm sm:max-w-xs focus:border-cyan-400"
+                    required
+                  />
+                  <button
+                    type="submit"
+                    disabled={teleLoading || !pairCode.trim()}
+                    className="btn-primary text-xs flex items-center justify-center gap-2"
+                  >
+                    {teleLoading ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
+                    Approve & Connect Telegram
+                  </button>
+                </div>
+              </div>
+            </form>
+          )}
         </div>
 
         {/* RIGHT COLUMN */}

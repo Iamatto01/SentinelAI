@@ -60,6 +60,23 @@ function migrate(d) {
   try { d.exec("ALTER TABLE scans ADD COLUMN token_usage TEXT DEFAULT '{}'") } catch {}
 
   d.exec(`
+  
+  CREATE TABLE IF NOT EXISTS telegram_pairings (
+    id TEXT PRIMARY KEY,
+    user_id TEXT,
+    username TEXT,
+    platform TEXT DEFAULT 'telegram',
+    chat_id TEXT NOT NULL,
+    sender_name TEXT,
+    pairing_code TEXT NOT NULL,
+    status TEXT DEFAULT 'pending',
+    created_at TEXT NOT NULL,
+    approved_at TEXT
+  );
+  CREATE INDEX IF NOT EXISTS idx_tele_code ON telegram_pairings(pairing_code);
+  CREATE INDEX IF NOT EXISTS idx_tele_user ON telegram_pairings(user_id);
+  CREATE INDEX IF NOT EXISTS idx_tele_chat ON telegram_pairings(chat_id);
+
   CREATE TABLE IF NOT EXISTS users (
     id TEXT PRIMARY KEY,
     username TEXT UNIQUE NOT NULL,

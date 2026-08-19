@@ -55,7 +55,7 @@ export const config = {
     },
     groq: {
       key: (process.env.GROQ_API_KEY || '').trim(),
-      model: (process.env.GROQ_MODEL || 'llama-3.3-70b-versatile').trim(),
+      model: (process.env.GROQ_MODEL || 'openai/gpt-oss-120b').trim(),
     },
     scanTimeout: Number(process.env.AI_SCAN_TIMEOUT || 300),
   },
@@ -97,6 +97,16 @@ export const config = {
   scan: {
     moduleTimeoutMs: Number(process.env.MODULE_TIMEOUT_MS || 600000),
     maxConcurrency: Number(process.env.MAX_SCAN_CONCURRENCY || 3),
+  },
+
+  // Channel gateway (OpenClaw-style): Telegram + Discord bots.
+  channels: {
+    telegram: {
+      token: (process.env.TELEGRAM_BOT_TOKEN || '').trim(),
+    },
+    discord: {
+      token: (process.env.DISCORD_BOT_TOKEN || '').trim(),
+    },
   },
 }
 

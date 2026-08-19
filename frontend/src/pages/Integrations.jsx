@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { Loader2, RefreshCw, Cpu, Database, Bot, Sparkles, CheckCircle2, XCircle, Search, X, Shield, ExternalLink } from 'lucide-react'
+import { Loader2, RefreshCw, Cpu, Database, Bot, Sparkles, CheckCircle2, XCircle, Search, X, Shield, ExternalLink, Send, ShieldCheck, Unlink } from 'lucide-react'
 import { api } from '../lib/api.js'
 
 function StatusDot({ ok }) {
@@ -20,8 +20,14 @@ export default function Integrations() {
   const [showAgentsModal, setShowAgentsModal] = useState(false)
   const [agentSearch, setAgentSearch] = useState('')
   const [selectedAgent, setSelectedAgent] = useState(null)
+  const [teleStatus, setTeleStatus] = useState(null)
+  const [pairCode, setPairCode] = useState('')
+  const [teleLoading, setTeleLoading] = useState(false)
+  const [teleMsg, setTeleMsg] = useState('')
+  const [teleErr, setTeleErr] = useState('')
 
   const load = () => {
+    api.telegramPairing().then(setTeleStatus).catch(() => {})
     api.status().then(setStatus).catch((e) => setErr(e.message))
     api.agents().then((a) => setAgents(a || [])).catch(() => {})
     loadAiProviders()
@@ -40,6 +46,35 @@ export default function Integrations() {
   }
 
   useEffect(() => { load() }, [])
+
+  async function handlePairTelegram(e) {
+    e.preventDefault()
+    setTeleMsg(''); setTeleErr(''); setTeleLoading(true)
+    try {
+      const res = await api.pairTelegram(pairCode)
+      setTeleMsg(res.message || 'Telegram account paired successfully!')
+      setPairCode('')
+      api.telegramPairing().then(setTeleStatus).catch(() => {})
+    } catch (err) {
+      setTeleErr(err.message || 'Failed to pair Telegram account')
+    } finally {
+      setTeleLoading(false)
+    }
+  }
+
+  async function handleUnpairTelegram() {
+    if (!window.confirm('Adakah anda pasti mahu memutuskan sambungan Telegram?')) return
+    setTeleMsg(''); setTeleErr(''); setTeleLoading(true)
+    try {
+      const res = await api.unpairTelegram()
+      setTeleMsg(res.message || 'Telegram unlinked.')
+      api.telegramPairing().then(setTeleStatus).catch(() => {})
+    } catch (err) {
+      setTeleErr(err.message || 'Failed to unlink Telegram')
+    } finally {
+      setTeleLoading(false)
+    }
+  }
 
   async function reindex() {
     setReindexing(true)
@@ -134,6 +169,57 @@ export default function Integrations() {
               </code>
               <p className="text-slate-500 text-[11px]">Or enable the systemd unit: <code className="text-accent">sudo systemctl enable --now msfrpcd</code></p>
             </div>
+          )}
+        </div>
+
+        {/* Telegram Bot Card */}
+        <div className="card p-5 space-y-4">
+          <div className="flex items-center justify-between">
+            <h3 className="flex items-center gap-2 font-semibold text-slate-100">
+              <Send size={18} className="text-cyan-400" /> Telegram Bot Integration
+            </h3>
+            <StatusDot ok={teleStatus?.paired} />
+          </div>
+
+          <p className="text-xs text-slate-400">
+            Bot pentest & alert masa nyata: <a href={`https://t.me/${teleStatus?.botUsername || 'sentinelai_telebot'}`} target="_blank" rel="noreferrer" className="text-cyan-400 font-mono underline font-semibold">@{teleStatus?.botUsername || 'sentinelai_telebot'}</a>
+          </p>
+
+          {teleMsg && <div className="p-2.5 text-xs text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded-lg">{teleMsg}</div>}
+          {teleErr && <div className="p-2.5 text-xs text-rose-400 bg-rose-500/10 border border-rose-500/20 rounded-lg">{teleErr}</div>}
+
+          {teleStatus?.paired ? (
+            <div className="p-3 bg-cyan-950/30 border border-cyan-500/30 rounded-xl space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-emerald-400 flex items-center gap-1.5"><ShieldCheck size={14} /> Disambungkan</span>
+                <button onClick={handleUnpairTelegram} disabled={teleLoading} className="text-rose-400 hover:text-rose-300 text-[11px] underline">
+                  Unlink
+                </button>
+              </div>
+              <p className="text-[11px] text-slate-300">
+                Chat ID: <span className="font-mono text-cyan-300">{teleStatus.pairing?.chatId}</span> ({teleStatus.pairing?.senderName})
+              </p>
+            </div>
+          ) : (
+            <form onSubmit={handlePairTelegram} className="space-y-2">
+              <p className="text-[11px] text-slate-400">
+                Taip <code className="bg-ink-950 text-cyan-300 px-1 py-0.5 rounded">/start</code> di bot Telegram untuk dapatkan kod 6-digit:
+              </p>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  maxLength={10}
+                  placeholder="Contoh: 141053"
+                  value={pairCode}
+                  onChange={(e) => setPairCode(e.target.value)}
+                  className="input text-xs font-mono tracking-wider text-center"
+                  required
+                />
+                <button type="submit" disabled={teleLoading || !pairCode.trim()} className="btn-primary text-xs shrink-0">
+                  {teleLoading ? <Loader2 size={12} className="animate-spin" /> : 'Approve'}
+                </button>
+              </div>
+            </form>
           )}
         </div>
 

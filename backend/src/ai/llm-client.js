@@ -4,8 +4,7 @@ import { config } from '../config.js'
  * Unified LLM client with multi-provider fallback order:
  *  1. OpenRouter (primary, if OPENROUTER_API_KEY configured)
  *  2. Bandelbanget (provider 2, if BANDELBANGET_API_KEY configured)
- *  3. Afiq Gateway (fallback 1, if AFIQ_API_KEY configured)
- *  4. Groq API (fallback 2, if GROQ_API_KEY configured)
+ *  3. Groq API (fallback, if GROQ_API_KEY configured)
  * Retries with backoff on 429/5xx. Redacts nothing here (callers sanitize).
  */
 export class LLMClient {
@@ -18,7 +17,7 @@ export class LLMClient {
 
   setUsageCallback(cb) { this.usageCallback = typeof cb === 'function' ? cb : null }
 
-  isConfigured() { return Boolean(this.openrouter?.key || this.bandelbanget?.key || this.afiq?.key || this.groq?.key) }
+  isConfigured() { return Boolean(this.openrouter?.key || this.bandelbanget?.key || this.groq?.key) }
 
   async checkProvidersHealth() {
     const list = [
@@ -309,38 +308,6 @@ export class LLMClient {
     } catch (e) {
       clearTimeout(timer)
       if (e.name === 'AbortError') throw new Error('Bandelbanget request timed out (60s limit)')
-      throw e
-    }
-  }
-
-  async #afiq(prompt, options) {
-    const url = `${this.afiq.baseUrl.replace(/\/$/, '')}/chat/completions`
-    const messages = []
-    if (options.system) messages.push({ role: 'system', content: options.system })
-    messages.push({ role: 'user', content: prompt })
-
-    const ctrl = new AbortController()
-    const timer = setTimeout(() => ctrl.abort(), options.timeoutMs ?? 60000)
-    try {
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: { 'X-API-Key': this.afiq.key, 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model: this.afiq.model,
-          messages,
-          temperature: options.temperature ?? 0.1,
-          max_tokens: options.maxTokens ?? 2048,
-        }),
-        signal: ctrl.signal,
-      })
-      clearTimeout(timer)
-      if (!res.ok) throw Object.assign(new Error(`Afiq HTTP ${res.status}: ${await res.text()}`), { status: res.status })
-      const data = await res.json()
-      this.#usage(data.usage, this.afiq.model, options.context)
-      return data.choices?.[0]?.message?.content ?? ''
-    } catch (e) {
-      clearTimeout(timer)
-      if (e.name === 'AbortError') throw new Error('Afiq Gateway request timed out (60s limit)')
       throw e
     }
   }

@@ -29,6 +29,7 @@ import { matchExploits, classifyRisk } from './exploits/registry.js'
 import { sendScanRequestNotification } from './email.js'
 import { GitHubClient, parseGitHubWebhook } from './integrations/github.js'
 import { PLANS, getUserSubscription, consumeScanQuota, activateSubscription, getPaymentHistory } from './billing.js'
+import { channelGateway } from './channels/index.js'
 
 // CORS: only whitelisted origins (config.corsOrigins from CLIENT_ORIGIN).
 // Non-browser clients (curl, server-to-server) carry no Origin header → allowed.
@@ -1931,6 +1932,90 @@ app.get('/api/dashboard', requireAuth, (req, res) => {
   })
 })
 
+// ── Channel gateway (Telegram/Discord bots) ─────────────────────────────────
+app.get('/api/channels/me', requireAuth, (req, res) => {
+  try {
+    const pairing = db.get("SELECT * FROM telegram_pairings WHERE user_id = ? AND status = 'approved' ORDER BY approved_at DESC LIMIT 1", req.user.id)
+    res.json({
+      paired: !!pairing,
+      pairing: pairing ? {
+        chatId: pairing.chat_id,
+        senderName: pairing.sender_name,
+        approvedAt: pairing.approved_at,
+        platform: pairing.platform
+      } : null,
+      botUsername: 'sentinelai_telebot'
+    })
+  } catch (e) {
+    res.status(500).json({ error: e.message })
+  }
+})
+
+app.post('/api/channels/pair', requireAuth, (req, res) => {
+  try {
+    const { code } = req.body || {}
+    if (!code) return res.status(400).json({ error: 'Sila masukkan kod 6-digit dari Telegram' })
+    const trimmedCode = String(code).trim()
+    const pending = db.get("SELECT * FROM telegram_pairings WHERE platform = 'telegram' AND pairing_code = ? AND status = 'pending'", trimmedCode)
+    if (!pending) {
+      return res.status(404).json({ error: 'Kod pairing tidak sah atau telah tamat. Sila taip /start di @sentinelai_telebot untuk mendapatkan kod baharu.' })
+    }
+    const now = new Date().toISOString()
+    db.run("DELETE FROM telegram_pairings WHERE user_id = ?", req.user.id)
+    db.run("UPDATE telegram_pairings SET user_id = ?, username = ?, status = 'approved', approved_at = ? WHERE id = ?",
+      req.user.id, req.user.username || req.user.email, now, pending.id)
+    
+    // Send immediate confirmation on Telegram
+    import('./channels/telegram.js').then(({ telegramBot }) => {
+      telegramBot.sendTo(pending.chat_id,
+        `🎉 *Akaun Berjaya Disambungkan!*
+
+` +
+        `Disambungkan ke akaun SentinelAI: *${req.user.username || req.user.email}* (${req.user.role?.toUpperCase() || 'CLIENT'})
+
+` +
+        `Anda kini boleh menggunakan arahan berikut secara terus:
+` +
+        `• \`/scans\` — Senarai imbasan akaun anda
+` +
+        `• \`/status\` — Semak status semasa sistem
+` +
+        `• \`/scan <url>\` — Lancarkan imbasan pentest baharu
+` +
+        `• \`/help\` — Senarai semua arahan
+
+` +
+        `🌐 Portal: https://sentinelai.studio`
+      ).catch(() => {})
+    }).catch(() => {})
+
+    res.json({
+      ok: true,
+      message: 'Akaun Telegram berjaya dipautkan!',
+      chatId: pending.chat_id,
+      senderName: pending.sender_name
+    })
+  } catch (e) {
+    res.status(500).json({ error: e.message })
+  }
+})
+
+app.post('/api/channels/unpair', requireAuth, (req, res) => {
+  try {
+    db.run("DELETE FROM telegram_pairings WHERE user_id = ?", req.user.id)
+    res.json({ ok: true, message: 'Sambungan Telegram telah diputuskan.' })
+  } catch (e) {
+    res.status(500).json({ error: e.message })
+  }
+})
+
+app.get('/api/channels', requireAuth, requireStaff, (req, res) => {
+  res.json({
+    connected: channelGateway.channels.map(c => ({ platform: c.platform, identity: c.me?.username || null })),
+    approved: channelGateway.listApproved(),
+  })
+})
+
 // ── WebSocket ────────────────────────────────────────────────────────────────
 io.on('connection', (socket) => {
   socket.on('scan:subscribe', (scanId) => { if (scanId) socket.join(`scan:${scanId}`) })
@@ -1940,10 +2025,18 @@ io.on('connection', (socket) => {
 })
 
 const PORT = config.port
-server.listen(PORT, () => {
+server.listen(PORT, async () => {
   console.log(`\n[FYP2] Unified Pentest Platform backend listening on http://localhost:${PORT}`)
   console.log(`[FYP2] Hexstrike engine: ${config.hexstrike.url} (${config.hexstrike.enabled ? 'enabled' : 'disabled'})`)
   console.log(`[FYP2] Agents: ${agentRegistry.list().length} | RAG docs: ${payloadsRag.payloadsIndexStatus().docs}`)
+
+  // Channel gateway (Telegram/Discord bots) — non-fatal if tokens missing.
+  try {
+    channelGateway.attach({ io, pipeline, orchestrator: exploitEngine, agentRegistry })
+    await channelGateway.start()
+  } catch (e) {
+    console.warn(`[FYP2] Channel gateway failed to start: ${e.message}`)
+  }
 })
 
 process.on('uncaughtException', (err) => {

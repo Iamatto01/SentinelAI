@@ -12,7 +12,6 @@ class ChannelGateway {
     this.agentRegistry = null
     this.channels = []
     this.started = false
-    this.approved = new Map()
   }
 
   attach({ io, pipeline, orchestrator, agentRegistry }) {
@@ -22,20 +21,37 @@ class ChannelGateway {
     this.agentRegistry = agentRegistry
   }
 
+  getApprovedPairing(platform, chatId) {
+    try {
+      return db.get(
+        "SELECT * FROM telegram_pairings WHERE platform = ? AND chat_id = ? AND status = 'approved' ORDER BY approved_at DESC LIMIT 1",
+        String(platform),
+        String(chatId)
+      )
+    } catch {
+      return null
+    }
+  }
+
   isApproved(platform, chatId) {
-    return true
-  }
-
-  approve(platform, chatId) {
-    this.approved.set(${platform}:, { platform, approvedAt: Date.now() })
-  }
-
-  revoke(platform, chatId) {
-    this.approved.delete(${platform}:)
+    return !!this.getApprovedPairing(platform, chatId)
   }
 
   listApproved() {
-    return [...this.approved.entries()].map(([id, meta]) => ({ id, ...meta }))
+    try {
+      const rows = db.all("SELECT * FROM telegram_pairings WHERE status = 'approved'")
+      return rows.map(r => ({
+        id: `${r.platform}:${r.chat_id}`,
+        platform: r.platform,
+        chatId: r.chat_id,
+        userId: r.user_id,
+        username: r.username,
+        senderName: r.sender_name,
+        approvedAt: r.approved_at
+      }))
+    } catch {
+      return []
+    }
   }
 
   broadcast(message, opts = {}) {
@@ -46,90 +62,184 @@ class ChannelGateway {
     }
   }
 
-  async handleCommand(platform, chatId, text, reply) {
-    this.approve(platform, chatId)
+  async handleCommand(platform, chatId, text, reply, senderInfo = {}) {
     const cmd = String(text || '').trim()
-    if (!cmd.startsWith('/')) {
-      reply('Gunakan arahan /help untuk melihat senarai arahan.')
-      return
-    }
-    const [name, ...args] = cmd.slice(1).split(/\\s+/)
+    const pairing = this.getApprovedPairing(platform, chatId)
+    const pairedUser = pairing?.user_id
+      ? db.get("SELECT id, username, email, role FROM users WHERE id = ?", pairing.user_id)
+      : null
 
-    if (name === 'start') {
+    const [name, ...args] = cmd.startsWith('/') ? cmd.slice(1).split(/\s+/) : ['unknown']
+
+    // ── NOT PAIRED FLOW ──────────────────────────────────────────────────────
+    if (!pairing || !pairedUser) {
+      if (name === 'start' || !cmd.startsWith('/')) {
+        // Generate or fetch existing pending pairing code
+        let pending = db.get(
+          "SELECT * FROM telegram_pairings WHERE platform = ? AND chat_id = ? AND status = 'pending' ORDER BY created_at DESC LIMIT 1",
+          String(platform),
+          String(chatId)
+        )
+
+        let code = pending?.pairing_code
+        if (!code) {
+          // Generate deterministic 6-digit code based on chatId
+          let h = 0
+          const s = `${platform}:${chatId}:${Date.now()}`
+          for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0
+          code = String((h % 900000) + 100000)
+
+          db.run(
+            "DELETE FROM telegram_pairings WHERE platform = ? AND chat_id = ? AND status = 'pending'",
+            String(platform),
+            String(chatId)
+          )
+          db.run(
+            "INSERT INTO telegram_pairings (id, platform, chat_id, sender_name, pairing_code, status, created_at) VALUES (?, ?, ?, ?, ?, 'pending', ?)",
+            `tele_${randomUUID()}`,
+            String(platform),
+            String(chatId),
+            senderInfo.senderName || 'Telegram User',
+            code,
+            new Date().toISOString()
+          )
+        }
+
+        reply(
+          `🔒 *SentinelAI Account Pairing*
+
+` +
+          `Kod sambungan akaun 6-digit anda:
+` +
+          `👉 \`${code}\`
+
+` +
+          `*Cara sambungkan ke akaun SentinelAI anda:*
+` +
+          `1. Log masuk ke akaun anda di https://sentinelai.studio
+` +
+          `2. Buka menu **Settings** (atau Integrations) ➡️ **Telegram Pairing**
+` +
+          `3. Masukkan kod \`${code}\` dan klik **Approve & Connect**.
+
+` +
+          `_Selepas akaun disambungkan, anda boleh jalankan imbasan pentest, semak findings, dan terima alert masa nyata!_`
+        )
+        return
+      }
+
       reply(
-        '🛡️ *Selamat datang ke SentinelAI Telegram Bot!*\\n\\n' +
-        'Platform ini disambungkan terus ke *Hexstrike Pentest Engine* & *50 AI Specialist Personas*.\\n\\n' +
-        '*Senarai Arahan Tersedia:*\\n' +
-        '• /status — Semak status sistem & imbasan aktif\\n' +
-        '• /scans — Senarai imbasan terkini & skor risiko\\n' +
-        '• /agents — Senarai 50 AI agent personas yang aktif\\n' +
-        '• /scan <url> — Lancarkan imbasan keselamatan ke atas target\\n' +
-        '• /help — Paparkan senarai bantuan ini\\n\\n' +
-        '🌐 Dashboard Web: https://sentinelai.studio'
+        `🔒 *Akaun Belum Disambungkan*
+
+` +
+        `Sila taip /start untuk mendapatkan kod sambungan 6-digit anda, kemudian luluskan di dashboard web https://sentinelai.studio.`
       )
       return
     }
 
+    // ── PAIRED USER COMMANDS ────────────────────────────────────────────────
     switch (name) {
+      case 'start':
       case 'help':
         reply(
-          '🛡️ *SentinelAI Bot Commands:*\\n\\n' +
-          '• /status — Status platform & enjin Hexstrike\\n' +
-          '• /scans — 8 imbasan terkini & status kerentanan\\n' +
-          '• /agents — Senarai 50 persona AI Agent\\n' +
-          '• /scan <url> — Lancarkan imbasan terus dari Telegram\\n' +
-          '• /help — Bantuan arahan\\n\\n' +
-          '🌐 Portal: https://sentinelai.studio'
+          `🛡️ *SentinelAI Telegram Connected!*
+
+` +
+          `Pengguna: *${pairedUser.username || pairedUser.email}* (${pairedUser.role?.toUpperCase() || 'CLIENT'})
+` +
+          `Chat ID: \`${chatId}\`
+
+` +
+          `*Senarai Arahan Tersedia:*
+` +
+          `• \`/status\` — Semak status sistem & enjin pentest
+` +
+          `• \`/scans\` — Senarai imbasan terkini akaun anda
+` +
+          `• \`/agents\` — Senarai 50 AI Specialist Personas
+` +
+          `• \`/scan <url>\` — Lancarkan imbasan pentest sasaran baharu
+` +
+          `• \`/unlink\` — Putuskan sambungan Telegram ini
+` +
+          `• \`/help\` — Paparkan bantuan arahan
+
+` +
+          `🌐 Portal: https://sentinelai.studio`
         )
         break
 
       case 'status': {
-        const scans = db.all(SELECT status, COUNT(*) c FROM scans GROUP BY status)
+        const scans = pairedUser.role === 'admin'
+          ? db.all(`SELECT status, COUNT(*) c FROM scans GROUP BY status`)
+          : db.all(`SELECT status, COUNT(*) c FROM scans WHERE user_id = ? OR client = ? GROUP BY status`, pairedUser.id, pairedUser.username)
         const running = scans.find(s => s.status === 'running')?.c || 0
         const total = scans.reduce((a, s) => a + s.c, 0)
         reply(
-          🛡️ *SentinelAI Platform Status*\\n\\n +
-          • Total Scans: **\\n +
-          • Active Running Scans: **\\n +
-          • AI Specialist Agents: * Personas*\\n +
-          • Hexstrike Tools: *124 Kali Tools Active*\\n +
-          • Status: *ONLINE (Healthy)*\\n\\n +
-          🌐 Portal: https://sentinelai.studio
+          `🛡️ *SentinelAI Status (${pairedUser.username || 'Client'})*
+
+` +
+          `• Jumlah Imbasan: *${total}*
+` +
+          `• Sedang Berjalan: *${running} active*
+` +
+          `• Enjin Hexstrike: *124 Kali Tools (ONLINE)*
+` +
+          `• AI Specialist Agents: *50 Personas Active*
+
+` +
+          `🌐 Dashboard: https://sentinelai.studio`
         )
         break
       }
 
       case 'scans': {
-        const scans = db.all(SELECT id, target, status, risk_score, created_at FROM scans ORDER BY created_at DESC LIMIT 8)
-        if (!scans.length) { reply('Tiada imbasan ditemui.'); break }
+        const scans = pairedUser.role === 'admin'
+          ? db.all(`SELECT id, target, status, risk_score, created_at FROM scans ORDER BY created_at DESC LIMIT 8`)
+          : db.all(`SELECT id, target, status, risk_score, created_at FROM scans WHERE user_id = ? OR client = ? ORDER BY created_at DESC LIMIT 8`, pairedUser.id, pairedUser.username)
+        if (!scans.length) {
+          reply('Tiada imbasan ditemui untuk akaun anda. Taip `/scan https://example.com` untuk memulakan imbasan.')
+          break
+        }
         const list = scans.map((s, idx) =>
-          ${idx + 1}. **\\n   Status: \${s.status}\ | Risk: **\\n   🔗 https://sentinelai.studio/app/scans/
-        ).join('\\n\\n')
-        reply(📊 *Imbasan Terkini (SentinelAI):*\\n\\n)
+          `${idx + 1}. *${s.target || '?'}*
+   Status: \`${s.status}\` | Risk: *${(s.risk_score ?? 0).toFixed(1)}*
+   🔗 https://sentinelai.studio/app/scans/${s.id}`
+        ).join('
+
+')
+        reply(`📊 *Imbasan Terkini Akaun Anda:*
+
+${list}`)
         break
       }
 
       case 'agents': {
         const agents = (this.agentRegistry?.list?.() || []).slice(0, 50)
         if (!agents.length) { reply('Tiada agent dimuatkan.'); break }
-        reply(🤖 *50 Specialist AI Personas Active:*\\n\\n + agents.map(a => • \${a.name || a.id}\`).join('\\n'))
+        reply(`🤖 *50 Specialist AI Personas Active:*
+
+` + agents.map(a => `• \`${a.name || a.id}\``).join('
+'))
         break
       }
 
       case 'scan': {
         const target = args[0]
         if (!target) {
-          reply('⚠️ Sila masukkan URL/IP sasaran. Contoh: /scan https://example.com')
+          reply('⚠️ Sila masukkan URL/IP sasaran. Contoh: `/scan https://example.com`')
           break
         }
         try {
-          const scanId = scan_
+          const scanId = `scan_${randomUUID()}`
           const now = new Date().toISOString()
-          db.run(INSERT INTO scans (id, target, target_type, mode, status, template, modules, progress, created_at, started_at)
-                  VALUES (?,?,?,?,?,?,?,?,?,?),
-            scanId, target.trim(), 'url', 'blackbox', 'running', 'standard',
-            JSON.stringify(['nmap', 'httpx', 'whatweb', 'nuclei', 'nikto']), 0, now, now)
-          const scan = db.get(SELECT * FROM scans WHERE id = ?, scanId)
+          db.run(
+            `INSERT INTO scans (id, user_id, target, target_type, mode, status, template, modules, progress, created_at, started_at)
+             VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+            scanId, pairedUser.id, target.trim(), 'url', 'blackbox', 'running', 'standard',
+            JSON.stringify(['nmap', 'httpx', 'whatweb', 'nuclei', 'nikto']), 0, now, now
+          )
+          const scan = db.get(`SELECT * FROM scans WHERE id = ?`, scanId)
           if (this.pipeline?.runBlackbox) {
             setImmediate(async () => {
               try {
@@ -140,38 +250,48 @@ class ChannelGateway {
                   verify: true,
                   depth: 'standard'
                 })
-                reply(✅ *Imbasan Selesai untuk !*\\n\\nLihat laporan & findings penuh di:\\nhttps://sentinelai.studio/app/scans/)
+                reply(`✅ *Imbasan Selesai untuk ${target}!*
+
+Lihat laporan & findings penuh di:
+https://sentinelai.studio/app/scans/${scanId}`)
               } catch (e) {
-                reply(❌ Ralat semasa imbasan : )
+                reply(`❌ Ralat semasa imbasan ${target}: ${e.message}`)
               }
             })
           }
           reply(
-            🚀 *Imbasan Keselamatan Dilancarkan!*\\n\\n +
-            • Sasaran: \${target}\\
- +
-            • Scan ID: \${scanId.slice(0, 12)}\\
- +
-            • Enjin: *Hexstrike Toolchain (Nmap, Nuclei, Nikto, WhatWeb)*\\n\\n +
-            Pantau secara langsung di:\\nhttps://sentinelai.studio/app/scans/
+            `🚀 *Imbasan Keselamatan Dilancarkan!*
+
+` +
+            `• Akaun: *${pairedUser.username || pairedUser.email}*
+` +
+            `• Sasaran: \`${target}\`
+` +
+            `• Scan ID: \`${scanId.slice(0, 12)}\`
+` +
+            `• Enjin: *Hexstrike Toolchain*
+
+` +
+            `Pantau secara langsung di:
+https://sentinelai.studio/app/scans/${scanId}`
           )
         } catch (e) {
-          reply(❌ Gagal melancarkan imbasan: )
+          reply(`❌ Gagal melancarkan imbasan: ${e.message}`)
         }
         break
       }
 
+      case 'unlink': {
+        db.run("DELETE FROM telegram_pairings WHERE platform = ? AND chat_id = ?", String(platform), String(chatId))
+        reply(`🔓 *Sambungan Telegram Diputuskan.*
+
+Akaun Telegram anda telah dinyahpaut daripada SentinelAI. Taip /start pada bila-bila masa untuk menyambung semula.`)
+        break
+      }
+
       default:
-        reply(Arahan / tidak dikenali. Taip /help untuk bantuan.)
+        reply(`Arahan /${name} tidak dikenali. Taip /help untuk senarai arahan.`)
     }
-  }
-
-  pairingCodeFor(platform, chatId) {
-    return '000000'
-  }
-
-  approveByCode(code) {
-    return { ok: true }
   }
 
   async start() {
@@ -182,9 +302,9 @@ class ChannelGateway {
       try {
         await telegramBot.start(this)
         this.channels.push(telegramBot)
-        console.log([Channels] Telegram bot @ started)
+        console.log(`[Channels] Telegram bot @${telegramBot.me?.username || 'unknown'} started`)
       } catch (e) {
-        console.warn([Channels] Telegram failed to start: )
+        console.warn(`[Channels] Telegram failed to start: ${e.message}`)
       }
     }
 
@@ -192,9 +312,9 @@ class ChannelGateway {
       try {
         await discordBot.start(this)
         this.channels.push(discordBot)
-        console.log([Channels] Discord bot  started)
+        console.log(`[Channels] Discord bot ${discordBot.client?.user?.tag || 'unknown'} started`)
       } catch (e) {
-        console.warn([Channels] Discord failed to start: )
+        console.warn(`[Channels] Discord failed to start: ${e.message}`)
       }
     }
   }

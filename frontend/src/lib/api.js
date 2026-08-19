@@ -130,6 +130,11 @@ export const api = {
   kaliServiceAction: (service, action) => apiFetch('/api/kali/service', { method: 'POST', body: { service, action } }),
   kaliTools: () => apiFetch('/api/kali/tools'),
   kaliToolsInstall: () => apiFetch('/api/kali/tools/install', { method: 'POST' }),
+
+  // ── Telegram & Channels Pairing ──
+  telegramPairing: () => apiFetch('/api/channels/me'),
+  pairTelegram: (code) => apiFetch('/api/channels/pair', { method: 'POST', body: { code } }),
+  unpairTelegram: () => apiFetch('/api/channels/unpair', { method: 'POST' }),
 }
 
 export default api
