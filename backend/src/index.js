@@ -1968,23 +1968,13 @@ app.post('/api/channels/pair', requireAuth, (req, res) => {
     // Send immediate confirmation on Telegram
     import('./channels/telegram.js').then(({ telegramBot }) => {
       telegramBot.sendTo(pending.chat_id,
-        `🎉 *Akaun Berjaya Disambungkan!*
-
-` +
-        `Disambungkan ke akaun SentinelAI: *${req.user.username || req.user.email}* (${req.user.role?.toUpperCase() || 'CLIENT'})
-
-` +
-        `Anda kini boleh menggunakan arahan berikut secara terus:
-` +
-        `• \`/scans\` — Senarai imbasan akaun anda
-` +
-        `• \`/status\` — Semak status semasa sistem
-` +
-        `• \`/scan <url>\` — Lancarkan imbasan pentest baharu
-` +
-        `• \`/help\` — Senarai semua arahan
-
-` +
+        `🎉 *Akaun Berjaya Disambungkan!*\n\n` +
+        `Disambungkan ke akaun SentinelAI: *${req.user.username || req.user.email}* (${req.user.role?.toUpperCase() || 'CLIENT'})\n\n` +
+        `Anda kini boleh menggunakan arahan berikut secara terus:\n` +
+        `• \`/scans\` — Senarai imbasan akaun anda\n` +
+        `• \`/status\` — Semak status semasa sistem\n` +
+        `• \`/scan <url>\` — Lancarkan imbasan pentest baharu\n` +
+        `• \`/help\` — Senarai semua arahan\n\n` +
         `🌐 Portal: https://sentinelai.studio`
       ).catch(() => {})
     }).catch(() => {})
