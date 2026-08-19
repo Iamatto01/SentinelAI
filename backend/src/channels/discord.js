@@ -3,12 +3,6 @@ import { config } from '../config.js'
 /**
  * Discord bot — zero-dependency implementation using Discord's official
  * REST API + Gateway WebSocket (no discord.js needed).
- *
- * Setup (Discord Developer Portal):
- *   1. New Application → Bot → Reset Token → put in .env DISCORD_BOT_TOKEN
- *   2. Enable "Message Content Intent" under Bot → Privileged Gateway Intents
- *   3. OAuth2 → URL Generator: scopes=bot, permissions=Send Messages,
- *      Read Message History → open the URL to invite the bot to a server.
  */
 
 const API_BASE = 'https://discord.com/api/v10'
@@ -20,8 +14,7 @@ class DiscordBot {
     this.running = false
     this.ws = null
     this.applicationId = null
-    /** channelIds that sent /start and await approval */
-    this.pending = []
+    this.clientUsername = null
     this.heartbeatTimer = null
     this.lastSeq = null
     this.sessionId = null
@@ -30,8 +23,8 @@ class DiscordBot {
 
   async start(gateway) {
     this.gateway = gateway
-    const token = config.channels.discord.token
-    // Fetch bot user + gateway URL in parallel.
+    const token = config.channels?.discord?.token
+    if (!token) return
     const [meRes, gwRes] = await Promise.all([
       fetch(`${API_BASE}/users/@me`, { headers: { authorization: `Bot ${token}` } }),
       fetch(`${API_BASE}/gateway/bot`, { headers: { authorization: `Bot ${token}` } }),
@@ -41,6 +34,7 @@ class DiscordBot {
     if (!gwRes.ok) throw new Error(`Discord gateway fetch failed (${gwRes.status})`)
     const gw = await gwRes.json()
     this.applicationId = me.id
+    this.clientUsername = me.username
     this.running = true
     this.connectWs(gw.url)
   }
@@ -50,7 +44,7 @@ class DiscordBot {
     this.ws.onmessage = (ev) => this.onGatewayMessage(JSON.parse(ev.data))
     this.ws.onclose = () => {
       this.stopHeartbeat()
-      if (this.running) setTimeout(() => this.connectWs(this.resumeUrl || url), 3000) // reconnect/resume
+      if (this.running) setTimeout(() => this.connectWs(this.resumeUrl || url), 3000)
     }
   }
 
@@ -58,7 +52,7 @@ class DiscordBot {
     const { op, t, d, s } = msg
     if (s) this.lastSeq = s
 
-    if (op === 10) { // HELLO — start heartbeating, then IDENTIFY/RESUME
+    if (op === 10) {
       const interval = d.heartbeat_interval
       this.startHeartbeat(interval)
       if (this.sessionId) {
@@ -76,7 +70,7 @@ class DiscordBot {
     } else if (op === 0 && t === 'READY') {
       this.sessionId = d.session_id
       this.resumeUrl = d.resume_gateway_url
-      console.log(`[Channels] Discord gateway ready as @${d.user.username}`)
+      console.log(`[Channels] Discord gateway ready as @${d.user.username} (ID: ${this.applicationId})`)
     } else if (op === 0 && t === 'MESSAGE_CREATE') {
       // 1. Ignore messages from ANY bot (including Sentinel MLBB, GitHub bot, or itself)
       if (d.author?.bot || d.author?.id === this.applicationId || !d.content) return
@@ -88,7 +82,7 @@ class DiscordBot {
       const isDirectCommand = rawContent.startsWith('/') || rawContent.startsWith('!')
 
       // 2. In server/guild channels, ONLY respond if the message starts with / or explicitly mentions THIS bot.
-      // If user is chatting normally or mentioning another bot (@Sentinel MLBB), completely ignore it!
+      // If user is chatting normally or mentioning another bot (@Sentinel MLBB), ignore it completely!
       if (!isDirectCommand && !isMentioned && d.guild_id) {
         return
       }
@@ -96,10 +90,6 @@ class DiscordBot {
       let cleanText = rawContent
       if (isMentioned) {
         cleanText = cleanText.replace(new RegExp(`<@!?${this.applicationId}>`, 'g'), '').trim()
-        if (!cleanText.startsWith('/') && !cleanText.startsWith('!')) cleanText = `/${cleanText}`
-      }
-      if (cleanText.startsWith('!')) {
-        cleanText = `/${cleanText.slice(1)}`
       }
 
       const channelId = d.channel_id
@@ -109,9 +99,9 @@ class DiscordBot {
       }
 
       this.gateway.handleCommand('discord', channelId, cleanText, (reply) => this.sendTo(channelId, reply), senderInfo).catch(() => { })
-    } else if (op === 7) { // RECONNECT requested
+    } else if (op === 7) {
       this.ws?.close()
-    } else if (op === 9) { // Invalid session — fresh IDENTIFY
+    } else if (op === 9) {
       this.sessionId = null
       setTimeout(() => this.ws?.close(), 2000)
     }
@@ -127,17 +117,15 @@ class DiscordBot {
   sendWs(obj) { try { this.ws?.send(JSON.stringify(obj)) } catch { } }
 
   async sendTo(channelId, text) {
-    // Discord message limit is 2000 chars — split if needed.
     for (const chunk of String(text).match(/[\s\S]{1,1900}(\s|$)/g) || [String(text)]) {
       await fetch(`${API_BASE}/channels/${channelId}/messages`, {
         method: 'POST',
-        headers: { authorization: `Bot ${config.channels.discord.token}`, 'content-type': 'application/json' },
+        headers: { authorization: `Bot ${config.channels?.discord?.token}`, 'content-type': 'application/json' },
         body: JSON.stringify({ content: chunk }),
       }).catch(e => console.warn(`[Discord] send failed: ${e.message}`))
     }
   }
 
-  /** Gateway broadcast — send to every approved channel. */
   send(text) {
     const targets = this.gateway.listApproved().filter(a => a.platform === 'discord').map(a => a.id.split(':')[1])
     return Promise.all(targets.map(id => this.sendTo(id, text)))
