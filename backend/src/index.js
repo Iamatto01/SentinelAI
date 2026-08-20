@@ -156,25 +156,35 @@ function visibleProjectIds(user) {
   if (user.projectId) return [user.projectId]
   const userEmail = (user.email || '').toLowerCase()
   const username = (user.username || '').toLowerCase()
-  const allProjs = db.all(`SELECT id, client, name FROM projects`)
+  const allProjs = db.all(`SELECT id, client, name, user_id FROM projects`)
   const ids = allProjs
     .filter((p) => {
+      if (p.user_id && p.user_id === user.id) return true
       const c = (p.client || '').toLowerCase()
       const n = (p.name || '').toLowerCase()
-      return (userEmail && c.includes(userEmail)) || (username && c.includes(username))
+      return (userEmail && c.includes(userEmail)) || (username && c.includes(username)) ||
+             (userEmail && n.includes(userEmail)) || (username && n.includes(username))
     })
     .map((p) => p.id)
   return ids.length ? ids : []
 }
 
-/** Guard a scan-scoped request: 404 unless the scan belongs to a project the user may see. */
+/** Guard a scan-scoped request: 404 unless the scan belongs to the client or their project. */
 function requireScanAccess(req, res, next) {
-  const allowed = visibleProjectIds(req.user)
-  if (allowed === null) return next()
-  const scan = db.get(`SELECT id, project_id FROM scans WHERE id = ?`, req.params.id || req.params.scanId || req.body?.scanId)
+  if (req.user?.role !== 'client') return next()
+  const scanId = req.params.id || req.params.scanId || req.body?.scanId
+  const scan = db.get(`SELECT id, project_id, user_id, client FROM scans WHERE id = ?`, scanId)
   if (!scan) return res.status(404).json({ error: 'not found' })
-  if (!scan.project_id || !allowed.includes(scan.project_id)) return res.status(404).json({ error: 'not found' })
-  next()
+  
+  // 1. If scan was created directly by this client
+  if (scan.user_id && scan.user_id === req.user.id) return next()
+  if (scan.client && (scan.client.toLowerCase() === (req.user.username || '').toLowerCase() || scan.client.toLowerCase() === (req.user.email || '').toLowerCase())) return next()
+
+  // 2. If scan belongs to an authorized client project
+  const allowed = visibleProjectIds(req.user)
+  if (allowed && scan.project_id && allowed.includes(scan.project_id)) return next()
+
+  return res.status(404).json({ error: 'not found' })
 }
 
 /** Persist the exact launch configuration of a scan so it can be re-run later. */
@@ -603,29 +613,41 @@ app.get('/api/scans', requireAuth, (req, res) => {
     if (req.user?.role === 'client') {
       const userEmail = (req.user.email || '').toLowerCase()
       const username = (req.user.username || '').toLowerCase()
+      const userId = req.user.id
       const userProjId = req.user.projectId
+
       const allProjs = db.all(`SELECT * FROM projects`)
       const matchProjs = allProjs.filter((p) => {
         if (userProjId && p.id === userProjId) return true
+        if (p.user_id && p.user_id === userId) return true
         const c = (p.client || '').toLowerCase()
         const n = (p.name || '').toLowerCase()
         return (userEmail && c.includes(userEmail)) || (username && c.includes(username)) ||
                (userEmail && n.includes(userEmail)) || (username && n.includes(username))
       })
       const projIds = matchProjs.map(p => p.id)
+
+      let scans = []
       if (projIds.length > 0) {
         const placeholders = projIds.map(() => '?').join(',')
-        const scans = db.all(`
+        scans = db.all(`
           SELECT s.*, (SELECT COUNT(*) FROM findings f WHERE f.scan_id = s.id) AS findings_count
-          FROM scans s WHERE s.project_id IN (${placeholders}) OR s.project_id IS NULL OR s.project_id = '' ORDER BY s.created_at DESC LIMIT 200
-        `, ...projIds)
-        return res.json(scans || [])
+          FROM scans s 
+          WHERE s.project_id IN (${placeholders}) 
+             OR (s.user_id IS NOT NULL AND s.user_id = ?) 
+             OR (s.client IS NOT NULL AND (LOWER(s.client) = ? OR LOWER(s.client) = ?))
+          ORDER BY s.created_at DESC LIMIT 200
+        `, ...projIds, userId, username, userEmail)
+      } else {
+        scans = db.all(`
+          SELECT s.*, (SELECT COUNT(*) FROM findings f WHERE f.scan_id = s.id) AS findings_count
+          FROM scans s 
+          WHERE (s.user_id IS NOT NULL AND s.user_id = ?) 
+             OR (s.client IS NOT NULL AND (LOWER(s.client) = ? OR LOWER(s.client) = ?))
+          ORDER BY s.created_at DESC LIMIT 200
+        `, userId, username, userEmail)
       }
-      const standalone = db.all(`
-        SELECT s.*, (SELECT COUNT(*) FROM findings f WHERE f.scan_id = s.id) AS findings_count
-        FROM scans s WHERE s.project_id IS NULL OR s.project_id = '' ORDER BY s.created_at DESC LIMIT 200
-      `)
-      return res.json(standalone || [])
+      return res.json(scans || [])
     }
     const allScans = db.all(`
       SELECT s.*, (SELECT COUNT(*) FROM findings f WHERE f.scan_id = s.id) AS findings_count
@@ -698,10 +720,10 @@ app.post('/api/scans', requireAuth, async (req, res) => {
 
   const id = `scan_${randomUUID()}`
   const now = new Date().toISOString()
-  db.run(`INSERT INTO scans (id, project_id, target, target_type, mode, status, template, modules, progress, created_at, started_at)
-          VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+  db.run(`INSERT INTO scans (id, project_id, target, target_type, mode, status, template, modules, progress, created_at, started_at, user_id, client)
+          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     id, projectId, target || '(whitebox)', targetType, mode, 'running', template,
-    JSON.stringify(modules), 0, now, now)
+    JSON.stringify(modules), 0, now, now, req.user?.id || null, req.user?.username || req.user?.email || null)
   const scan = db.get(`SELECT * FROM scans WHERE id = ?`, id)
   audit(req.user.username, 'scan:start', `${mode} → ${target || 'codebase'}`)
   saveScanConfig(id, { target, targetType, mode, template, modules, objective, maxTools, files, language, focus, verify, depth })
@@ -1919,13 +1941,61 @@ app.get('/api/billing/history', requireAuth, (req, res) => {
 
 // ── Dashboard ────────────────────────────────────────────────────────────────
 app.get('/api/dashboard', requireAuth, (req, res) => {
-  const scans = db.all(`SELECT * FROM scans ORDER BY created_at DESC`)
-  const findings = db.all(`SELECT severity FROM findings`)
+  let scans = []
+  let projsCount = 0
+
+  if (req.user?.role === 'client') {
+    const userEmail = (req.user.email || '').toLowerCase()
+    const username = (req.user.username || '').toLowerCase()
+    const userId = req.user.id
+    const userProjId = req.user.projectId
+
+    const allProjs = db.all(`SELECT * FROM projects`)
+    const matchProjs = allProjs.filter((p) => {
+      if (userProjId && p.id === userProjId) return true
+      if (p.user_id && p.user_id === userId) return true
+      const c = (p.client || '').toLowerCase()
+      const n = (p.name || '').toLowerCase()
+      return (userEmail && c.includes(userEmail)) || (username && c.includes(username)) ||
+             (userEmail && n.includes(userEmail)) || (username && n.includes(username))
+    })
+    projsCount = matchProjs.length
+    const projIds = matchProjs.map(p => p.id)
+
+    if (projIds.length > 0) {
+      const placeholders = projIds.map(() => '?').join(',')
+      scans = db.all(`
+        SELECT * FROM scans 
+        WHERE project_id IN (${placeholders}) 
+           OR (user_id IS NOT NULL AND user_id = ?) 
+           OR (client IS NOT NULL AND (LOWER(client) = ? OR LOWER(client) = ?))
+        ORDER BY created_at DESC
+      `, ...projIds, userId, username, userEmail)
+    } else {
+      scans = db.all(`
+        SELECT * FROM scans 
+        WHERE (user_id IS NOT NULL AND user_id = ?) 
+           OR (client IS NOT NULL AND (LOWER(client) = ? OR LOWER(client) = ?))
+        ORDER BY created_at DESC
+      `, userId, username, userEmail)
+    }
+  } else {
+    scans = db.all(`SELECT * FROM scans ORDER BY created_at DESC`)
+    projsCount = db.get(`SELECT COUNT(*) c FROM projects`)?.c || 0
+  }
+
+  const scanIds = scans.map(s => s.id)
+  let findings = []
+  if (scanIds.length > 0) {
+    const placeholders = scanIds.map(() => '?').join(',')
+    findings = db.all(`SELECT severity FROM findings WHERE scan_id IN (${placeholders})`, ...scanIds)
+  }
+
   const counts = { critical: 0, high: 0, medium: 0, low: 0, info: 0 }
   for (const f of findings) counts[f.severity] = (counts[f.severity] || 0) + 1
   const recent = scans.slice(0, 8)
   res.json({
-    totals: { projects: db.get(`SELECT COUNT(*) c FROM projects`).c, scans: scans.length, findings: findings.length },
+    totals: { projects: projsCount, scans: scans.length, findings: findings.length },
     severity: counts,
     recentScans: recent,
     runningScans: scans.filter(s => s.status === 'running').length,

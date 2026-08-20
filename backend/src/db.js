@@ -57,6 +57,8 @@ function migrate(d) {
   try { d.exec("ALTER TABLE projects ADD COLUMN cover TEXT") } catch {}
   try { d.exec("ALTER TABLE projects ADD COLUMN client_id TEXT") } catch {}
   try { d.exec("ALTER TABLE projects ADD COLUMN user_id TEXT") } catch {}
+  try { d.exec("ALTER TABLE scans ADD COLUMN user_id TEXT") } catch {}
+  try { d.exec("ALTER TABLE scans ADD COLUMN client TEXT") } catch {}
   try { d.exec("ALTER TABLE scans ADD COLUMN token_usage TEXT DEFAULT '{}'") } catch {}
 
   d.exec(`

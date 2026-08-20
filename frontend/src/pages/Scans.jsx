@@ -406,20 +406,24 @@ export default function Scans() {
 
         <div className="flex flex-wrap items-center gap-2.5">
           <button
+            type="button"
             onClick={() => setShowFolderModal(true)}
-            className="btn-ghost text-xs border-cyan-500/30 text-cyan-300 hover:border-cyan-400 flex items-center gap-1.5"
+            className="btn-secondary text-xs py-2 px-3.5 flex items-center gap-2 border-cyan-400/40 bg-cyan-500/10 text-cyan-300 hover:bg-cyan-500/20 hover:border-cyan-300 font-bold shadow-md transition-all cursor-pointer"
           >
-            <FolderPlus size={14} /> Add New Folder
+            <FolderPlus size={16} className="text-cyan-400" />
+            <span>+ Add New Folder</span>
           </button>
 
           <button
+            type="button"
             onClick={() => handleOpenScanModalForFolder('')}
-            className="btn-primary text-xs py-2 px-3.5 shadow-glow flex items-center gap-1.5"
+            className="btn-primary text-xs py-2 px-3.5 shadow-glow flex items-center gap-1.5 font-bold cursor-pointer"
           >
-            <Plus size={14} /> New Assessment
+            <Plus size={15} />
+            <span>+ New Assessment</span>
           </button>
 
-          <button onClick={fetchData} className="btn-ghost text-xs p-2.5" title="Refresh Matrix">
+          <button onClick={fetchData} className="btn-ghost text-xs p-2.5 cursor-pointer" title="Refresh Matrix">
             <RefreshCw size={14} />
           </button>
         </div>
@@ -440,17 +444,26 @@ export default function Scans() {
 
         <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
           {viewMode === 'folder' && (
-            <div className="flex items-center gap-1.5 mr-2">
+            <div className="flex items-center gap-2 mr-2">
+              <button
+                type="button"
+                onClick={() => setShowFolderModal(true)}
+                className="text-xs font-bold text-cyan-300 hover:text-cyan-200 bg-cyan-500/10 border border-cyan-400/30 rounded-lg px-2.5 py-1 flex items-center gap-1 transition-all"
+              >
+                <FolderPlus size={13} />
+                <span>+ Folder</span>
+              </button>
+              <span className="text-slate-600 text-xs">|</span>
               <button
                 onClick={expandAllFolders}
-                className="text-[11px] font-semibold text-slate-400 hover:text-cyan-300 transition-colors px-2 py-1"
+                className="text-[11px] font-semibold text-slate-400 hover:text-cyan-300 transition-colors px-1.5 py-1"
               >
                 Expand All
               </button>
               <span className="text-slate-600 text-xs">•</span>
               <button
                 onClick={collapseAllFolders}
-                className="text-[11px] font-semibold text-slate-400 hover:text-cyan-300 transition-colors px-2 py-1"
+                className="text-[11px] font-semibold text-slate-400 hover:text-cyan-300 transition-colors px-1.5 py-1"
               >
                 Collapse All
               </button>
