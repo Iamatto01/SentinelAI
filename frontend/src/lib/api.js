@@ -134,7 +134,9 @@ export const api = {
   // ── Telegram & Channels Pairing ──
   telegramPairing: () => apiFetch('/api/channels/me'),
   pairTelegram: (code) => apiFetch('/api/channels/pair', { method: 'POST', body: { code } }),
-  unpairTelegram: () => apiFetch('/api/channels/unpair', { method: 'POST' }),
+  unpairChannel: (platform) => apiFetch('/api/channels/unpair', { method: 'POST', body: { platform } }),
+  unpairTelegram: () => apiFetch('/api/channels/unpair', { method: 'POST', body: { platform: 'telegram' } }),
+  unpairDiscord: () => apiFetch('/api/channels/unpair', { method: 'POST', body: { platform: 'discord' } }),
 }
 
 export default api

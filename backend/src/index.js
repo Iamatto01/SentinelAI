@@ -1935,16 +1935,23 @@ app.get('/api/dashboard', requireAuth, (req, res) => {
 // ── Channel gateway (Telegram/Discord bots) ─────────────────────────────────
 app.get('/api/channels/me', requireAuth, (req, res) => {
   try {
-    const pairing = db.get("SELECT * FROM telegram_pairings WHERE user_id = ? AND status = 'approved' ORDER BY approved_at DESC LIMIT 1", req.user.id)
+    const telePairing = db.get("SELECT * FROM telegram_pairings WHERE user_id = ? AND platform = 'telegram' AND status = 'approved' ORDER BY approved_at DESC LIMIT 1", req.user.id)
+    const discordPairing = db.get("SELECT * FROM telegram_pairings WHERE user_id = ? AND platform = 'discord' AND status = 'approved' ORDER BY approved_at DESC LIMIT 1", req.user.id)
     res.json({
-      paired: !!pairing,
-      pairing: pairing ? {
-        chatId: pairing.chat_id,
-        senderName: pairing.sender_name,
-        approvedAt: pairing.approved_at,
-        platform: pairing.platform
-      } : null,
-      botUsername: 'sentinelai_telebot'
+      telegram: {
+        paired: !!telePairing,
+        chatId: telePairing?.chat_id,
+        senderName: telePairing?.sender_name,
+        approvedAt: telePairing?.approved_at,
+        botUsername: 'sentinelai_telebot'
+      },
+      discord: {
+        paired: !!discordPairing,
+        chatId: discordPairing?.chat_id,
+        senderName: discordPairing?.sender_name,
+        approvedAt: discordPairing?.approved_at,
+        botName: 'Sentinel AI'
+      }
     })
   } catch (e) {
     res.status(500).json({ error: e.message })
@@ -1954,34 +1961,44 @@ app.get('/api/channels/me', requireAuth, (req, res) => {
 app.post('/api/channels/pair', requireAuth, (req, res) => {
   try {
     const { code } = req.body || {}
-    if (!code) return res.status(400).json({ error: 'Sila masukkan kod 6-digit dari Telegram' })
+    if (!code) return res.status(400).json({ error: 'Sila masukkan kod 6-digit dari Telegram atau Discord' })
     const trimmedCode = String(code).trim()
-    const pending = db.get("SELECT * FROM telegram_pairings WHERE platform = 'telegram' AND pairing_code = ? AND status = 'pending'", trimmedCode)
+    const pending = db.get("SELECT * FROM telegram_pairings WHERE pairing_code = ? AND status = 'pending'", trimmedCode)
     if (!pending) {
-      return res.status(404).json({ error: 'Kod pairing tidak sah atau telah tamat. Sila taip /start di @sentinelai_telebot untuk mendapatkan kod baharu.' })
+      return res.status(404).json({ error: 'Kod pairing tidak sah atau telah tamat. Sila taip /start di Telegram (@sentinelai_telebot) atau di Discord (@Sentinel AI /start) untuk mendapatkan kod baharu.' })
     }
     const now = new Date().toISOString()
-    db.run("DELETE FROM telegram_pairings WHERE user_id = ?", req.user.id)
+    const platform = pending.platform || 'telegram'
+    const platformLabel = platform === 'discord' ? 'Discord' : 'Telegram'
+
+    // Unlink old pairing of this user on this specific platform
+    db.run("DELETE FROM telegram_pairings WHERE user_id = ? AND platform = ?", req.user.id, platform)
     db.run("UPDATE telegram_pairings SET user_id = ?, username = ?, status = 'approved', approved_at = ? WHERE id = ?",
       req.user.id, req.user.username || req.user.email, now, pending.id)
     
-    // Send immediate confirmation on Telegram
-    import('./channels/telegram.js').then(({ telegramBot }) => {
-      telegramBot.sendTo(pending.chat_id,
-        `🎉 *Akaun Berjaya Disambungkan!*\n\n` +
-        `Disambungkan ke akaun SentinelAI: *${req.user.username || req.user.email}* (${req.user.role?.toUpperCase() || 'CLIENT'})\n\n` +
-        `Anda kini boleh menggunakan arahan berikut secara terus:\n` +
-        `• \`/scans\` — Senarai imbasan akaun anda\n` +
-        `• \`/status\` — Semak status semasa sistem\n` +
-        `• \`/scan <url>\` — Lancarkan imbasan pentest baharu\n` +
-        `• \`/help\` — Senarai semua arahan\n\n` +
-        `🌐 Portal: https://sentinelai.studio`
-      ).catch(() => {})
-    }).catch(() => {})
+    const confirmMsg = `🎉 *Akaun Berjaya Disambungkan!*\n\n` +
+      `Disambungkan ke akaun SentinelAI: *${req.user.username || req.user.email}* (${req.user.role?.toUpperCase() || 'CLIENT'})\n\n` +
+      `Anda kini boleh menggunakan arahan berikut secara terus:\n` +
+      `• \`/scans\` — Senarai imbasan akaun anda\n` +
+      `• \`/status\` — Semak status semasa sistem\n` +
+      `• \`/scan <url>\` — Lancarkan imbasan pentest baharu\n` +
+      `• \`/help\` — Senarai semua arahan\n\n` +
+      `🌐 Portal: https://sentinelai.studio`
+
+    if (platform === 'discord') {
+      import('./channels/discord.js').then(({ discordBot }) => {
+        discordBot.sendTo(pending.chat_id, confirmMsg).catch(() => {})
+      }).catch(() => {})
+    } else {
+      import('./channels/telegram.js').then(({ telegramBot }) => {
+        telegramBot.sendTo(pending.chat_id, confirmMsg).catch(() => {})
+      }).catch(() => {})
+    }
 
     res.json({
       ok: true,
-      message: 'Akaun Telegram berjaya dipautkan!',
+      message: `Akaun ${platformLabel} berjaya dipautkan!`,
+      platform,
       chatId: pending.chat_id,
       senderName: pending.sender_name
     })
@@ -1992,8 +2009,13 @@ app.post('/api/channels/pair', requireAuth, (req, res) => {
 
 app.post('/api/channels/unpair', requireAuth, (req, res) => {
   try {
-    db.run("DELETE FROM telegram_pairings WHERE user_id = ?", req.user.id)
-    res.json({ ok: true, message: 'Sambungan Telegram telah diputuskan.' })
+    const { platform } = req.body || {}
+    if (platform) {
+      db.run("DELETE FROM telegram_pairings WHERE user_id = ? AND platform = ?", req.user.id, String(platform))
+    } else {
+      db.run("DELETE FROM telegram_pairings WHERE user_id = ?", req.user.id)
+    }
+    res.json({ ok: true, message: 'Sambungan telah diputuskan.' })
   } catch (e) {
     res.status(500).json({ error: e.message })
   }
