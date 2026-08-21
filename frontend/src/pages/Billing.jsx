@@ -230,6 +230,11 @@ export default function Billing() {
                   <Star size={10} className="fill-slate-950" /> Most Popular
                 </div>
               )}
+              {plan.id === 'enterprise' && (
+                <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-0.5 rounded-full bg-gradient-to-r from-amber-500 via-purple-500 to-pink-500 text-slate-950 font-extrabold text-[10px] tracking-wider uppercase shadow-lg shadow-amber-500/30 flex items-center gap-1">
+                  <Sparkles size={10} className="fill-slate-950 text-slate-950" /> VIP Security Advisory Included
+                </div>
+              )}
 
               <div className="space-y-6">
                 <div>

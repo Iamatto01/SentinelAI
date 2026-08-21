@@ -2002,6 +2002,95 @@ app.get('/api/dashboard', requireAuth, (req, res) => {
   })
 })
 
+// ── Professional Security Consultation & Advisory ──────────────────────────
+app.get('/api/consultations', requireAuth, (req, res) => {
+  try {
+    const isStaff = req.user?.role !== 'client'
+    const requests = isStaff
+      ? db.all(`SELECT * FROM consultation_requests ORDER BY created_at DESC`)
+      : db.all(`SELECT * FROM consultation_requests WHERE user_id = ? ORDER BY created_at DESC`, req.user.id)
+    res.json({ consultations: requests || [] })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+app.post('/api/consultations', requireAuth, (req, res) => {
+  try {
+    const {
+      serviceType,
+      consultantName = 'Any Specialist',
+      scanId = null,
+      preferredDate,
+      preferredTime,
+      channel = 'Google Meet',
+      notes = ''
+    } = req.body || {}
+
+    if (!serviceType || !serviceType.trim()) {
+      return res.status(400).json({ error: 'Service type is required' })
+    }
+
+    const sub = getUserSubscription(req.user.id)
+    const planTier = sub?.plan_id || 'none'
+    const id = `cons_${randomUUID().slice(0, 16)}`
+    const now = new Date().toISOString()
+
+    db.run(
+      `INSERT INTO consultation_requests (
+        id, user_id, username, email, service_type, consultant_name, scan_id,
+        preferred_date, preferred_time, channel, notes, plan_tier, status,
+        created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)`,
+      id,
+      req.user.id,
+      req.user.username || 'client',
+      req.user.email || '',
+      serviceType.trim(),
+      consultantName.trim(),
+      scanId || null,
+      preferredDate || null,
+      preferredTime || null,
+      channel || 'Google Meet',
+      notes.trim(),
+      planTier,
+      now,
+      now
+    )
+
+    audit(req.user.username, 'consultation:request', `${serviceType} with ${consultantName}`)
+    const created = db.get(`SELECT * FROM consultation_requests WHERE id = ?`, id)
+    res.status(201).json({ success: true, consultation: created })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+app.put('/api/consultations/:id', requireAuth, requireStaff, (req, res) => {
+  try {
+    const existing = db.get(`SELECT * FROM consultation_requests WHERE id = ?`, req.params.id)
+    if (!existing) return res.status(404).json({ error: 'Consultation request not found' })
+
+    const { status = existing.status, meetingLink = existing.meeting_link, adminNotes = existing.admin_notes } = req.body || {}
+    const now = new Date().toISOString()
+
+    db.run(
+      `UPDATE consultation_requests SET status = ?, meeting_link = ?, admin_notes = ?, updated_at = ? WHERE id = ?`,
+      status,
+      meetingLink,
+      adminNotes,
+      now,
+      req.params.id
+    )
+
+    audit(req.user.username, 'consultation:update', `${req.params.id} -> ${status}`)
+    const updated = db.get(`SELECT * FROM consultation_requests WHERE id = ?`, req.params.id)
+    res.json({ success: true, consultation: updated })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
 // ── Channel gateway (Telegram/Discord bots) ─────────────────────────────────
 app.get('/api/channels/me', requireAuth, (req, res) => {
   try {

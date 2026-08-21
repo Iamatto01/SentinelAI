@@ -4,7 +4,7 @@ import {
   LayoutDashboard, Radar, Bug, FolderKanban, Plug, LogOut, Shield, Plus,
   Hexagon, Activity, Settings as SettingsIcon, Crosshair, Menu, X,
   ChevronLeft, ChevronRight, Search, Bell, Sparkles, GitBranch, CreditCard,
-  Users, AlertTriangle, ArrowRight, Lock, CheckCircle2, Zap, Terminal
+  Users, AlertTriangle, UserCheck, Briefcase, Award, ArrowRight, Lock, CheckCircle2, Zap, Terminal
 } from 'lucide-react'
 import { useAuth } from '../lib/AuthContext.jsx'
 import { api } from '../lib/api.js'
@@ -52,6 +52,7 @@ export default function Shell() {
     { to: '/app/exploits', label: 'Exploits', icon: Crosshair },
     { to: '/app/findings', label: 'Findings', icon: Bug },
     { to: '/app/monitoring', label: 'Monitoring', icon: Activity },
+    { to: '/app/consultants', label: 'Consultations', icon: UserCheck },
     { to: '/app/integrations', label: 'Integrations', icon: Plug },
     { to: '/app/billing', label: 'Billing & Plans', icon: CreditCard },
     { to: '/app/settings', label: 'Settings', icon: SettingsIcon },
@@ -62,6 +63,7 @@ export default function Shell() {
     { to: '/app/scans', label: 'My Scans', icon: Radar },
     { to: '/app/github', label: 'GitHub Automation', icon: GitBranch },
     { to: '/app/findings', label: 'Vulnerability Findings', icon: Bug },
+    { to: '/app/consultants', label: 'Hire Security Expert', icon: UserCheck },
     { to: '/app/billing', label: 'Billing & Quota', icon: CreditCard },
     { to: '/app/settings', label: 'Settings', icon: SettingsIcon },
   ]
@@ -78,7 +80,7 @@ export default function Shell() {
     subscription?.plan_id === 'none'
   )
 
-  const isAllowedPathWhenExpired = location.pathname.startsWith('/app/billing') || location.pathname.startsWith('/app/settings')
+  const isAllowedPathWhenExpired = location.pathname.startsWith('/app/billing') || location.pathname.startsWith('/app/settings') || location.pathname.startsWith('/app/consultants')
 
   const handleScanButtonClick = () => {
     if (isSubscriptionExpired) {

@@ -33,13 +33,16 @@ export const PLANS = {
     currency: 'USD',
     scanQuota: 9999,
     maxRepos: 999,
+    consultationIncluded: true,
+    consultationHours: 4,
     features: [
       'Unlimited GitHub Repositories',
       'Unlimited AI Code Audits',
+      '👨‍💼 1-on-1 Certified Security Consultant & Advisory (Guided Remediation & Virtual CISO)',
       'GitHub PR Bot Inline Review',
       'Real-time Slack / Discord Webhooks',
       'Executive White-label PDF Reports',
-      'Dedicated SLA & 24/7 Support'
+      'Dedicated SLA & 24/7 VIP Support'
     ],
     popular: false,
   },

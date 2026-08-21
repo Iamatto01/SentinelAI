@@ -102,6 +102,28 @@ function migrate(d) {
     updated_at TEXT NOT NULL
   );
 
+  CREATE TABLE IF NOT EXISTS consultation_requests (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    username TEXT,
+    email TEXT,
+    service_type TEXT NOT NULL,
+    consultant_name TEXT,
+    scan_id TEXT,
+    preferred_date TEXT,
+    preferred_time TEXT,
+    channel TEXT DEFAULT 'Google Meet',
+    notes TEXT,
+    plan_tier TEXT DEFAULT 'none',
+    status TEXT DEFAULT 'pending',
+    meeting_link TEXT,
+    admin_notes TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_consult_user ON consultation_requests(user_id);
+  CREATE INDEX IF NOT EXISTS idx_consult_status ON consultation_requests(status);
+
   CREATE TABLE IF NOT EXISTS client_credentials (
     id TEXT PRIMARY KEY,
     project_id TEXT NOT NULL,
