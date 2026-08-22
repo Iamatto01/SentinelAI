@@ -53,6 +53,11 @@ export const config = {
     },
     bandelbanget: {
       key: (process.env.BANDELBANGET_API_KEY || '').trim(),
+      backupKey: (process.env.BANDELBANGET_BACKUP_API_KEY || '').trim(),
+      keys: [
+        (process.env.BANDELBANGET_API_KEY || '').trim(),
+        (process.env.BANDELBANGET_BACKUP_API_KEY || '').trim(),
+      ].filter(Boolean),
       baseUrl: (process.env.BANDELBANGET_BASE_URL || 'https://bandelbanget.xyz/v1').trim(),
       model: (process.env.BANDELBANGET_MODEL || 'deepseek-v4-pro').trim(),
     },

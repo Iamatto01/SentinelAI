@@ -283,33 +283,46 @@ export class LLMClient {
     if (options.system) messages.push({ role: 'system', content: options.system })
     messages.push({ role: 'user', content: prompt })
 
-    const ctrl = new AbortController()
-    const timer = setTimeout(() => ctrl.abort(), options.timeoutMs ?? 60000)
-    try {
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${this.bandelbanget.key}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: this.bandelbanget.model || 'deepseek-v4-pro',
-          messages,
-          temperature: options.temperature ?? 0.1,
-          max_tokens: options.maxTokens ?? 8000,
-        }),
-        signal: ctrl.signal,
-      })
-      clearTimeout(timer)
-      if (!res.ok) throw Object.assign(new Error(`Bandelbanget HTTP ${res.status}: ${await res.text()}`), { status: res.status })
-      const data = await res.json()
-      this.#usage(data.usage, this.bandelbanget.model, options.context)
-      return data.choices?.[0]?.message?.content ?? ''
-    } catch (e) {
-      clearTimeout(timer)
-      if (e.name === 'AbortError') throw new Error('Bandelbanget request timed out (60s limit)')
-      throw e
+    const keys = (this.bandelbanget.keys && this.bandelbanget.keys.length > 0)
+      ? this.bandelbanget.keys
+      : [this.bandelbanget.key].filter(Boolean)
+
+    let lastErr = null
+    for (const key of keys) {
+      const ctrl = new AbortController()
+      const timer = setTimeout(() => ctrl.abort(), options.timeoutMs ?? 60000)
+      try {
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${key}`,
+            'Content-Type': 'application/json',
+            'User-Agent': 'Mozilla/5.0 SentinelAI/2.0',
+          },
+          body: JSON.stringify({
+            model: this.bandelbanget.model || 'deepseek-v4-pro',
+            messages,
+            temperature: options.temperature ?? 0.1,
+            max_tokens: options.maxTokens ?? 8000,
+          }),
+          signal: ctrl.signal,
+        })
+        clearTimeout(timer)
+        if (!res.ok) {
+          const errText = await res.text()
+          throw Object.assign(new Error(`Bandelbanget HTTP ${res.status}: ${errText}`), { status: res.status })
+        }
+        const data = await res.json()
+        const text = data.choices?.[0]?.message?.content ?? ''
+        this.#usage(data.usage, this.bandelbanget.model, options.context)
+        if (text.trim().length > 0) return text
+      } catch (e) {
+        clearTimeout(timer)
+        lastErr = e
+        console.warn(`[AI Engine] Bandelbanget key (...${key.slice(-8)}) error: ${e.message}`)
+      }
     }
+    throw lastErr || new Error('All Bandelbanget API keys failed')
   }
 
   async #groq(prompt, options) {
