@@ -6,6 +6,7 @@ import {
 } from 'lucide-react'
 import InspectorLogo from '../components/InspectorLogo.jsx'
 import SystemTree from '../components/SystemTree.jsx'
+import PageTurnTransition from '../components/PageTurnTransition.jsx'
 import './Home.css'
 
 export default function Landing() {
@@ -95,7 +96,9 @@ export default function Landing() {
   ]
 
   return (
-    <div className="at-home min-h-screen relative overflow-x-hidden">
+    <div className="at-home min-h-screen relative overflow-x-hidden page-turn-reveal">
+      {/* ── Realistic Paper Page Turn Reveal on Load (Top-Left to Bottom-Right) ── */}
+      <PageTurnTransition duration={1200} />
       {/* Scroll indicator bar */}
       <div className="at-home__scroll-bar" />
 
