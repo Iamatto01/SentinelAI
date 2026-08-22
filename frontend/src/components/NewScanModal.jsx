@@ -188,32 +188,50 @@ export default function NewScanModal({ onClose, onStarted, initialProjectId = ''
   }
 
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center glass-overlay p-4 overflow-y-auto" onClick={onClose}>
-      <div className="card w-full max-w-2xl max-h-[90vh] overflow-auto glass-in my-auto shadow-2xl" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between border-b border-white/10 px-6 py-4 bg-slate-900/80">
-          <div className="flex items-center gap-2">
-            <div className="p-1.5 rounded-lg bg-cyan-500/20 text-cyan-400">
-              <Zap size={18} />
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 md:p-8 bg-slate-950/85 backdrop-blur-md overflow-y-auto" onClick={onClose}>
+      <div className="relative w-full max-w-4xl max-h-[92vh] flex flex-col rounded-3xl border border-cyan-500/40 bg-slate-900/98 shadow-2xl shadow-cyan-950/80 overflow-hidden text-slate-100 animate-in fade-in zoom-in-95 duration-200 my-auto" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between border-b border-white/10 px-6 sm:px-8 py-5 bg-slate-950/90 shrink-0">
+          <div className="flex items-center gap-3.5">
+            <div className="p-2.5 rounded-2xl bg-gradient-to-br from-cyan-500 to-blue-600 text-slate-950 shadow-lg shadow-cyan-500/30">
+              <Zap size={22} className="stroke-[2.5]" />
             </div>
-            <h2 className="text-lg font-bold text-slate-100">New Security Assessment</h2>
+            <div>
+              <h2 className="text-xl font-black text-white tracking-tight">New Security Assessment</h2>
+              <p className="text-xs text-slate-400 font-medium mt-0.5">Configure automated DAST Blackbox or SAST Whitebox vulnerability audit</p>
+            </div>
           </div>
-          <button onClick={onClose} className="text-slate-500 hover:text-slate-200 cursor-pointer"><X size={20} /></button>
+          <button onClick={onClose} className="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"><X size={20} /></button>
         </div>
 
-        <form onSubmit={submit} className="p-6 space-y-5">
+        <form onSubmit={submit} className="flex-1 overflow-y-auto p-6 sm:p-8 space-y-6 custom-scrollbar">
           {/* Scan Type Mode Switcher */}
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <button type="button" onClick={() => setMode('blackbox')}
-              className={`p-4 rounded-2xl border text-left transition-all duration-200 cursor-pointer ${mode === 'blackbox' ? 'border-cyan-400 bg-cyan-500/15 shadow-glow ring-1 ring-cyan-400' : 'border-white/10 bg-slate-900/60 hover:border-white/20'}`}>
-              <Globe className={mode === 'blackbox' ? 'text-cyan-400' : 'text-slate-500'} size={22} />
-              <p className="mt-2 font-bold text-slate-100">Blackbox Assessment</p>
-              <p className="text-xs text-slate-400">External web & network target via Hexstrike engine</p>
+              className={`p-5 rounded-2xl border text-left transition-all duration-200 cursor-pointer relative overflow-hidden group ${mode === 'blackbox' ? 'border-cyan-400 bg-gradient-to-br from-cyan-950/60 to-slate-900 shadow-xl shadow-cyan-950/50 ring-2 ring-cyan-400/40' : 'border-white/10 bg-slate-950/60 hover:border-white/20 hover:bg-slate-900/60'}`}>
+              <div className="flex items-center justify-between">
+                <div className={`p-2.5 rounded-xl border ${mode === 'blackbox' ? 'bg-cyan-500 text-slate-950 border-cyan-400' : 'bg-slate-900 border-white/10 text-slate-400'}`}>
+                  <Globe size={22} />
+                </div>
+                <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full font-bold uppercase ${mode === 'blackbox' ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-400/30' : 'bg-white/5 text-slate-400'}`}>
+                  DAST Web Engine
+                </span>
+              </div>
+              <p className="mt-3 font-extrabold text-base text-white">Blackbox Assessment</p>
+              <p className="text-xs text-slate-400 mt-1 leading-relaxed">External live web, API & network target scanning via Hexstrike Kali engine</p>
             </button>
+
             <button type="button" onClick={() => setMode('whitebox')}
-              className={`p-4 rounded-2xl border text-left transition-all duration-200 cursor-pointer ${mode === 'whitebox' ? 'border-cyan-400 bg-cyan-500/15 shadow-glow ring-1 ring-cyan-400' : 'border-white/10 bg-slate-900/60 hover:border-white/20'}`}>
-              <FileCode2 className={mode === 'whitebox' ? 'text-cyan-400' : 'text-slate-500'} size={22} />
-              <p className="mt-2 font-bold text-slate-100">Whitebox Code Audit</p>
-              <p className="text-xs text-slate-400">Source code AST audit via Code Auditor specialist agent</p>
+              className={`p-5 rounded-2xl border text-left transition-all duration-200 cursor-pointer relative overflow-hidden group ${mode === 'whitebox' ? 'border-cyan-400 bg-gradient-to-br from-cyan-950/60 to-slate-900 shadow-xl shadow-cyan-950/50 ring-2 ring-cyan-400/40' : 'border-white/10 bg-slate-950/60 hover:border-white/20 hover:bg-slate-900/60'}`}>
+              <div className="flex items-center justify-between">
+                <div className={`p-2.5 rounded-xl border ${mode === 'whitebox' ? 'bg-cyan-500 text-slate-950 border-cyan-400' : 'bg-slate-900 border-white/10 text-slate-400'}`}>
+                  <FileCode2 size={22} />
+                </div>
+                <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full font-bold uppercase ${mode === 'whitebox' ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-400/30' : 'bg-white/5 text-slate-400'}`}>
+                  SAST Code Audit
+                </span>
+              </div>
+              <p className="mt-3 font-extrabold text-base text-white">Whitebox Code Audit</p>
+              <p className="text-xs text-slate-400 mt-1 leading-relaxed">Source code AST audit, static analysis & auto-patching via Code Auditor agent</p>
             </button>
           </div>
 
@@ -337,15 +355,21 @@ export default function NewScanModal({ onClose, onStarted, initialProjectId = ''
 
           {mode === 'blackbox' ? (
             <>
-              <div>
-                <label className="label text-xs font-bold text-slate-200">Target URL / Hostname *</label>
-                <input
-                  className="input text-xs w-full"
-                  placeholder="https://example.com or 192.168.1.10"
-                  value={target}
-                  onChange={(e) => setTarget(e.target.value)}
-                  required
-                />
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-200 flex items-center justify-between">
+                  <span>Target URL / IP Address *</span>
+                  <span className="text-[10px] text-slate-400 font-mono">e.g. https://target.com, http://192.168.1.1</span>
+                </label>
+                <div className="relative">
+                  <input
+                    className="input text-sm w-full !py-3 !pl-10 !pr-4 bg-slate-950/80 border-white/15 focus:border-cyan-400 font-mono text-cyan-300"
+                    placeholder="https://example.com or 192.168.1.10"
+                    value={target}
+                    onChange={(e) => setTarget(e.target.value)}
+                    required
+                  />
+                  <Globe className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500" size={16} />
+                </div>
               </div>
 
               {/* 2 Simplified Objectives */}
@@ -534,17 +558,17 @@ export default function NewScanModal({ onClose, onStarted, initialProjectId = ''
             </div>
           )}
 
-          <div className="flex justify-end gap-2 pt-3 border-t border-white/10">
-            <button type="button" onClick={onClose} className="btn-secondary text-xs py-2 px-4 cursor-pointer">
+          <div className="flex items-center justify-between pt-4 border-t border-white/10 shrink-0">
+            <button type="button" onClick={onClose} className="btn-ghost text-xs py-2.5 px-5 cursor-pointer">
               Cancel
             </button>
             <button
               type="submit"
               disabled={busy}
-              className="btn-primary text-xs py-2 px-5 cursor-pointer shadow-glow bg-gradient-to-r from-cyan-500 to-blue-600"
+              className="btn-primary text-xs py-2.5 px-7 cursor-pointer shadow-lg shadow-cyan-500/30 bg-gradient-to-r from-cyan-500 via-cyan-400 to-blue-600 text-slate-950 font-black hover:scale-105 transition-transform flex items-center gap-2"
             >
-              {busy && <Loader2 size={14} className="animate-spin" />}
-              {busy ? 'Starting Assessment...' : 'Launch Assessment'}
+              {busy ? <Loader2 size={16} className="animate-spin" /> : <Zap size={16} />}
+              <span>{busy ? 'Starting Assessment...' : 'Launch Assessment'}</span>
             </button>
           </div>
         </form>
