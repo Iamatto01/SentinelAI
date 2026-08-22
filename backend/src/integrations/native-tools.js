@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process'
+import fs from 'node:fs'
 import { config } from '../config.js'
 
 /**
@@ -14,29 +15,52 @@ const TIMEOUT_MS = config.hexstrike?.timeoutMs || 600000
 /** Check if a binary exists in PATH. */
 async function which(bin) {
   return new Promise((resolve) => {
-    const proc = spawn('which', [bin], { shell: true })
+    const proc = spawn('which', [bin])
     proc.on('close', (code) => resolve(code === 0))
     proc.on('error', () => resolve(false))
   })
+}
+
+/** Expand simple glob dirs (e.g. /usr/lib/ruby/gems/STAR/bin) into existing paths. */
+function expandGlobDirs(patterns) {
+  const out = []
+  for (const p of patterns) {
+    if (!p.includes('*')) { out.push(p); continue }
+    const parent = p.slice(0, p.indexOf('/*'))
+    try {
+      for (const d of fs.readdirSync(parent)) {
+        const full = `${parent}/${d}/bin`
+        if (fs.existsSync(full)) out.push(full)
+      }
+    } catch { /* parent missing — skip */ }
+  }
+  return out
 }
 
 /** Run a command, capture stdout/stderr, respect timeout. */
 async function run(cmd, args, { timeout = TIMEOUT_MS } = {}) {
   return new Promise((resolve) => {
     // Ensure Go/Python gem tool paths are reachable regardless of caller env
-    const extra = [
+    const extra = expandGlobDirs([
       '/usr/local/bin', '/usr/local/sbin',
       '/root/go/bin', '/root/.local/bin',
       '/usr/lib/ruby/gems/*/bin', '/var/lib/gems/*/bin',
       process.env.HOME ? `${process.env.HOME}/go/bin` : null,
       process.env.HOME ? `${process.env.HOME}/.local/bin` : null,
-    ].filter(Boolean).join(':')
+    ].filter(Boolean)).join(':')
     const env = { ...process.env, PATH: `${process.env.PATH || ''}:${extra}` }
-    const proc = spawn(cmd, args, { shell: true, stdio: ['ignore', 'pipe', 'pipe'], env })
+    // No shell:true — args are arrays, so metacharacters in user-supplied
+    // targets can't be interpreted by a shell (command-injection fix).
+    // detached + process-group kill so grandchildren (real scanners spawned
+    // via wrappers) don't survive as orphans when we time out.
+    const proc = spawn(cmd, args, { stdio: ['ignore', 'pipe', 'pipe'], env, detached: true })
     let stdout = ''
     let stderr = ''
+    const killTree = () => {
+      try { process.kill(-proc.pid, 'SIGKILL') } catch { try { proc.kill('SIGKILL') } catch { /* already gone */ } }
+    }
     const timer = setTimeout(() => {
-      proc.kill('SIGKILL')
+      killTree()
       resolve({ success: false, stdout, stderr, error: `timeout after ${timeout}ms` })
     }, timeout)
 

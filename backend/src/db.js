@@ -55,30 +55,8 @@ export function getDb() {
 
 function migrate(d) {
   try { d.exec("ALTER TABLE projects ADD COLUMN cover TEXT") } catch {}
-  try { d.exec("ALTER TABLE projects ADD COLUMN client_id TEXT") } catch {}
-  try { d.exec("ALTER TABLE projects ADD COLUMN user_id TEXT") } catch {}
-  try { d.exec("ALTER TABLE scans ADD COLUMN user_id TEXT") } catch {}
-  try { d.exec("ALTER TABLE scans ADD COLUMN client TEXT") } catch {}
-  try { d.exec("ALTER TABLE scans ADD COLUMN token_usage TEXT DEFAULT '{}'") } catch {}
 
   d.exec(`
-  
-  CREATE TABLE IF NOT EXISTS telegram_pairings (
-    id TEXT PRIMARY KEY,
-    user_id TEXT,
-    username TEXT,
-    platform TEXT DEFAULT 'telegram',
-    chat_id TEXT NOT NULL,
-    sender_name TEXT,
-    pairing_code TEXT NOT NULL,
-    status TEXT DEFAULT 'pending',
-    created_at TEXT NOT NULL,
-    approved_at TEXT
-  );
-  CREATE INDEX IF NOT EXISTS idx_tele_code ON telegram_pairings(pairing_code);
-  CREATE INDEX IF NOT EXISTS idx_tele_user ON telegram_pairings(user_id);
-  CREATE INDEX IF NOT EXISTS idx_tele_chat ON telegram_pairings(chat_id);
-
   CREATE TABLE IF NOT EXISTS users (
     id TEXT PRIMARY KEY,
     username TEXT UNIQUE NOT NULL,
@@ -102,28 +80,6 @@ function migrate(d) {
     updated_at TEXT NOT NULL
   );
 
-  CREATE TABLE IF NOT EXISTS consultation_requests (
-    id TEXT PRIMARY KEY,
-    user_id TEXT NOT NULL,
-    username TEXT,
-    email TEXT,
-    service_type TEXT NOT NULL,
-    consultant_name TEXT,
-    scan_id TEXT,
-    preferred_date TEXT,
-    preferred_time TEXT,
-    channel TEXT DEFAULT 'Google Meet',
-    notes TEXT,
-    plan_tier TEXT DEFAULT 'none',
-    status TEXT DEFAULT 'pending',
-    meeting_link TEXT,
-    admin_notes TEXT,
-    created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL
-  );
-  CREATE INDEX IF NOT EXISTS idx_consult_user ON consultation_requests(user_id);
-  CREATE INDEX IF NOT EXISTS idx_consult_status ON consultation_requests(status);
-
   CREATE TABLE IF NOT EXISTS client_credentials (
     id TEXT PRIMARY KEY,
     project_id TEXT NOT NULL,
@@ -145,7 +101,6 @@ function migrate(d) {
     modules TEXT DEFAULT '[]',
     progress INTEGER DEFAULT 0,
     risk_score REAL,
-    token_usage TEXT DEFAULT '{}',
     created_at TEXT NOT NULL,
     started_at TEXT,
     finished_at TEXT,
@@ -193,7 +148,7 @@ function migrate(d) {
     content TEXT,
     keywords TEXT,
     UNIQUE(category, file)
-  );
+    );
   CREATE INDEX IF NOT EXISTS idx_payload_cat ON payload_index(category);
 
   CREATE TABLE IF NOT EXISTS skills_index (
@@ -337,112 +292,14 @@ function migrate(d) {
     created_at TEXT NOT NULL,
     FOREIGN KEY (campaign_id) REFERENCES exploit_campaigns(id) ON DELETE CASCADE
   );
-
-  -- ============ GITHUB AUTOMATION & REPO SYNC ============
-  CREATE TABLE IF NOT EXISTS github_integrations (
-    id TEXT PRIMARY KEY,
-    user_id TEXT NOT NULL,
-    github_username TEXT NOT NULL,
-    access_token TEXT NOT NULL,
-    avatar_url TEXT,
-    created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL,
-    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-  );
-  CREATE INDEX IF NOT EXISTS idx_gh_user ON github_integrations(user_id);
-
-  CREATE TABLE IF NOT EXISTS github_repos (
-    id TEXT PRIMARY KEY,
-    user_id TEXT NOT NULL,
-    repo_id TEXT,
-    full_name TEXT NOT NULL,
-    repo_url TEXT NOT NULL,
-    default_branch TEXT DEFAULT 'main',
-    is_private INTEGER DEFAULT 0,
-    auto_scan_push INTEGER DEFAULT 1,
-    auto_scan_pr INTEGER DEFAULT 1,
-    email_report INTEGER DEFAULT 1,
-    last_scan_id TEXT,
-    last_scan_at TEXT,
-    last_risk_score REAL,
-    created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL,
-    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-  );
-  CREATE INDEX IF NOT EXISTS idx_gh_repos_user ON github_repos(user_id);
-  CREATE INDEX IF NOT EXISTS idx_gh_repos_name ON github_repos(full_name);
-
-  -- ============ SUBSCRIPTIONS & BILLING ============
-  CREATE TABLE IF NOT EXISTS subscriptions (
-    id TEXT PRIMARY KEY,
-    user_id TEXT UNIQUE NOT NULL,
-    plan_id TEXT NOT NULL DEFAULT 'starter',
-    plan_name TEXT NOT NULL DEFAULT 'Starter Free',
-    status TEXT NOT NULL DEFAULT 'active', -- active, past_due, canceled
-    scan_quota_total INTEGER DEFAULT 5,
-    scan_quota_used INTEGER DEFAULT 0,
-    current_period_end TEXT,
-    created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL,
-    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-  );
-  CREATE INDEX IF NOT EXISTS idx_sub_user ON subscriptions(user_id);
-
-  CREATE TABLE IF NOT EXISTS payment_transactions (
-    id TEXT PRIMARY KEY,
-    user_id TEXT NOT NULL,
-    amount REAL NOT NULL,
-    currency TEXT DEFAULT 'USD',
-    status TEXT NOT NULL DEFAULT 'succeeded', -- succeeded, pending, failed
-    provider TEXT NOT NULL DEFAULT 'stripe', -- stripe, lemonsqueezy, toyyibpay, manual
-    reference_id TEXT,
-    plan_id TEXT NOT NULL,
-    created_at TEXT NOT NULL,
-    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-  );
-  CREATE INDEX IF NOT EXISTS idx_pay_user ON payment_transactions(user_id);
-
-  -- ============ AI FEEDBACK LOOP (Dynamic Self-Correction) ============
-
-  -- Prompt adjustments learned from AI errors (persists across restarts)
-  CREATE TABLE IF NOT EXISTS ai_prompt_adjustments (
-    id TEXT PRIMARY KEY,
-    agent TEXT NOT NULL,
-    adjustment TEXT NOT NULL,
-    error_type TEXT,
-    finding_title TEXT,
-    created_at TEXT NOT NULL,
-    active INTEGER DEFAULT 1
-  );
-  CREATE INDEX IF NOT EXISTS idx_ai_adj_agent ON ai_prompt_adjustments(agent);
-
-  -- Review history: every time the feedback loop reviews a finding
-  CREATE TABLE IF NOT EXISTS ai_feedback_reviews (
-    id TEXT PRIMARY KEY,
-    scan_id TEXT,
-    finding_id TEXT,
-    attempts INTEGER DEFAULT 0,
-    errors_found INTEGER DEFAULT 0,
-    corrected INTEGER DEFAULT 0,
-    review_log TEXT DEFAULT '[]',
-    created_at TEXT NOT NULL
-  );
-  CREATE INDEX IF NOT EXISTS idx_ai_rev_scan ON ai_feedback_reviews(scan_id);
-  CREATE INDEX IF NOT EXISTS idx_ai_rev_finding ON ai_feedback_reviews(finding_id);
   `)
 
   // Migration: add layman_impact column for existing databases
   try { d.exec(`ALTER TABLE findings ADD COLUMN layman_impact TEXT`) } catch { /* already exists */ }
+  try { d.exec(`ALTER TABLE findings ADD COLUMN fingerprint TEXT`) } catch { /* already exists */ }
+  try { d.exec(`CREATE INDEX IF NOT EXISTS idx_findings_fingerprint ON findings(scan_id, fingerprint)`) } catch { /* already exists */ }
   // Migration: store structured whitebox audit metadata (files checked, tool passes, timing)
   try { d.exec(`ALTER TABLE scans ADD COLUMN whitebox_meta TEXT`) } catch { /* already exists */ }
-  // Migration: store structured blackbox audit metadata (URLs scanned, tools run, endpoints found)
-  try { d.exec(`ALTER TABLE scans ADD COLUMN blackbox_meta TEXT`) } catch { /* already exists */ }
-  // Migration: store scan trigger source, repo name, commit hash, and notification flags
-  try { d.exec(`ALTER TABLE scans ADD COLUMN trigger_source TEXT DEFAULT 'manual'`) } catch { /* already exists */ }
-  try { d.exec(`ALTER TABLE scans ADD COLUMN repo_name TEXT`) } catch { /* already exists */ }
-  try { d.exec(`ALTER TABLE scans ADD COLUMN commit_hash TEXT`) } catch { /* already exists */ }
-  try { d.exec(`ALTER TABLE scans ADD COLUMN email_notify TEXT`) } catch { /* already exists */ }
-  try { d.exec(`ALTER TABLE scans ADD COLUMN user_id TEXT`) } catch { /* already exists */ }
 }
 
 // ── generic helpers ──────────────────────────────────────────────────────────

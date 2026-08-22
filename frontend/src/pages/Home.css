@@ -5,13 +5,17 @@
   --at-bg-b: #0b1437;
   --at-text: #f1f5f9;
   --at-muted: #94a3b8;
-  --at-line: rgba(255, 255, 255, 0.12);
+  --at-line: rgba(255, 255, 255, 0.08);
   --at-cyan: #00f2fe;
   --at-amber: #f59e0b;
-  --at-card: rgba(6, 11, 38, 0.75);
+  --at-card: rgba(255, 255, 255, 0.04);
+  --at-glass: rgba(255, 255, 255, 0.06);
+  --at-glass-border: rgba(255, 255, 255, 0.12);
+  --at-glass-highlight: rgba(255, 255, 255, 0.08);
   min-height: 100vh;
   max-width: 100vw;
   box-sizing: border-box;
+  zoom: 0.9;
   color: var(--at-text);
   background:
     radial-gradient(circle at 15% 15%, rgba(0, 242, 254, 0.16) 0%, transparent 40%),
@@ -294,12 +298,20 @@
 }
 
 .at-home__metrics article {
-  border: 1px solid var(--at-line);
-  background: var(--at-card);
+  border: 1px solid var(--at-glass-border);
+  background: var(--at-glass);
   border-radius: 1.1rem;
   padding: 1.15rem 1rem;
-  -webkit-backdrop-filter: blur(8px);
-  backdrop-filter: blur(8px);
+  backdrop-filter: blur(40px) saturate(180%);
+  -webkit-backdrop-filter: blur(40px) saturate(180%);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2), inset 0 1px 0 var(--at-glass-highlight);
+  transition: border-color 0.3s ease, transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.at-home__metrics article:hover {
+  border-color: rgba(255, 255, 255, 0.2);
+  transform: translateY(-2px);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.3), inset 0 1px 0 var(--at-glass-highlight);
 }
 
 .at-home__metrics h3 {
@@ -472,103 +484,68 @@
 }
 
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   ELEGANT PAGE TRANSITION — Smooth diagonal curtain sweep
+   ═══════════════════════════════════════════════════════════════════════════ */
 
-/* ── Realistic Paper Page Turn (Top-Left to Bottom-Right) ───────────────── */
-.page-turn-sheet {
-  animation: pageTurnSheet 1.2s cubic-bezier(0.22, 1, 0.36, 1) forwards;
-  background: radial-gradient(circle at 10% 10%, #0b1437 0%, #060b26 70%);
-  box-shadow: inset 0 0 100px rgba(0, 0, 0, 0.9);
-}
-
-@keyframes pageTurnSheet {
-  0% {
-    clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%);
-    opacity: 1;
-  }
-  25% {
-    clip-path: polygon(30% 0, 100% 0, 100% 100%, 0 30%);
-  }
-  55% {
-    clip-path: polygon(85% 0, 100% 0, 100% 100%, 0 85%);
-  }
-  85% {
-    clip-path: polygon(100% 40%, 100% 0, 100% 100%, 40% 100%);
-  }
-  100% {
-    clip-path: polygon(100% 100%, 100% 100%, 100% 100%, 100% 100%);
-    opacity: 0;
-  }
-}
-
-.page-turn-crease {
+/* Main dark curtain that sweeps from top-left to bottom-right */
+.pt-curtain {
   position: absolute;
-  top: -100%;
-  left: -100%;
-  width: 300%;
-  height: 300%;
+  inset: 0;
+  background: linear-gradient(135deg, #060b26 0%, #0a0f2e 40%, #0d1340 100%);
+  animation: ptCurtainSweep 1.4s cubic-bezier(0.76, 0, 0.24, 1) forwards;
+  will-change: clip-path;
+}
+
+@keyframes ptCurtainSweep {
+  0%   { clip-path: polygon(0 0, 100% 0, 100% 100%, 0% 100%); }
+  100% { clip-path: polygon(100% 0, 100% 0, 100% 100%, 100% 100%); }
+}
+
+/* Thin luminous streak along the sweeping edge */
+.pt-light-streak {
+  position: absolute;
+  inset: 0;
   background: linear-gradient(
-    135deg,
-    transparent 46%,
-    rgba(0, 0, 0, 0.75) 48.5%,
-    rgba(30, 41, 59, 0.95) 49.3%,
-    rgba(255, 255, 255, 0.95) 50%,
-    rgba(0, 242, 254, 0.85) 50.4%,
-    rgba(0, 117, 255, 0.5) 51.2%,
-    rgba(0, 0, 0, 0.85) 52.8%,
-    transparent 55.5%
+    105deg,
+    transparent 40%,
+    rgba(0, 242, 254, 0.15) 49%,
+    rgba(255, 255, 255, 0.6) 50%,
+    rgba(0, 117, 255, 0.2) 51%,
+    transparent 60%
   );
-  animation: pageTurnCrease 1.2s cubic-bezier(0.22, 1, 0.36, 1) forwards;
-  pointer-events: none;
-  filter: drop-shadow(0 0 30px rgba(0, 242, 254, 0.45));
+  animation: ptStreakSweep 1.4s cubic-bezier(0.76, 0, 0.24, 1) forwards;
+  will-change: transform;
+  filter: blur(1px);
 }
 
-@keyframes pageTurnCrease {
-  0% {
-    transform: translate3d(-35%, -35%, 0);
-    opacity: 1;
-  }
-  85% {
-    opacity: 1;
-  }
-  100% {
-    transform: translate3d(35%, 35%, 0);
-    opacity: 0;
-  }
+@keyframes ptStreakSweep {
+  0%   { transform: translateX(-100%); opacity: 0; }
+  15%  { opacity: 1; }
+  85%  { opacity: 1; }
+  100% { transform: translateX(100%); opacity: 0; }
 }
 
-.page-turn-sheen {
+/* Soft ambient glow that fades out */
+.pt-glow {
   position: absolute;
-  top: -100%;
-  left: -100%;
-  width: 300%;
-  height: 300%;
-  background: radial-gradient(circle at 50% 50%, rgba(0, 242, 254, 0.25) 0%, transparent 60%);
-  animation: pageTurnSheen 1.2s cubic-bezier(0.22, 1, 0.36, 1) forwards;
-  pointer-events: none;
+  inset: 0;
+  background: radial-gradient(ellipse at 30% 30%, rgba(0, 242, 254, 0.08) 0%, transparent 70%);
+  animation: ptGlowFade 1.4s ease-out forwards;
+  will-change: opacity;
 }
 
-@keyframes pageTurnSheen {
-  0% {
-    transform: translate3d(-35%, -35%, 0) scale(0.6);
-    opacity: 0.8;
-  }
-  100% {
-    transform: translate3d(35%, 35%, 0) scale(1.4);
-    opacity: 0;
-  }
+@keyframes ptGlowFade {
+  0%   { opacity: 1; }
+  100% { opacity: 0; }
 }
 
-.page-turn-reveal {
-  animation: pageTurnContentReveal 1.2s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+/* Content reveal animation */
+.pt-content-reveal {
+  animation: ptContentIn 0.8s cubic-bezier(0.16, 1, 0.3, 1) 0.3s both;
 }
 
-@keyframes pageTurnContentReveal {
-  0% {
-    filter: brightness(0.85);
-    transform: scale(0.99);
-  }
-  100% {
-    filter: brightness(1);
-    transform: scale(1);
-  }
+@keyframes ptContentIn {
+  0%   { opacity: 0.7; transform: scale(0.995); filter: blur(2px); }
+  100% { opacity: 1;   transform: scale(1);     filter: blur(0px); }
 }

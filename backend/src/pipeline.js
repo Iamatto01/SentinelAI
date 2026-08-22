@@ -42,6 +42,8 @@ export class UnifiedPipeline {
     this.io = io
     // scanId -> { paused: bool, pauseWaiters: [] } — runtime control flags
     this.control = new Map()
+    // scanId -> blackbox metadata (tools/urls/subdomains) used by retry logic
+    this._blackboxMeta = new Map()
   }
 
   emit(scanId, event, data) {
@@ -126,9 +128,7 @@ export class UnifiedPipeline {
 
     // Merge repeated detections from pattern scanning and AI audit passes.
     const fingerprint = findingFingerprint(f)
-    const existing = db.all(`SELECT * FROM findings WHERE scan_id = ?`, scanId).find((row) => {
-      try { return JSON.parse(row.evidence || '{}').fingerprint === fingerprint } catch { return false }
-    })
+    const existing = db.get(`SELECT * FROM findings WHERE scan_id = ? AND fingerprint = ?`, scanId, fingerprint)
     if (existing) {
       const evidence = JSON.parse(existing.evidence || '{}')
       const sources = new Set([...(evidence.sources || [existing.module]), f.module || 'unknown'])
@@ -145,14 +145,15 @@ export class UnifiedPipeline {
     const now = new Date().toISOString()
     try {
       db.run(
-        `INSERT INTO findings (id, scan_id, title, severity, cvss, cwe_id, cve_id, owasp_category, description, layman_impact, remediation, module, status, evidence, poc, agent_verdict, created_at)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        `INSERT INTO findings (id, scan_id, title, severity, cvss, cwe_id, cve_id, owasp_category, description, layman_impact, remediation, module, status, evidence, poc, agent_verdict, fingerprint, created_at)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
         id, scanId, f.title || 'Untitled finding', f.severity || 'info',
         f.cvss ?? SEVERITY_SCORE[f.severity] ?? 0, f.cweId || f.cwe || null, f.cveId || null,
         f.owaspCategory || null, f.description || '', f.laymanImpact || null, f.remediation || '',
         f.module || 'unknown', 'open',
         JSON.stringify(f.evidence || {}), JSON.stringify(f.poc || {}),
         verdict ? JSON.stringify({ agent: verdict.agent, confidence: verdict.confidence, reasoning: verdict.verdict }) : null,
+        fingerprint,
         now
       )
       const stored = db.get(`SELECT * FROM findings WHERE id = ?`, id)
@@ -1230,7 +1231,7 @@ export class UnifiedPipeline {
       this.finish(scanId, 'completed')
     } catch (e) {
       this.log(scanId, 'error', `Whitebox audit warning: ${e.message}`)
-      this.finish(scanId, 'completed')
+      this.finish(scanId, 'failed')
     }
   }
 
@@ -1443,20 +1444,6 @@ export class UnifiedPipeline {
       this.finish(scanId, 'completed')
     } catch (e) {
       this.log(scanId, 'error', `Retry blackbox warning: ${e.message}`)
-      this.finish(scanId, 'completed')
-    }
-  }
-
-  /**
-   * Retry failed passes in a whitebox code audit scan.
-   */
-  async retryFailedWhitebox(scan, opts = {}) {
-    const scanId = scan.id
-    this.log(scanId, 'info', `🔁 Retrying whitebox scan on ${scan.target}...`)
-    try {
-      await this.runWhiteboxAudit(scan, opts)
-    } catch (e) {
-      this.log(scanId, 'error', `Retry whitebox failed: ${e.message}`)
       this.finish(scanId, 'failed')
     }
   }
@@ -1682,8 +1669,6 @@ export class UnifiedPipeline {
 }
 
 export function computeRiskScore(counts) {
-  const raw = (counts.critical || 0) * 10 + (counts.high || 0) * 7 + (counts.medium || 0) * 4 + (counts.low || 0) * 1.5 + (counts.info || 0) * 0.2
-  const score = Math.min(10, Math.round((raw / Math.max(1, raw)) * 10 * (raw > 0 ? Math.min(1, raw / 20 + 0.4) : 0) * 10) / 10)
   return Math.min(10, Math.round((counts.critical * 3 + counts.high * 2 + counts.medium * 0.8 + counts.low * 0.2) * 10) / 10)
 }
 

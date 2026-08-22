@@ -96,7 +96,7 @@ export default function Landing() {
   ]
 
   return (
-    <div className="at-home min-h-screen relative overflow-x-hidden page-turn-reveal">
+    <div className="at-home min-h-screen relative overflow-x-hidden pt-content-reveal">
       {/* ── Realistic Paper Page Turn Reveal on Load (Top-Left to Bottom-Right) ── */}
       <PageTurnTransition duration={1200} />
       {/* Scroll indicator bar */}
@@ -110,7 +110,7 @@ export default function Landing() {
       <div className="at-home__blob at-home__blob--c" />
 
       {/* ── Slim & Compact Glassmorphic Top Floating Navbar ────────────────── */}
-      <header className="sticky top-6 sm:top-8 z-50 w-[calc(100%-2rem)] max-w-5xl mx-auto px-5 sm:px-7 py-3 flex items-center justify-between rounded-2xl bg-slate-950/85 border border-white/15 backdrop-blur-xl shadow-2xl transition-all mb-4">
+      <header className="sticky top-6 sm:top-8 z-50 w-[calc(100%-2rem)] max-w-5xl mx-auto px-5 sm:px-7 py-3 flex items-center justify-between rounded-2xl border border-white/[0.12] shadow-2xl transition-all mb-4" style={{ background: 'rgba(6, 11, 38, 0.45)', backdropFilter: 'blur(40px) saturate(180%)', WebkitBackdropFilter: 'blur(40px) saturate(180%)', boxShadow: '0 8px 32px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.08)' }}>
         <Link to="/" className="flex items-center gap-2.5 group">
           <InspectorLogo size={26} />
           <span className="font-extrabold text-sm sm:text-base text-white tracking-tight group-hover:text-cyan-300 transition-colors">
@@ -176,7 +176,7 @@ export default function Landing() {
 
         {/* Right Column Hero Visual Card */}
         <div className="at-home__visual at-stagger-2">
-          <div className="at-home__visual-frame glass p-7 sm:p-8 border border-white/15 rounded-3xl flex flex-col justify-between shadow-2xl relative overflow-hidden bg-slate-950/75">
+          <div className="at-home__visual-frame p-7 sm:p-8 rounded-3xl flex flex-col justify-between shadow-2xl relative overflow-hidden" style={{ background: 'rgba(6, 11, 38, 0.4)', backdropFilter: 'blur(40px) saturate(180%)', WebkitBackdropFilter: 'blur(40px) saturate(180%)', border: '1px solid rgba(255, 255, 255, 0.1)', boxShadow: '0 16px 48px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.06)' }}>
             <div className="flex items-center justify-between border-b border-white/10 pb-4">
               <div className="flex items-center gap-3">
                 <InspectorLogo size={38} />
@@ -223,7 +223,7 @@ export default function Landing() {
       {/* ── Upper Hero Extension: Signal Strip & FYP Creator Showcase ──────── */}
       <div className="max-w-6xl mx-auto px-4 sm:px-8 space-y-8 mt-12 sm:mt-16 mb-24 sm:mb-32">
         {/* Ticker / Signal Strip */}
-        <div className="at-home__signal-strip at-stagger-3 my-0">
+        <div className="at-home__signal-strip at-stagger-3 my-0" style={{ background: 'rgba(2, 6, 23, 0.35)', backdropFilter: 'blur(30px)', WebkitBackdropFilter: 'blur(30px)' }}>
           <div className="at-home__signal-track">
             <span>NMAP PORT RECON</span>
             <span>SQLMAP INJECTION PROBE</span>
@@ -237,7 +237,7 @@ export default function Landing() {
 
         {/* ── FYP Creator & Lead Security Architect Showcase Banner ─────────────── */}
         <section className="scroll-mt-32 my-0">
-          <div className="card p-6 sm:p-8 border border-cyan-500/30 bg-slate-950/80 rounded-3xl shadow-xl relative overflow-hidden backdrop-blur-xl">
+          <div className="p-6 sm:p-8 rounded-3xl shadow-xl relative overflow-hidden" style={{ background: 'rgba(6, 11, 38, 0.35)', backdropFilter: 'blur(40px) saturate(180%)', WebkitBackdropFilter: 'blur(40px) saturate(180%)', border: '1px solid rgba(0, 242, 254, 0.15)', boxShadow: '0 12px 40px rgba(0, 0, 0, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.06)' }}>
             <div className="flex flex-col sm:flex-row items-center sm:items-start gap-6 sm:gap-8">
               {/* Creator Photo - Strictly constrained 120x120 square with centered face */}
               <div className="relative shrink-0 flex flex-col items-center">
@@ -340,21 +340,21 @@ export default function Landing() {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div className="card p-6 border border-white/10 bg-white/[0.03] backdrop-blur-xl hover:border-cyan-400/50 hover:-translate-y-1 transition-all duration-300">
+            <div className="p-6 rounded-2xl hover:-translate-y-1 transition-all duration-300 hover:border-cyan-400/30" style={{ background: 'rgba(255, 255, 255, 0.04)', backdropFilter: 'blur(40px) saturate(180%)', WebkitBackdropFilter: 'blur(40px) saturate(180%)', border: '1px solid rgba(255, 255, 255, 0.08)', boxShadow: '0 8px 32px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.06)' }}>
               <Bot className="text-cyan-400 mb-3" size={32} />
               <h3 className="text-lg font-bold text-white mb-2">51 Specialist AI Agents</h3>
               <p className="text-sm text-slate-400">
                 Automated routing of findings to specialized AI personas (Web Hunter, Database Attacker, Code Auditor) to filter out noise and false positives.
               </p>
             </div>
-            <div className="card p-6 border border-white/10 bg-white/[0.03] backdrop-blur-xl hover:border-amber-400/50 hover:-translate-y-1 transition-all duration-300">
+            <div className="p-6 rounded-2xl hover:-translate-y-1 transition-all duration-300 hover:border-amber-400/30" style={{ background: 'rgba(255, 255, 255, 0.04)', backdropFilter: 'blur(40px) saturate(180%)', WebkitBackdropFilter: 'blur(40px) saturate(180%)', border: '1px solid rgba(255, 255, 255, 0.08)', boxShadow: '0 8px 32px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.06)' }}>
               <Radar className="text-amber-400 mb-3" size={32} />
               <h3 className="text-lg font-bold text-white mb-2">150+ Kali Security Tools</h3>
               <p className="text-sm text-slate-400">
                 Hexstrike REST API engine dynamically chains nmap, nuclei, sqlmap, ffuf, nikto, subfinder, and more based on target analysis.
               </p>
             </div>
-            <div className="card p-6 border border-white/10 bg-white/[0.03] backdrop-blur-xl hover:border-emerald-400/50 hover:-translate-y-1 transition-all duration-300">
+            <div className="p-6 rounded-2xl hover:-translate-y-1 transition-all duration-300 hover:border-emerald-400/30" style={{ background: 'rgba(255, 255, 255, 0.04)', backdropFilter: 'blur(40px) saturate(180%)', WebkitBackdropFilter: 'blur(40px) saturate(180%)', border: '1px solid rgba(255, 255, 255, 0.08)', boxShadow: '0 8px 32px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.06)' }}>
               <ShieldCheck className="text-emerald-400 mb-3" size={32} />
               <h3 className="text-lg font-bold text-white mb-2">Blackbox & Whitebox Unified</h3>
               <p className="text-sm text-slate-400">

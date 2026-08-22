@@ -154,16 +154,17 @@ const requireStaff = (req, res, next) => {
 function visibleProjectIds(user) {
   if (user?.role !== 'client') return null
   if (user.projectId) return [user.projectId]
-  const userEmail = (user.email || '').toLowerCase()
-  const username = (user.username || '').toLowerCase()
+  const userEmail = (user.email || '').toLowerCase().trim()
+  const username = (user.username || '').toLowerCase().trim()
+  // STRICT matching only: exact email/username equality against the project's
+  // client field, or direct ownership. Substring matching was spoofable — a user
+  // could set their email to any substring of another project's client string.
   const allProjs = db.all(`SELECT id, client, name, user_id FROM projects`)
   const ids = allProjs
     .filter((p) => {
       if (p.user_id && p.user_id === user.id) return true
-      const c = (p.client || '').toLowerCase()
-      const n = (p.name || '').toLowerCase()
-      return (userEmail && c.includes(userEmail)) || (username && c.includes(username)) ||
-             (userEmail && n.includes(userEmail)) || (username && n.includes(username))
+      const c = (p.client || '').toLowerCase().trim()
+      return (userEmail && c === userEmail) || (username && c === username)
     })
     .map((p) => p.id)
   return ids.length ? ids : []
@@ -220,14 +221,15 @@ app.get('/api/status', requireAuth, async (req, res) => {
 
 // ── Auth ─────────────────────────────────────────────────────────────────────
 // Brute-force protection: 100 attempts / 15 min per real client IP.
+// Uses the library's DEFAULT keying (= req.ip, with IPv6 subnet bucketing).
+// Never trust raw X-Forwarded-For/CF headers here — attackers can rotate them
+// per request to bypass the limiter entirely.
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   limit: 100,
   skipSuccessfulRequests: true,
   standardHeaders: true,
   legacyHeaders: false,
-  validate: { xForwardedForHeader: false, default: false },
-  keyGenerator: (req) => req.headers['cf-connecting-ip'] || req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.ip || 'client-ip',
   message: { error: 'Too many login attempts — try again later' },
 })
 
@@ -248,9 +250,12 @@ app.post('/api/auth/login', loginLimiter, (req, res) => {
   const clientCred = db.get(`SELECT * FROM client_credentials WHERE email = ?`, identifier)
   if (clientCred) {
     const isPlaintext = !clientCred.password.startsWith('$2')
+    const inputPass = password || ''
+    const storedPass = clientCred.password
+    const lengthMatch = isPlaintext ? inputPass.length === storedPass.length : true
     const ok = isPlaintext
-      ? password === clientCred.password
-      : bcrypt.compareSync(password || '', clientCred.password)
+      ? lengthMatch && timingSafeEqual(Buffer.from(inputPass), Buffer.from(storedPass))
+      : bcrypt.compareSync(inputPass, storedPass)
     if (ok) {
       if (isPlaintext) {
         db.run(`UPDATE client_credentials SET password = ? WHERE id = ?`, bcrypt.hashSync(password, 10), clientCred.id)
@@ -339,6 +344,20 @@ app.get('/api/users/me', requireAuth, (req, res) => {
 
 app.put('/api/users/me', requireAuth, (req, res) => {
   const { email } = req.body || {}
+  // Validate + uniqueness-check email; clients cannot change it freely
+  // (their email is the key that links them to their project).
+  if (email != null) {
+    if (typeof email !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()))
+      return res.status(400).json({ error: 'invalid email address' })
+    const normalized = email.trim().toLowerCase()
+    if (req.user?.role === 'client') {
+      const current = db.get(`SELECT email FROM users WHERE id = ?`, req.user.sub)
+      if (!current || (current.email || '').toLowerCase() !== normalized)
+        return res.status(403).json({ error: 'client accounts cannot change their email' })
+    }
+    const dupe = db.get(`SELECT id FROM users WHERE LOWER(email) = ? AND id != ?`, normalized, req.user.sub)
+    if (dupe) return res.status(409).json({ error: 'email already in use by another account' })
+  }
   db.run(`UPDATE users SET email = ? WHERE id = ?`, email ?? null, req.user.sub)
   audit(req.user.username, 'user:update', 'profile updated')
   const u = db.get(`SELECT * FROM users WHERE id = ?`, req.user.sub)
@@ -563,8 +582,10 @@ app.delete('/api/projects/:id', requireAuth, (req, res) => {
       return res.status(403).json({ error: 'Cannot delete this project' })
     }
   }
-  db.run(`DELETE FROM client_credentials WHERE project_id = ?`, req.params.id)
-  db.run(`DELETE FROM projects WHERE id = ?`, req.params.id)
+  db.transaction(() => {
+    db.run(`DELETE FROM client_credentials WHERE project_id = ?`, req.params.id)
+    db.run(`DELETE FROM projects WHERE id = ?`, req.params.id)
+  })()
   audit(req.user.username, 'project:delete', req.params.id)
   res.json({ ok: true })
 })
@@ -601,7 +622,7 @@ app.put('/api/projects/:id/credentials/:credId', requireAuth, requireStaff, (req
   res.json(db.get(`SELECT id, project_id, email, note, created_at FROM client_credentials WHERE id = ?`, req.params.credId))
 })
 
-app.delete('/api/projects/:id/credentials/:credId', requireAuth, (req, res) => {
+app.delete('/api/projects/:id/credentials/:credId', requireAuth, requireStaff, (req, res) => {
   db.run(`DELETE FROM client_credentials WHERE id = ? AND project_id = ?`, req.params.credId, req.params.id)
   audit(req.user.username, 'project:cred_delete', `${req.params.credId}`)
   res.json({ ok: true })
@@ -718,6 +739,16 @@ app.post('/api/scans', requireAuth, async (req, res) => {
   if (mode === 'blackbox' && !target) return res.status(400).json({ error: 'target required for blackbox' })
   if (mode === 'whitebox' && (!files || !files.length)) return res.status(400).json({ error: 'files required for whitebox' })
 
+  // Quota enforcement — applies to ALL scan launches (manual, whitebox-folder),
+  // not just GitHub-triggered ones. Admins are exempt.
+  if (req.user?.role !== 'admin') {
+    try {
+      consumeScanQuota(req.user.id)
+    } catch (quotaErr) {
+      return res.status(402).json({ error: quotaErr.message, upgradeRequired: true })
+    }
+  }
+
   const id = `scan_${randomUUID()}`
   const now = new Date().toISOString()
   db.run(`INSERT INTO scans (id, project_id, target, target_type, mode, status, template, modules, progress, created_at, started_at, user_id, client)
@@ -753,10 +784,12 @@ app.post('/api/scans/:id/stop', requireAuth, requireStaff, (req, res) => {
 app.delete('/api/scans/:id', requireAuth, requireStaff, (req, res) => {
   const { id } = req.params
   pipeline.stopScan(id) // abort any running scan
-  db.run(`DELETE FROM logs WHERE scan_id = ?`, id)
-  db.run(`DELETE FROM scan_configs WHERE scan_id = ?`, id)
-  db.run(`DELETE FROM findings WHERE scan_id = ?`, id)
-  db.run(`DELETE FROM scans WHERE id = ?`, id)
+  db.transaction(() => {
+    db.run(`DELETE FROM logs WHERE scan_id = ?`, id)
+    db.run(`DELETE FROM scan_configs WHERE scan_id = ?`, id)
+    db.run(`DELETE FROM findings WHERE scan_id = ?`, id)
+    db.run(`DELETE FROM scans WHERE id = ?`, id)
+  })()
   audit(req.user.username, 'scan:delete', id)
   res.json({ ok: true })
 })
@@ -1068,6 +1101,17 @@ app.put('/api/findings/:id/status', requireAuth, requireStaff, (req, res) => {
   res.json(db.get(`SELECT * FROM findings WHERE id = ?`, req.params.id))
 })
 
+const FINDING_SEVERITIES = ['info', 'low', 'medium', 'high', 'critical']
+app.put('/api/findings/:id/severity', requireAuth, requireStaff, (req, res) => {
+  const { severity } = req.body || {}
+  if (!FINDING_SEVERITIES.includes(severity)) return res.status(400).json({ error: `severity must be one of: ${FINDING_SEVERITIES.join(', ')}` })
+  const existing = db.get(`SELECT id FROM findings WHERE id = ?`, req.params.id)
+  if (!existing) return res.status(404).json({ error: 'Finding not found' })
+  db.run(`UPDATE findings SET severity = ? WHERE id = ?`, severity, req.params.id)
+  audit(req.user.username, 'finding:severity', `${req.params.id} → ${severity}`)
+  res.json(db.get(`SELECT * FROM findings WHERE id = ?`, req.params.id))
+})
+
 // ── Findings & Database Backup API — staff only (full DB export)
 app.post('/api/backup/create', requireAuth, requireStaff, (req, res) => {
   const result = db.backupDatabase()
@@ -1100,10 +1144,10 @@ app.get('/api/backup/export', requireAuth, requireStaff, (req, res) => {
 })
 
 // Finding notes
-app.get('/api/findings/:id/notes', requireAuth, (req, res) => {
+app.get('/api/findings/:id/notes', requireAuth, requireStaff, (req, res) => {
   res.json(db.all(`SELECT * FROM finding_notes WHERE finding_id = ? ORDER BY ts ASC`, req.params.id))
 })
-app.post('/api/findings/:id/notes', requireAuth, (req, res) => {
+app.post('/api/findings/:id/notes', requireAuth, requireStaff, (req, res) => {
   const { note } = req.body || {}
   if (!note) return res.status(400).json({ error: 'note required' })
   const id = `note_${randomUUID()}`
@@ -1443,32 +1487,39 @@ app.post('/api/scans/:id/audio-briefing', requireAuth, requireScanAccess, async 
 // ── Exploitation (MSF + campaigns) — staff only; MSF session commands are
 // remote shell execution and must never be reachable by client-portal users.
 app.get('/api/exploits/msf/status', requireAuth, requireStaff, async (req, res) => {
-  res.json(await msf.status())
+  try { res.json(await msf.status()) }
+  catch (e) { console.error('[msf:status]', e.message); res.status(502).json({ error: e.message || 'MSF RPC unavailable' }) }
 })
 
 // List active MSF sessions
 app.get('/api/exploits/msf/sessions', requireAuth, requireStaff, async (req, res) => {
-  res.json(await msf.listSessions())
+  try { res.json(await msf.listSessions()) }
+  catch (e) { console.error('[msf:sessions]', e.message); res.status(502).json({ error: e.message || 'MSF RPC unavailable' }) }
 })
 
 // Get a specific MSF session
 app.get('/api/exploits/msf/sessions/:id', requireAuth, requireStaff, async (req, res) => {
-  const s = await msf.sessionInfo(req.params.id)
-  if (!s) return res.status(404).json({ error: 'session not found' })
-  res.json(s)
+  try {
+    const s = await msf.sessionInfo(req.params.id)
+    if (!s) return res.status(404).json({ error: 'session not found' })
+    res.json(s)
+  } catch (e) { console.error('[msf:sessionInfo]', e.message); res.status(502).json({ error: e.message || 'MSF RPC unavailable' }) }
 })
 
 // Run a command in an MSF session
 app.post('/api/exploits/msf/sessions/:id/command', requireAuth, requireStaff, async (req, res) => {
   const { command } = req.body || {}
   if (!command) return res.status(400).json({ error: 'command required' })
-  const result = await msf.shellCommand(req.params.id, command)
-  res.json(result)
+  try {
+    const result = await msf.shellCommand(req.params.id, command)
+    res.json(result)
+  } catch (e) { console.error('[msf:shellCommand]', e.message); res.status(502).json({ error: e.message || 'MSF RPC unavailable' }) }
 })
 
 // Kill an MSF session
 app.delete('/api/exploits/msf/sessions/:id', requireAuth, requireStaff, async (req, res) => {
-  res.json(await msf.stopSession(req.params.id))
+  try { res.json(await msf.stopSession(req.params.id)) }
+  catch (e) { console.error('[msf:stopSession]', e.message); res.status(502).json({ error: e.message || 'MSF RPC unavailable' }) }
 })
 
 // List all exploit campaigns
@@ -1484,7 +1535,7 @@ app.get('/api/exploits/campaigns', requireAuth, requireStaff, (req, res) => {
 })
 
 // Get a specific campaign with steps & loot
-app.get('/api/exploits/campaigns/:id', requireAuth, (req, res) => {
+app.get('/api/exploits/campaigns/:id', requireAuth, requireStaff, (req, res) => {
   const campaign = db.get(`
     SELECT ec.*, f.title AS finding_title, f.severity AS finding_severity, s.target AS scan_target
     FROM exploit_campaigns ec
@@ -1502,7 +1553,7 @@ app.get('/api/exploits/campaigns/:id', requireAuth, (req, res) => {
 })
 
 // Launch an exploitation campaign for a finding
-app.post('/api/exploits/campaigns', requireAuth, async (req, res) => {
+app.post('/api/exploits/campaigns', requireAuth, requireStaff, async (req, res) => {
   const { scanId, findingId } = req.body || {}
   if (!findingId) return res.status(400).json({ error: 'findingId required' })
 
@@ -1532,18 +1583,23 @@ app.post('/api/exploits/campaigns', requireAuth, async (req, res) => {
     })
   }
 
-  const result = await exploitEngine.launchCampaign(scan, finding)
-  audit(req.user.username, 'exploit:launch', `${finding.title} → ${result.campaignId || 'no_match'}`)
+  try {
+    const result = await exploitEngine.launchCampaign(scan, finding)
+    audit(req.user.username, 'exploit:launch', `${finding.title} → ${result.campaignId || 'no_match'}`)
 
-  res.status(201).json({
-    ...result,
-    matchedExploits: matchExploits(finding).length,
-    risk: classifyRisk(finding),
-  })
+    res.status(201).json({
+      ...result,
+      matchedExploits: matchExploits(finding).length,
+      risk: classifyRisk(finding),
+    })
+  } catch (e) {
+    console.error('[exploit:launch]', e)
+    res.status(500).json({ error: e.message || 'Campaign launch failed' })
+  }
 })
 
 // Approve a gated exploit step
-app.post('/api/exploits/campaigns/:campaignId/approve', requireAuth, async (req, res) => {
+app.post('/api/exploits/campaigns/:campaignId/approve', requireAuth, requireStaff, async (req, res) => {
   const { stepId } = req.body || {}
   if (!stepId) return res.status(400).json({ error: 'stepId required' })
 
@@ -1558,7 +1614,7 @@ app.post('/api/exploits/campaigns/:campaignId/approve', requireAuth, async (req,
 })
 
 // Deny a gated exploit step
-app.post('/api/exploits/campaigns/:campaignId/deny', requireAuth, async (req, res) => {
+app.post('/api/exploits/campaigns/:campaignId/deny', requireAuth, requireStaff, async (req, res) => {
   const { stepId } = req.body || {}
   if (!stepId) return res.status(400).json({ error: 'stepId required' })
 
@@ -1573,7 +1629,7 @@ app.post('/api/exploits/campaigns/:campaignId/deny', requireAuth, async (req, re
 })
 
 // Pause a campaign
-app.post('/api/exploits/campaigns/:campaignId/pause', requireAuth, (req, res) => {
+app.post('/api/exploits/campaigns/:campaignId/pause', requireAuth, requireStaff, (req, res) => {
   exploitEngine.pauseCampaign(req.params.campaignId)
   db.run(`UPDATE exploit_campaigns SET status = 'paused' WHERE id = ?`, req.params.campaignId)
   audit(req.user.username, 'exploit:pause', req.params.campaignId)
@@ -1581,17 +1637,17 @@ app.post('/api/exploits/campaigns/:campaignId/pause', requireAuth, (req, res) =>
 })
 
 // Resume a campaign
-app.post('/api/exploits/campaigns/:campaignId/resume', requireAuth, (req, res) => {
+app.post('/api/exploits/campaigns/:campaignId/resume', requireAuth, requireStaff, (req, res) => {
   exploitEngine.resumeCampaign(req.params.campaignId)
   db.run(`UPDATE exploit_campaigns SET status = 'running' WHERE id = ?`, req.params.campaignId)
   audit(req.user.username, 'exploit:resume', req.params.campaignId)
+  // Resume execution — schedule after response so the client is unblocked
+  setImmediate(() => exploitEngine.executeCampaign(req.params.campaignId))
   res.json({ ok: true })
-  // Resume execution
-  exploitEngine.executeCampaign(req.params.campaignId)
 })
 
 // Abort a campaign
-app.post('/api/exploits/campaigns/:campaignId/abort', requireAuth, (req, res) => {
+app.post('/api/exploits/campaigns/:campaignId/abort', requireAuth, requireStaff, (req, res) => {
   db.run(`UPDATE exploit_campaigns SET status = 'aborted', finished_at = ? WHERE id = ?`,
     new Date().toISOString(), req.params.campaignId)
   audit(req.user.username, 'exploit:abort', req.params.campaignId)
@@ -1916,7 +1972,8 @@ app.post('/api/billing/checkout', requireAuth, (req, res) => {
   const plan = PLANS[planId]
   const amount = billingInterval === 'yearly' ? plan.priceYearly : plan.priceMonthly
 
-  // For testing / simulation or instant activation:
+  // NOTE: In production, integrate with Stripe/PayPal checkout session here.
+  // Currently this activates subscriptions instantly for testing/simulation.
   const updatedSub = activateSubscription({
     userId: req.user.id,
     planId,
@@ -2146,12 +2203,12 @@ app.post('/api/channels/pair', requireAuth, (req, res) => {
 
     if (platform === 'discord') {
       import('./channels/discord.js').then(({ discordBot }) => {
-        discordBot.sendTo(pending.chat_id, confirmMsg).catch(() => {})
-      }).catch(() => {})
+        discordBot.sendTo(pending.chat_id, confirmMsg).catch(err => console.error('Discord notification failed:', err.message))
+      }).catch(err => console.error('Discord pairing failed:', err.message))
     } else {
       import('./channels/telegram.js').then(({ telegramBot }) => {
-        telegramBot.sendTo(pending.chat_id, confirmMsg).catch(() => {})
-      }).catch(() => {})
+        telegramBot.sendTo(pending.chat_id, confirmMsg).catch(err => console.error('Telegram notification failed:', err.message))
+      }).catch(err => console.error('Telegram pairing failed:', err.message))
     }
 
     res.json({

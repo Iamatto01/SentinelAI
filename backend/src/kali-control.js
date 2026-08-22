@@ -17,12 +17,12 @@ async function runCmd(cmd, timeoutMs = 30000) {
     ].filter(Boolean).join(':')
 
     const env = { ...process.env, PATH: `${process.env.PATH || ''}:${extra}` }
-    const proc = spawn(cmd, { shell: true, stdio: ['ignore', 'pipe', 'pipe'], env })
+    const proc = spawn(cmd, { shell: true, stdio: ['ignore', 'pipe', 'pipe'], env, detached: true })
     let stdout = ''
     let stderr = ''
 
     const timer = setTimeout(() => {
-      proc.kill('SIGKILL')
+      try { process.kill(-proc.pid, 'SIGKILL') } catch { proc.kill('SIGKILL') }
       resolve({ success: false, stdout, stderr, error: `Command timed out after ${timeoutMs / 1000}s`, code: 124 })
     }, timeoutMs)
 
