@@ -16,6 +16,8 @@
   max-width: 100vw;
   box-sizing: border-box;
   zoom: 0.9;
+  width: calc(100vw / 0.9);
+  min-height: calc(100vh / 0.9);
   color: var(--at-text);
   background:
     radial-gradient(circle at 15% 15%, rgba(0, 242, 254, 0.16) 0%, transparent 40%),

@@ -110,7 +110,7 @@ export default function Landing() {
       <div className="at-home__blob at-home__blob--c" />
 
       {/* ── Slim & Compact Glassmorphic Top Floating Navbar ────────────────── */}
-      <header className="sticky top-6 sm:top-8 z-50 w-[calc(100%-2rem)] max-w-5xl mx-auto px-5 sm:px-7 py-3 flex items-center justify-between rounded-2xl border border-white/[0.12] shadow-2xl transition-all mb-4" style={{ background: 'rgba(6, 11, 38, 0.45)', backdropFilter: 'blur(40px) saturate(180%)', WebkitBackdropFilter: 'blur(40px) saturate(180%)', boxShadow: '0 8px 32px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.08)' }}>
+      <header className="sticky top-6 sm:top-8 z-50 w-[calc(100%-2rem)] max-w-5xl mx-auto px-6 sm:px-8 py-3.5 flex items-center justify-between rounded-full border border-white/[0.12] shadow-2xl transition-all mb-4" style={{ background: 'rgba(6, 11, 38, 0.45)', backdropFilter: 'blur(40px) saturate(180%)', WebkitBackdropFilter: 'blur(40px) saturate(180%)', boxShadow: '0 8px 32px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.08)' }}>
         <Link to="/" className="flex items-center gap-2.5 group">
           <InspectorLogo size={26} />
           <span className="font-extrabold text-sm sm:text-base text-white tracking-tight group-hover:text-cyan-300 transition-colors">
