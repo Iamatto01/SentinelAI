@@ -188,9 +188,9 @@ export default function NewScanModal({ onClose, onStarted, initialProjectId = ''
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 md:p-8 bg-slate-950/85 backdrop-blur-md overflow-y-auto" onClick={onClose}>
-      <div className="relative w-full max-w-4xl max-h-[92vh] flex flex-col rounded-3xl border border-cyan-500/40 bg-slate-900/98 shadow-2xl shadow-cyan-950/80 overflow-hidden text-slate-100 animate-in fade-in zoom-in-95 duration-200 my-auto" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between border-b border-white/10 px-6 sm:px-8 py-5 bg-slate-950/90 shrink-0">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-slate-950/90 backdrop-blur-lg overflow-y-auto" onClick={onClose}>
+      <div className="relative w-full max-w-4xl h-[90vh] max-h-[920px] flex flex-col rounded-3xl border-2 border-cyan-500/50 bg-[#0a1026] shadow-[0_0_60px_rgba(0,242,254,0.25)] text-slate-100 animate-in fade-in zoom-in-95 duration-200 my-auto overflow-hidden" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between border-b border-white/10 px-6 sm:px-8 py-5 bg-slate-950 shrink-0 z-10">
           <div className="flex items-center gap-3.5">
             <div className="p-2.5 rounded-2xl bg-gradient-to-br from-cyan-500 to-blue-600 text-slate-950 shadow-lg shadow-cyan-500/30">
               <Zap size={22} className="stroke-[2.5]" />
@@ -203,7 +203,7 @@ export default function NewScanModal({ onClose, onStarted, initialProjectId = ''
           <button onClick={onClose} className="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"><X size={20} /></button>
         </div>
 
-        <form onSubmit={submit} className="flex-1 overflow-y-auto p-6 sm:p-8 space-y-6 custom-scrollbar">
+        <form id="new-scan-form" onSubmit={submit} className="flex-1 min-h-0 overflow-y-auto p-6 sm:p-8 space-y-6 bg-[#0b132e]/95">
           {/* Scan Type Mode Switcher */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <button type="button" onClick={() => setMode('blackbox')}
@@ -558,20 +558,23 @@ export default function NewScanModal({ onClose, onStarted, initialProjectId = ''
             </div>
           )}
 
-          <div className="flex items-center justify-between pt-4 border-t border-white/10 shrink-0">
-            <button type="button" onClick={onClose} className="btn-ghost text-xs py-2.5 px-5 cursor-pointer">
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={busy}
-              className="btn-primary text-xs py-2.5 px-7 cursor-pointer shadow-lg shadow-cyan-500/30 bg-gradient-to-r from-cyan-500 via-cyan-400 to-blue-600 text-slate-950 font-black hover:scale-105 transition-transform flex items-center gap-2"
-            >
-              {busy ? <Loader2 size={16} className="animate-spin" /> : <Zap size={16} />}
-              <span>{busy ? 'Starting Assessment...' : 'Launch Assessment'}</span>
-            </button>
-          </div>
         </form>
+
+        {/* Pinned Footer */}
+        <div className="border-t border-white/10 px-6 sm:px-8 py-4 bg-slate-950 flex items-center justify-between shrink-0 z-10">
+          <button type="button" onClick={onClose} className="btn-ghost text-xs py-2.5 px-5 cursor-pointer">
+            Cancel
+          </button>
+          <button
+            type="submit"
+            form="new-scan-form"
+            disabled={busy}
+            className="btn-primary text-xs py-2.5 px-7 cursor-pointer shadow-lg shadow-cyan-500/30 bg-gradient-to-r from-cyan-500 via-cyan-400 to-blue-600 text-slate-950 font-black hover:scale-105 transition-transform flex items-center gap-2"
+          >
+            {busy ? <Loader2 size={16} className="animate-spin" /> : <Zap size={16} />}
+            <span>{busy ? 'Starting Assessment...' : 'Launch Assessment'}</span>
+          </button>
+        </div>
       </div>
     </div>
   )
