@@ -107,7 +107,7 @@ export default function Landing() {
       <div className="at-home__blob at-home__blob--c" />
 
       {/* ── Slim & Compact Glassmorphic Top Floating Navbar ────────────────── */}
-      <header className="sticky top-6 sm:top-8 z-50 w-[calc(100%-2rem)] max-w-5xl mx-auto px-4 sm:px-6 py-2.5 flex items-center justify-between rounded-2xl bg-slate-950/80 border border-white/15 backdrop-blur-xl shadow-2xl transition-all">
+      <header className="sticky top-6 sm:top-8 z-50 w-[calc(100%-2rem)] max-w-5xl mx-auto px-5 sm:px-7 py-3 flex items-center justify-between rounded-2xl bg-slate-950/85 border border-white/15 backdrop-blur-xl shadow-2xl transition-all mb-4">
         <Link to="/" className="flex items-center gap-2.5 group">
           <InspectorLogo size={26} />
           <span className="font-extrabold text-sm sm:text-base text-white tracking-tight group-hover:text-cyan-300 transition-colors">
@@ -146,7 +146,7 @@ export default function Landing() {
             SentinelAI orchestrates 150+ real Kali Linux pentest tools via the Hexstrike Engine, 51 specialist AI personas, and local-first RAG knowledge base.
           </p>
 
-          <div className="at-home__hero-actions mt-2">
+          <div className="at-home__hero-actions mt-4 sm:mt-5 gap-3 sm:gap-4">
             <Link to="/login" className="at-home__btn at-home__btn--solid at-home__btn--hero shadow-glow hover:scale-105 transition-transform">
               Start Free Assessment <ArrowRight size={16} />
             </Link>
@@ -173,7 +173,7 @@ export default function Landing() {
 
         {/* Right Column Hero Visual Card */}
         <div className="at-home__visual at-stagger-2">
-          <div className="at-home__visual-frame glass p-6 border border-white/15 rounded-3xl flex flex-col justify-between shadow-2xl relative overflow-hidden bg-slate-950/70">
+          <div className="at-home__visual-frame glass p-7 sm:p-8 border border-white/15 rounded-3xl flex flex-col justify-between shadow-2xl relative overflow-hidden bg-slate-950/75">
             <div className="flex items-center justify-between border-b border-white/10 pb-4">
               <div className="flex items-center gap-3">
                 <InspectorLogo size={38} />
@@ -190,18 +190,18 @@ export default function Landing() {
               </span>
             </div>
 
-            <div className="my-5 space-y-2.5 font-mono text-xs">
-              <div className="p-3 rounded-xl bg-black/40 border border-white/10 flex items-center justify-between hover:border-emerald-400/40 transition-colors">
+            <div className="my-6 space-y-3.5 font-mono text-xs">
+              <div className="p-3.5 rounded-xl bg-black/40 border border-white/10 flex items-center justify-between hover:border-emerald-400/40 transition-colors">
                 <span className="text-slate-400">Hexstrike API Engine</span>
                 <span className="text-emerald-400 font-semibold flex items-center gap-1.5">
                   <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" /> 127.0.0.1:8888 (Online)
                 </span>
               </div>
-              <div className="p-3 rounded-xl bg-black/40 border border-white/10 flex items-center justify-between hover:border-cyan-400/40 transition-colors">
+              <div className="p-3.5 rounded-xl bg-black/40 border border-white/10 flex items-center justify-between hover:border-cyan-400/40 transition-colors">
                 <span className="text-slate-400">AI Agents Verification</span>
                 <span className="text-cyan-400 font-semibold">51 Specialist Personas</span>
               </div>
-              <div className="p-3 rounded-xl bg-black/40 border border-white/10 flex items-center justify-between hover:border-amber-400/40 transition-colors">
+              <div className="p-3.5 rounded-xl bg-black/40 border border-white/10 flex items-center justify-between hover:border-amber-400/40 transition-colors">
                 <span className="text-slate-400">Knowledge Base RAG</span>
                 <span className="text-amber-400 font-semibold">PayloadsAllTheThings FTS5</span>
               </div>
@@ -218,7 +218,7 @@ export default function Landing() {
       </main>
 
       {/* ── Upper Hero Extension: Signal Strip & FYP Creator Showcase ──────── */}
-      <div className="max-w-6xl mx-auto px-4 sm:px-8 space-y-4 mb-20 sm:mb-28">
+      <div className="max-w-6xl mx-auto px-4 sm:px-8 space-y-8 mt-12 sm:mt-16 mb-24 sm:mb-32">
         {/* Ticker / Signal Strip */}
         <div className="at-home__signal-strip at-stagger-3 my-0">
           <div className="at-home__signal-track">
@@ -234,8 +234,8 @@ export default function Landing() {
 
         {/* ── FYP Creator & Lead Security Architect Showcase Banner ─────────────── */}
         <section className="scroll-mt-32 my-0">
-          <div className="card p-5 sm:p-6 border border-cyan-500/30 bg-slate-950/80 rounded-2xl shadow-xl relative overflow-hidden backdrop-blur-xl">
-            <div className="flex flex-col sm:flex-row items-center sm:items-start gap-5 sm:gap-6">
+          <div className="card p-6 sm:p-8 border border-cyan-500/30 bg-slate-950/80 rounded-3xl shadow-xl relative overflow-hidden backdrop-blur-xl">
+            <div className="flex flex-col sm:flex-row items-center sm:items-start gap-6 sm:gap-8">
               {/* Creator Photo - Strictly constrained 120x120 square with centered face */}
               <div className="relative shrink-0 flex flex-col items-center">
                 <div
@@ -324,7 +324,7 @@ export default function Landing() {
       </div>
 
       {/* ── Features & Architecture (Spacious Full-Width Sections) ─────────── */}
-      <div className="max-w-6xl mx-auto px-4 sm:px-8 space-y-32 sm:space-y-40 pb-36">
+      <div className="max-w-6xl mx-auto px-4 sm:px-8 space-y-36 sm:space-y-44 pb-36">
         {/* Features Section */}
         <div id="features" className="space-y-6 scroll-mt-24">
           <div className="text-center space-y-2">
