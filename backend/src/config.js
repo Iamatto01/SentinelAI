@@ -40,6 +40,9 @@ export const config = {
     issuer: process.env.JWT_ISSUER || 'fyp2-backend',
   },
   defaultAdminPassword: process.env.DEFAULT_ADMIN_PASSWORD || 'kali',
+  // Kali sudo password — used for systemctl/apt tool management.
+  // Set to empty string for passwordless sudo (NOPASSWD in sudoers is preferred).
+  kaliSudoPassword: process.env.KALI_SUDO_PASSWORD || 'kali',
 
   ai: {
     provider: (process.env.AI_PROVIDER || 'hybrid').trim(),

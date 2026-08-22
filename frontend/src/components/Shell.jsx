@@ -150,8 +150,8 @@ export default function Shell() {
       <aside
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
-        className={`fixed inset-y-0 left-0 lg:left-3 lg:inset-y-3 glass rounded-none lg:rounded-3xl flex flex-col z-50 overflow-hidden transition-all duration-300 ease-in-out shadow-2xl border border-white/15 ${
-          isExpanded ? 'w-64 lg:w-60 shadow-cyan-950/40' : 'w-64 lg:w-20'
+        className={`fixed inset-y-0 left-0 flex flex-col z-50 overflow-hidden transition-all duration-300 ease-in-out shadow-2xl border-r border-white/10 ${
+          isExpanded ? 'w-64 shadow-cyan-950/40' : 'w-64 lg:w-20'
         } ${
           mobileOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
         }`}
@@ -249,9 +249,9 @@ export default function Shell() {
       </aside>
 
       {/* Main Content Area */}
-      <main className={`transition-all duration-300 ${pinned ? 'pl-0 lg:pl-[264px]' : 'pl-0 lg:pl-[104px]'} pr-0 lg:pr-3`}>
+      <main className={`transition-all duration-300 ${pinned ? 'pl-0 lg:pl-64' : 'pl-0 lg:pl-20'}`}>
         {/* Desktop Top Header Bar (Vision UI Style) */}
-        <header className="hidden lg:flex items-center justify-between mx-auto max-w-7xl px-6 pt-5 pb-2">
+        <header className="hidden lg:flex items-center justify-between px-6 pt-5 pb-2">
           <div className="flex items-center gap-2 text-xs font-semibold text-slate-400">
             <span>Portal</span>
             <span>/</span>
@@ -283,7 +283,7 @@ export default function Shell() {
           </div>
         </header>
 
-        <div className="mx-auto max-w-7xl px-3 sm:px-6 py-4 sm:py-6">
+        <div className="px-3 sm:px-6 py-4 sm:py-6">
           {/* Paywall Gate: If client has no subscription and tries to view dashboard/scans, show Paywall Card */}
           {isSubscriptionExpired && !isAllowedPathWhenExpired ? (
             <div className="space-y-6 animate-in fade-in duration-300 py-6">

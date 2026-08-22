@@ -2,6 +2,7 @@ import os from 'node:os'
 import { spawn, exec } from 'node:child_process'
 import { promisify } from 'node:util'
 import { llm } from './ai/llm-client.js'
+import { config } from './config.js'
 
 const execAsync = promisify(exec)
 
@@ -165,12 +166,33 @@ export async function executeCommand(command, timeout = 30000) {
     throw new Error('Command is required')
   }
 
-  // Basic sanitization/warning against catastrophic system destruction
-  const blocked = [':(){ :|:& };:', 'rm -rf /', 'rm -rf /*', 'mkfs', 'dd if=/dev/zero of=/dev/sda']
-  for (const b of blocked) {
-    if (command.trim().includes(b)) {
-      throw new Error(`Dangerous command blocked: ${b}`)
-    }
+  // Allowlist: only safe read-only/recon/system-status commands
+  const allowed = [
+    'nmap', 'nikto', 'nuclei', 'gobuster', 'feroxbuster', 'sqlmap', 'ffuf',
+    'dirsearch', 'wafw00f', 'subfinder', 'amass', 'masscan', 'sslscan', 'whatweb',
+    'wpscan', 'hydra', 'msfconsole', 'msfrpcd', 'httpx', 'katana', 'dalfox', 'arjun',
+    'whois', 'dig', 'nslookup', 'host', 'traceroute', 'tracert', 'ping', 'curl', 'wget',
+    'python3', 'python', 'ruby', 'perl', 'go', 'node',
+    'netstat', 'ss', 'ps', 'top', 'htop', 'free', 'df', 'du', 'ls', 'cat', 'head', 'tail',
+    'grep', 'find', 'locate', 'which', 'whereis', 'file', 'stat', 'strings', 'xxd', 'hexdump',
+    'awk', 'sed', 'sort', 'uniq', 'wc', 'cut', 'tr', 'tee', 'tar', 'gzip', 'zip', 'unzip',
+    'ifconfig', 'ip', 'iwconfig', 'rfkill', 'arp', 'route', 'tcpdump', 'tshark',
+    'systemctl', 'journalctl', 'service', 'docker', 'uptime', 'uname', 'who', 'w', 'id',
+    'last', 'lastlog', 'crontab', 'date', 'vmstat', 'iostat', 'lsof', 'getent',
+    'passwd', 'chage', 'ufw', 'iptables', 'fail2ban-client',
+    'git', 'make', 'cmake', 'gcc', 'g++',
+    'pip', 'pip3', 'npm', 'yarn', 'gem', 'cpan',
+    'echo', 'true', 'false', 'env', 'printenv', 'pwd',
+    'ssh', 'scp', 'rsync', 'nc', 'ncat', 'socat',
+    'base64', 'openssl', 'gpg',
+    'snmpwalk', 'snmpget', 'enum4linux', 'smbclient', 'smbmap', 'rpcclient',
+    'aircrack-ng', 'airodump-ng', 'aireplay-ng', 'reaver', 'wash', 'kismet',
+    'searchsploit', 'exploitdb',
+  ]
+  const firstWord = command.trim().split(/\s+/)[0]
+  const bin = firstWord.replace(/^.*\//, '') // strip path prefix
+  if (!allowed.includes(bin)) {
+    throw new Error(`Command not allowed: ${bin}. Use the AI suggest feature or request a tool addition.`)
   }
 
   const result = await runCmd(command, timeout)
@@ -277,7 +299,9 @@ export async function manageService(service, action) {
     throw new Error(`Invalid action. Allowed: ${allowedActions.join(', ')}`)
   }
 
-  let cmd = `echo kali | sudo -S systemctl ${action} ${service}`
+  // Prefer passwordless sudo (NOPASSWD in sudoers). Falls back to config.kaliSudoPassword.
+  const sudo = config.kaliSudoPassword ? `echo ${config.kaliSudoPassword} | sudo -S` : 'sudo'
+  let cmd = `${sudo} systemctl ${action} ${service}`
 
   // Special handling for Hexstrike / Metasploit if not systemd units
   if (service === 'hexstrike' && action === 'restart') {
@@ -338,15 +362,17 @@ export async function auditTools() {
 
 /** Trigger background installation/update of all tools */
 export function triggerToolsInstall() {
+  // Prefer passwordless sudo (NOPASSWD in sudoers). Falls back to config.kaliSudoPassword.
+  const sudo = config.kaliSudoPassword ? `echo ${config.kaliSudoPassword} | sudo -S` : 'sudo'
   const installCmd = `
-    echo kali | sudo -S apt update -y && \
-    echo kali | sudo -S apt install -y nmap nikto nuclei gobuster feroxbuster sqlmap ffuf dirsearch wafw00f subfinder amass masscan sslscan whatweb wpscan hydra metasploit-framework avahi-daemon avahi-utils libnss-mdns python3-pip httpx-toolkit && \
+    ${sudo} apt update -y && \
+    ${sudo} apt install -y nmap nikto nuclei gobuster feroxbuster sqlmap ffuf dirsearch wafw00f subfinder amass masscan sslscan whatweb wpscan hydra metasploit-framework avahi-daemon avahi-utils libnss-mdns python3-pip httpx-toolkit && \
     (pip3 install arjun --break-system-packages 2>/dev/null || true) && \
     (go install github.com/projectdiscovery/katana/cmd/katana@latest 2>/dev/null || true) && \
     (go install github.com/hahwul/dalfox/v2@latest 2>/dev/null || true) && \
-    ([ -f ~/go/bin/katana ] && sudo cp ~/go/bin/katana /usr/local/bin/katana 2>/dev/null || true) && \
-    ([ -f ~/go/bin/dalfox ] && sudo cp ~/go/bin/dalfox /usr/local/bin/dalfox 2>/dev/null || true) && \
-    (if command -v httpx-toolkit >/dev/null 2>&1; then sudo ln -sf "$(which httpx-toolkit)" /usr/local/bin/httpx 2>/dev/null || true; fi)
+    ([ -f ~/go/bin/katana ] && ${sudo} cp ~/go/bin/katana /usr/local/bin/katana 2>/dev/null || true) && \
+    ([ -f ~/go/bin/dalfox ] && ${sudo} cp ~/go/bin/dalfox /usr/local/bin/dalfox 2>/dev/null || true) && \
+    (if command -v httpx-toolkit >/dev/null 2>&1; then ${sudo} ln -sf "$(which httpx-toolkit)" /usr/local/bin/httpx 2>/dev/null || true; fi)
   `
 
   setImmediate(async () => {

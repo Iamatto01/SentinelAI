@@ -13,11 +13,10 @@
   --at-glass-border: rgba(255, 255, 255, 0.12);
   --at-glass-highlight: rgba(255, 255, 255, 0.08);
   min-height: 100vh;
-  max-width: 100vw;
+  width: 100%;
+  margin: 0;
+  padding: 0;
   box-sizing: border-box;
-  zoom: 0.9;
-  width: calc(100vw / 0.9);
-  min-height: calc(100vh / 0.9);
   color: var(--at-text);
   background:
     radial-gradient(circle at 15% 15%, rgba(0, 242, 254, 0.16) 0%, transparent 40%),
@@ -31,17 +30,7 @@
   text-rendering: optimizeLegibility;
 }
 
-.at-home__scroll-bar {
-  position: fixed;
-  left: 0;
-  top: 0;
-  width: 100%;
-  height: 2px;
-  transform-origin: left center;
-  z-index: 12;
-  background: linear-gradient(90deg, #70e2ff, #ffd593);
-  box-shadow: 0 0 22px rgba(112, 226, 255, 0.6);
-}
+
 
 .at-home__grid,
 .at-home__noise {
@@ -244,7 +233,7 @@
 }
 
 .at-home__content {
-  width: min(1200px, calc(100% - 2.6rem));
+  width: min(1600px, calc(100% - 2.6rem));
   margin: 0 auto;
   padding: 4.5rem 0 3.5rem;
   display: grid;
