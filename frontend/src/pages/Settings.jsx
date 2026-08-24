@@ -192,7 +192,7 @@ export default function Settings() {
             <button
               type="button"
               onClick={randomizeNow}
-              className="btn-primary flex items-center gap-2 text-xs self-start sm:self-auto shadow-glow"
+              className="btn-fizzy self-start sm:self-auto"
             >
               <RefreshCw size={14} className="animate-spin-slow" />
               <span>Roll Random AI Background</span>
@@ -463,10 +463,14 @@ export default function Settings() {
                 <button
                   type="submit"
                   disabled={teleLoading || !telePairCode.trim()}
-                  className="btn-primary text-xs flex items-center justify-center gap-2"
+                  className="btn-concept-12"
                 >
-                  {teleLoading ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
-                  Sambung Telegram
+                  <span className="btn-concept-12__text">
+                    {teleLoading ? 'Menyambung...' : 'Sambung Telegram'}
+                  </span>
+                  <span className="btn-concept-12__icon">
+                    {teleLoading ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
+                  </span>
                 </button>
                 <a
                   href={`https://t.me/${teleStatus?.telegram?.botUsername || 'sentinelai_telebot'}`}
@@ -565,10 +569,14 @@ export default function Settings() {
                 <button
                   type="submit"
                   disabled={discordLoading || !discordPairCode.trim()}
-                  className="btn-primary text-xs bg-indigo-600 hover:bg-indigo-500 border-indigo-400 flex items-center justify-center gap-2"
+                  className="btn-concept-12 btn-concept-12--indigo"
                 >
-                  {discordLoading ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
-                  Sambung Discord
+                  <span className="btn-concept-12__text">
+                    {discordLoading ? 'Menyambung...' : 'Sambung Discord'}
+                  </span>
+                  <span className="btn-concept-12__icon">
+                    {discordLoading ? <Loader2 size={16} className="animate-spin" /> : <Bot size={16} />}
+                  </span>
                 </button>
               </div>
             </form>

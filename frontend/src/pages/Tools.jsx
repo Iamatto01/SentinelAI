@@ -144,11 +144,7 @@ export default function Tools() {
             <div className="flex flex-wrap items-center justify-center gap-2">
               <button
                 onClick={() => setActiveCat('all')}
-                className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                  activeCat === 'all'
-                    ? 'bg-cyan-500 text-slate-950 shadow-lg shadow-cyan-500/30'
-                    : 'bg-white/5 text-slate-300 border border-white/10 hover:bg-white/10'
-                }`}
+                className={`btn-swipe-right ${activeCat === 'all' ? 'btn-swipe-right--active' : ''}`}
               >
                 All Categories
               </button>
@@ -158,13 +154,9 @@ export default function Tools() {
                   <button
                     key={c.id}
                     onClick={() => setActiveCat(c.id)}
-                    className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
-                      activeCat === c.id
-                        ? 'bg-cyan-500 text-slate-950 shadow-lg shadow-cyan-500/30'
-                        : 'bg-white/5 text-slate-300 border border-white/10 hover:bg-white/10'
-                    }`}
+                    className={`btn-swipe-right ${activeCat === c.id ? 'btn-swipe-right--active' : ''}`}
                   >
-                    <Icon size={12} /> {c.title}
+                    <Icon size={13} /> {c.title}
                   </button>
                 )
               })}
@@ -268,8 +260,11 @@ export default function Tools() {
             Launch your first autonomous assessment and watch {totalTools}+ tools chain themselves against your target.
           </p>
           <div className="flex justify-center gap-4">
-            <Link to="/login?mode=register&plan=pro" className="btn-primary py-3.5 px-8 text-xs sm:text-sm font-extrabold shadow-glow flex items-center gap-2 hover:scale-105 transition-transform">
-              Get Started Now <ArrowRight size={16} />
+            <Link to="/login?mode=register&plan=pro" className="btn-concept-12">
+              <span className="btn-concept-12__text">Get Started Now</span>
+              <span className="btn-concept-12__icon">
+                <ShieldCheck size={18} />
+              </span>
             </Link>
           </div>
         </section>

@@ -201,13 +201,16 @@ export default function About() {
           <p className="text-slate-400 text-xs sm:text-sm max-w-xl mx-auto leading-relaxed">
             See how SentinelAI's research-driven pipeline can secure your codebase and infrastructure continuously.
           </p>
-          <div className="flex justify-center gap-4">
-            <Link to="/pricing" className="btn-primary py-3.5 px-8 text-xs sm:text-sm font-extrabold shadow-glow flex items-center gap-2 hover:scale-105 transition-transform">
-              View Pricing <ArrowRight size={16} />
+          <div className="flex justify-center items-center flex-wrap gap-4">
+            <Link to="/pricing" className="btn-concept-12">
+              <span className="btn-concept-12__text">View Pricing</span>
+              <span className="btn-concept-12__icon">
+                <ShieldCheck size={18} />
+              </span>
             </Link>
-            <Link to="/contact" className="btn-secondary py-3.5 px-8 text-xs sm:text-sm font-extrabold border-white/20 hover:border-cyan-400/50 hover:text-cyan-300 transition-colors flex items-center gap-2">
+            <a href="mailto:muhammadsaifudinmj@gmail.com" className="btn-thin py-3 px-6 text-xs font-bold hover:border-cyan-400/50">
               Talk to Us
-            </Link>
+            </a>
           </div>
         </section>
       </div>

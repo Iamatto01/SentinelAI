@@ -114,15 +114,15 @@ export default function Landing() {
           </p>
 
           <div className="at-home__hero-actions mt-4 sm:mt-5 gap-3 sm:gap-4 flex items-center flex-wrap">
-            {/* #12 Button Concept for Start Free Assessment (No Arrow) */}
+            {/* #12 Button Concept for Start Free Assessment */}
             <Link to="/login" className="btn-concept-12">
               <span className="btn-concept-12__text">Start Free Assessment</span>
               <span className="btn-concept-12__icon">
                 <ShieldAlert size={18} />
               </span>
             </Link>
-            {/* Thin Button Style for Explore Capabilities */}
-            <a href="#features" className="btn-thin py-2.5 px-5 text-xs font-bold hover:border-cyan-400/50">
+            {/* #22 Animated Border & Glow for Explore Capabilities */}
+            <a href="#features" className="btn-animated-border text-xs font-bold">
               Explore Capabilities
             </a>
           </div>
@@ -181,8 +181,8 @@ export default function Landing() {
 
             <div className="pt-3 border-t border-white/10 flex justify-between items-center text-xs">
               <span className="text-slate-400">Ready to audit targets?</span>
-              {/* Rounded Pulse Button Style for Launch Dashboard */}
-              <Link to="/login" className="btn-rounded-pulse btn-rounded-pulse--sm">
+              {/* #1 Hover Glow Effect for Launch Dashboard */}
+              <Link to="/login" className="btn-hover-glow text-xs py-2 px-4">
                 Launch Dashboard
               </Link>
             </div>
@@ -537,9 +537,10 @@ export default function Landing() {
               </div>
 
               <div className="pt-8">
+                {/* #11 Flush Button for Pro */}
                 <Link
                   to={`/login?mode=register&plan=pro&interval=${interval}`}
-                  className="btn-rounded-pulse w-full justify-center py-3.5 text-xs font-extrabold shadow-glow hover:scale-[1.01] transition-transform"
+                  className="btn-flush w-full justify-center"
                 >
                   <span>Subscribe to SentinelAI Pro</span>
                 </Link>
@@ -587,9 +588,10 @@ export default function Landing() {
               </div>
 
               <div className="pt-8">
+                {/* #19 Fancy VIP Button for Enterprise */}
                 <Link
                   to={`/login?mode=register&plan=enterprise&interval=${interval}`}
-                  className="btn-thin w-full justify-center py-3.5 text-xs font-extrabold border-white/20 hover:border-cyan-400/50 hover:text-cyan-300 transition-colors"
+                  className="btn-fancy-vip w-full justify-center"
                 >
                   <span>Subscribe to Enterprise</span>
                 </Link>
