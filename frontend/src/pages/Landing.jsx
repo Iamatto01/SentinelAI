@@ -98,10 +98,6 @@ export default function Landing() {
 
   return (
     <PublicLayout>
-      <div className="pt-content-reveal">
-      {/* ── Realistic Paper Page Turn Reveal on Load (Top-Left to Bottom-Right) ── */}
-      <PageTurnTransition duration={1200} />
-
       {/* ── Main Hero Content (Original 2-Column Side-by-Side Layout) ──────── */}
       <main className="at-home__content">
         {/* Left Column Hero Text */}
@@ -620,7 +616,6 @@ export default function Landing() {
             </Link>
           </div>
         </div>
-      </div>
       </div>
     </PublicLayout>
   )
