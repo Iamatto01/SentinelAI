@@ -5,6 +5,7 @@ import { ScanProvider } from './lib/ScanContext.jsx'
 import { AiProvider } from './lib/AiContext.jsx'
 import { ThemeProvider } from './lib/ThemeContext.jsx'
 import Shell from './components/Shell.jsx'
+import PublicLayout from './components/PublicLayout.jsx'
 import Landing from './pages/Landing.jsx'
 import About from './pages/About.jsx'
 import Tools from './pages/Tools.jsx'
@@ -94,8 +95,8 @@ export default function App() {
           <Route path="/about" element={<About />} />
           <Route path="/tools" element={<Tools />} />
           <Route path="/services" element={<Services />} />
-          <Route path="/pricing" element={<Navigate to="/#pricing" replace />} />
-          <Route path="/contact" element={<About />} />
+          <Route path="/pricing" element={<Pricing />} />
+          <Route path="/contact" element={<Contact />} />
           <Route path="/login" element={<Login />} />
           
           {/* Top-level aliases for direct URL navigation */}

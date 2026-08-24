@@ -7,6 +7,7 @@ import {
 import InspectorLogo from '../components/InspectorLogo.jsx'
 import SystemTree from '../components/SystemTree.jsx'
 import PageTurnTransition from '../components/PageTurnTransition.jsx'
+import PublicLayout from '../components/PublicLayout.jsx'
 import './Home.css'
 
 export default function Landing() {
@@ -96,44 +97,10 @@ export default function Landing() {
   ]
 
   return (
-    <div className="at-home min-h-screen relative overflow-x-hidden pt-content-reveal">
+    <PublicLayout>
+      <div className="pt-content-reveal">
       {/* ── Realistic Paper Page Turn Reveal on Load (Top-Left to Bottom-Right) ── */}
       <PageTurnTransition duration={1200} />
-      
-
-      {/* Ambient Grid & Background Blobs */}
-      <div className="at-home__grid" />
-      <div className="at-home__noise" />
-      <div className="at-home__blob at-home__blob--a" />
-      <div className="at-home__blob at-home__blob--b" />
-      <div className="at-home__blob at-home__blob--c" />
-
-      {/* ── Slim & Compact Glassmorphic Top Floating Navbar ────────────────── */}
-      <header className="sticky top-5 sm:top-6 z-50 w-[calc(100%-2.5rem)] max-w-5xl mx-auto px-6 sm:px-8 py-3 flex items-center justify-between rounded-full border border-white/[0.12] shadow-2xl transition-all mb-2" style={{ background: 'rgba(6, 11, 38, 0.45)', backdropFilter: 'blur(40px) saturate(180%)', WebkitBackdropFilter: 'blur(40px) saturate(180%)', boxShadow: '0 8px 32px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.08)' }}>
-        <Link to="/" className="flex items-center gap-2.5 group">
-          <InspectorLogo size={26} />
-          <span className="font-extrabold text-sm sm:text-base text-white tracking-tight group-hover:text-cyan-300 transition-colors">
-            SentinelAI
-          </span>
-        </Link>
-
-        <nav className="hidden md:flex items-center gap-7 text-xs font-bold text-slate-300">
-          <a href="#features" className="hover:text-cyan-400 transition-colors">Features</a>
-          <a href="#architecture" className="hover:text-cyan-400 transition-colors">Architecture Tree</a>
-          <a href="#pricing" className="hover:text-cyan-400 transition-colors">Pricing & Plans</a>
-        </nav>
-
-        <div className="flex items-center gap-3">
-          {/* Thin Button Style for Sign In */}
-          <Link to="/login" className="btn-thin">
-            Sign In
-          </Link>
-          {/* Rounded Pulse Button Style for Get Started (No Arrow) */}
-          <Link to="/login?mode=register&plan=pro" className="btn-rounded-pulse btn-rounded-pulse--sm">
-            <span>Get Started</span>
-          </Link>
-        </div>
-      </header>
 
       {/* ── Main Hero Content (Original 2-Column Side-by-Side Layout) ──────── */}
       <main className="at-home__content">
@@ -654,6 +621,7 @@ export default function Landing() {
           </div>
         </div>
       </div>
-    </div>
+      </div>
+    </PublicLayout>
   )
 }

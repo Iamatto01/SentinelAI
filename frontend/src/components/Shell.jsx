@@ -21,7 +21,9 @@ export default function Shell() {
   const location = useLocation()
   const [showNew, setShowNew] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
-  const [pinned, setPinned] = useState(false)
+  const [pinned, setPinned] = useState(() => {
+    return localStorage.getItem('sentinel_sidebar_pinned') === 'true'
+  })
   const [isHovered, setIsHovered] = useState(false)
   const [subscription, setSubscription] = useState(null)
   const [loadingSub, setLoadingSub] = useState(true)
@@ -171,6 +173,19 @@ export default function Shell() {
           </div>
 
           <div className="flex items-center gap-1">
+            {showLabels && (
+              <button
+                onClick={() => {
+                  const next = !pinned
+                  setPinned(next)
+                  localStorage.setItem('sentinel_sidebar_pinned', String(next))
+                }}
+                title={pinned ? "Collapse Sidebar" : "Pin Sidebar Expanded"}
+                className="hidden lg:flex p-1.5 text-slate-400 hover:text-cyan-300 hover:bg-white/5 rounded-lg transition-colors"
+              >
+                <ChevronLeft size={16} className={`transition-transform duration-300 ${pinned ? '' : 'rotate-180'}`} />
+              </button>
+            )}
             <button
               onClick={() => setMobileOpen(false)}
               className="lg:hidden p-1.5 text-slate-400 hover:text-white rounded-lg"
@@ -248,8 +263,8 @@ export default function Shell() {
         </div>
       </aside>
 
-      {/* Main Content Area */}
-      <main className={`transition-all duration-300 ${pinned ? 'pl-0 lg:pl-64' : 'pl-0 lg:pl-20'}`}>
+      {/* Main Content Area: smooth rightward push on expand */}
+      <main className={`transition-all duration-300 ease-in-out ${isExpanded ? 'pl-0 lg:pl-64' : 'pl-0 lg:pl-20'}`}>
         {/* Desktop Top Header Bar (Vision UI Style) */}
         <header className="hidden lg:flex items-center justify-between px-6 pt-5 pb-2">
           <div className="flex items-center gap-2 text-xs font-semibold text-slate-400">

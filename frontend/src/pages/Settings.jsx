@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { Loader2, Save, KeyRound, UserCircle, CheckCircle2, Database, Bell, Building2, Moon, Upload, Sparkles, Image, Eye, Sliders, RefreshCw, Layers, Send, ExternalLink, ShieldCheck, Unlink } from 'lucide-react'
+import { Loader2, Save, KeyRound, UserCircle, CheckCircle2, Database, Bell, Building2, Moon, Upload, Sparkles, Image, Eye, Sliders, RefreshCw, Layers, Send, ExternalLink, ShieldCheck, Unlink, Bot, MessageSquare } from 'lucide-react'
 import { api } from '../lib/api.js'
 import { useAuth } from '../lib/AuthContext.jsx'
 import { useTheme } from '../lib/ThemeContext.jsx'
@@ -24,10 +24,18 @@ export default function Settings() {
   const [notifs, setNotifs] = useState({ scanFinish: true, criticalAlert: true, dnd: false })
   const [branding, setBranding] = useState({ companyName: '', logo: '' })
   const [teleStatus, setTeleStatus] = useState(null)
-  const [pairCode, setPairCode] = useState('')
+  
+  // Dedicated Telegram State
+  const [telePairCode, setTelePairCode] = useState('')
   const [teleLoading, setTeleLoading] = useState(false)
   const [teleMsg, setTeleMsg] = useState('')
   const [teleErr, setTeleErr] = useState('')
+
+  // Dedicated Discord State
+  const [discordPairCode, setDiscordPairCode] = useState('')
+  const [discordLoading, setDiscordLoading] = useState(false)
+  const [discordMsg, setDiscordMsg] = useState('')
+  const [discordErr, setDiscordErr] = useState('')
 
   const loadTeleStatus = () => {
     api.telegramPairing().then(setTeleStatus).catch(() => {})
@@ -55,9 +63,9 @@ export default function Settings() {
     e.preventDefault()
     setTeleMsg(''); setTeleErr(''); setTeleLoading(true)
     try {
-      const res = await api.pairTelegram(pairCode)
+      const res = await api.pairTelegram(telePairCode)
       setTeleMsg(res.message || 'Telegram account paired successfully!')
-      setPairCode('')
+      setTelePairCode('')
       loadTeleStatus()
     } catch (err) {
       setTeleErr(err.message || 'Failed to pair Telegram account')
@@ -66,18 +74,46 @@ export default function Settings() {
     }
   }
 
+  async function handlePairDiscord(e) {
+    e.preventDefault()
+    setDiscordMsg(''); setDiscordErr(''); setDiscordLoading(true)
+    try {
+      const res = await api.pairTelegram(discordPairCode)
+      setDiscordMsg(res.message || 'Discord account paired successfully!')
+      setDiscordPairCode('')
+      loadTeleStatus()
+    } catch (err) {
+      setDiscordErr(err.message || 'Failed to pair Discord account')
+    } finally {
+      setDiscordLoading(false)
+    }
+  }
+
   async function handleUnpairChannel(platform) {
     const label = platform === 'discord' ? 'Discord' : 'Telegram'
     if (!window.confirm(`Adakah anda pasti mahu memutuskan sambungan ${label} daripada akaun ini?`)) return
-    setTeleMsg(''); setTeleErr(''); setTeleLoading(true)
+    if (platform === 'discord') {
+      setDiscordMsg(''); setDiscordErr(''); setDiscordLoading(true)
+    } else {
+      setTeleMsg(''); setTeleErr(''); setTeleLoading(true)
+    }
     try {
       const res = await api.unpairChannel(platform)
-      setTeleMsg(res.message || `${label} unlinked successfully.`)
+      if (platform === 'discord') {
+        setDiscordMsg(res.message || `${label} unlinked successfully.`)
+      } else {
+        setTeleMsg(res.message || `${label} unlinked successfully.`)
+      }
       loadTeleStatus()
     } catch (err) {
-      setTeleErr(err.message || `Failed to unlink ${label}`)
+      if (platform === 'discord') {
+        setDiscordErr(err.message || `Failed to unlink ${label}`)
+      } else {
+        setTeleErr(err.message || `Failed to unlink ${label}`)
+      }
     } finally {
       setTeleLoading(false)
+      setDiscordLoading(false)
     }
   }
 
@@ -336,7 +372,7 @@ export default function Settings() {
           </form>
         </div>
 
-        {/* TELEGRAM & DISCORD BOTS ACCOUNT PAIRING */}
+        {/* TELEGRAM BOT INTEGRATION CARD */}
         <div className="card p-6 space-y-6 border-cyan-500/30 bg-slate-900/60 shadow-2xl relative overflow-hidden">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-white/10 pb-4">
             <div className="flex items-center gap-3">
@@ -345,51 +381,42 @@ export default function Settings() {
               </div>
               <div>
                 <h3 className="text-base font-bold text-white flex items-center gap-2">
-                  Telegram & Discord Bots Integration
+                  Telegram Bot Integration
                 </h3>
                 <p className="text-xs text-slate-400">
-                  Sambungkan akaun anda dengan bot Telegram atau Discord untuk melancarkan imbasan dan menerima laporan pentest secara automatik.
+                  Sambungkan akaun Telegram anda dengan <span className="text-cyan-300 font-mono font-semibold">@{teleStatus?.telegram?.botUsername || 'sentinelai_telebot'}</span> untuk melancarkan imbasan dari jauh, menerima amaran masa nyata & laporan pentest secara automatik.
                 </p>
               </div>
             </div>
+
+            {teleStatus?.telegram?.paired ? (
+              <span className="text-[11px] uppercase font-bold px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center gap-1.5 self-start sm:self-auto">
+                <ShieldCheck size={14} /> Connected
+              </span>
+            ) : (
+              <span className="text-[11px] uppercase font-bold px-3 py-1 rounded-full bg-slate-800 text-slate-400 border border-white/10 self-start sm:self-auto">
+                Not Paired
+              </span>
+            )}
           </div>
 
           {teleMsg && <div className="p-3 text-xs font-semibold text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 rounded-xl">{teleMsg}</div>}
           {teleErr && <div className="p-3 text-xs font-semibold text-rose-400 bg-rose-500/10 border border-rose-500/30 rounded-xl">{teleErr}</div>}
 
-          {/* Active Channels Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* Telegram Channel Card */}
-            <div className="p-4 rounded-xl bg-slate-950/40 border border-white/10 space-y-3 flex flex-col justify-between">
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-white flex items-center gap-2">
-                    <span className="w-2.5 h-2.5 rounded-full bg-cyan-400"></span> Telegram Bot
-                  </span>
-                  {teleStatus?.telegram?.paired ? (
-                    <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center gap-1">
-                      <ShieldCheck size={12} /> Connected
-                    </span>
-                  ) : (
-                    <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 border border-white/10">
-                      Not Paired
-                    </span>
-                  )}
+          {/* Telegram Status Info & Unlink */}
+          {teleStatus?.telegram?.paired ? (
+            <div className="p-4 rounded-xl bg-cyan-950/25 border border-cyan-500/30 space-y-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                <div>
+                  <span className="text-slate-400 text-[11px]">Chat ID</span>
+                  <div className="font-mono text-cyan-300 font-bold">{teleStatus.telegram.chatId}</div>
                 </div>
-
-                <p className="text-xs text-slate-400">
-                  Bot: <a href={`https://t.me/${teleStatus?.telegram?.botUsername || 'sentinelai_telebot'}`} target="_blank" rel="noreferrer" className="text-cyan-400 font-mono underline font-semibold">@{teleStatus?.telegram?.botUsername || 'sentinelai_telebot'}</a>
-                </p>
-
-                {teleStatus?.telegram?.paired && (
-                  <div className="p-2.5 bg-cyan-950/30 border border-cyan-500/30 rounded-lg text-xs space-y-1">
-                    <div className="text-slate-300">Chat ID: <span className="font-mono text-cyan-300">{teleStatus.telegram.chatId}</span></div>
-                    <div className="text-slate-400 text-[11px]">Nama: {teleStatus.telegram.senderName || 'Telegram User'}</div>
-                  </div>
-                )}
+                <div>
+                  <span className="text-slate-400 text-[11px]">Nama Pengguna</span>
+                  <div className="text-slate-200 font-semibold">{teleStatus.telegram.senderName || 'Telegram User'}</div>
+                </div>
               </div>
-
-              <div className="pt-2 flex items-center justify-between gap-2 border-t border-white/5">
+              <div className="flex items-center justify-between pt-2 border-t border-white/10 text-xs">
                 <a
                   href={`https://t.me/${teleStatus?.telegram?.botUsername || 'sentinelai_telebot'}`}
                   target="_blank"
@@ -398,95 +425,154 @@ export default function Settings() {
                 >
                   <ExternalLink size={12} /> Buka Telegram
                 </a>
-                {teleStatus?.telegram?.paired && (
-                  <button
-                    type="button"
-                    onClick={() => handleUnpairChannel('telegram')}
-                    disabled={teleLoading}
-                    className="text-rose-400 hover:text-rose-300 text-xs underline"
-                  >
-                    Unlink
-                  </button>
-                )}
+                <button
+                  type="button"
+                  onClick={() => handleUnpairChannel('telegram')}
+                  disabled={teleLoading}
+                  className="text-rose-400 hover:text-rose-300 text-xs underline cursor-pointer"
+                >
+                  {teleLoading ? 'Memutuskan...' : 'Putuskan Sambungan'}
+                </button>
               </div>
             </div>
-
-            {/* Discord Channel Card */}
-            <div className="p-4 rounded-xl bg-slate-950/40 border border-white/10 space-y-3 flex flex-col justify-between">
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-white flex items-center gap-2">
-                    <span className="w-2.5 h-2.5 rounded-full bg-indigo-400"></span> Discord Bot
-                  </span>
-                  {teleStatus?.discord?.paired ? (
-                    <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center gap-1">
-                      <ShieldCheck size={12} /> Connected
-                    </span>
-                  ) : (
-                    <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 border border-white/10">
-                      Not Paired
-                    </span>
-                  )}
+          ) : (
+            /* Telegram Pairing Step-by-Step Box */
+            <form onSubmit={handlePairTelegram} className="space-y-4 p-4 rounded-xl bg-cyan-950/20 border border-cyan-500/30">
+              <div className="text-xs text-slate-300 space-y-1.5">
+                <div>
+                  <strong className="text-cyan-400">Langkah 1:</strong> Buka bot Telegram rasmi di <a href={`https://t.me/${teleStatus?.telegram?.botUsername || 'sentinelai_telebot'}`} target="_blank" rel="noreferrer" className="text-cyan-300 underline font-mono font-semibold">@{teleStatus?.telegram?.botUsername || 'sentinelai_telebot'}</a>
                 </div>
-
-                <p className="text-xs text-slate-400">
-                  Bot: <span className="text-indigo-400 font-mono font-semibold">@Sentinel AI</span> (Di server Discord anda)
-                </p>
-
-                {teleStatus?.discord?.paired && (
-                  <div className="p-2.5 bg-indigo-950/30 border border-indigo-500/30 rounded-lg text-xs space-y-1">
-                    <div className="text-slate-300">Channel/User ID: <span className="font-mono text-indigo-300">{teleStatus.discord.chatId}</span></div>
-                    <div className="text-slate-400 text-[11px]">Nama: {teleStatus.discord.senderName || 'Discord User'}</div>
-                  </div>
-                )}
+                <div>
+                  <strong className="text-cyan-400">Langkah 2:</strong> Hantar arahan <code className="bg-black/50 px-1.5 py-0.5 rounded text-cyan-300 font-mono font-bold">/start</code> untuk mendapatkan Kod Pengesahan 6-digit anda.
+                </div>
+                <div>
+                  <strong className="text-cyan-400">Langkah 3:</strong> Masukkan kod 6-digit tersebut di bawah untuk mengaktifkan sambungan:
+                </div>
               </div>
 
-              <div className="pt-2 flex items-center justify-between gap-2 border-t border-white/5">
-                <span className="text-[11px] text-slate-500">Taip @Sentinel AI /start</span>
-                {teleStatus?.discord?.paired && (
-                  <button
-                    type="button"
-                    onClick={() => handleUnpairChannel('discord')}
-                    disabled={teleLoading}
-                    className="text-rose-400 hover:text-rose-300 text-xs underline"
-                  >
-                    Unlink
-                  </button>
-                )}
+              <div className="flex flex-col sm:flex-row gap-3 pt-1">
+                <input
+                  type="text"
+                  maxLength={10}
+                  placeholder="Contoh: 141053"
+                  value={telePairCode}
+                  onChange={(e) => setTelePairCode(e.target.value)}
+                  className="input font-mono tracking-widest text-center text-sm sm:max-w-xs focus:border-cyan-400"
+                  required
+                />
+                <button
+                  type="submit"
+                  disabled={teleLoading || !telePairCode.trim()}
+                  className="btn-primary text-xs flex items-center justify-center gap-2"
+                >
+                  {teleLoading ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
+                  Sambung Telegram
+                </button>
+                <a
+                  href={`https://t.me/${teleStatus?.telegram?.botUsername || 'sentinelai_telebot'}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="btn-ghost text-xs py-2 px-3.5 flex items-center justify-center gap-1.5 sm:ml-auto"
+                >
+                  <ExternalLink size={13} /> Buka Telegram
+                </a>
+              </div>
+            </form>
+          )}
+        </div>
+
+        {/* DISCORD & OTHER BOTS INTEGRATION CARD */}
+        <div className="card p-6 space-y-6 border-indigo-500/30 bg-slate-900/60 shadow-2xl relative overflow-hidden">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-white/10 pb-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-indigo-500/20 border border-indigo-400/30 flex items-center justify-center text-indigo-400">
+                <Bot size={20} />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-white flex items-center gap-2">
+                  Discord & Other Bots Integration
+                </h3>
+                <p className="text-xs text-slate-400">
+                  Sambungkan bot Discord <span className="text-indigo-300 font-mono font-semibold">@Sentinel AI</span> ke dalam server atau DM Discord anda untuk menerima log amaran audit, notifikasi GitHub PR, dan status imbasan.
+                </p>
               </div>
             </div>
+
+            {teleStatus?.discord?.paired ? (
+              <span className="text-[11px] uppercase font-bold px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center gap-1.5 self-start sm:self-auto">
+                <ShieldCheck size={14} /> Connected
+              </span>
+            ) : (
+              <span className="text-[11px] uppercase font-bold px-3 py-1 rounded-full bg-slate-800 text-slate-400 border border-white/10 self-start sm:self-auto">
+                Not Paired
+              </span>
+            )}
           </div>
 
-          {/* Unified Pairing Input Box */}
-          <form onSubmit={handlePairTelegram} className="space-y-3 p-4 rounded-xl bg-cyan-950/20 border border-cyan-500/30">
-            <div className="text-xs text-slate-300 space-y-1">
-              <div>
-                <strong className="text-cyan-400">Langkah 1:</strong> Taip <code className="bg-black/40 px-1.5 py-0.5 rounded text-cyan-300 font-mono">/start</code> di Telegram (<a href="https://t.me/sentinelai_telebot" target="_blank" rel="noreferrer" className="text-cyan-400 underline">@sentinelai_telebot</a>) ATAU taip <code className="bg-black/40 px-1.5 py-0.5 rounded text-indigo-300 font-mono">@Sentinel AI /start</code> di Discord untuk dapatkan kod 6-digit.
+          {discordMsg && <div className="p-3 text-xs font-semibold text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 rounded-xl">{discordMsg}</div>}
+          {discordErr && <div className="p-3 text-xs font-semibold text-rose-400 bg-rose-500/10 border border-rose-500/30 rounded-xl">{discordErr}</div>}
+
+          {/* Discord Status Info & Unlink */}
+          {teleStatus?.discord?.paired ? (
+            <div className="p-4 rounded-xl bg-indigo-950/25 border border-indigo-500/30 space-y-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                <div>
+                  <span className="text-slate-400 text-[11px]">Channel / User ID</span>
+                  <div className="font-mono text-indigo-300 font-bold">{teleStatus.discord.chatId}</div>
+                </div>
+                <div>
+                  <span className="text-slate-400 text-[11px]">Nama Pengguna / Server</span>
+                  <div className="text-slate-200 font-semibold">{teleStatus.discord.senderName || 'Discord User'}</div>
+                </div>
               </div>
-              <div>
-                <strong className="text-cyan-400">Langkah 2:</strong> Masukkan kod 6-digit tersebut di bawah untuk menghubungkan akaun anda:
+              <div className="flex items-center justify-between pt-2 border-t border-white/10 text-xs">
+                <span className="text-[11px] text-slate-400 font-mono">Status: Aktif menerima notifikasi Discord</span>
+                <button
+                  type="button"
+                  onClick={() => handleUnpairChannel('discord')}
+                  disabled={discordLoading}
+                  className="text-rose-400 hover:text-rose-300 text-xs underline cursor-pointer"
+                >
+                  {discordLoading ? 'Memutuskan...' : 'Putuskan Sambungan'}
+                </button>
               </div>
             </div>
-            <div className="flex flex-col sm:flex-row gap-3 pt-2">
-              <input
-                type="text"
-                maxLength={10}
-                placeholder="Contoh: 141053"
-                value={pairCode}
-                onChange={(e) => setPairCode(e.target.value)}
-                className="input font-mono tracking-widest text-center text-sm sm:max-w-xs focus:border-cyan-400"
-                required
-              />
-              <button
-                type="submit"
-                disabled={teleLoading || !pairCode.trim()}
-                className="btn-primary text-xs flex items-center justify-center gap-2"
-              >
-                {teleLoading ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
-                Approve & Connect Channel
-              </button>
-            </div>
-          </form>
+          ) : (
+            /* Discord Pairing Step-by-Step Box */
+            <form onSubmit={handlePairDiscord} className="space-y-4 p-4 rounded-xl bg-indigo-950/20 border border-indigo-500/30">
+              <div className="text-xs text-slate-300 space-y-1.5">
+                <div>
+                  <strong className="text-indigo-400">Langkah 1:</strong> Buka Discord anda (server channel atau Direct Message ke bot).
+                </div>
+                <div>
+                  <strong className="text-indigo-400">Langkah 2:</strong> Taip arahan <code className="bg-black/50 px-1.5 py-0.5 rounded text-indigo-300 font-mono font-bold">@Sentinel AI /start</code> untuk menjana Kod Pengesahan 6-digit.
+                </div>
+                <div>
+                  <strong className="text-indigo-400">Langkah 3:</strong> Masukkan kod 6-digit tersebut di bawah untuk mengaktifkan sambungan:
+                </div>
+              </div>
+
+              <div className="flex flex-col sm:flex-row gap-3 pt-1">
+                <input
+                  type="text"
+                  maxLength={10}
+                  placeholder="Contoh: 839201"
+                  value={discordPairCode}
+                  onChange={(e) => setDiscordPairCode(e.target.value)}
+                  className="input font-mono tracking-widest text-center text-sm sm:max-w-xs focus:border-indigo-400"
+                  required
+                />
+                <button
+                  type="submit"
+                  disabled={discordLoading || !discordPairCode.trim()}
+                  className="btn-primary text-xs bg-indigo-600 hover:bg-indigo-500 border-indigo-400 flex items-center justify-center gap-2"
+                >
+                  {discordLoading ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
+                  Sambung Discord
+                </button>
+              </div>
+            </form>
+          )}
         </div>
 
         {/* RIGHT COLUMN */}
