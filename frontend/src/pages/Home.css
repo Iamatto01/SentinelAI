@@ -540,3 +540,163 @@
   0%   { opacity: 0.7; transform: scale(0.995); filter: blur(2px); }
   100% { opacity: 1;   transform: scale(1);     filter: blur(0px); }
 }
+
+/* ==========================================================================
+   BUTTON INNOVATIONS & STYLES (Thin, Rounded Pulse, #12 Button Concept)
+   ========================================================================== */
+
+/* ── 1. Thin Button Style (Minimalist sleek outline) ── */
+.btn-thin {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  border-radius: 9999px;
+  padding: 0.45rem 1.15rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: #e2e8f0;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.btn-thin:hover {
+  color: #ffffff;
+  background: rgba(0, 242, 254, 0.12);
+  border-color: rgba(0, 242, 254, 0.55);
+  box-shadow: 0 0 16px rgba(0, 242, 254, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  transform: translateY(-1px);
+}
+
+/* ── 2. Rounded Pulse Button Style (Continuous glowing ring) ── */
+.btn-rounded-pulse {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border-radius: 9999px;
+  padding: 0.65rem 1.45rem;
+  font-size: 0.82rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  color: #04081e;
+  background: linear-gradient(135deg, #00f2fe 0%, #38bdf8 50%, #00c6ff 100%);
+  border: 1px solid rgba(255, 255, 255, 0.45);
+  box-shadow: 0 0 18px rgba(0, 242, 254, 0.5), 0 4px 14px rgba(0, 0, 0, 0.35);
+  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  animation: btnPulseGlowRing 2.4s infinite;
+  text-decoration: none;
+  cursor: pointer;
+  position: relative;
+}
+
+.btn-rounded-pulse:hover {
+  transform: translateY(-2px) scale(1.03);
+  box-shadow: 0 0 28px rgba(0, 242, 254, 0.85), 0 6px 20px rgba(0, 0, 0, 0.45);
+  color: #020617;
+}
+
+.btn-rounded-pulse--sm {
+  padding: 0.42rem 1.05rem;
+  font-size: 0.76rem;
+}
+
+@keyframes btnPulseGlowRing {
+  0% {
+    box-shadow: 0 0 0 0 rgba(0, 242, 254, 0.65), 0 0 18px rgba(0, 242, 254, 0.4);
+  }
+  70% {
+    box-shadow: 0 0 0 10px rgba(0, 242, 254, 0), 0 0 26px rgba(0, 242, 254, 0.65);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(0, 242, 254, 0), 0 0 18px rgba(0, 242, 254, 0.4);
+  }
+}
+
+/* ── 3. #12 Button Concept (Segmented Action Button) ── */
+.btn-concept-12 {
+  display: inline-flex;
+  align-items: stretch;
+  border-radius: 12px;
+  overflow: hidden;
+  text-decoration: none;
+  font-family: inherit;
+  background: linear-gradient(135deg, #0ea5e9 0%, #0284c7 60%, #0369a1 100%);
+  box-shadow: 0 8px 24px rgba(2, 132, 199, 0.4), 0 2px 6px rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  cursor: pointer;
+}
+
+.btn-concept-12:hover {
+  transform: translateY(-2px) scale(1.02);
+  box-shadow: 0 12px 32px rgba(14, 165, 233, 0.6), 0 4px 14px rgba(0, 0, 0, 0.45);
+  border-color: rgba(255, 255, 255, 0.4);
+}
+
+.btn-concept-12__text {
+  padding: 0.82rem 1.45rem;
+  font-weight: 800;
+  font-size: 0.84rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.25s ease;
+  user-select: none;
+}
+
+.btn-concept-12__icon {
+  background: rgba(0, 0, 0, 0.25);
+  border-left: 1px solid rgba(255, 255, 255, 0.16);
+  padding: 0.82rem 1.05rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+  transition: all 0.3s ease;
+}
+
+.btn-concept-12:hover .btn-concept-12__icon {
+  background: rgba(0, 0, 0, 0.4);
+  color: #67e8f9;
+}
+
+.btn-concept-12:hover .btn-concept-12__icon svg {
+  transform: scale(1.15) rotate(6deg);
+  transition: transform 0.3s ease;
+}
+
+/* Amber / Gold variation of #12 Button Concept */
+.btn-concept-12--amber {
+  background: linear-gradient(135deg, #f59e0b 0%, #d97706 60%, #b45309 100%);
+  box-shadow: 0 8px 24px rgba(245, 158, 11, 0.38), 0 2px 6px rgba(0, 0, 0, 0.35);
+}
+
+.btn-concept-12--amber:hover {
+  box-shadow: 0 12px 32px rgba(245, 158, 11, 0.6), 0 4px 14px rgba(0, 0, 0, 0.45);
+}
+
+.btn-concept-12--amber .btn-concept-12__text {
+  color: #0c0a09;
+}
+
+.btn-concept-12--amber .btn-concept-12__icon {
+  color: #0c0a09;
+  background: rgba(0, 0, 0, 0.15);
+  border-left: 1px solid rgba(0, 0, 0, 0.12);
+}
+
+.btn-concept-12--amber:hover .btn-concept-12__icon {
+  background: rgba(0, 0, 0, 0.25);
+  color: #000000;
+}
+

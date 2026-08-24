@@ -1,7 +1,7 @@
 import React, { useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
-  ShieldAlert, Bot, Radar, FileText, ArrowRight, ShieldCheck, Cpu, DatabaseZap, Sparkles, Globe2, Binary, CheckCircle2,
+  ShieldAlert, Bot, Radar, FileText, ShieldCheck, Cpu, DatabaseZap, Sparkles, Globe2, Binary, CheckCircle2,
   ChevronRight, ChevronDown, Layers, Terminal, Network, GitBranch, Zap, Server, Workflow, Code2, KeyRound, Activity
 } from 'lucide-react'
 import InspectorLogo from '../components/InspectorLogo.jsx'
@@ -123,12 +123,14 @@ export default function Landing() {
           <a href="#pricing" className="hover:text-cyan-400 transition-colors">Pricing & Plans</a>
         </nav>
 
-        <div className="flex items-center gap-2">
-          <Link to="/login" className="text-xs font-bold text-slate-300 hover:text-white px-2.5 py-1.5 transition-colors">
+        <div className="flex items-center gap-3">
+          {/* Thin Button Style for Sign In */}
+          <Link to="/login" className="btn-thin">
             Sign In
           </Link>
-          <Link to="/login?mode=register&plan=pro" className="btn-primary text-xs py-1.5 px-3.5 shadow-glow flex items-center gap-1.5 font-bold rounded-lg">
-            <span>Get Started</span> <ArrowRight size={12} />
+          {/* Rounded Pulse Button Style for Get Started (No Arrow) */}
+          <Link to="/login?mode=register&plan=pro" className="btn-rounded-pulse btn-rounded-pulse--sm">
+            <span>Get Started</span>
           </Link>
         </div>
       </header>
@@ -148,11 +150,16 @@ export default function Landing() {
             SentinelAI orchestrates 150+ real Kali Linux pentest tools via the Hexstrike Engine, 51 specialist AI personas, and local-first RAG knowledge base.
           </p>
 
-          <div className="at-home__hero-actions mt-4 sm:mt-5 gap-3 sm:gap-4">
-            <Link to="/login" className="at-home__btn at-home__btn--solid at-home__btn--hero shadow-glow hover:scale-105 transition-transform">
-              Start Free Assessment <ArrowRight size={16} />
+          <div className="at-home__hero-actions mt-4 sm:mt-5 gap-3 sm:gap-4 flex items-center flex-wrap">
+            {/* #12 Button Concept for Start Free Assessment (No Arrow) */}
+            <Link to="/login" className="btn-concept-12">
+              <span className="btn-concept-12__text">Start Free Assessment</span>
+              <span className="btn-concept-12__icon">
+                <ShieldAlert size={18} />
+              </span>
             </Link>
-            <a href="#features" className="at-home__btn at-home__btn--ghost at-home__btn--hero hover:border-cyan-400/50">
+            {/* Thin Button Style for Explore Capabilities */}
+            <a href="#features" className="btn-thin py-2.5 px-5 text-xs font-bold hover:border-cyan-400/50">
               Explore Capabilities
             </a>
           </div>
@@ -211,7 +218,8 @@ export default function Landing() {
 
             <div className="pt-3 border-t border-white/10 flex justify-between items-center text-xs">
               <span className="text-slate-400">Ready to audit targets?</span>
-              <Link to="/login" className="btn-primary text-xs py-2 px-4 hover:scale-105 transition-transform">
+              {/* Rounded Pulse Button Style for Launch Dashboard */}
+              <Link to="/login" className="btn-rounded-pulse btn-rounded-pulse--sm">
                 Launch Dashboard
               </Link>
             </div>
@@ -438,7 +446,7 @@ export default function Landing() {
                           </div>
 
                           <div className="p-1.5 rounded-xl bg-white/5 text-slate-400 group-hover:text-cyan-300 group-hover:bg-cyan-500/20 transition-colors">
-                            <ArrowRight size={14} className="group-hover:translate-x-0.5 transition-transform" />
+                            <ChevronRight size={14} className="group-hover:translate-x-0.5 transition-transform" />
                           </div>
                         </div>
 
@@ -568,9 +576,9 @@ export default function Landing() {
               <div className="pt-8">
                 <Link
                   to={`/login?mode=register&plan=pro&interval=${interval}`}
-                  className="btn-primary w-full justify-center py-3.5 text-xs font-extrabold shadow-glow hover:scale-[1.01] transition-transform flex items-center gap-2"
+                  className="btn-rounded-pulse w-full justify-center py-3.5 text-xs font-extrabold shadow-glow hover:scale-[1.01] transition-transform"
                 >
-                  <span>Subscribe to SentinelAI Pro</span> <ArrowRight size={14} />
+                  <span>Subscribe to SentinelAI Pro</span>
                 </Link>
               </div>
             </div>
@@ -618,9 +626,9 @@ export default function Landing() {
               <div className="pt-8">
                 <Link
                   to={`/login?mode=register&plan=enterprise&interval=${interval}`}
-                  className="btn-secondary w-full justify-center py-3.5 text-xs font-extrabold border-white/20 hover:border-cyan-400/50 hover:text-cyan-300 transition-colors flex items-center gap-2"
+                  className="btn-thin w-full justify-center py-3.5 text-xs font-extrabold border-white/20 hover:border-cyan-400/50 hover:text-cyan-300 transition-colors"
                 >
-                  <span>Subscribe to Enterprise</span> <ArrowRight size={14} />
+                  <span>Subscribe to Enterprise</span>
                 </Link>
               </div>
             </div>
@@ -636,8 +644,12 @@ export default function Landing() {
             </p>
           </div>
           <div className="flex justify-center gap-4">
-            <Link to="/login?mode=register&plan=pro" className="btn-primary py-3.5 px-8 text-xs sm:text-sm font-extrabold shadow-glow flex items-center gap-2 hover:scale-105 transition-transform">
-              Get Started Now <ArrowRight size={16} />
+            {/* #12 Button Concept for Bottom CTA */}
+            <Link to="/login?mode=register&plan=pro" className="btn-concept-12">
+              <span className="btn-concept-12__text">Get Started Now</span>
+              <span className="btn-concept-12__icon">
+                <ShieldCheck size={18} />
+              </span>
             </Link>
           </div>
         </div>

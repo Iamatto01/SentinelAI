@@ -1,13 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { Bot, X, Send, Loader2, Sparkles } from 'lucide-react'
+import { X, Send, Loader2 } from 'lucide-react'
 import InspectorLogo from './InspectorLogo.jsx'
 import { api } from '../lib/api.js'
 import { useScanContext } from '../lib/ScanContext.jsx'
 
 export default function AIChatWidget() {
   const [open, setOpen] = useState(false)
-  const [agents, setAgents] = useState([])
-  const [agent, setAgent] = useState('web-hunter')
+  const [agent] = useState('web-hunter')
   const [input, setInput] = useState('')
   const [busy, setBusy] = useState(false)
   const [messages, setMessages] = useState([
@@ -16,7 +15,6 @@ export default function AIChatWidget() {
   const endRef = useRef(null)
   const { currentScan } = useScanContext()
 
-  useEffect(() => { api.agents().then((a) => setAgents(a || [])).catch(() => {}) }, [])
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages, open])
 
   // When scan context changes, inject a contextual note into the conversation

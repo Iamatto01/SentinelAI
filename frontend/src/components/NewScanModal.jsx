@@ -189,7 +189,7 @@ export default function NewScanModal({ onClose, onStarted, initialProjectId = ''
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-slate-950/90 backdrop-blur-lg overflow-y-auto" onClick={onClose}>
-      <div className="relative w-full max-w-4xl h-[90vh] max-h-[920px] flex flex-col rounded-3xl border-2 border-cyan-500/50 bg-[#0a1026] shadow-[0_0_60px_rgba(0,242,254,0.25)] text-slate-100 animate-in fade-in zoom-in-95 duration-200 my-auto overflow-hidden" onClick={(e) => e.stopPropagation()}>
+      <div className="relative w-full max-w-4xl h-[94vh] max-h-[1100px] flex flex-col rounded-3xl border-2 border-cyan-500/50 bg-[#0a1026] shadow-[0_0_60px_rgba(0,242,254,0.25)] text-slate-100 animate-in fade-in zoom-in-95 duration-200 my-auto overflow-hidden" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between border-b border-white/10 px-6 sm:px-8 py-5 bg-slate-950 shrink-0 z-10">
           <div className="flex items-center gap-3.5">
             <div className="p-2.5 rounded-2xl bg-gradient-to-br from-cyan-500 to-blue-600 text-slate-950 shadow-lg shadow-cyan-500/30">

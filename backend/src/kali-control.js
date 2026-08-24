@@ -1,10 +1,7 @@
 import os from 'node:os'
-import { spawn, exec } from 'node:child_process'
-import { promisify } from 'node:util'
+import { spawn } from 'node:child_process'
 import { llm } from './ai/llm-client.js'
 import { config } from './config.js'
-
-const execAsync = promisify(exec)
 
 /** Execute a command with timeout and environment extras */
 async function runCmd(cmd, timeoutMs = 30000) {

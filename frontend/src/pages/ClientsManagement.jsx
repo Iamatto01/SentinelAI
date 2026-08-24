@@ -4,7 +4,7 @@ import {
   Users, Shield, Search, RefreshCw, AlertCircle, CheckCircle2,
   Calendar, Layers, Edit3, X, Loader2, Sparkles, Filter, Check, TrendingUp,
   FolderOpen, FolderPlus, Play, FileText, Download, ExternalLink, Globe, FileCode2,
-  Zap, Clock, KeyRound, ArrowRight, ShieldAlert, CheckCircle, Database
+  Zap, Clock, ArrowRight, ShieldAlert
 } from 'lucide-react'
 import { api } from '../lib/api.js'
 

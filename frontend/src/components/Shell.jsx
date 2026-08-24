@@ -150,7 +150,7 @@ export default function Shell() {
       <aside
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
-        className={`fixed inset-y-0 left-0 flex flex-col z-50 overflow-hidden transition-all duration-300 ease-in-out shadow-2xl border-r border-white/10 ${
+        className={`fixed inset-y-0 left-0 flex flex-col z-50 overflow-hidden transition-all duration-300 ease-in-out shadow-2xl border-r border-white/10 bg-slate-950/95 backdrop-blur-xl ${
           isExpanded ? 'w-64 shadow-cyan-950/40' : 'w-64 lg:w-20'
         } ${
           mobileOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'

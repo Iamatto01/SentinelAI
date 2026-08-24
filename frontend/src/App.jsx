@@ -6,6 +6,9 @@ import { AiProvider } from './lib/AiContext.jsx'
 import { ThemeProvider } from './lib/ThemeContext.jsx'
 import Shell from './components/Shell.jsx'
 import Landing from './pages/Landing.jsx'
+import About from './pages/About.jsx'
+import Tools from './pages/Tools.jsx'
+import Services from './pages/Services.jsx'
 import Login from './pages/Login.jsx'
 import Dashboard from './pages/Dashboard.jsx'
 import Scans from './pages/Scans.jsx'
@@ -88,6 +91,11 @@ export default function App() {
       <ThemeProvider>
         <Routes>
           <Route path="/" element={<Landing />} />
+          <Route path="/about" element={<About />} />
+          <Route path="/tools" element={<Tools />} />
+          <Route path="/services" element={<Services />} />
+          <Route path="/pricing" element={<Navigate to="/#pricing" replace />} />
+          <Route path="/contact" element={<About />} />
           <Route path="/login" element={<Login />} />
           
           {/* Top-level aliases for direct URL navigation */}
