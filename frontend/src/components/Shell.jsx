@@ -73,14 +73,17 @@ export default function Shell() {
   const navItems = isAdmin ? adminNav : clientNav
   const currentNav = navItems.find(n => location.pathname.startsWith(n.to)) || { label: 'Platform' }
 
-  // Strict Paywall Condition: Client has no active paid subscription or is expired
-  const isSubscriptionExpired = isClient && (
+  // Paywall Condition: Client has expired subscription or exhausted trial quota
+  const isTrial = isClient && subscription?.plan_id === 'trial'
+  const isTrialExhausted = isTrial && (subscription?.remainingQuota <= 0 || (subscription?.scan_quota_used >= subscription?.scan_quota_total))
+  const isPaidExpired = isClient && !isTrial && (
     subscription?.isSubscribed === false ||
     subscription?.isExpired ||
     subscription?.status === 'expired' ||
     subscription?.status === 'inactive' ||
     subscription?.plan_id === 'none'
   )
+  const isSubscriptionExpired = isTrialExhausted || isPaidExpired
 
   const isAllowedPathWhenExpired = location.pathname.startsWith('/app/billing') || location.pathname.startsWith('/app/settings') || location.pathname.startsWith('/app/consultants')
 
@@ -97,20 +100,36 @@ export default function Shell() {
     <div className="min-h-screen relative selection:bg-cyan-500 selection:text-slate-950">
       {/* AI Dynamic Background Layer */}
       <AIBackgroundCanvas />
-      {/* Expired / Inactive Subscription Alert Banner */}
+      
+      {/* Expired / Inactive / Trial Exhausted Alert Banner */}
       {isSubscriptionExpired && (
         <div className="sticky top-0 z-50 bg-gradient-to-r from-amber-600 via-rose-600 to-red-600 text-white px-4 py-2 text-xs font-bold shadow-xl flex items-center justify-between">
           <div className="flex items-center gap-2 max-w-4xl">
             <AlertTriangle size={16} className="shrink-0 animate-bounce text-amber-200" />
             <span>
-              <strong>Subscription Inactive or Expired:</strong> Your account is locked until a subscription is activated. Subscribe to access assessments and GitHub CI/CD automation.
+              <strong>{isTrial ? 'Free Trial Limit Reached (3/3 Scans Used):' : 'Subscription Inactive or Expired:'}</strong> {isTrial ? 'Upgrade to Pro or Enterprise to continue launching autonomous AI pentest audits.' : 'Your account is locked until a subscription is activated.'}
             </span>
           </div>
           <Link
             to="/app/billing"
             className="px-3 py-1 rounded-full bg-slate-950/80 hover:bg-slate-950 text-cyan-300 font-extrabold text-[11px] border border-white/20 transition-all flex items-center gap-1 shrink-0 ml-3"
           >
-            <span>Unlock Now</span> <ArrowRight size={12} />
+            <span>Upgrade Now</span> <ArrowRight size={12} />
+          </Link>
+        </div>
+      )}
+
+      {/* Trial Active Floating Notice (Non-intrusive) */}
+      {!isSubscriptionExpired && isTrial && (
+        <div className="sticky top-0 z-40 bg-slate-950/90 backdrop-blur-xl border-b border-cyan-500/30 px-4 py-1.5 text-xs text-slate-300 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Sparkles size={14} className="text-cyan-400" />
+            <span>
+              <strong className="text-cyan-300">Free Trial Active:</strong> You have <span className="text-white font-mono font-bold">{subscription?.remainingQuota ?? 3} of 3 free scans</span> remaining.
+            </span>
+          </div>
+          <Link to="/app/billing" className="text-cyan-400 hover:text-cyan-300 text-[11px] font-bold underline flex items-center gap-1">
+            <span>View Plans</span> <ArrowRight size={11} />
           </Link>
         </div>
       )}

@@ -162,28 +162,38 @@ export default function Landing() {
             </div>
 
             <div className="my-6 space-y-3.5 font-mono text-xs">
-              <div className="p-3.5 rounded-xl bg-black/40 border border-white/10 flex items-center justify-between hover:border-emerald-400/40 transition-colors">
-                <span className="text-slate-400">Hexstrike API Engine</span>
-                <span className="text-emerald-400 font-semibold flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" /> 127.0.0.1:8888 (Online)
+              <div className="p-3.5 rounded-xl bg-black/40 border border-white/10 flex items-center justify-between hover:border-cyan-400/40 transition-colors">
+                <div className="flex items-center gap-2">
+                  <Radar size={14} className="text-cyan-400" />
+                  <span className="text-slate-300">DAST Dynamic Analysis</span>
+                </div>
+                <span className="text-cyan-400 font-semibold flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" /> Live Probing
                 </span>
               </div>
-              <div className="p-3.5 rounded-xl bg-black/40 border border-white/10 flex items-center justify-between hover:border-cyan-400/40 transition-colors">
-                <span className="text-slate-400">AI Agents Verification</span>
-                <span className="text-cyan-400 font-semibold">51 Specialist Personas</span>
+              <div className="p-3.5 rounded-xl bg-black/40 border border-white/10 flex items-center justify-between hover:border-indigo-400/40 transition-colors">
+                <div className="flex items-center gap-2">
+                  <Code2 size={14} className="text-indigo-400" />
+                  <span className="text-slate-300">SAST Static Code Parser</span>
+                </div>
+                <span className="text-indigo-300 font-semibold">OWASP Top 10</span>
               </div>
-              <div className="p-3.5 rounded-xl bg-black/40 border border-white/10 flex items-center justify-between hover:border-amber-400/40 transition-colors">
-                <span className="text-slate-400">Knowledge Base RAG</span>
-                <span className="text-amber-400 font-semibold">PayloadsAllTheThings FTS5</span>
+              <div className="p-3.5 rounded-xl bg-black/40 border border-white/10 flex items-center justify-between hover:border-emerald-400/40 transition-colors">
+                <div className="flex items-center gap-2">
+                  <Bot size={14} className="text-emerald-400" />
+                  <span className="text-slate-300">Multi-LLM Consensus AI</span>
+                </div>
+                <span className="text-emerald-400 font-semibold">0% False Positives</span>
               </div>
             </div>
 
             <div className="pt-3 border-t border-white/10 flex justify-between items-center text-xs">
-              <span className="text-slate-400">Ready to audit targets?</span>
-              {/* #1 Hover Glow Effect for Launch Dashboard */}
-              <Link to="/login" className="btn-hover-glow text-xs py-2 px-4">
-                Launch Dashboard
-              </Link>
+              <span className="text-slate-400 flex items-center gap-1.5">
+                <Sparkles size={13} className="text-cyan-400" /> 3 Free Trial Scans
+              </span>
+              <span className="text-[11px] font-mono text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded-full border border-emerald-500/20">
+                Ready for Targets
+              </span>
             </div>
           </div>
         </div>
@@ -376,7 +386,7 @@ export default function Landing() {
                     : 'bg-white/5 text-slate-300 border border-white/10 hover:bg-white/10'
                 }`}
               >
-                <Binary size={15} /> Portal Route Diagram
+                <Binary size={15} /> Full Execution Flowchart
               </button>
             </div>
           </div>

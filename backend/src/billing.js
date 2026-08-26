@@ -7,6 +7,22 @@ import { randomUUID } from 'node:crypto'
 import * as db from './db.js'
 
 export const PLANS = {
+  trial: {
+    id: 'trial',
+    name: 'Free Trial',
+    priceMonthly: 0,
+    priceYearly: 0,
+    currency: 'USD',
+    scanQuota: 3,
+    maxRepos: 1,
+    features: [
+      '3 Free Autonomous Security Scans',
+      'Hexstrike 150+ Kali Toolchain (DAST + SAST)',
+      'Multi-LLM Consensus AI Verification',
+      'Executive Summary & Remediation Diff'
+    ],
+    popular: false,
+  },
   pro: {
     id: 'pro',
     name: 'SentinelAI Pro',
@@ -49,7 +65,7 @@ export const PLANS = {
 }
 
 /**
- * Get or initialize user subscription (paid-only system, default is inactive)
+ * Get or initialize user subscription (defaults to Free Trial with 3 scans)
  */
 export function getUserSubscription(userId) {
   let sub = db.get(`SELECT * FROM subscriptions WHERE user_id = ?`, userId)
@@ -58,13 +74,20 @@ export function getUserSubscription(userId) {
     const now = new Date().toISOString()
     db.run(
       `INSERT INTO subscriptions (id, user_id, plan_id, plan_name, status, scan_quota_total, scan_quota_used, current_period_end, created_at, updated_at)
-       VALUES (?, ?, 'none', 'No Active Subscription', 'inactive', 0, 0, NULL, ?, ?)`,
+       VALUES (?, ?, 'trial', 'Free Trial', 'active', 3, 0, NULL, ?, ?)`,
       id, userId, now, now
+    )
+    sub = db.get(`SELECT * FROM subscriptions WHERE user_id = ?`, userId)
+  } else if (sub.plan_id === 'none' && sub.status === 'inactive') {
+    // Upgrade existing inactive empty accounts to Free Trial with 3 credits
+    db.run(
+      `UPDATE subscriptions SET plan_id = 'trial', plan_name = 'Free Trial', status = 'active', scan_quota_total = 3, updated_at = ? WHERE id = ?`,
+      new Date().toISOString(), sub.id
     )
     sub = db.get(`SELECT * FROM subscriptions WHERE user_id = ?`, userId)
   }
 
-  // Check period expiry
+  // Check period expiry (only for paid plans with set expiration)
   let isExpired = false
   if (sub.current_period_end && new Date(sub.current_period_end) < new Date()) {
     isExpired = true
@@ -77,20 +100,22 @@ export function getUserSubscription(userId) {
   const plan = PLANS[sub.plan_id] || null
   const remainingQuota = Math.max(0, (sub.scan_quota_total || 0) - (sub.scan_quota_used || 0))
   const isUnlimited = (sub.scan_quota_total || 0) >= 9000
-  const isSubscribed = sub.status === 'active' && sub.plan_id !== 'none' && !isExpired
+  const isTrial = sub.plan_id === 'trial'
+  const isSubscribed = sub.status === 'active' && !isExpired
 
   return {
     ...sub,
     plan,
     isSubscribed,
     isExpired,
+    isTrial,
     remainingQuota,
     isUnlimited,
   }
 }
 
 /**
- * Verify paid subscription & quota before running scan
+ * Verify subscription & quota before running scan
  */
 export function consumeScanQuota(userId) {
   const sub = getUserSubscription(userId)
@@ -100,10 +125,13 @@ export function consumeScanQuota(userId) {
   }
 
   if (!sub.isSubscribed || sub.status !== 'active') {
-    throw new Error(`An active SentinelAI paid subscription is required to run code audits. Please subscribe to Pro or Enterprise in Billing.`)
+    throw new Error(`An active subscription is required to run security audits. Please subscribe to Pro or Enterprise in Billing.`)
   }
 
   if (!sub.isUnlimited && sub.scan_quota_used >= sub.scan_quota_total) {
+    if (sub.plan_id === 'trial') {
+      throw new Error(`Free trial scan limit reached (${sub.scan_quota_used}/${sub.scan_quota_total} scans used). Please upgrade to SentinelAI Pro or Enterprise in Billing to continue scanning.`)
+    }
     throw new Error(`Monthly scan quota reached (${sub.scan_quota_used}/${sub.scan_quota_total}). Please upgrade your SentinelAI subscription in Billing.`)
   }
 

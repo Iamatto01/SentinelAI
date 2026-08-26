@@ -153,6 +153,24 @@ export default function Billing() {
                 <Calendar size={14} className="text-slate-500" />
                 <span>Next billing date: <strong>{new Date(subscription.current_period_end).toLocaleDateString()}</strong></span>
               </div>
+            ) : subscription.plan_id === 'trial' ? (
+              <div className={`text-xs px-3 py-1.5 rounded-xl flex items-center gap-1.5 ${
+                subscription.remainingQuota > 0
+                  ? 'text-cyan-300 bg-cyan-500/10 border border-cyan-500/20'
+                  : 'text-amber-300 bg-amber-500/10 border border-amber-500/20'
+              }`}>
+                {subscription.remainingQuota > 0 ? (
+                  <>
+                    <Sparkles size={14} className="text-cyan-400" />
+                    <span>Free Trial: <strong>{subscription.remainingQuota} of 3 scans</strong> remaining</span>
+                  </>
+                ) : (
+                  <>
+                    <AlertCircle size={14} className="text-amber-400" />
+                    <span>Free Trial Completed (3/3 used) &mdash; Upgrade below</span>
+                  </>
+                )}
+              </div>
             ) : (
               <div className="text-xs text-amber-300/90 bg-amber-500/10 border border-amber-500/20 px-3 py-1.5 rounded-xl flex items-center gap-1.5">
                 <AlertCircle size={14} className="text-amber-400" />

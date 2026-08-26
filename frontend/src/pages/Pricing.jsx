@@ -102,6 +102,12 @@ export default function Pricing() {
             GitHub webhooks, and executive PDF reports.
           </p>
 
+          {/* Free Trial Callout */}
+          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-2xl bg-cyan-500/10 border border-cyan-500/30 text-cyan-300 text-xs font-semibold shadow-[0_0_20px_rgba(0,242,254,0.15)]">
+            <Sparkles size={14} className="text-cyan-400" />
+            <span><strong>3 Free Scans Included:</strong> Every new account starts with 3 free trial audits &bull; No credit card required.</span>
+          </div>
+
           {/* Monthly / Yearly Switch */}
           <div className="flex items-center justify-center gap-3 pt-2">
             <span className={`text-xs font-semibold ${interval === 'monthly' ? 'text-white' : 'text-slate-500'}`}>Monthly Billing</span>

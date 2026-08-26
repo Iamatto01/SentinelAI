@@ -102,6 +102,10 @@ if [ ! -f .env ] && [ -f .env.example ]; then
     cp .env.example .env
 fi
 
+# Install frontend dependencies if needed
+echo "   📦 Installing frontend dependencies..."
+npm install --prefix frontend
+
 # Build production bundle for frontend
 echo "   🔨 Building frontend..."
 npm run build --prefix frontend

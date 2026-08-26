@@ -54,20 +54,14 @@ export default function PublicLayout({ children }) {
               : 'bg-slate-950/75 backdrop-blur-xl border-b sm:border border-white/[0.12] shadow-[0_8px_32px_rgba(0,0,0,0.4),inset_0_1px_0_rgba(255,255,255,0.08)]'
           }`}
         >
-          {/* Brand Logo & Tag */}
+          {/* Brand Logo */}
           <Link to="/" className="flex items-center gap-2.5 group shrink-0">
             <div className="relative p-0.5 rounded-xl bg-gradient-to-br from-red-500/30 to-red-900/40 border border-red-500/30 group-hover:border-cyan-400/50 group-hover:shadow-[0_0_16px_rgba(0,242,254,0.3)] transition-all duration-300">
               <InspectorLogo size={24} className="sm:w-7 sm:h-7" />
             </div>
-            <div className="flex items-center gap-2">
-              <span className="font-extrabold text-sm sm:text-base text-white tracking-tight group-hover:text-cyan-300 transition-colors">
-                Sentinel<span className="text-cyan-400">AI</span>
-              </span>
-              <span className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-cyan-500/10 text-cyan-400 border border-cyan-500/30">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                v2.4 Live
-              </span>
-            </div>
+            <span className="font-extrabold text-sm sm:text-base text-white tracking-tight group-hover:text-cyan-300 transition-colors">
+              Sentinel<span className="text-cyan-400">AI</span>
+            </span>
           </Link>
 
           {/* Desktop Navigation Links */}
@@ -92,12 +86,6 @@ export default function PublicLayout({ children }) {
 
           {/* Action CTAs */}
           <div className="flex items-center gap-2 sm:gap-3">
-            {/* Engine Status Tag for Wide Screens */}
-            <div className="hidden xl:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-[11px] text-emerald-400 font-mono">
-              <Activity size={12} className="animate-pulse text-emerald-400" />
-              <span>150+ Tools</span>
-            </div>
-
             {/* Desktop / Tablet Sign In */}
             <Link
               to="/login"

@@ -14,43 +14,16 @@ const GLASS_CARD = {
   boxShadow: '0 8px 32px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.06)',
 }
 
-// ── Kali Tool Catalog (grouped by pipeline stage) ────────────────────────────
+// ── Kali Tool Catalog (grouped by pipeline stage & DAST / SAST) ─────────────
 const TOOL_CATEGORIES = [
   {
-    id: 'recon',
-    icon: Radar,
-    color: 'text-cyan-400',
-    accent: 'hover:border-cyan-400/40',
-    title: 'Recon & Discovery',
-    desc: 'Passive and active surface mapping before any packet touches the target.',
-    tools: ['Nmap', 'Masscan', 'Subfinder', 'Amass', 'WhatWeb', 'DNSBrute', 'Katana', 'Waybackurls'],
-  },
-  {
-    id: 'vuln',
+    id: 'dast',
     icon: Bug,
     color: 'text-amber-400',
     accent: 'hover:border-amber-400/40',
-    title: 'Vulnerability Probing',
-    desc: 'Template-driven and heuristic vulnerability identification across services.',
-    tools: ['Nuclei', 'Nikto', 'WAFW00F', 'WPScan', 'Rustscan', 'Jaeles'],
-  },
-  {
-    id: 'fuzz',
-    icon: Globe2,
-    color: 'text-emerald-400',
-    accent: 'hover:border-emerald-400/40',
-    title: 'Web & Injection Fuzzing',
-    desc: 'Parameter discovery, injection testing, and content brute-forcing.',
-    tools: ['SQLMap', 'FFUF', 'Gobuster', 'Dalfox', 'Arjun', 'X8', 'Gau', 'Qsreplace'],
-  },
-  {
-    id: 'exploit',
-    icon: Swords,
-    color: 'text-rose-400',
-    accent: 'hover:border-rose-400/40',
-    title: 'Exploitation & Post-Access',
-    desc: 'Controlled exploitation with manual approval gates for critical actions.',
-    tools: ['Metasploit RPC (msfrpcd)', 'Hydra', 'Hashcat', 'Searchsploit', 'Impacket', 'CrackMapExec'],
+    title: 'Dynamic App Security Testing (DAST)',
+    desc: 'Live blackbox vulnerability probing, template-based testing, and heuristic injection fuzzing.',
+    tools: ['Nuclei (YAML Templates)', 'Nikto Web Scanner', 'SQLMap Injection Engine', 'FFUF Web Fuzzer', 'WPScan CMS Auditor', 'Dalfox XSS Scanner', 'Arjun Parameter Discovery', 'WAFW00F Bypass Detector', 'Rustscan Port Prober', 'Jaeles Dynamic Engine'],
   },
   {
     id: 'sast',
@@ -58,8 +31,35 @@ const TOOL_CATEGORIES = [
     color: 'text-indigo-400',
     accent: 'hover:border-indigo-400/40',
     title: 'Static Code Analysis (SAST)',
-    desc: 'AST-based multi-language source auditing for OWASP Top 10 flaws.',
-    tools: ['JS / TS AST Parser', 'Python AST Parser', 'PHP Parser', 'Java Parser', 'Go Parser'],
+    desc: 'Whitebox AST-based source code auditing for OWASP Top 10 vulnerabilities across multiple languages.',
+    tools: ['JS / TypeScript AST Parser', 'Python AST Security Parser', 'PHP Vulnerability Parser', 'Java AST Security Engine', 'Go AST Code Scanner', 'Taint-Flow Source-to-Sink Engine'],
+  },
+  {
+    id: 'recon',
+    icon: Radar,
+    color: 'text-cyan-400',
+    accent: 'hover:border-cyan-400/40',
+    title: 'Recon & Attack Surface Mapping',
+    desc: 'Passive and active surface discovery, DNS enumeration, and technology fingerprinting.',
+    tools: ['Nmap Port Scanner', 'Masscan Fast Scanner', 'Subfinder Subdomain Recon', 'Amass OSINT Mapping', 'WhatWeb Tech Identifier', 'DNSBrute Enumerator', 'Katana Web Crawler', 'Waybackurls Archive Discovery'],
+  },
+  {
+    id: 'fuzz',
+    icon: Globe2,
+    color: 'text-emerald-400',
+    accent: 'hover:border-emerald-400/40',
+    title: 'Web & Parameter Fuzzing',
+    desc: 'High-speed directory discovery, hidden parameter identification, and payload permutation.',
+    tools: ['FFUF Directory Fuzzer', 'Gobuster URL Bruter', 'X8 Hidden Parameter Tool', 'Gau Endpoint Fetcher', 'Qsreplace Parameter Injector'],
+  },
+  {
+    id: 'exploit',
+    icon: Swords,
+    color: 'text-rose-400',
+    accent: 'hover:border-rose-400/40',
+    title: 'Controlled Exploitation & PoC',
+    desc: 'Controlled proof-of-concept verification with mandatory human-in-the-loop safety approval gates.',
+    tools: ['Metasploit RPC (msfrpcd)', 'Hydra Credential Tester', 'Hashcat Password Cracker', 'Searchsploit Exploit DB', 'Impacket Network Suite', 'CrackMapExec Lateral Tool'],
   },
 ]
 
@@ -102,12 +102,14 @@ export default function Tools() {
       <div className="max-w-6xl mx-auto px-4 sm:px-8 pt-16 sm:pt-24 pb-12 space-y-24">
         {/* ── Hero ─────────────────────────────────────────────────────────── */}
         <section className="text-center space-y-5">
+          <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-cyan-500/10 border border-cyan-400/30 text-cyan-300 text-xs font-bold uppercase tracking-wider">
+            <ShieldCheck size={14} className="text-cyan-400" /> Full DAST &amp; SAST Dual-Engine Platform
+          </div>
           <h1 className="text-3xl sm:text-5xl font-extrabold text-white tracking-tight leading-tight">
             150+ Kali Tools &amp; <span className="at-home__gradient-text">51 AI Personas</span>
           </h1>
           <p className="text-sm text-slate-400 max-w-2xl mx-auto leading-relaxed">
-            Every tool in the Hexstrike engine is real, installed, and health-checked — orchestrated
-            autonomously by specialist AI personas that know when and how to chain them.
+            Every tool in the Hexstrike engine is real, installed, and health-checked — combining live dynamic blackbox testing (DAST) with whitebox static code parsing (SAST).
           </p>
           <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
             <Link to="/services" className="btn-swipe btn-lg">
