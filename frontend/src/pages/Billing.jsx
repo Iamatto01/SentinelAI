@@ -5,6 +5,7 @@ import {
   Lock, TrendingUp, HelpCircle, BadgeCheck
 } from 'lucide-react'
 import { api } from '../lib/api.js'
+import { BillingSkeleton } from '../components/SkeletonLoader.jsx'
 
 export default function Billing() {
   const [loading, setLoading] = useState(true)
@@ -72,8 +73,10 @@ export default function Billing() {
   const quotaUsed = subscription?.scan_quota_used || 0
   const quotaPct = isUnlimited ? 100 : Math.min(100, Math.round((quotaUsed / quotaTotal) * 100))
 
+  if (loading && !subscription) return <BillingSkeleton />
+
   return (
-    <div className="space-y-8 animate-in fade-in duration-300 pb-16">
+    <div className="space-y-8 animate-in fade-in duration-300 pb-16 content-fade">
       {/* Header Banner */}
       <div className="card p-6 border-white/10 relative overflow-hidden bg-gradient-to-r from-slate-900/90 via-slate-900/70 to-indigo-950/40">
         <div className="absolute top-0 right-0 p-8 opacity-10 pointer-events-none">

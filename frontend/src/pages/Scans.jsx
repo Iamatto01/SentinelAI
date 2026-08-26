@@ -8,6 +8,8 @@ import {
 import { api, apiFetch } from '../lib/api.js'
 import { useAuth } from '../lib/AuthContext.jsx'
 import { getSocket } from '../lib/socket.js'
+import { ScanListSkeleton } from '../components/SkeletonLoader.jsx'
+import Tooltip from '../components/Tooltip.jsx'
 import ReportModal from '../components/ReportModal.jsx'
 import NewScanModal from '../components/NewScanModal.jsx'
 
@@ -184,16 +186,17 @@ export default function Scans() {
 
   async function handleDelete(id, e) {
     if (e) e.stopPropagation()
-    if (!window.confirm('Are you sure you want to delete this scan and all its findings?')) return
-    setActionBusy(id)
+    // Optimistic: remove immediately, restore on failure
+    const prevScans = scans
+    setScans((prev) => (prev || []).filter((s) => s.id !== id))
+    setActiveMenu(null)
     try {
       await api.deleteScan(id)
-      setScans((prev) => (prev || []).filter((s) => s.id !== id))
     } catch (err2) {
+      setScans(prevScans)
       alert(`Delete failed: ${err2.message}`)
     } finally {
       setActionBusy(null)
-      setActiveMenu(null)
     }
   }
 
@@ -274,7 +277,7 @@ export default function Scans() {
   }, [filteredScans, projects])
 
   if (err) return <div className="card p-6 text-rose-400 border border-rose-500/30 bg-rose-500/10">{err}</div>
-  if (!scans) return <div className="flex justify-center py-24"><Loader2 className="animate-spin text-cyan-400" size={32} /></div>
+  if (!scans) return <ScanListSkeleton />
 
   // Render a scans table component
   const renderScansTable = (scanList, isSubTable = false) => {

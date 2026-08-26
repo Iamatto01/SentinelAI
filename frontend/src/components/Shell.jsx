@@ -12,6 +12,7 @@ import NewScanModal from './NewScanModal.jsx'
 import InspectorLogo from './InspectorLogo.jsx'
 import AIChatWidget from './AIChatWidget.jsx'
 import AIBackgroundCanvas from './AIBackgroundCanvas.jsx'
+import Tooltip from './Tooltip.jsx'
 import { useTheme } from '../lib/ThemeContext.jsx'
 
 export default function Shell() {
@@ -219,7 +220,11 @@ export default function Shell() {
           <button
             onClick={handleScanButtonClick}
             title={isSubscriptionExpired ? "Subscribe to Launch Scans" : "Launch New Security Audit"}
-            className={`btn-primary w-full justify-center ${!showLabels ? 'lg:!px-0' : ''}`}
+            className={`btn-primary w-full justify-center active-press ${
+              !showLabels ? 'lg:!px-0' : ''
+            } ${
+              !isSubscriptionExpired && isTrial && (subscription?.remainingQuota ?? 3) <= 1 ? 'ring-urgent' : ''
+            }`}
           >
             {isSubscriptionExpired ? <Lock size={16} /> : <Plus size={16} />}
             {showLabels && <span>{isSubscriptionExpired ? 'Subscribe to Scan' : 'Launch Scan'}</span>}
@@ -230,11 +235,10 @@ export default function Shell() {
         <nav className="flex-1 px-3 space-y-1.5 overflow-y-auto">
           {navItems.map(({ to, label, icon: Icon }) => {
             const isLocked = isSubscriptionExpired && !to.startsWith('/app/billing') && !to.startsWith('/app/settings')
-            return (
+            const navItem = (
               <NavLink
                 key={to}
                 to={to}
-                title={!showLabels ? label : undefined}
                 onClick={() => setMobileOpen(false)}
                 className={({ isActive }) =>
                   `flex items-center gap-3.5 rounded-2xl py-2.5 text-sm font-semibold transition-all duration-200 ${
@@ -259,6 +263,10 @@ export default function Shell() {
                 )}
               </NavLink>
             )
+            // When sidebar is collapsed, wrap in tooltip for accessibility
+            return !showLabels
+              ? <Tooltip key={to} content={isLocked ? `${label} (Locked — Upgrade to unlock)` : label}>{navItem}</Tooltip>
+              : <React.Fragment key={to}>{navItem}</React.Fragment>
           })}
         </nav>
 
@@ -271,13 +279,15 @@ export default function Shell() {
                 <p className="text-[10px] uppercase tracking-wider font-extrabold text-cyan-400">{user?.role}</p>
               </div>
             )}
-            <button
-              onClick={() => { logout(); nav('/login') }}
-              title="Sign out"
-              className="text-slate-400 hover:text-rose-400 transition-colors shrink-0 p-1.5 rounded-xl hover:bg-rose-500/10"
-            >
-              <LogOut size={17} />
-            </button>
+            <Tooltip content="Sign Out">
+              <button
+                onClick={() => { logout(); nav('/login') }}
+                title="Sign out"
+                className="text-slate-400 hover:text-rose-400 transition-colors shrink-0 p-1.5 rounded-xl hover:bg-rose-500/10"
+              >
+                <LogOut size={17} />
+              </button>
+            </Tooltip>
           </div>
         </div>
       </aside>

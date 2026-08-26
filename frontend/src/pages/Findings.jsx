@@ -1,5 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { Loader2, Bug, Trash2, FolderGit2, Radar, Search, Filter, RefreshCw, Flag, Crosshair, Play, Download, Database, Sparkles } from 'lucide-react'
+import { FindingSkeleton } from '../components/SkeletonLoader.jsx'
+import Tooltip from '../components/Tooltip.jsx'
 import { api } from '../lib/api.js'
 import { useAi } from '../lib/AiContext.jsx'
 import SeverityBadge from '../components/SeverityBadge.jsx'
@@ -127,17 +129,26 @@ export default function Findings() {
   }
 
   function onStatusChange(id, status) {
+    // Optimistic: apply immediately, no revert needed for status
     setFindings((p) => p.map((f) => (f.id === id ? { ...f, status } : f)))
     setSelected((s) => (s && s.id === id ? { ...s, status } : s))
+    api.setFindingStatus(id, status).catch(() => {
+      // Revert on failure
+      loadData()
+    })
   }
 
   async function remove(id) {
-    if (!window.confirm('Are you sure you want to delete this finding?')) return
+    // Optimistic: remove immediately, restore on failure
+    const prev = findings
+    setFindings((p) => p.filter((f) => f.id !== id))
+    setSelected((s) => (s && s.id === id ? null : s))
     try {
       await api.deleteFinding(id)
-      setFindings((p) => p.filter((f) => f.id !== id))
-      setSelected((s) => (s && s.id === id ? null : s))
-    } catch (e) { alert(`Delete failed: ${e.message}`) }
+    } catch (e) {
+      setFindings(prev)
+      alert(`Delete failed: ${e.message}`)
+    }
   }
 
   async function launchExploitFor(findingId) {
@@ -206,10 +217,10 @@ export default function Findings() {
   }, [findings, sevFilter, projectFilter, scanFilter, searchQuery, statusFilter])
 
   if (err) return <div className="card p-6 text-rose-400 border border-rose-500/30 bg-rose-500/10">{err}</div>
-  if (loading || !findings) return <div className="flex justify-center py-24"><Loader2 className="animate-spin text-cyan-400" size={32} /></div>
+  if (loading && !findings) return <FindingSkeleton />
 
   return (
-    <div className="space-y-6 motion-fade-up">
+    <div className="space-y-6 motion-fade-up content-fade">
       {/* Top Header */}
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
@@ -370,21 +381,23 @@ export default function Findings() {
             <div
               key={f.id}
               onClick={() => setSelected(f)}
-              className="card p-5 hover:border-cyan-400/40 transition-all duration-300 cursor-pointer relative group space-y-3"
+              className="card p-5 hover:border-cyan-400/40 hover-lift transition-all duration-300 cursor-pointer relative group space-y-3"
             >
               <div className="flex items-start justify-between gap-3">
                 <h3 className="font-bold text-white leading-snug flex-1 min-w-0 break-words group-hover:text-cyan-300 transition-colors">
                   {f.title}
                 </h3>
                 <div className="flex items-center gap-2 shrink-0">
-                  <button
-                    onClick={(e) => { e.stopPropagation(); launchExploitFor(f.id) }}
-                    disabled={exploitingId === f.id}
-                    title="Launch exploit campaign"
-                    className="p-1.5 rounded-xl bg-cyan-500/15 border border-cyan-400/30 text-cyan-300 hover:bg-cyan-500/25 transition-colors disabled:opacity-50"
-                  >
-                    {exploitingId === f.id ? <Loader2 size={14} className="animate-spin" /> : <Crosshair size={14} />}
-                  </button>
+                  <Tooltip content="Launch AI Exploit Campaign">
+                    <button
+                      onClick={(e) => { e.stopPropagation(); launchExploitFor(f.id) }}
+                      disabled={exploitingId === f.id}
+                      className="icon-btn icon-btn-success"
+                      aria-label="Launch exploit campaign"
+                    >
+                      {exploitingId === f.id ? <Loader2 size={13} className="animate-spin" /> : <Crosshair size={13} />}
+                    </button>
+                  </Tooltip>
                   <SeverityBadge severity={f.severity} />
                 </div>
               </div>

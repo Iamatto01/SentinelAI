@@ -3,6 +3,7 @@ import { X, Loader2, ShieldAlert, BookOpen, StickyNote, Send, ExternalLink, Tras
 import { api } from '../lib/api.js'
 import { useAi } from '../lib/AiContext.jsx'
 import SeverityBadge from './SeverityBadge.jsx'
+import Tooltip from './Tooltip.jsx'
 
 function safeParse(j, fallback) {
   if (!j) return fallback
@@ -277,7 +278,11 @@ export default function FindingDetailDrawer({ finding, onClose, onStatusChange, 
             </div>
             <div className="flex items-center gap-2 shrink-0">
               <SeverityBadge severity={finding.severity} onChange={onSeverityChange} />
-              <button onClick={onClose} className="text-slate-500 hover:text-slate-200"><X size={20} /></button>
+              <Tooltip content="Close Panel">
+                <button onClick={onClose} className="icon-btn" aria-label="Close">
+                  <X size={16} />
+                </button>
+              </Tooltip>
             </div>
           </div>
           <div className="mt-3 flex items-center gap-2">
