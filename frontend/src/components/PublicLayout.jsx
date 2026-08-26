@@ -97,11 +97,11 @@ export default function PublicLayout({ children }) {
 
             {/* Primary Get Started CTA */}
             <Link
-              to="/login?mode=register&plan=pro"
+              to="/login?mode=register&plan=trial"
               className="inline-flex items-center gap-1.5 px-3.5 sm:px-4 py-1.5 sm:py-2 rounded-xl text-xs font-bold text-slate-950 bg-gradient-to-r from-cyan-400 via-cyan-300 to-sky-400 hover:from-cyan-300 hover:to-blue-400 shadow-[0_0_18px_rgba(0,242,254,0.4)] hover:shadow-[0_0_26px_rgba(0,242,254,0.7)] hover:scale-[1.02] active:scale-[0.98] transition-all"
             >
               <Sparkles size={13} className="hidden sm:inline-block" />
-              <span>Get Started</span>
+              <span>Get Started Free</span>
               <ArrowRight size={13} />
             </Link>
 
@@ -171,7 +171,7 @@ export default function PublicLayout({ children }) {
             {/* Drawer Action CTAs */}
             <div className="pt-3 border-t border-white/10 space-y-2">
               <Link
-                to="/login?mode=register&plan=pro"
+                to="/login?mode=register&plan=trial"
                 onClick={() => setMobileOpen(false)}
                 className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl font-bold text-sm text-slate-950 bg-gradient-to-r from-cyan-400 via-cyan-300 to-sky-400 shadow-[0_0_20px_rgba(0,242,254,0.4)] hover:shadow-[0_0_28px_rgba(0,242,254,0.7)] transition-all"
               >

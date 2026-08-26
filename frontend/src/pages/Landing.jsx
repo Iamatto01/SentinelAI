@@ -633,8 +633,8 @@ export default function Landing() {
             </p>
           </div>
           <div className="flex justify-center gap-4">
-            <Link to="/login?mode=register&plan=pro" className="btn-gradient-flow btn-lg">
-              Get Started Now <ArrowRight size={16} />
+            <Link to="/login?mode=register&plan=trial" className="btn-gradient-flow btn-lg">
+              Get Started Free <ArrowRight size={16} />
             </Link>
           </div>
         </div>

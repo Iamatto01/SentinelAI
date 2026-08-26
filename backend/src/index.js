@@ -26,7 +26,7 @@ import { walkProjects } from './folder-walker.js'
 import { ExploitOrchestrator } from './exploits/orchestrator.js'
 import * as msf from './exploits/msf-client.js'
 import { matchExploits, classifyRisk } from './exploits/registry.js'
-import { sendScanRequestNotification } from './email.js'
+import { sendScanRequestNotification, sendAnonymousFeedbackNotification } from './email.js'
 import { GitHubClient, parseGitHubWebhook } from './integrations/github.js'
 import { PLANS, getUserSubscription, consumeScanQuota, activateSubscription, getPaymentHistory } from './billing.js'
 import { channelGateway } from './channels/index.js'
@@ -726,10 +726,36 @@ app.post('/api/scans/request', requireAuth, async (req, res) => {
   }
 })
 
-app.post('/api/scans', requireAuth, async (req, res) => {
-  if (req.user?.role === 'client') {
-    return res.status(403).json({ error: 'Client users cannot launch scans directly. Please use Ask for New Scan.' })
+// Anonymous Community Feedback & Bug Reports
+app.post('/api/feedback', async (req, res) => {
+  try {
+    const { category, message, rating } = req.body || {}
+    if (!message || !message.trim()) {
+      return res.status(400).json({ error: 'Feedback message is required' })
+    }
+
+    const senderContext = req.user ? `${req.user.role} user (${req.user.username || 'client'})` : 'Anonymous Visitor'
+    const result = await sendAnonymousFeedbackNotification({
+      category: category || 'General Feedback',
+      message: message.trim(),
+      rating: rating || 5,
+      userContext: senderContext,
+    })
+
+    audit(req.user?.username || 'anonymous', 'feedback:submit', `Category: ${category || 'General'}`)
+
+    return res.json({
+      success: true,
+      message: 'Thank you! Your feedback has been sent anonymously to muhammadsaifudinmj@gmail.com.',
+      result,
+    })
+  } catch (err) {
+    console.error('[feedback] error:', err)
+    return res.status(500).json({ error: 'Failed to send feedback: ' + (err.message || err) })
   }
+})
+
+app.post('/api/scans', requireAuth, async (req, res) => {
   const {
     target, projectId = null, mode = 'blackbox', targetType = 'url',
     template = 'standard', modules = [], objective = 'comprehensive', maxTools = 6,

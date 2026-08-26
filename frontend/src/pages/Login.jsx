@@ -60,7 +60,7 @@ export default function Login() {
   // Parse URL query params
   const searchParams = new URLSearchParams(loc.search)
   const initialMode = searchParams.get('mode') === 'register' ? 'register' : 'login'
-  const initialPlan = searchParams.get('plan') === 'enterprise' ? 'enterprise' : 'pro'
+  const initialPlan = searchParams.get('plan') === 'enterprise' ? 'enterprise' : searchParams.get('plan') === 'pro' ? 'pro' : 'trial'
   const initialInterval = searchParams.get('interval') === 'yearly' ? 'yearly' : 'monthly'
 
   const [mode, setMode] = useState(initialMode) // 'login' | 'register'
@@ -94,7 +94,7 @@ export default function Login() {
           username: username.trim(),
           email: email.trim(),
           password,
-          planId,
+          planId: planId || 'trial',
           billingInterval: interval,
           paymentProvider: 'stripe',
         })
@@ -133,7 +133,7 @@ export default function Login() {
       <div className="absolute bottom-1/3 left-1/2 -translate-x-1/2 translate-y-1/2 w-[500px] h-[500px] bg-purple-600/15 rounded-full blur-[120px] pointer-events-none" />
 
       {/* Main Centered Login / Register Container */}
-      <div className="w-full max-w-md relative z-10 my-auto motion-fade-up">
+      <div className="w-full max-w-lg relative z-10 my-auto motion-fade-up">
         {/* Header Logo & Title */}
         <div className="flex flex-col items-center mb-6 text-center">
           <div className="relative mb-3 group">
@@ -170,7 +170,7 @@ export default function Login() {
                 : 'text-slate-400 hover:text-white'
             }`}
           >
-            Create Account & Subscribe
+            Create Account (Free Trial)
           </button>
         </div>
 
@@ -243,47 +243,71 @@ export default function Login() {
             </div>
           </div>
 
-          {/* Registration Plan Selection */}
+          {/* Registration Plan Selection (Free Trial, Pro, Enterprise) */}
           {mode === 'register' && (
             <div className="space-y-2 pt-2 border-t border-white/10">
               <div className="flex items-center justify-between text-xs">
-                <span className="font-bold text-slate-200">Select Subscription Plan:</span>
-                <button
-                  type="button"
-                  onClick={() => setInterval(interval === 'monthly' ? 'yearly' : 'monthly')}
-                  className="text-[11px] text-cyan-300 font-semibold hover:underline"
-                >
-                  {interval === 'yearly' ? 'Yearly (17% OFF)' : 'Monthly'}
-                </button>
+                <span className="font-bold text-slate-200">Select Tier:</span>
+                {planId !== 'trial' && (
+                  <button
+                    type="button"
+                    onClick={() => setInterval(interval === 'monthly' ? 'yearly' : 'monthly')}
+                    className="text-[11px] text-cyan-300 font-semibold hover:underline"
+                  >
+                    {interval === 'yearly' ? 'Yearly (17% OFF)' : 'Monthly'}
+                  </button>
+                )}
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                {/* 1. Free Trial Card */}
+                <button
+                  type="button"
+                  onClick={() => setPlanId('trial')}
+                  className={`p-3 rounded-2xl border text-left transition-all cursor-pointer relative overflow-hidden ${
+                    planId === 'trial'
+                      ? 'border-cyan-400 bg-cyan-500/20 ring-1 ring-cyan-400 shadow-[0_0_15px_rgba(0,242,254,0.25)]'
+                      : 'border-white/10 bg-slate-900/60 hover:border-white/20'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-extrabold text-white">Free Trial</span>
+                    {planId === 'trial' ? <Check size={14} className="text-cyan-400" /> : <span className="text-[9px] px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-300 font-bold">FREE</span>}
+                  </div>
+                  <div className="text-lg font-black text-cyan-300 mt-1">
+                    $0 <span className="text-[10px] text-slate-400 font-normal">forever</span>
+                  </div>
+                  <div className="text-[10px] text-cyan-200 font-semibold mt-0.5">3 Free AI Scans</div>
+                </button>
+
+                {/* 2. Pro Card */}
                 <button
                   type="button"
                   onClick={() => setPlanId('pro')}
                   className={`p-3 rounded-2xl border text-left transition-all cursor-pointer ${
                     planId === 'pro'
                       ? 'border-cyan-400 bg-cyan-500/15 ring-1 ring-cyan-400'
-                      : 'border-white/10 bg-slate-950/60 hover:border-white/20'
+                      : 'border-white/10 bg-slate-900/60 hover:border-white/20'
                   }`}
                 >
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-extrabold text-white">SentinelAI Pro</span>
+                    <span className="text-xs font-extrabold text-white">Pro Plan</span>
                     {planId === 'pro' && <Check size={14} className="text-cyan-400" />}
                   </div>
-                  <div className="text-lg font-black text-cyan-300 mt-1">
+                  <div className="text-lg font-black text-white mt-1">
                     ${interval === 'yearly' ? '190' : '19'}<span className="text-[10px] text-slate-400 font-normal">/{interval === 'yearly' ? 'yr' : 'mo'}</span>
                   </div>
-                  <div className="text-[10px] text-slate-400 mt-0.5">50 Scans &bull; 5 Repos</div>
+                  <div className="text-[10px] text-slate-400 mt-0.5">50 Scans • 5 Repos</div>
                 </button>
 
+                {/* 3. Enterprise Card */}
                 <button
                   type="button"
                   onClick={() => setPlanId('enterprise')}
                   className={`p-3 rounded-2xl border text-left transition-all cursor-pointer ${
                     planId === 'enterprise'
                       ? 'border-emerald-400 bg-emerald-500/15 ring-1 ring-emerald-400'
-                      : 'border-white/10 bg-slate-950/60 hover:border-white/20'
+                      : 'border-white/10 bg-slate-900/60 hover:border-white/20'
                   }`}
                 >
                   <div className="flex items-center justify-between">
@@ -293,9 +317,15 @@ export default function Login() {
                   <div className="text-lg font-black text-emerald-300 mt-1">
                     ${interval === 'yearly' ? '790' : '79'}<span className="text-[10px] text-slate-400 font-normal">/{interval === 'yearly' ? 'yr' : 'mo'}</span>
                   </div>
-                  <div className="text-[10px] text-slate-400 mt-0.5">Unlimited Scans & Repos</div>
+                  <div className="text-[10px] text-slate-400 mt-0.5">Unlimited • 1-on-1</div>
                 </button>
               </div>
+
+              {planId === 'trial' && (
+                <div className="text-center pt-1 text-[11px] text-cyan-300/90 font-medium">
+                  ✨ Instant access • No credit card required
+                </div>
+              )}
             </div>
           )}
 
@@ -313,8 +343,12 @@ export default function Login() {
           >
             {busy && <Loader2 size={15} className="animate-spin" />}
             {busy
-              ? (mode === 'login' ? 'Authenticating...' : 'Activating Subscription...')
-              : (mode === 'login' ? 'Sign In to Operations Center' : `Subscribe & Activate ${planId === 'enterprise' ? 'Enterprise' : 'Pro'}`)}
+              ? (mode === 'login' ? 'Authenticating...' : 'Creating Account...')
+              : (mode === 'login'
+                  ? 'Sign In to Operations Center'
+                  : planId === 'trial'
+                  ? 'Create Free Trial Account (3 Free Scans)'
+                  : `Subscribe & Activate ${planId === 'enterprise' ? 'Enterprise' : 'Pro'}`)}
           </button>
         </form>
       </div>

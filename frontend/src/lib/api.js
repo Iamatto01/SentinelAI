@@ -142,6 +142,9 @@ export const api = {
   unpairChannel: (platform) => apiFetch('/api/channels/unpair', { method: 'POST', body: { platform } }),
   unpairTelegram: () => apiFetch('/api/channels/unpair', { method: 'POST', body: { platform: 'telegram' } }),
   unpairDiscord: () => apiFetch('/api/channels/unpair', { method: 'POST', body: { platform: 'discord' } }),
+
+  // ── Anonymous Feedback ──
+  sendFeedback: (body) => apiFetch('/api/feedback', { method: 'POST', body }),
 }
 
 export default api

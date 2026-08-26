@@ -211,9 +211,12 @@ export default function KaliControl() {
   }
 
   const presets = [
-    { label: 'Check IP Addresses', cmd: 'ip -br addr show' },
-    { label: 'Running Scan Processes', cmd: 'ps aux | grep -E "nmap|nuclei|sqlmap|ffuf|nikto|msf" | grep -v grep' },
+    { label: 'Storage & Disks', cmd: 'df -h && echo "" && lsblk -o NAME,SIZE,TYPE,MOUNTPOINT,FSTYPE,LABEL' },
+    { label: 'Top Processes (htop)', cmd: 'htop' },
     { label: 'Memory & Swap', cmd: 'free -h' },
+    { label: 'Check IP Addresses', cmd: 'ip -br addr show' },
+    { label: 'PM2 Status', cmd: 'pm2 list 2>/dev/null || echo "PM2 not active"' },
+    { label: 'Running Scan Processes', cmd: 'ps aux | grep -E "nmap|nuclei|sqlmap|ffuf|nikto|msf" | grep -v grep' },
     { label: 'Hexstrike Logs (Last 20)', cmd: 'tail -n 20 /home/kali/hexstrike.log 2>/dev/null || echo "No hexstrike log"' },
     { label: 'SentinelAI Logs (Last 20)', cmd: 'tail -n 20 /home/kali/sentinelai.log 2>/dev/null || echo "No sentinelai log"' },
     { label: 'Metasploit RPC Status', cmd: 'ss -tlnp | grep 55553' },

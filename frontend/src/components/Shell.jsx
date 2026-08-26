@@ -75,9 +75,12 @@ export default function Shell() {
   const currentNav = navItems.find(n => location.pathname.startsWith(n.to)) || { label: 'Platform' }
 
   // Paywall Condition: Client has expired subscription or exhausted trial quota
+  // Community Open Access Switch: Set to true so community members can freely test without being locked out
+  const COMMUNITY_FREE_ACCESS_MODE = true
+
   const isTrial = isClient && subscription?.plan_id === 'trial'
-  const isTrialExhausted = isTrial && (subscription?.remainingQuota <= 0 || (subscription?.scan_quota_used >= subscription?.scan_quota_total))
-  const isPaidExpired = isClient && !isTrial && (
+  const isTrialExhausted = !COMMUNITY_FREE_ACCESS_MODE && isTrial && (subscription?.remainingQuota <= 0 || (subscription?.scan_quota_used >= subscription?.scan_quota_total))
+  const isPaidExpired = !COMMUNITY_FREE_ACCESS_MODE && isClient && !isTrial && (
     subscription?.isSubscribed === false ||
     subscription?.isExpired ||
     subscription?.status === 'expired' ||
@@ -102,7 +105,7 @@ export default function Shell() {
       {/* AI Dynamic Background Layer */}
       <AIBackgroundCanvas />
       
-      {/* Expired / Inactive / Trial Exhausted Alert Banner */}
+      {/* Expired / Inactive / Trial Exhausted Alert Banner (Only when paywall is active) */}
       {isSubscriptionExpired && (
         <div className="sticky top-0 z-50 bg-gradient-to-r from-amber-600 via-rose-600 to-red-600 text-white px-4 py-2 text-xs font-bold shadow-xl flex items-center justify-between">
           <div className="flex items-center gap-2 max-w-4xl">
@@ -120,8 +123,23 @@ export default function Shell() {
         </div>
       )}
 
-      {/* Trial Active Floating Notice (Non-intrusive) */}
-      {!isSubscriptionExpired && isTrial && (
+      {/* Community Free Access Preview Notice */}
+      {COMMUNITY_FREE_ACCESS_MODE && (
+        <div className="sticky top-0 z-40 bg-gradient-to-r from-cyan-950/80 via-blue-950/70 to-slate-950/90 backdrop-blur-xl border-b border-cyan-500/30 px-4 py-1.5 text-xs text-slate-300 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
+            <span>
+              <strong className="text-cyan-300">Community Preview Active:</strong> Open trial access is enabled for testing.
+            </span>
+          </div>
+          <Link to="/app/billing" className="text-cyan-400 hover:text-cyan-300 text-[11px] font-bold underline flex items-center gap-1">
+            <span>Billing & Quota</span> <ArrowRight size={11} />
+          </Link>
+        </div>
+      )}
+
+      {/* Trial Active Floating Notice (When community mode is off) */}
+      {!COMMUNITY_FREE_ACCESS_MODE && !isSubscriptionExpired && isTrial && (
         <div className="sticky top-0 z-40 bg-slate-950/90 backdrop-blur-xl border-b border-cyan-500/30 px-4 py-1.5 text-xs text-slate-300 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Sparkles size={14} className="text-cyan-400" />
@@ -216,23 +234,25 @@ export default function Shell() {
         </div>
 
         {/* Scan Action Button */}
-        <div className="p-3">
+        <div className="p-3 flex justify-center">
           <button
             onClick={handleScanButtonClick}
             title={isSubscriptionExpired ? "Subscribe to Launch Scans" : "Launch New Security Audit"}
-            className={`btn-primary w-full justify-center active-press ${
-              !showLabels ? 'lg:!px-0' : ''
+            className={`btn-primary active-press transition-all duration-300 ${
+              !showLabels
+                ? 'w-11 h-11 p-0 rounded-2xl flex items-center justify-center'
+                : 'w-full py-2.5 px-4 rounded-2xl justify-center'
             } ${
               !isSubscriptionExpired && isTrial && (subscription?.remainingQuota ?? 3) <= 1 ? 'ring-urgent' : ''
             }`}
           >
-            {isSubscriptionExpired ? <Lock size={16} /> : <Plus size={16} />}
-            {showLabels && <span>{isSubscriptionExpired ? 'Subscribe to Scan' : 'Launch Scan'}</span>}
+            {isSubscriptionExpired ? <Lock size={18} /> : <Plus size={18} />}
+            {showLabels && <span className="font-bold text-sm">{isSubscriptionExpired ? 'Subscribe to Scan' : 'Launch Scan'}</span>}
           </button>
         </div>
 
         {/* Vision Navigation Links */}
-        <nav className="flex-1 px-3 space-y-1.5 overflow-y-auto">
+        <nav className="flex-1 px-3 space-y-1 overflow-y-auto">
           {navItems.map(({ to, label, icon: Icon }) => {
             const isLocked = isSubscriptionExpired && !to.startsWith('/app/billing') && !to.startsWith('/app/settings')
             const navItem = (
@@ -241,25 +261,50 @@ export default function Shell() {
                 to={to}
                 onClick={() => setMobileOpen(false)}
                 className={({ isActive }) =>
-                  `flex items-center gap-3.5 rounded-2xl py-2.5 text-sm font-semibold transition-all duration-200 ${
-                    !showLabels ? 'lg:justify-center lg:px-0 px-3' : 'px-3.5'
-                  } ${
-                    isActive
-                      ? 'bg-gradient-to-r from-cyan-500/25 to-blue-600/25 text-cyan-300 border border-cyan-400/40 glass-glow'
-                      : isLocked
-                      ? 'text-slate-500 hover:text-slate-400 opacity-60'
-                      : 'text-slate-400 border border-transparent hover:bg-white/[0.06] hover:text-slate-100'
-                  }`
+                  !showLabels
+                    ? `w-11 h-11 mx-auto rounded-2xl flex items-center justify-center transition-all duration-200 relative group ${
+                        isActive
+                          ? 'bg-gradient-to-tr from-cyan-500/25 to-blue-600/35 text-cyan-300 border border-cyan-400/50 shadow-[0_0_16px_rgba(0,242,254,0.3)]'
+                          : isLocked
+                          ? 'text-slate-500 opacity-60 border border-transparent'
+                          : 'text-slate-400 hover:text-white hover:bg-white/[0.08] border border-transparent'
+                      }`
+                    : `flex items-center gap-3 px-3 py-2.5 rounded-2xl text-sm font-semibold transition-all duration-200 relative group ${
+                        isActive
+                          ? 'bg-gradient-to-r from-cyan-500/15 via-blue-500/10 to-transparent text-cyan-200 border border-cyan-400/30 shadow-[0_0_15px_rgba(0,242,254,0.12)]'
+                          : isLocked
+                          ? 'text-slate-500 hover:text-slate-400 opacity-60 border border-transparent'
+                          : 'text-slate-400 border border-transparent hover:bg-white/[0.04] hover:text-slate-100'
+                      }`
                 }
               >
-                <div className={`p-1.5 rounded-xl transition-colors ${location.pathname.startsWith(to) ? 'bg-cyan-500 text-slate-950' : 'bg-white/5 text-slate-300'}`}>
-                  {isLocked ? <Lock size={16} className="text-amber-400" /> : <Icon size={16} />}
-                </div>
-                {showLabels && (
-                  <span className="truncate flex items-center justify-between flex-1">
-                    <span>{label}</span>
-                    {isLocked && <Lock size={12} className="text-amber-400" />}
-                  </span>
+                {({ isActive }) => (
+                  <>
+                    {/* Glowing active indicator dot/bar */}
+                    {isActive && (
+                      <span className={`absolute bg-cyan-400 rounded-r-full shadow-[0_0_8px_#00f2fe] ${
+                        !showLabels ? '-left-3 top-2.5 bottom-2.5 w-1' : 'left-0 top-2 bottom-2 w-1'
+                      }`} />
+                    )}
+
+                    {!showLabels ? (
+                      isLocked ? <Lock size={16} className="text-amber-400" /> : <Icon size={18} className={isActive ? 'text-cyan-300 drop-shadow-[0_0_6px_rgba(0,242,254,0.6)]' : 'group-hover:scale-110 transition-transform'} />
+                    ) : (
+                      <>
+                        <div className={`p-1.5 rounded-xl transition-colors ${
+                          isActive
+                            ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-400/30 shadow-[0_0_8px_rgba(0,242,254,0.25)]'
+                            : 'bg-white/[0.03] text-slate-400 group-hover:text-slate-200'
+                        }`}>
+                          {isLocked ? <Lock size={15} className="text-amber-400" /> : <Icon size={15} />}
+                        </div>
+                        <span className="truncate flex items-center justify-between flex-1">
+                          <span className={isActive ? 'font-bold text-white' : 'text-slate-300 group-hover:text-white'}>{label}</span>
+                          {isLocked && <Lock size={12} className="text-amber-400" />}
+                        </span>
+                      </>
+                    )}
+                  </>
                 )}
               </NavLink>
             )

@@ -179,8 +179,8 @@ export default function Services() {
             Start with a free assessment or talk directly to the Security Architect about your environment.
           </p>
           <div className="flex justify-center items-center flex-wrap gap-4">
-            <Link to="/login?mode=register&plan=pro" className="btn-concept-12">
-              <span className="btn-concept-12__text">Get Started Now</span>
+            <Link to="/login?mode=register&plan=trial" className="btn-concept-12">
+              <span className="btn-concept-12__text">Start Free Assessment</span>
               <span className="btn-concept-12__icon">
                 <ShieldCheck size={18} />
               </span>

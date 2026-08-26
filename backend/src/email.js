@@ -105,6 +105,91 @@ export async function sendScanRequestNotification({ clientUser, project, target,
 }
 
 /**
+ * Send Anonymous Community Feedback & Bug Report to developer email
+ */
+export async function sendAnonymousFeedbackNotification({ category = 'General Feedback', message, rating, userContext = 'Anonymous Community User' }) {
+  const recipient = DEFAULT_NOTIFY_EMAIL
+
+  const smtpHost = process.env.SMTP_HOST || 'smtp.gmail.com'
+  const smtpPort = Number(process.env.SMTP_PORT || 587)
+  const smtpUser = process.env.SMTP_USER || ''
+  const smtpPass = process.env.SMTP_PASS || ''
+
+  let transporter
+  if (smtpUser && smtpPass) {
+    transporter = nodemailer.createTransport({
+      host: smtpHost,
+      port: smtpPort,
+      secure: smtpPort === 465,
+      auth: { user: smtpUser, pass: smtpPass },
+    })
+  } else {
+    transporter = nodemailer.createTransport({ jsonTransport: true })
+  }
+
+  const ratingStars = rating ? '⭐'.repeat(Number(rating)) : 'Not provided'
+  const subject = `[SentinelAI Feedback] [${category}] Community Feedback (${ratingStars})`
+
+  const htmlContent = `
+    <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 600px; margin: 0 auto; background-color: #09090b; color: #f4f4f5; border: 1px solid rgba(255,255,255,0.15); border-radius: 12px; padding: 24px;">
+      <div style="display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 16px; margin-bottom: 20px;">
+        <h2 style="color: #00f2fe; margin: 0; font-size: 20px;">💬 SentinelAI — Anonymous Community Feedback</h2>
+      </div>
+
+      <p style="color: #a1a1aa; font-size: 14px; margin-bottom: 20px;">
+        A user has submitted anonymous feedback / bug report from the platform Settings:
+      </p>
+
+      <table style="width: 100%; border-collapse: collapse; background-color: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 8px; overflow: hidden; margin-bottom: 24px;">
+        <tbody>
+          <tr>
+            <td style="padding: 12px 16px; border-bottom: 1px solid rgba(255,255,255,0.08); color: #71717a; font-size: 13px; font-weight: 600; width: 130px;">Category</td>
+            <td style="padding: 12px 16px; border-bottom: 1px solid rgba(255,255,255,0.08); color: #00f2fe; font-size: 14px; font-weight: bold;">
+              ${category}
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 12px 16px; border-bottom: 1px solid rgba(255,255,255,0.08); color: #71717a; font-size: 13px; font-weight: 600;">Rating</td>
+            <td style="padding: 12px 16px; border-bottom: 1px solid rgba(255,255,255,0.08); color: #fbbf24; font-size: 14px;">
+              ${ratingStars} (${rating || 0}/5)
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 12px 16px; border-bottom: 1px solid rgba(255,255,255,0.08); color: #71717a; font-size: 13px; font-weight: 600;">Sender Context</td>
+            <td style="padding: 12px 16px; border-bottom: 1px solid rgba(255,255,255,0.08); color: #a1a1aa; font-size: 13px;">
+              ${userContext} (Anonymous)
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 12px 16px; color: #71717a; font-size: 13px; font-weight: 600; vertical-align: top;">Feedback Content</td>
+            <td style="padding: 12px 16px; color: #ffffff; font-size: 14px; line-height: 1.6; white-space: pre-wrap; font-family: monospace; background: rgba(0,0,0,0.3); border-radius: 6px;">${message || '(No message provided)'}</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div style="border-top: 1px solid rgba(255,255,255,0.1); padding-top: 16px; font-size: 12px; color: #71717a; text-align: center;">
+        Directly sent to muhammadsaifudinmj@gmail.com via SentinelAI Platform &bull; ${new Date().toUTCString()}
+      </div>
+    </div>
+  `
+
+  try {
+    const info = await transporter.sendMail({
+      from: `"SentinelAI Feedback" <${smtpUser || 'no-reply@sentinelai.studio'}>`,
+      to: recipient,
+      subject,
+      html: htmlContent,
+    })
+
+    console.log(`[email] Anonymous feedback delivered to ${recipient}:`, info.messageId || JSON.stringify(info))
+    return { success: true, recipient, messageId: info.messageId }
+  } catch (err) {
+    console.error(`[email] Feedback delivery error:`, err.message)
+    return { success: false, recipient, error: err.message }
+  }
+}
+
+/**
  * Send automated Security Audit Report Email with PDF attachment to subscriber/user
  */
 export async function sendScanAuditReportEmail({ userEmail, scan, findings = [], pdfPath, repoName, triggerSource, commitHash }) {

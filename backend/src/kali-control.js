@@ -14,7 +14,13 @@ async function runCmd(cmd, timeoutMs = 30000) {
       process.env.HOME ? `${process.env.HOME}/.local/bin` : null,
     ].filter(Boolean).join(':')
 
-    const env = { ...process.env, PATH: `${process.env.PATH || ''}:${extra}` }
+    const env = {
+      ...process.env,
+      PATH: `${process.env.PATH || ''}:${extra}`,
+      TERM: 'xterm-256color',
+      COLUMNS: '120',
+      LINES: '40',
+    }
     const proc = spawn(cmd, { shell: true, stdio: ['ignore', 'pipe', 'pipe'], env, detached: true })
     let stdout = ''
     let stderr = ''
@@ -192,7 +198,17 @@ export async function executeCommand(command, timeout = 30000) {
     throw new Error(`Command not allowed: ${bin}. Use the AI suggest feature or request a tool addition.`)
   }
 
-  const result = await runCmd(command, timeout)
+  // Translate interactive commands to non-interactive batch mode
+  let finalCmd = command.trim()
+  if (bin === 'htop') {
+    finalCmd = 'COLUMNS=120 top -b -n 1 | head -n 35'
+  } else if (bin === 'top' && !finalCmd.includes('-b')) {
+    finalCmd = `COLUMNS=120 top -b -n 1 | head -n 35`
+  } else if (['nano', 'vim', 'vi', 'less', 'more'].includes(bin)) {
+    throw new Error(`Interactive editor/pager (${bin}) is not supported in web terminal. Use 'cat', 'head -n 50', or 'tail -n 50' to view files.`)
+  }
+
+  const result = await runCmd(finalCmd, timeout)
   return result
 }
 

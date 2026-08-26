@@ -259,8 +259,8 @@ export default function Tools() {
             Launch your first autonomous assessment and watch {totalTools}+ tools chain themselves against your target.
           </p>
           <div className="flex justify-center gap-4">
-            <Link to="/login?mode=register&plan=pro" className="btn-concept-12">
-              <span className="btn-concept-12__text">Get Started Now</span>
+            <Link to="/login?mode=register&plan=trial" className="btn-concept-12">
+              <span className="btn-concept-12__text">Get Started Free</span>
               <span className="btn-concept-12__icon">
                 <ShieldCheck size={18} />
               </span>

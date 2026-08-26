@@ -115,26 +115,35 @@ export function getUserSubscription(userId) {
 }
 
 /**
+ * Toggle for community open-access trial mode.
+ * When true, paywalls/hard locks are temporarily relaxed for community testing.
+ */
+export const COMMUNITY_FREE_ACCESS_MODE = true
+
+/**
  * Verify subscription & quota before running scan
  */
 export function consumeScanQuota(userId) {
   const sub = getUserSubscription(userId)
   
-  if (sub.isExpired) {
-    throw new Error(`Your SentinelAI subscription has expired. Please renew your plan in Billing to continue scanning.`)
-  }
-
-  if (!sub.isSubscribed || sub.status !== 'active') {
-    throw new Error(`An active subscription is required to run security audits. Please subscribe to Pro or Enterprise in Billing.`)
-  }
-
-  if (!sub.isUnlimited && sub.scan_quota_used >= sub.scan_quota_total) {
-    if (sub.plan_id === 'trial') {
-      throw new Error(`Free trial scan limit reached (${sub.scan_quota_used}/${sub.scan_quota_total} scans used). Please upgrade to SentinelAI Pro or Enterprise in Billing to continue scanning.`)
+  if (!COMMUNITY_FREE_ACCESS_MODE) {
+    if (sub.isExpired) {
+      throw new Error(`Your SentinelAI subscription has expired. Please renew your plan in Billing to continue scanning.`)
     }
-    throw new Error(`Monthly scan quota reached (${sub.scan_quota_used}/${sub.scan_quota_total}). Please upgrade your SentinelAI subscription in Billing.`)
+
+    if (!sub.isSubscribed || sub.status !== 'active') {
+      throw new Error(`An active subscription is required to run security audits. Please subscribe to Pro or Enterprise in Billing.`)
+    }
+
+    if (!sub.isUnlimited && sub.scan_quota_used >= sub.scan_quota_total) {
+      if (sub.plan_id === 'trial') {
+        throw new Error(`Free trial scan limit reached (${sub.scan_quota_used}/${sub.scan_quota_total} scans used). Please upgrade to SentinelAI Pro or Enterprise in Billing to continue scanning.`)
+      }
+      throw new Error(`Monthly scan quota reached (${sub.scan_quota_used}/${sub.scan_quota_total}). Please upgrade your SentinelAI subscription in Billing.`)
+    }
   }
 
+  // Increment usage count for analytics/tracking
   db.run(
     `UPDATE subscriptions SET scan_quota_used = scan_quota_used + 1, updated_at = ? WHERE user_id = ?`,
     new Date().toISOString(), userId
@@ -142,8 +151,8 @@ export function consumeScanQuota(userId) {
 
   return {
     success: true,
-    quotaUsed: sub.scan_quota_used + 1,
-    quotaTotal: sub.scan_quota_total,
+    quotaUsed: (sub.scan_quota_used || 0) + 1,
+    quotaTotal: sub.scan_quota_total || 3,
   }
 }
 
