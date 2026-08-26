@@ -63,8 +63,8 @@ const TOOL_CATEGORIES = [
   },
 ]
 
-// ── 51 AI Agent Personas Matrix ──────────────────────────────────────────────
-const AGENT_PERSONAS = [
+// ── 53 AI Agent Personas Matrix ──────────────────────────────────────────────
+const DEFAULT_AGENT_PERSONAS = [
   'Web Hunter', 'Database Attacker', 'Code Auditor', 'BizLogic Hunter', 'Cloud Security',
   'LLM Red Team', 'API Security', 'Network Attacker', 'Credential Tester', 'Crypto Analyzer',
   'Reverse Engineer', 'Malware Analyst', 'Forensics Analyst', 'Mobile Pentester', 'IoT Pentester',
@@ -75,12 +75,31 @@ const AGENT_PERSONAS = [
   'Data Exfiltrator', 'Persistence Planner', 'Traffic Analyzer', 'Stig Analyst', 'Password Auditor',
   'Attack Planner', 'Swarm Orchestrator', 'Poc Validator', 'Bug Bounty', 'CTF Solver',
   'CICD Red Team', 'Recon Advisor', 'Opsec Anonymizer', 'AI Recon', 'Scope Guard',
-  'Ad Attacker',
+  'Ad Attacker', 'Whitebox Fuzzer', 'Exploit Dev Whitebox', 'Debugger Analyst'
 ]
 
 export default function Tools() {
   const [query, setQuery] = useState('')
   const [activeCat, setActiveCat] = useState('all')
+  const [agentList, setAgentList] = useState(DEFAULT_AGENT_PERSONAS)
+
+  useEffect(() => {
+    fetch('/api/public/agents')
+      .then((r) => (r.ok ? r.json() : []))
+      .then((data) => {
+        if (Array.isArray(data) && data.length > 0) {
+          const names = data.map((a) =>
+            typeof a === 'string'
+              ? a
+              : a.name
+              ? a.name.split('-').map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')
+              : a
+          )
+          setAgentList(names)
+        }
+      })
+      .catch(() => {})
+  }, [])
 
   // Filter tools across all categories by search query + active category
   const filtered = useMemo(() => {
@@ -106,7 +125,7 @@ export default function Tools() {
             <ShieldCheck size={14} className="text-cyan-400" /> Full DAST &amp; SAST Dual-Engine Platform
           </div>
           <h1 className="text-3xl sm:text-5xl font-extrabold text-white tracking-tight leading-tight">
-            150+ Kali Tools &amp; <span className="at-home__gradient-text">51 AI Personas</span>
+            150+ Kali Tools &amp; <span className="at-home__gradient-text">{agentList.length} AI Personas</span>
           </h1>
           <p className="text-sm text-slate-400 max-w-2xl mx-auto leading-relaxed">
             Every tool in the Hexstrike engine is real, installed, and health-checked — combining live dynamic blackbox testing (DAST) with whitebox static code parsing (SAST).
@@ -192,13 +211,13 @@ export default function Tools() {
           )}
         </section>
 
-        {/* ── 51 AI Agent Personas Matrix ──────────────────────────────────── */}
+        {/* ── Specialist AI Agent Personas Matrix ──────────────────────────── */}
         <section className="space-y-8">
           <div className="text-center space-y-2">
             <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-amber-500/10 border border-amber-400/30 text-amber-300 text-xs font-bold uppercase tracking-wider">
               <Bot size={13} className="text-amber-400" /> Specialist Agent Matrix
             </div>
-            <h2 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">51 AI Agent Personas</h2>
+            <h2 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">{agentList.length} AI Agent Personas</h2>
             <p className="text-xs text-slate-400 max-w-xl mx-auto">
               Each finding is routed to the persona best suited to verify, exploit, or remediate it — under multi-LLM consensus.
             </p>
@@ -206,7 +225,7 @@ export default function Tools() {
 
           <div className="p-6 sm:p-8 rounded-3xl" style={GLASS_CARD}>
             <div className="flex flex-wrap gap-2 justify-center">
-              {AGENT_PERSONAS.map((p) => (
+              {agentList.map((p) => (
                 <span
                   key={p}
                   className="px-3 py-1.5 rounded-xl bg-slate-950/80 border border-white/10 text-[11px] font-bold text-slate-300 hover:border-amber-400/50 hover:text-amber-300 hover:bg-amber-500/5 transition-all cursor-default"
@@ -216,7 +235,7 @@ export default function Tools() {
               ))}
             </div>
             <p className="text-center text-[11px] text-slate-500 mt-5 font-mono">
-              {AGENT_PERSONAS.length} personas registered in the consensus routing table
+              {agentList.length} personas registered in the consensus routing table
             </p>
           </div>
         </section>

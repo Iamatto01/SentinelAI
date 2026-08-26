@@ -53,10 +53,10 @@ const LAYERS = [
     id: 'ai',
     num: '04',
     title: 'AI Agent Reasoning Core',
-    tech: '51 Specialist Personas + Multi-LLM',
+    tech: '53 Specialist Personas + Multi-LLM',
     icon: Bot,
     accent: 'amber',
-    desc: '51 specialist AI personas verify raw tool outputs, eliminate false-positive noise, calculate CVSS risk scores, and generate dual-tier reports.',
+    desc: '53 specialist AI personas verify raw tool outputs, eliminate false-positive noise, calculate CVSS risk scores, and generate dual-tier reports.',
     modules: [
       { name: 'Web Hunter & Exploit Persona', detail: 'Validates XSS, SQLi, SSRF findings and generates proof-of-concept steps.' },
       { name: 'False-Positive Elimination', detail: 'Context-aware verification that discards benign scan noise automatically.' },

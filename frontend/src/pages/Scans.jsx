@@ -449,15 +449,6 @@ export default function Scans() {
           {viewMode === 'folder' && (
             <div className="flex items-center gap-2 mr-2">
               <button
-                type="button"
-                onClick={() => setShowFolderModal(true)}
-                className="text-xs font-bold text-cyan-300 hover:text-cyan-200 bg-cyan-500/10 border border-cyan-400/30 rounded-lg px-2.5 py-1 flex items-center gap-1 transition-all"
-              >
-                <FolderPlus size={13} />
-                <span>+ Folder</span>
-              </button>
-              <span className="text-slate-600 text-xs">|</span>
-              <button
                 onClick={expandAllFolders}
                 className="text-[11px] font-semibold text-slate-400 hover:text-cyan-300 transition-colors px-1.5 py-1"
               >

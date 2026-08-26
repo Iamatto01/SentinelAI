@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import {
   ShieldAlert, Bot, Radar, FileText, ShieldCheck, Cpu, DatabaseZap, Sparkles, Globe2, Binary, CheckCircle2,
@@ -16,6 +16,16 @@ export default function Landing() {
   const [interval, setInterval] = useState('monthly')
   const [archMode, setArchMode] = useState('tree') // 'tree' | 'flow' | 'mermaid'
   const [hoveredStep, setHoveredStep] = useState(null)
+  const [agentsCount, setAgentsCount] = useState(53)
+
+  useEffect(() => {
+    fetch('/api/public/stats')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (d?.agentsCount) setAgentsCount(d.agentsCount)
+      })
+      .catch(() => {})
+  }, [])
 
   const ARCH_STEPS = [
     {
@@ -60,7 +70,7 @@ export default function Landing() {
     {
       id: 4,
       num: '04',
-      title: '51 AI Specialist Personas',
+      title: `${agentsCount} AI Specialist Personas`,
       short: 'Multi-LLM consensus engine (Groq, OpenRouter, DeepSeek) filters noise & scores risk.',
       icon: Bot,
       tech: 'Multi-LLM Groq / DeepSeek',
@@ -112,7 +122,7 @@ export default function Landing() {
           </h1>
 
           <p className="at-home__subtitle">
-            SentinelAI orchestrates 150+ real Kali Linux pentest tools via the Hexstrike Engine, 51 specialist AI personas, and local-first RAG knowledge base.
+            SentinelAI orchestrates 150+ real Kali Linux pentest tools via the Hexstrike Engine, {agentsCount} specialist AI personas, and local-first RAG knowledge base.
           </p>
 
           <div className="at-home__hero-actions mt-4 sm:mt-5 gap-3 sm:gap-4 flex items-center flex-wrap">
@@ -132,7 +142,7 @@ export default function Landing() {
               <p>Hexstrike Kali Engine</p>
             </article>
             <article className="hover:border-amber-400/50 transition-colors">
-              <h3 className="text-amber-400">51 Personas</h3>
+              <h3 className="text-amber-400">{agentsCount} Personas</h3>
               <p>Specialist AI Agents</p>
             </article>
             <article className="hover:border-emerald-400/50 transition-colors">
@@ -209,7 +219,7 @@ export default function Landing() {
             <span>NUCLEI VULN SCAN</span>
             <span>FFUF DIRECTORY BRUTEFORCE</span>
             <span>WHITEBOX CODE AUDIT</span>
-            <span>51 AI SPECIALIST PERSONAS</span>
+            <span>{agentsCount} AI SPECIALIST PERSONAS</span>
             <span>HEXSTRIKE KALI ENGINE</span>
           </div>
         </div>
@@ -267,7 +277,7 @@ export default function Landing() {
                 </div>
 
                 <p className="text-xs text-slate-300 leading-relaxed max-w-2xl">
-                  Researched and built SentinelAI — an autonomous multi-agent pentest orchestration platform combining 150+ Kali Linux tools, 51 LLM specialist personas, and PayloadsAllTheThings RAG intelligence.
+                  Researched and built SentinelAI — an autonomous multi-agent pentest orchestration platform combining 150+ Kali Linux tools, {agentsCount} LLM specialist personas, and PayloadsAllTheThings RAG intelligence.
                 </p>
 
                 {/* Professional Links */}
@@ -321,7 +331,7 @@ export default function Landing() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div className="p-6 rounded-2xl hover:-translate-y-1 transition-all duration-300 hover:border-cyan-400/30" style={{ background: 'rgba(255, 255, 255, 0.04)', backdropFilter: 'blur(40px) saturate(180%)', WebkitBackdropFilter: 'blur(40px) saturate(180%)', border: '1px solid rgba(255, 255, 255, 0.08)', boxShadow: '0 8px 32px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.06)' }}>
               <Bot className="text-cyan-400 mb-3" size={32} />
-              <h3 className="text-lg font-bold text-white mb-2">51 Specialist AI Agents</h3>
+              <h3 className="text-lg font-bold text-white mb-2">{agentsCount} Specialist AI Agents</h3>
               <p className="text-sm text-slate-400">
                 Automated routing of findings to specialized AI personas (Web Hunter, Database Attacker, Code Auditor) to filter out noise and false positives.
               </p>

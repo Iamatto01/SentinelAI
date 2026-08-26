@@ -30,14 +30,11 @@ export default function Dashboard() {
       <div className="card p-6 border border-white/15 bg-gradient-to-r from-slate-950/80 via-slate-900/60 to-slate-950/80 backdrop-blur-2xl relative overflow-hidden flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div className="absolute top-0 right-0 w-80 h-80 bg-cyan-500/10 rounded-full blur-3xl pointer-events-none" />
         <div className="z-10">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-cyan-500/10 border border-cyan-400/30 text-cyan-300 text-xs font-bold mb-2">
-            <Sparkles size={13} className="text-cyan-400 animate-spin" /> Vision Security Operations Center
-          </div>
           <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
             Security Overview & Threat Matrix
           </h1>
           <p className="text-xs sm:text-sm text-slate-400 mt-1">
-            Real-time assessment intelligence powered by Hexstrike Engine & 51 AI Agent Personas
+            Real-time assessment intelligence powered by Hexstrike Engine & {data?.agentsCount || 53} AI Agent Personas
           </p>
         </div>
 
@@ -127,7 +124,7 @@ export default function Dashboard() {
         <div className="motion-fade-up motion-delay-1"><StatCard icon={FolderKanban} label="Total Scans Executed" value={data?.totals?.scans || 0} tone="cyan" trend="+12%" /></div>
         <div className="motion-fade-up motion-delay-2"><StatCard icon={Bug} label="Discovered Findings" value={data?.totals?.findings || 0} tone="critical" sub={`${criticalCount} Critical Vulnerabilities`} /></div>
         <div className="motion-fade-up motion-delay-3"><StatCard icon={Activity} label="Active Engine Scans" value={data?.runningScans || 0} tone="emerald" trend="Live" /></div>
-        <div className="motion-fade-up motion-delay-4"><StatCard icon={Cpu} label="AI Agents Online" value={51} tone="purple" sub="Active Personas" /></div>
+        <div className="motion-fade-up motion-delay-4"><StatCard icon={Cpu} label="AI Agents Online" value={data?.agentsCount || 53} tone="purple" sub="Active Personas" /></div>
       </div>
 
       {/* Charts & Security Health */}
@@ -211,7 +208,7 @@ export default function Dashboard() {
                 <span className="flex items-center gap-2">
                   <Cpu size={14} className="text-purple-400" /> AI Agent Mesh
                 </span>
-                <span className="text-purple-300 font-bold">51 Active Personas</span>
+                <span className="text-purple-300 font-bold">{data?.agentsCount || 53} Active Personas</span>
               </div>
             </div>
           </div>

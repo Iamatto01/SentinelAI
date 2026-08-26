@@ -100,7 +100,7 @@ export default function Integrations() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-slate-100">Integrations</h1>
-          <p className="text-sm text-slate-500">Engine, knowledge base, 51 specialist agents & AI providers live status</p>
+          <p className="text-sm text-slate-500">Engine, knowledge base, {agents.length || 53} specialist agents &amp; AI providers live status</p>
         </div>
         <button onClick={load} className="btn-ghost text-xs">
           <RefreshCw size={14} className={checkingAi ? 'animate-spin' : ''} /> Refresh Status
@@ -232,11 +232,11 @@ export default function Integrations() {
           </form>
         </div>
 
-        {/* 51 Specialist Agents Card */}
+        {/* Specialist Agents Card */}
         <div className="card p-5 flex flex-col h-full">
           <div className="flex items-center justify-between mb-4 shrink-0">
             <h3 className="flex items-center gap-2 font-semibold text-slate-100">
-              <Bot size={18} className="text-accent" /> Specialist Agents ({agents.length})
+              <Bot size={18} className="text-accent" /> Specialist Agents ({agents.length || 53})
             </h3>
             <StatusDot ok={agents.length > 0} />
           </div>
@@ -260,7 +260,7 @@ export default function Integrations() {
             onClick={() => setShowAgentsModal(true)}
             className="btn-ghost mt-4 w-full justify-center text-xs text-accent border border-accent/30 hover:bg-accent/10 shrink-0"
           >
-            Explore All 51 Agent Personas & Prompt Specs →
+            Explore All {agents.length || 53} Agent Personas & Prompt Specs →
           </button>
         </div>
 
@@ -336,14 +336,14 @@ export default function Integrations() {
 
       </div>
 
-      {/* Modal: All 51 Agent Personas */}
+      {/* Modal: All Specialist Agent Personas */}
       {showAgentsModal && (
         <div className="fixed inset-0 z-50 grid place-items-center bg-black/75 backdrop-blur-md p-4 animate-in fade-in" onClick={() => setShowAgentsModal(false)}>
           <div className="card w-full max-w-4xl p-6 space-y-4 max-h-[85vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <div>
                 <h2 className="text-lg font-bold text-slate-100 flex items-center gap-2">
-                  <Bot className="text-accent" size={20} /> 51 Specialist Agent Personas
+                  <Bot className="text-accent" size={20} /> {agents.length || 53} Specialist Agent Personas
                 </h2>
                 <p className="text-xs text-slate-500">Domain-specific offensive AI agent prompts loaded from /agents/</p>
               </div>

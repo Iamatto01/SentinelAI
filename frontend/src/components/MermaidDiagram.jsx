@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react'
 import mermaid from 'mermaid'
-import { Workflow, ShieldCheck, Cpu, Layers, Sparkles } from 'lucide-react'
+import { Workflow, ShieldCheck, Cpu, Layers, Sparkles, ZoomIn, ZoomOut, RotateCcw } from 'lucide-react'
 
 const DIAGRAMS = {
   pipeline: {
@@ -33,7 +33,7 @@ const DIAGRAMS = {
 
     %% 4. AI Verification
     subgraph AI["🧠 4. Multi-LLM Consensus AI"]
-        D1["🤖 51 Specialist Personas (Web Hunter, DB Attacker)"]
+        D1["🤖 53 Specialist Personas (Web Hunter, DB Attacker)"]
         D2["📚 PayloadsAllTheThings RAG FTS5 (10k+ PoC Index)"]
         D3["⚖️ Multi-LLM Consensus (Groq / DeepSeek / OpenRouter)"]
         D4["✨ 0% False-Positive Suppression Filter"]
@@ -76,35 +76,38 @@ const DIAGRAMS = {
     label: 'DAST vs SAST Dual-Engine Flow',
     icon: ShieldCheck,
     desc: 'Dynamic Blackbox Live Probing vs Static Whitebox AST Code Audit',
-    code: `graph LR
+    code: `flowchart TD
     subgraph DAST_Engine["🎯 DAST Dynamic Analysis (Blackbox)"]
-        D_In["Target Web URL / REST API"]
-        D_Recon["1. Recon: Katana & Subfinder"]
-        D_Vuln["2. Nuclei YAML Templates & Nikto"]
-        D_Fuzz["3. SQLMap Injection & FFUF Fuzzing"]
-        D_Out["DAST Raw Findings"]
+        direction TB
+        D_In["🌐 Target Web URL / REST API Endpoint"]
+        D_Recon["🔍 Phase 1: Recon & Crawling (Katana & Subfinder)"]
+        D_Vuln["⚡ Phase 2: Vulnerability Probes (Nuclei & Nikto)"]
+        D_Fuzz["🎯 Phase 3: Exploitative Fuzzing (SQLMap & FFUF)"]
+        D_Out["📦 DAST Raw Vulnerability Signals"]
         D_In --> D_Recon --> D_Vuln --> D_Fuzz --> D_Out
     end
 
     subgraph SAST_Engine["💻 SAST Static Analysis (Whitebox)"]
-        S_In["Repository Source Code / GitHub PR"]
-        S_AST["1. AST Multi-Language Parser"]
-        S_Rules["2. OWASP Top 10 Security Rules"]
-        S_Taint["3. Source-to-Sink Taint Tracking"]
-        S_Out["SAST Raw Findings"]
+        direction TB
+        S_In["📁 Repository Source Code / GitHub PR Commits"]
+        S_AST["🌳 Phase 1: AST Multi-Language Parser (JS, Py, PHP, Java)"]
+        S_Rules["🛡️ Phase 2: OWASP Top 10 Security Rules"]
+        S_Taint["🔗 Phase 3: Source-to-Sink Taint Tracking"]
+        S_Out["📦 SAST Raw Vulnerability Signals"]
         S_In --> S_AST --> S_Rules --> S_Taint --> S_Out
     end
 
     subgraph AI_Consensus["🧠 Multi-LLM Consensus Triangulation"]
-        Agent["51 Specialist AI Personas"]
-        RAG["RAG Exploit Knowledge Base"]
-        LLM["Multi-LLM Agreement Gating"]
-        Gated["Verified Zero-Noise Report"]
+        direction TB
+        Agent["🤖 53 Specialist AI Personas"]
+        RAG["📚 PayloadsAllTheThings RAG Vector Index (10k+ PoC Docs)"]
+        LLM["⚖️ Multi-LLM Consensus Agreement Gating (>= 2/3)"]
+        Gated["✨ Verified Zero-Noise Executive Pentest Report"]
         Agent --> RAG --> LLM --> Gated
     end
 
-    D_Out --> Agent
-    S_Out --> Agent`
+    D_Out ==>|Raw Blackbox Data| Agent
+    S_Out ==>|Raw Whitebox Data| Agent`
   },
   ai_engine: {
     id: 'ai_engine',
@@ -149,7 +152,7 @@ function ensureMermaidInit() {
         lineColor: '#38bdf8',
         secondaryColor: '#0c1a40',
         tertiaryColor: '#060b26',
-        fontSize: '12px',
+        fontSize: '14px',
         fontFamily: 'Bricolage Grotesque, system-ui, sans-serif'
       },
       flowchart: { curve: 'basis', useMaxWidth: true },
@@ -160,6 +163,7 @@ function ensureMermaidInit() {
 
 export default function MermaidDiagram() {
   const [activeTab, setActiveTab] = useState('pipeline')
+  const [zoom, setZoom] = useState(1)
   const containerRef = useRef(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
@@ -192,26 +196,60 @@ export default function MermaidDiagram() {
 
   return (
     <div className="space-y-4">
-      {/* Sub-tab switcher */}
-      <div className="flex flex-wrap items-center justify-center gap-2">
-        {Object.values(DIAGRAMS).map((d) => {
-          const Icon = d.icon
-          const isActive = activeTab === d.id
-          return (
-            <button
-              key={d.id}
-              onClick={() => setActiveTab(d.id)}
-              className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
-                isActive
-                  ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-400/40 shadow-[0_0_15px_rgba(0,242,254,0.2)]'
-                  : 'bg-white/5 text-slate-400 border border-white/10 hover:bg-white/10 hover:text-slate-200'
-              }`}
-            >
-              <Icon size={14} className={isActive ? 'text-cyan-400' : 'text-slate-400'} />
-              <span>{d.label}</span>
-            </button>
-          )
-        })}
+      {/* Sub-tab switcher & Zoom Controls */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-2">
+          {Object.values(DIAGRAMS).map((d) => {
+            const Icon = d.icon
+            const isActive = activeTab === d.id
+            return (
+              <button
+                key={d.id}
+                onClick={() => {
+                  setActiveTab(d.id)
+                  setZoom(1)
+                }}
+                className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
+                  isActive
+                    ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-400/40 shadow-[0_0_15px_rgba(0,242,254,0.2)]'
+                    : 'bg-white/5 text-slate-400 border border-white/10 hover:bg-white/10 hover:text-slate-200'
+                }`}
+              >
+                <Icon size={14} className={isActive ? 'text-cyan-400' : 'text-slate-400'} />
+                <span>{d.label}</span>
+              </button>
+            )
+          })}
+        </div>
+
+        {/* Zoom controls */}
+        <div className="flex items-center gap-1.5 bg-slate-900/80 border border-white/10 rounded-xl px-2.5 py-1 backdrop-blur-md shadow-sm">
+          <button
+            type="button"
+            onClick={() => setZoom((z) => Math.max(0.7, Number((z - 0.15).toFixed(2))))}
+            className="p-1 rounded-lg hover:bg-white/10 text-slate-300 hover:text-white transition-colors cursor-pointer"
+            title="Zoom Out"
+          >
+            <ZoomOut size={13} />
+          </button>
+          <span className="text-[11px] font-mono text-cyan-300 font-bold px-1 select-none">{Math.round(zoom * 100)}%</span>
+          <button
+            type="button"
+            onClick={() => setZoom((z) => Math.min(2.0, Number((z + 0.15).toFixed(2))))}
+            className="p-1 rounded-lg hover:bg-white/10 text-slate-300 hover:text-white transition-colors cursor-pointer"
+            title="Zoom In"
+          >
+            <ZoomIn size={13} />
+          </button>
+          <button
+            type="button"
+            onClick={() => setZoom(1)}
+            className="p-1 rounded-lg hover:bg-white/10 text-slate-400 hover:text-cyan-300 transition-colors ml-1 cursor-pointer"
+            title="Reset Zoom (100%)"
+          >
+            <RotateCcw size={12} />
+          </button>
+        </div>
       </div>
 
       <p className="text-xs text-center text-slate-400 font-mono">
@@ -220,7 +258,7 @@ export default function MermaidDiagram() {
 
       {/* Render Canvas */}
       <div
-        className="relative min-h-[360px] p-4 sm:p-8 rounded-3xl overflow-x-auto [&_svg]:mx-auto [&_svg]:max-w-full"
+        className="relative min-h-[380px] p-4 sm:p-8 rounded-3xl overflow-x-auto [&_svg]:mx-auto [&_svg]:max-w-full [&_svg]:h-auto transition-all"
         style={{
           background: 'rgba(6, 11, 38, 0.65)',
           backdropFilter: 'blur(40px) saturate(180%)',
@@ -234,7 +272,11 @@ export default function MermaidDiagram() {
             <p className="text-xs text-rose-400 font-mono">Failed to render diagram: {error}</p>
           </div>
         ) : (
-          <div ref={containerRef} className="w-full flex justify-center" />
+          <div
+            ref={containerRef}
+            className="w-full flex justify-center origin-top transition-transform duration-200"
+            style={{ transform: `scale(${zoom})`, transformOrigin: 'top center' }}
+          />
         )}
       </div>
     </div>

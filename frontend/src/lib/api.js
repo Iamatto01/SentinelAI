@@ -145,6 +145,8 @@ export const api = {
 
   // ── Anonymous Feedback ──
   sendFeedback: (body) => apiFetch('/api/feedback', { method: 'POST', body }),
+  publicStats: () => apiFetch('/api/public/stats'),
+  publicAgents: () => apiFetch('/api/public/agents'),
 }
 
 export default api

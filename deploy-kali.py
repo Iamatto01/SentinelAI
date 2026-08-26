@@ -112,14 +112,16 @@ npm run build --prefix frontend
 
 # Restart running SentinelAI server processes
 echo "   🔄 Restarting SentinelAI server processes on Kali..."
-pkill -f "concurrently.*SentinelAI" || true
-pkill -f "node.*src/index.js" || true
-pkill -f "node.*vite" || true
-sleep 1
+fuser -k 5000/tcp 2>/dev/null || true
+fuser -k 5173/tcp 2>/dev/null || true
+pkill -9 -f "concurrently.*SentinelAI" 2>/dev/null || true
+pkill -9 -f "node.*src/index.js" 2>/dev/null || true
+pkill -9 -f "node.*vite" 2>/dev/null || true
+sleep 2
 
 # Start SentinelAI in background
 nohup npm run dev > sentinelai.log 2>&1 &
-sleep 2
+sleep 3
 
 echo "   ✓ SentinelAI successfully restarted!"
 ps aux | grep -E "node.*src/index.js|vite" | grep -v grep || true

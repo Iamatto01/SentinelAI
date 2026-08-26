@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import {
   X, Globe, FileCode2, Loader2, FolderOpen, ChevronRight, ChevronUp, Plus,
   Trash2, Code2, ShieldCheck, Swords, User, Zap, Check, CheckCircle2
@@ -187,23 +188,26 @@ export default function NewScanModal({ onClose, onStarted, initialProjectId = ''
     }
   }
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-slate-950/90 backdrop-blur-lg overflow-y-auto" onClick={onClose}>
-      <div className="relative w-full max-w-4xl h-[94vh] max-h-[1100px] flex flex-col rounded-3xl border-2 border-cyan-500/50 bg-[#0a1026] shadow-[0_0_60px_rgba(0,242,254,0.25)] text-slate-100 animate-in fade-in zoom-in-95 duration-200 my-auto overflow-hidden" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between border-b border-white/10 px-6 sm:px-8 py-5 bg-slate-950 shrink-0 z-10">
-          <div className="flex items-center gap-3.5">
-            <div className="p-2.5 rounded-2xl bg-gradient-to-br from-cyan-500 to-blue-600 text-slate-950 shadow-lg shadow-cyan-500/30">
-              <Zap size={22} className="stroke-[2.5]" />
+  const modalContent = (
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-5 bg-slate-950/85 backdrop-blur-md overflow-hidden" onClick={onClose}>
+      <div 
+        className="relative w-full max-w-4xl h-[92vh] max-h-[92vh] flex flex-col rounded-2xl sm:rounded-3xl border-2 border-cyan-500/50 bg-[#0a1026] shadow-[0_0_80px_rgba(0,242,254,0.35)] text-slate-100 animate-in fade-in zoom-in-95 duration-200 overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between border-b border-white/10 px-5 sm:px-6 py-4 bg-slate-950 shrink-0 z-10">
+          <div className="flex items-center gap-3">
+            <div className="p-2 rounded-xl bg-gradient-to-br from-cyan-500 to-blue-600 text-slate-950 shadow-md shadow-cyan-500/30">
+              <Zap size={18} className="stroke-[2.5]" />
             </div>
             <div>
-              <h2 className="text-xl font-black text-white tracking-tight">New Security Assessment</h2>
-              <p className="text-xs text-slate-400 font-medium mt-0.5">Configure automated DAST Blackbox or SAST Whitebox vulnerability audit</p>
+              <h2 className="text-base sm:text-lg font-extrabold text-white tracking-tight">New Security Assessment</h2>
+              <p className="text-[11px] text-slate-400 font-medium">Configure automated DAST Blackbox or SAST Whitebox vulnerability audit</p>
             </div>
           </div>
-          <button onClick={onClose} className="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"><X size={20} /></button>
+          <button type="button" onClick={onClose} className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition-colors cursor-pointer" title="Close modal"><X size={18} /></button>
         </div>
 
-        <form id="new-scan-form" onSubmit={submit} className="flex-1 min-h-0 overflow-y-auto p-6 sm:p-8 space-y-6 bg-[#0b132e]/95">
+        <form id="new-scan-form" onSubmit={submit} className="flex-1 min-h-0 overflow-y-auto p-5 sm:p-6 space-y-5 bg-slate-950/70">
           {/* Scan Type Mode Switcher */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <button type="button" onClick={() => setMode('blackbox')}
@@ -560,22 +564,24 @@ export default function NewScanModal({ onClose, onStarted, initialProjectId = ''
 
         </form>
 
-        {/* Pinned Footer */}
-        <div className="border-t border-white/10 px-6 sm:px-8 py-4 bg-slate-950 flex items-center justify-between shrink-0 z-10">
-          <button type="button" onClick={onClose} className="btn-ghost text-xs py-2.5 px-5 cursor-pointer">
+        {/* Pinned Sticky Footer */}
+        <div className="border-t border-white/10 px-5 sm:px-6 py-3.5 bg-slate-900/95 backdrop-blur-lg flex items-center justify-between shrink-0 z-10">
+          <button type="button" onClick={onClose} className="btn-ghost text-xs py-2 px-4 cursor-pointer text-slate-400 hover:text-white">
             Cancel
           </button>
           <button
             type="submit"
             form="new-scan-form"
             disabled={busy}
-            className="btn-primary text-xs py-2.5 px-7 cursor-pointer shadow-lg shadow-cyan-500/30 bg-gradient-to-r from-cyan-500 via-cyan-400 to-blue-600 text-slate-950 font-black hover:scale-105 transition-transform flex items-center gap-2"
+            className="btn-primary text-xs py-2 px-6 cursor-pointer shadow-lg shadow-cyan-500/25 bg-gradient-to-r from-cyan-500 via-cyan-400 to-blue-600 text-slate-950 font-black hover:scale-105 transition-transform flex items-center gap-2"
           >
-            {busy ? <Loader2 size={16} className="animate-spin" /> : <Zap size={16} />}
+            {busy ? <Loader2 size={14} className="animate-spin" /> : <Zap size={14} />}
             <span>{busy ? 'Starting Assessment...' : 'Launch Assessment'}</span>
           </button>
         </div>
       </div>
     </div>
   )
+
+  return createPortal(modalContent, document.body)
 }

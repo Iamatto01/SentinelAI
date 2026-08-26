@@ -1868,7 +1868,7 @@ function renderAppendix(doc, { scans, project, isWhitebox }) {
   const tools = [
     ['Platform', 'FYP2 - Unified Pentest Platform v1.0.0'],
     ['Engine', 'HexStrike AI v6 + Native Security Toolchain'],
-    ['AI Engine', '51 Specialist Agent Personas'],
+    ['AI Engine', '53 Specialist Agent Personas'],
     ['PDF Engine', 'PDFKit Visual Engine'],
     ['Report Generated', fmtDateTime(new Date())],
   ]

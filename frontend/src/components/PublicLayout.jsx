@@ -10,7 +10,7 @@ import InspectorLogo from './InspectorLogo.jsx'
 const NAV_LINKS = [
   { to: '/', label: 'Home', icon: Home, desc: 'Overview & autonomous pentest engine' },
   { to: '/about', label: 'About', icon: ShieldCheck, desc: 'Mission & local-first zero-cloud privacy' },
-  { to: '/tools', label: 'Tools & AI', icon: Terminal, desc: '150+ Kali Linux tools & 51 AI personas' },
+  { to: '/tools', label: 'Tools & AI', icon: Terminal, desc: '150+ Kali Linux tools & 53 AI personas' },
   { to: '/services', label: 'Services', icon: Cpu, desc: 'Blackbox pentesting & DevSecOps CI/CD' },
   { to: '/pricing', label: 'Pricing', icon: Tag, desc: 'Transparent plans & researcher quotas' },
   { to: '/contact', label: 'Contact', icon: Mail, desc: 'Get in touch with security research lead' },
@@ -208,7 +208,7 @@ export default function PublicLayout({ children }) {
               <span className="font-extrabold text-white tracking-tight">SentinelAI</span>
             </div>
             <p className="text-xs text-slate-400 leading-relaxed">
-              Autonomous AI security assessment platform — 150+ Kali tools, 51 specialist AI personas, local-first RAG intelligence.
+              Autonomous AI security assessment platform — 150+ Kali tools, 53 specialist AI personas, local-first RAG intelligence.
             </p>
             <div className="flex items-center gap-2 pt-1">
               <a href="https://github.com/Iamatto01" target="_blank" rel="noreferrer" aria-label="GitHub" className="p-2 rounded-xl bg-white/5 border border-white/10 text-slate-300 hover:text-cyan-300 hover:border-cyan-400/50 transition-colors">

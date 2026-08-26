@@ -65,7 +65,7 @@ export default function About() {
             <h2 className="text-lg font-bold text-white">Our Mission</h2>
             <p className="text-xs text-slate-400 leading-relaxed">
               To democratize enterprise-grade penetration testing by orchestrating 150+ real Kali Linux
-              tools and 51 specialist AI personas into a single autonomous pipeline — making continuous,
+              tools and 53 specialist AI personas into a single autonomous pipeline — making continuous,
               high-quality security assessment affordable for teams of every size.
             </p>
           </div>
@@ -180,7 +180,7 @@ export default function About() {
         <section className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           {[
             { v: '150+', l: 'Kali Tools Orchestrated', c: 'text-cyan-400' },
-            { v: '51', l: 'Specialist AI Personas', c: 'text-amber-400' },
+            { v: '53', l: 'Specialist AI Personas', c: 'text-amber-400' },
             { v: '10k+', l: 'RAG PoC Payloads Indexed', c: 'text-emerald-400' },
             { v: '~90%', l: 'Cost vs Traditional Pentest', c: 'text-indigo-400' },
           ].map((s) => (

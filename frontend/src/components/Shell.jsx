@@ -123,36 +123,6 @@ export default function Shell() {
         </div>
       )}
 
-      {/* Community Free Access Preview Notice */}
-      {COMMUNITY_FREE_ACCESS_MODE && (
-        <div className="sticky top-0 z-40 bg-gradient-to-r from-cyan-950/80 via-blue-950/70 to-slate-950/90 backdrop-blur-xl border-b border-cyan-500/30 px-4 py-1.5 text-xs text-slate-300 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
-            <span>
-              <strong className="text-cyan-300">Community Preview Active:</strong> Open trial access is enabled for testing.
-            </span>
-          </div>
-          <Link to="/app/billing" className="text-cyan-400 hover:text-cyan-300 text-[11px] font-bold underline flex items-center gap-1">
-            <span>Billing & Quota</span> <ArrowRight size={11} />
-          </Link>
-        </div>
-      )}
-
-      {/* Trial Active Floating Notice (When community mode is off) */}
-      {!COMMUNITY_FREE_ACCESS_MODE && !isSubscriptionExpired && isTrial && (
-        <div className="sticky top-0 z-40 bg-slate-950/90 backdrop-blur-xl border-b border-cyan-500/30 px-4 py-1.5 text-xs text-slate-300 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Sparkles size={14} className="text-cyan-400" />
-            <span>
-              <strong className="text-cyan-300">Free Trial Active:</strong> You have <span className="text-white font-mono font-bold">{subscription?.remainingQuota ?? 3} of 3 free scans</span> remaining.
-            </span>
-          </div>
-          <Link to="/app/billing" className="text-cyan-400 hover:text-cyan-300 text-[11px] font-bold underline flex items-center gap-1">
-            <span>View Plans</span> <ArrowRight size={11} />
-          </Link>
-        </div>
-      )}
-
       {/* Mobile Top App Bar */}
       <header className="lg:hidden sticky top-0 z-30 flex items-center justify-between px-4 py-3 bg-slate-950/80 backdrop-blur-2xl border-b border-white/10">
         <div className="flex items-center gap-3">
@@ -341,10 +311,12 @@ export default function Shell() {
       <main className={`transition-all duration-300 ease-in-out ${isExpanded ? 'pl-0 lg:pl-64' : 'pl-0 lg:pl-20'}`}>
         {/* Desktop Top Header Bar (Vision UI Style) */}
         <header className="hidden lg:flex items-center justify-between px-6 pt-5 pb-2">
-          <div className="flex items-center gap-2 text-xs font-semibold text-slate-400">
-            <span>Portal</span>
-            <span>/</span>
-            <span className="text-cyan-300 font-bold">{currentNav.label}</span>
+          <div className="flex items-center gap-2 text-xs font-semibold px-3 py-1.5 rounded-xl bg-slate-900/80 border border-white/15 text-slate-200 shadow-md backdrop-blur-md">
+            <span className="text-slate-300 font-medium">Portal</span>
+            <span className="text-slate-500 font-bold">/</span>
+            <span className="text-cyan-300 font-extrabold tracking-wide drop-shadow-[0_0_8px_rgba(0,242,254,0.4)]">
+              {currentNav.label}
+            </span>
           </div>
 
           <div className="flex items-center gap-3">

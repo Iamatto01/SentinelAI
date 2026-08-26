@@ -203,7 +203,17 @@ app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(openapiSpec, {
 app.get('/api/openapi.json', (req, res) => res.json(openapiSpec))
 
 // ── Health & status ──────────────────────────────────────────────────────────
-app.get('/api/health', (req, res) => res.json({ ok: true, time: new Date().toISOString() }))
+app.get('/api/health', (req, res) => res.json({ ok: true, time: new Date().toISOString(), agentsCount: agentRegistry.list().length }))
+app.get('/api/public/stats', (req, res) => {
+  res.json({
+    agentsCount: agentRegistry.list().length,
+    toolsCount: 150,
+    ragDocsCount: payloadsRag.payloadsIndexStatus().docs || 10000,
+  })
+})
+app.get('/api/public/agents', (req, res) => {
+  res.json(agentRegistry.list())
+})
 
 app.get('/api/status', requireAuth, async (req, res) => {
   const engine = await hexstrike.engineStatus()
@@ -1097,17 +1107,37 @@ app.get('/api/findings', requireAuth, (req, res) => {
     WHERE 1=1
   `
   const params = []
-  // Client-portal users only see findings from their own projects
-  const allowedProjects = visibleProjectIds(req.user)
-  if (allowedProjects !== null) {
-    if (!allowedProjects.length) return res.json([])
-    sql += ` AND s.project_id IN (${allowedProjects.map(() => '?').join(',')})`
-    params.push(...allowedProjects)
+  // Client-portal users see findings from their own projects or direct scans
+  if (req.user?.role === 'client') {
+    const userEmail = (req.user.email || '').toLowerCase().trim()
+    const username = (req.user.username || '').toLowerCase().trim()
+    const userId = req.user.id
+    const userProjId = req.user.projectId
+
+    const allProjs = db.all(`SELECT id, client, name, user_id FROM projects`)
+    const matchProjs = allProjs.filter((p) => {
+      if (userProjId && p.id === userProjId) return true
+      if (p.user_id && p.user_id === userId) return true
+      const c = (p.client || '').toLowerCase().trim()
+      const n = (p.name || '').toLowerCase().trim()
+      return (userEmail && c === userEmail) || (username && c === username) ||
+             (userEmail && n === userEmail) || (username && n === username)
+    })
+    const projIds = matchProjs.map(p => p.id)
+
+    if (projIds.length > 0) {
+      const placeholders = projIds.map(() => '?').join(',')
+      sql += ` AND (s.project_id IN (${placeholders}) OR (s.user_id IS NOT NULL AND s.user_id = ?) OR (s.client IS NOT NULL AND (LOWER(s.client) = ? OR LOWER(s.client) = ?)))`
+      params.push(...projIds, userId, username, userEmail)
+    } else {
+      sql += ` AND ((s.user_id IS NOT NULL AND s.user_id = ?) OR (s.client IS NOT NULL AND (LOWER(s.client) = ? OR LOWER(s.client) = ?)))`
+      params.push(userId, username, userEmail)
+    }
   }
-  if (status) { sql += ' AND f.status = ?'; params.push(status) }
-  if (scan_id) { sql += ' AND f.scan_id = ?'; params.push(scan_id) }
-  if (project_id) { sql += ' AND s.project_id = ?'; params.push(project_id) }
-  if (severity) { sql += ' AND f.severity = ?'; params.push(severity) }
+  if (status && status !== 'all') { sql += ' AND f.status = ?'; params.push(status) }
+  if (scan_id && scan_id !== 'all') { sql += ' AND f.scan_id = ?'; params.push(scan_id) }
+  if (project_id && project_id !== 'all') { sql += ' AND s.project_id = ?'; params.push(project_id) }
+  if (severity && severity !== 'all') { sql += ' AND f.severity = ?'; params.push(severity) }
   sql += ' ORDER BY f.created_at DESC LIMIT 1000'
   res.json(db.all(sql, ...params))
 })
@@ -2082,6 +2112,7 @@ app.get('/api/dashboard', requireAuth, (req, res) => {
     severity: counts,
     recentScans: recent,
     runningScans: scans.filter(s => s.status === 'running').length,
+    agentsCount: agentRegistry.list().length,
   })
 })
 

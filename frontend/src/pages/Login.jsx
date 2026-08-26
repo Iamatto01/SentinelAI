@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react'
 import { useNavigate, useLocation, Link } from 'react-router-dom'
 import {
   ArrowLeft, Loader2, KeyRound, User, Eye, EyeOff, Sparkles,
-  Mail, Check, AlertCircle
+  Mail, Check, AlertCircle, Lock
 } from 'lucide-react'
 import InspectorLogo from '../components/InspectorLogo.jsx'
 import { useAuth } from '../lib/AuthContext.jsx'
@@ -60,8 +60,8 @@ export default function Login() {
   // Parse URL query params
   const searchParams = new URLSearchParams(loc.search)
   const initialMode = searchParams.get('mode') === 'register' ? 'register' : 'login'
-  const initialPlan = searchParams.get('plan') === 'enterprise' ? 'enterprise' : searchParams.get('plan') === 'pro' ? 'pro' : 'trial'
-  const initialInterval = searchParams.get('interval') === 'yearly' ? 'yearly' : 'monthly'
+  const initialPlan = 'trial'
+  const initialInterval = 'monthly'
 
   const [mode, setMode] = useState(initialMode) // 'login' | 'register'
   const [username, setUsername] = useState('')
@@ -243,36 +243,28 @@ export default function Login() {
             </div>
           </div>
 
-          {/* Registration Plan Selection (Free Trial, Pro, Enterprise) */}
+          {/* Registration Plan Selection (Free Trial active, Paid tiers locked for Beta) */}
           {mode === 'register' && (
-            <div className="space-y-2 pt-2 border-t border-white/10">
+            <div className="space-y-2.5 pt-2 border-t border-white/10">
               <div className="flex items-center justify-between text-xs">
                 <span className="font-bold text-slate-200">Select Tier:</span>
-                {planId !== 'trial' && (
-                  <button
-                    type="button"
-                    onClick={() => setInterval(interval === 'monthly' ? 'yearly' : 'monthly')}
-                    className="text-[11px] text-cyan-300 font-semibold hover:underline"
-                  >
-                    {interval === 'yearly' ? 'Yearly (17% OFF)' : 'Monthly'}
-                  </button>
-                )}
+                <span className="text-[10px] text-cyan-300 font-mono flex items-center gap-1">
+                  <Sparkles size={11} /> Community Beta Preview
+                </span>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                {/* 1. Free Trial Card */}
+                {/* 1. Free Trial Card - ACTIVE */}
                 <button
                   type="button"
                   onClick={() => setPlanId('trial')}
-                  className={`p-3 rounded-2xl border text-left transition-all cursor-pointer relative overflow-hidden ${
-                    planId === 'trial'
-                      ? 'border-cyan-400 bg-cyan-500/20 ring-1 ring-cyan-400 shadow-[0_0_15px_rgba(0,242,254,0.25)]'
-                      : 'border-white/10 bg-slate-900/60 hover:border-white/20'
-                  }`}
+                  className="p-3 rounded-2xl border-2 border-cyan-400 bg-gradient-to-br from-cyan-500/25 to-slate-900 shadow-[0_0_20px_rgba(0,242,254,0.3)] ring-1 ring-cyan-400 text-left transition-all cursor-pointer relative overflow-hidden"
                 >
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-extrabold text-white">Free Trial</span>
-                    {planId === 'trial' ? <Check size={14} className="text-cyan-400" /> : <span className="text-[9px] px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-300 font-bold">FREE</span>}
+                    <span className="text-xs font-black text-white tracking-tight">Free Trial</span>
+                    <span className="text-[9px] px-1.5 py-0.5 rounded bg-cyan-500 text-slate-950 font-black">
+                      ACTIVE
+                    </span>
                   </div>
                   <div className="text-lg font-black text-cyan-300 mt-1">
                     $0 <span className="text-[10px] text-slate-400 font-normal">forever</span>
@@ -280,52 +272,44 @@ export default function Login() {
                   <div className="text-[10px] text-cyan-200 font-semibold mt-0.5">3 Free AI Scans</div>
                 </button>
 
-                {/* 2. Pro Card */}
-                <button
-                  type="button"
-                  onClick={() => setPlanId('pro')}
-                  className={`p-3 rounded-2xl border text-left transition-all cursor-pointer ${
-                    planId === 'pro'
-                      ? 'border-cyan-400 bg-cyan-500/15 ring-1 ring-cyan-400'
-                      : 'border-white/10 bg-slate-900/60 hover:border-white/20'
-                  }`}
+                {/* 2. Pro Card - DISABLED / LOCKED */}
+                <div
+                  className="p-3 rounded-2xl border border-white/5 bg-slate-900/30 opacity-40 cursor-not-allowed select-none text-left relative overflow-hidden"
+                  title="Subscription billing temporarily disabled during community preview"
                 >
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-extrabold text-white">Pro Plan</span>
-                    {planId === 'pro' && <Check size={14} className="text-cyan-400" />}
+                    <span className="text-xs font-bold text-slate-400">Pro Plan</span>
+                    <span className="flex items-center gap-1 text-[8px] font-mono uppercase font-bold px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 border border-white/10">
+                      <Lock size={10} /> Locked
+                    </span>
                   </div>
-                  <div className="text-lg font-black text-white mt-1">
-                    ${interval === 'yearly' ? '190' : '19'}<span className="text-[10px] text-slate-400 font-normal">/{interval === 'yearly' ? 'yr' : 'mo'}</span>
+                  <div className="text-lg font-black text-slate-500 mt-1">
+                    $19<span className="text-[10px] text-slate-600 font-normal">/mo</span>
                   </div>
-                  <div className="text-[10px] text-slate-400 mt-0.5">50 Scans • 5 Repos</div>
-                </button>
+                  <div className="text-[10px] text-slate-500 mt-0.5">50 Scans • 5 Repos</div>
+                </div>
 
-                {/* 3. Enterprise Card */}
-                <button
-                  type="button"
-                  onClick={() => setPlanId('enterprise')}
-                  className={`p-3 rounded-2xl border text-left transition-all cursor-pointer ${
-                    planId === 'enterprise'
-                      ? 'border-emerald-400 bg-emerald-500/15 ring-1 ring-emerald-400'
-                      : 'border-white/10 bg-slate-900/60 hover:border-white/20'
-                  }`}
+                {/* 3. Enterprise Card - DISABLED / LOCKED */}
+                <div
+                  className="p-3 rounded-2xl border border-white/5 bg-slate-900/30 opacity-40 cursor-not-allowed select-none text-left relative overflow-hidden"
+                  title="Subscription billing temporarily disabled during community preview"
                 >
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-extrabold text-white">Enterprise</span>
-                    {planId === 'enterprise' && <Check size={14} className="text-emerald-400" />}
+                    <span className="text-xs font-bold text-slate-400">Enterprise</span>
+                    <span className="flex items-center gap-1 text-[8px] font-mono uppercase font-bold px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 border border-white/10">
+                      <Lock size={10} /> Locked
+                    </span>
                   </div>
-                  <div className="text-lg font-black text-emerald-300 mt-1">
-                    ${interval === 'yearly' ? '790' : '79'}<span className="text-[10px] text-slate-400 font-normal">/{interval === 'yearly' ? 'yr' : 'mo'}</span>
+                  <div className="text-lg font-black text-slate-500 mt-1">
+                    $79<span className="text-[10px] text-slate-600 font-normal">/mo</span>
                   </div>
-                  <div className="text-[10px] text-slate-400 mt-0.5">Unlimited • 1-on-1</div>
-                </button>
+                  <div className="text-[10px] text-slate-500 mt-0.5">Unlimited • 1-on-1</div>
+                </div>
               </div>
 
-              {planId === 'trial' && (
-                <div className="text-center pt-1 text-[11px] text-cyan-300/90 font-medium">
-                  ✨ Instant access • No credit card required
-                </div>
-              )}
+              <div className="text-center pt-1 text-[11px] text-cyan-300/90 font-medium">
+                ✨ Free Trial: 3 Full AI Security Scans • Instant Access • No Card Required
+              </div>
             </div>
           )}
 
@@ -346,9 +330,7 @@ export default function Login() {
               ? (mode === 'login' ? 'Authenticating...' : 'Creating Account...')
               : (mode === 'login'
                   ? 'Sign In to Operations Center'
-                  : planId === 'trial'
-                  ? 'Create Free Trial Account (3 Free Scans)'
-                  : `Subscribe & Activate ${planId === 'enterprise' ? 'Enterprise' : 'Pro'}`)}
+                  : 'Create Free Account & Start Testing (3 Free Scans)')}
           </button>
         </form>
       </div>

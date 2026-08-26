@@ -37,6 +37,35 @@ export default function Settings() {
   const [discordMsg, setDiscordMsg] = useState('')
   const [discordErr, setDiscordErr] = useState('')
 
+  // Anonymous Community Feedback State
+  const [feedbackCat, setFeedbackCat] = useState('General Feedback')
+  const [feedbackRating, setFeedbackRating] = useState(5)
+  const [feedbackText, setFeedbackText] = useState('')
+  const [feedbackBusy, setFeedbackBusy] = useState(false)
+  const [feedbackMsg, setFeedbackMsg] = useState('')
+  const [feedbackErr, setFeedbackErr] = useState('')
+
+  async function handleSendFeedback(e) {
+    e.preventDefault()
+    if (!feedbackText.trim()) return
+    setFeedbackBusy(true)
+    setFeedbackMsg('')
+    setFeedbackErr('')
+    try {
+      const res = await api.sendFeedback({
+        category: feedbackCat,
+        rating: feedbackRating,
+        message: feedbackText.trim(),
+      })
+      setFeedbackMsg(res.message || 'Feedback sent anonymously to muhammadsaifudinmj@gmail.com!')
+      setFeedbackText('')
+    } catch (e2) {
+      setFeedbackErr(e2.message || 'Failed to send feedback')
+    } finally {
+      setFeedbackBusy(false)
+    }
+  }
+
   const loadTeleStatus = () => {
     api.telegramPairing().then(setTeleStatus).catch(() => {})
   }
@@ -623,6 +652,99 @@ export default function Settings() {
               <div className="flex justify-end pt-2"><button type="submit" className="btn-primary text-xs"><Save size={15} /> Save API Keys</button></div>
             </form>
           )}
+
+          {/* Anonymous Community Feedback & Bug Report Card */}
+          <form onSubmit={handleSendFeedback} className="card p-6 space-y-5 hover:border-cyan-400/40 transition-all duration-300 border-cyan-500/20 bg-slate-950/70">
+            <div>
+              <div className="flex items-center justify-between">
+                <h3 className="flex items-center gap-2 text-base font-bold text-white">
+                  <MessageSquare size={18} className="text-cyan-400" /> Anonymous Feedback & Bug Report
+                </h3>
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-cyan-500/15 text-cyan-300 border border-cyan-400/30 font-bold">
+                  100% Anonymous
+                </span>
+              </div>
+              <p className="text-xs text-slate-400 mt-1">
+                Have an idea, request, or issue? Your message is sent directly to the developer (<code className="text-cyan-300">muhammadsaifudinmj@gmail.com</code>).
+              </p>
+            </div>
+
+            {feedbackMsg && (
+              <div className="p-3.5 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs font-semibold flex items-center gap-2">
+                <CheckCircle2 size={16} className="text-emerald-400 shrink-0" />
+                <span>{feedbackMsg}</span>
+              </div>
+            )}
+
+            {feedbackErr && (
+              <div className="p-3.5 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs font-semibold flex items-center gap-2">
+                <CheckCircle2 size={16} className="text-rose-400 shrink-0" />
+                <span>{feedbackErr}</span>
+              </div>
+            )}
+
+            <div className="space-y-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[10px] text-slate-400 uppercase font-bold block mb-1">Category</label>
+                  <select
+                    value={feedbackCat}
+                    onChange={(e) => setFeedbackCat(e.target.value)}
+                    className="input text-xs"
+                  >
+                    <option value="General Feedback">💡 General Feedback</option>
+                    <option value="Bug Report">🐛 Bug Report / Issue</option>
+                    <option value="Feature Request">🚀 Feature Request</option>
+                    <option value="Scan Tool Suggestion">🛡️ Kali Tool Suggestion</option>
+                    <option value="UI & UX Improvement">✨ UI / UX Improvement</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-[10px] text-slate-400 uppercase font-bold block mb-1">Rating</label>
+                  <div className="flex items-center gap-1 h-9 px-3 rounded-xl bg-white/5 border border-white/10">
+                    {[1, 2, 3, 4, 5].map((star) => (
+                      <button
+                        type="button"
+                        key={star}
+                        onClick={() => setFeedbackRating(star)}
+                        className={`text-base transition-transform hover:scale-125 cursor-pointer ${
+                          star <= feedbackRating ? 'opacity-100' : 'opacity-30'
+                        }`}
+                      >
+                        ⭐
+                      </button>
+                    ))}
+                    <span className="text-[11px] text-slate-400 font-mono ml-2">({feedbackRating}/5)</span>
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-[10px] text-slate-400 uppercase font-bold block mb-1">Your Message</label>
+                <textarea
+                  rows={4}
+                  value={feedbackText}
+                  onChange={(e) => setFeedbackText(e.target.value)}
+                  placeholder="Describe your bug, feedback, or suggestion in detail..."
+                  className="input text-xs w-full resize-none font-normal"
+                  required
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between pt-2 border-t border-white/10">
+              <span className="text-[11px] text-slate-500 italic">No account identifier is linked or exposed.</span>
+              <button
+                type="submit"
+                disabled={feedbackBusy || !feedbackText.trim()}
+                className="btn-primary text-xs flex items-center gap-1.5 cursor-pointer"
+              >
+                {feedbackBusy ? <Loader2 size={13} className="animate-spin" /> : <Send size={13} />}
+                <span>{feedbackBusy ? 'Sending...' : 'Send Anonymous Feedback'}</span>
+              </button>
+            </div>
+          </form>
         </div>
       </div>
     </div>

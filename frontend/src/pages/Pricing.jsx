@@ -29,7 +29,7 @@ const FEATURE_MATRIX = [
   ['Manual Approval Safety Gates', false, true],
   ['Executive White-label PDF Reports', false, true],
   ['PayloadsAllTheThings RAG PoC Samples', 'Standard index', 'Full 10k+ index'],
-  ['51 AI Specialist Personas', 'Core personas', 'All personas'],
+  ['53 AI Specialist Personas', 'Core personas', 'All personas'],
   ['Multi-LLM Consensus Verification', true, true],
   ['24/7 Surface Monitoring', false, true],
   ['Scan History & Re-run', '30 days', 'Unlimited'],
