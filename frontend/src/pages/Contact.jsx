@@ -28,16 +28,16 @@ const CHANNELS = [
     color: 'text-cyan-400',
     border: 'hover:border-cyan-400/50',
     label: 'Telegram Community & Bot Pairing',
-    value: '@SentinelAI Community',
-    href: 'https://t.me/',
+    value: '@sentinelai_telebot',
+    href: 'https://t.me/sentinelai_telebot',
   },
   {
     icon: MessageCircle,
     color: 'text-indigo-400',
     border: 'hover:border-indigo-400/50',
     label: 'Discord Alert Gateway',
-    value: 'SentinelAI Discord Server',
-    href: 'https://discord.com/',
+    value: 'Invite SentinelAI Bot',
+    href: 'https://discord.com/oauth2/authorize?client_id=1539651318648545420',
   },
   {
     icon: Github,
@@ -84,9 +84,6 @@ export default function Contact() {
       <div className="max-w-6xl mx-auto px-4 sm:px-8 pt-16 sm:pt-24 pb-12 space-y-24">
         {/* ── Hero ─────────────────────────────────────────────────────────── */}
         <section className="text-center space-y-5">
-          <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-cyan-500/10 border border-cyan-400/30 text-cyan-300 text-xs font-bold uppercase tracking-wider">
-            <Send size={13} className="text-cyan-400" /> Get in Touch
-          </div>
           <h1 className="text-3xl sm:text-5xl font-extrabold text-white tracking-tight leading-tight">
             Let&apos;s Secure <span className="at-home__gradient-text">Your Stack Together</span>
           </h1>
@@ -203,7 +200,7 @@ export default function Contact() {
                 <button
                   type="submit"
                   disabled={status === 'sending'}
-                  className="btn-primary w-full justify-center py-3.5 text-xs font-extrabold shadow-glow flex items-center gap-2 disabled:opacity-60 cursor-pointer"
+                  className="btn-swipe w-full justify-center py-3.5 text-xs font-extrabold disabled:opacity-60 cursor-pointer"
                 >
                   {status === 'sending'
                     ? (<><Loader2 size={14} className="animate-spin" /> Sending…</>)
@@ -229,7 +226,7 @@ export default function Contact() {
                   </li>
                 ))}
               </ul>
-              <Link to="/login?mode=register&plan=enterprise" className="btn-primary w-full justify-center py-3 text-xs font-extrabold shadow-glow flex items-center gap-2">
+              <Link to="/login?mode=register&plan=enterprise" className="btn-border-beam w-full justify-center py-3 text-xs font-extrabold">
                 Request a Slot <ArrowRight size={13} />
               </Link>
             </div>

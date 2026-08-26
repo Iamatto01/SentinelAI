@@ -102,9 +102,6 @@ export default function Tools() {
       <div className="max-w-6xl mx-auto px-4 sm:px-8 pt-16 sm:pt-24 pb-12 space-y-24">
         {/* ── Hero ─────────────────────────────────────────────────────────── */}
         <section className="text-center space-y-5">
-          <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-cyan-500/10 border border-cyan-400/30 text-cyan-300 text-xs font-bold uppercase tracking-wider">
-            <Terminal size={13} className="text-cyan-400" /> Arsenal Directory
-          </div>
           <h1 className="text-3xl sm:text-5xl font-extrabold text-white tracking-tight leading-tight">
             150+ Kali Tools &amp; <span className="at-home__gradient-text">51 AI Personas</span>
           </h1>
@@ -113,8 +110,8 @@ export default function Tools() {
             autonomously by specialist AI personas that know when and how to chain them.
           </p>
           <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
-            <Link to="/services" className="btn-primary py-3 px-6 text-xs font-extrabold shadow-glow flex items-center gap-2 hover:scale-105 transition-transform">
-              See Them in Action <ArrowRight size={14} />
+            <Link to="/services" className="btn-swipe btn-lg">
+              See Them in Action <ArrowRight size={15} />
             </Link>
           </div>
         </section>

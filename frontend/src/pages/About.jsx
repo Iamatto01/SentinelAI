@@ -1,8 +1,8 @@
 import React from 'react'
 import { Link } from 'react-router-dom'
 import {
-  ArrowRight, Sparkles, ShieldCheck, Database, FileText, GraduationCap,
-  GitBranch, Target, Eye, HeartHandshake, Lock, Users, Layers
+  ArrowRight, ShieldCheck, Database, FileText, GraduationCap,
+  GitBranch, Target, Eye, Lock, Users
 } from 'lucide-react'
 import PublicLayout from '../components/PublicLayout.jsx'
 
@@ -41,9 +41,6 @@ export default function About() {
       <div className="max-w-6xl mx-auto px-4 sm:px-8 pt-16 sm:pt-24 pb-12 space-y-24">
         {/* ── Hero ─────────────────────────────────────────────────────────── */}
         <section className="text-center space-y-5">
-          <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-cyan-500/10 border border-cyan-400/30 text-cyan-300 text-xs font-bold uppercase tracking-wider">
-            <Sparkles size={13} className="text-cyan-400" /> About SentinelAI
-          </div>
           <h1 className="text-3xl sm:text-5xl font-extrabold text-white tracking-tight leading-tight">
             Autonomous Security, <span className="at-home__gradient-text">Researched &amp; Engineered</span>
           </h1>
@@ -52,10 +49,10 @@ export default function About() {
             and cutting traditional consulting costs by up to 90%, without sacrificing depth or accuracy.
           </p>
           <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
-            <Link to="/services" className="btn-primary py-3 px-6 text-xs font-extrabold shadow-glow flex items-center gap-2 hover:scale-105 transition-transform">
-              Explore Services <ArrowRight size={14} />
+            <Link to="/services" className="btn-neon-draw btn-lg">
+              Explore Services <ArrowRight size={15} />
             </Link>
-            <Link to="/tools" className="at-home__btn at-home__btn--ghost hover:border-cyan-400/50 text-xs py-3 px-6">
+            <Link to="/tools" className="btn-swipe btn-lg">
               Browse the Tool Arsenal
             </Link>
           </div>

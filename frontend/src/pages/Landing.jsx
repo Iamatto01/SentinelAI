@@ -2,17 +2,19 @@ import React, { useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   ShieldAlert, Bot, Radar, FileText, ShieldCheck, Cpu, DatabaseZap, Sparkles, Globe2, Binary, CheckCircle2,
-  ChevronRight, ChevronDown, Layers, Terminal, Network, GitBranch, Zap, Server, Workflow, Code2, KeyRound, Activity
+  ChevronRight, ChevronDown, Layers, Terminal, Network, GitBranch, Zap, Server, Workflow, Code2, KeyRound, Activity,
+  ArrowRight
 } from 'lucide-react'
 import InspectorLogo from '../components/InspectorLogo.jsx'
 import SystemTree from '../components/SystemTree.jsx'
 import PageTurnTransition from '../components/PageTurnTransition.jsx'
 import PublicLayout from '../components/PublicLayout.jsx'
+import MermaidDiagram from '../components/MermaidDiagram.jsx'
 import './Home.css'
 
 export default function Landing() {
   const [interval, setInterval] = useState('monthly')
-  const [archMode, setArchMode] = useState('tree') // 'tree' | 'flow'
+  const [archMode, setArchMode] = useState('tree') // 'tree' | 'flow' | 'mermaid'
   const [hoveredStep, setHoveredStep] = useState(null)
 
   const ARCH_STEPS = [
@@ -114,15 +116,12 @@ export default function Landing() {
           </p>
 
           <div className="at-home__hero-actions mt-4 sm:mt-5 gap-3 sm:gap-4 flex items-center flex-wrap">
-            {/* #12 Button Concept for Start Free Assessment */}
-            <Link to="/login" className="btn-concept-12">
-              <span className="btn-concept-12__text">Start Free Assessment</span>
-              <span className="btn-concept-12__icon">
-                <ShieldAlert size={18} />
-              </span>
+            {/* Shine Sweep — primary hero action */}
+            <Link to="/login" className="btn-shine btn-lg">
+              Start Free Assessment <ArrowRight size={16} />
             </Link>
-            {/* #22 Animated Border & Glow for Explore Capabilities */}
-            <a href="#features" className="btn-animated-border text-xs font-bold">
+            {/* Neon Border Draw — secondary ghost action */}
+            <a href="#features" className="btn-neon-draw btn-lg">
               Explore Capabilities
             </a>
           </div>
@@ -369,12 +368,27 @@ export default function Landing() {
               >
                 <Workflow size={15} /> Sequential Pipeline Flow
               </button>
+              <button
+                onClick={() => setArchMode('mermaid')}
+                className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
+                  archMode === 'mermaid'
+                    ? 'bg-cyan-500 text-slate-950 shadow-lg shadow-cyan-500/30 font-extrabold'
+                    : 'bg-white/5 text-slate-300 border border-white/10 hover:bg-white/10'
+                }`}
+              >
+                <Binary size={15} /> Portal Route Diagram
+              </button>
             </div>
           </div>
 
           {/* Render Grand System Tree */}
           {archMode === 'tree' && (
             <SystemTree />
+          )}
+
+          {/* Render Exact Mermaid Diagram (Public Layout → Routes) */}
+          {archMode === 'mermaid' && (
+            <MermaidDiagram />
           )}
 
           {/* Render Sequential Pipeline Flow */}
@@ -609,12 +623,8 @@ export default function Landing() {
             </p>
           </div>
           <div className="flex justify-center gap-4">
-            {/* #12 Button Concept for Bottom CTA */}
-            <Link to="/login?mode=register&plan=pro" className="btn-concept-12">
-              <span className="btn-concept-12__text">Get Started Now</span>
-              <span className="btn-concept-12__icon">
-                <ShieldCheck size={18} />
-              </span>
+            <Link to="/login?mode=register&plan=pro" className="btn-gradient-flow btn-lg">
+              Get Started Now <ArrowRight size={16} />
             </Link>
           </div>
         </div>

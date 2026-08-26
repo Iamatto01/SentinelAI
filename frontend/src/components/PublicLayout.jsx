@@ -2,28 +2,33 @@ import React, { useState, useEffect } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import {
   ArrowRight, Menu, X, Github, Send, MessageCircle, Mail,
-  ShieldCheck, Cpu, Database, Terminal
+  ShieldCheck, Cpu, Database, Terminal, Sparkles, LogIn,
+  ChevronRight, Home, Tag, Activity, Globe2, Shield
 } from 'lucide-react'
 import InspectorLogo from './InspectorLogo.jsx'
 
 const NAV_LINKS = [
-  { to: '/', label: 'Home' },
-  { to: '/about', label: 'About' },
-  { to: '/tools', label: 'Tools & AI' },
-  { to: '/services', label: 'Services' },
-  { to: '/pricing', label: 'Pricing' },
-  { to: '/contact', label: 'Contact' },
+  { to: '/', label: 'Home', icon: Home, desc: 'Overview & autonomous pentest engine' },
+  { to: '/about', label: 'About', icon: ShieldCheck, desc: 'Mission & local-first zero-cloud privacy' },
+  { to: '/tools', label: 'Tools & AI', icon: Terminal, desc: '150+ Kali Linux tools & 51 AI personas' },
+  { to: '/services', label: 'Services', icon: Cpu, desc: 'Blackbox pentesting & DevSecOps CI/CD' },
+  { to: '/pricing', label: 'Pricing', icon: Tag, desc: 'Transparent plans & researcher quotas' },
+  { to: '/contact', label: 'Contact', icon: Mail, desc: 'Get in touch with security research lead' },
 ]
-
-const GLASS = {
-  background: 'rgba(6, 11, 38, 0.45)',
-  backdropFilter: 'blur(40px) saturate(180%)',
-  WebkitBackdropFilter: 'blur(40px) saturate(180%)',
-}
 
 export default function PublicLayout({ children }) {
   const [mobileOpen, setMobileOpen] = useState(false)
+  const [scrolled, setScrolled] = useState(false)
   const location = useLocation()
+
+  // Track scroll position for dynamic glass elevation
+  useEffect(() => {
+    const handleScroll = () => {
+      setScrolled(window.scrollY > 20)
+    }
+    window.addEventListener('scroll', handleScroll, { passive: true })
+    return () => window.removeEventListener('scroll', handleScroll)
+  }, [])
 
   // Close mobile drawer on route change + scroll to top on navigation
   useEffect(() => {
@@ -40,72 +45,163 @@ export default function PublicLayout({ children }) {
       <div className="at-home__blob at-home__blob--b" />
       <div className="at-home__blob at-home__blob--c" />
 
-      {/* ── Floating Glassmorphic Header ─────────────────────────────────── */}
-      <header
-        className="sticky top-5 sm:top-6 z-50 w-[calc(100%-2.5rem)] max-w-5xl mx-auto px-6 sm:px-8 py-3 flex items-center justify-between rounded-full border border-white/[0.12] shadow-2xl transition-all mb-2"
-        style={{ ...GLASS, boxShadow: '0 8px 32px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.08)' }}
-      >
-        <Link to="/" className="flex items-center gap-2.5 group shrink-0">
-          <InspectorLogo size={26} />
-          <span className="font-extrabold text-sm sm:text-base text-white tracking-tight group-hover:text-cyan-300 transition-colors">
-            SentinelAI
-          </span>
-        </Link>
+      {/* ── High-Tech Glassmorphic Header ─────────────────────────────────── */}
+      <header className="sticky top-0 sm:top-4 z-50 w-full sm:w-[calc(100%-2rem)] sm:max-w-6xl sm:mx-auto px-3 sm:px-0 transition-all duration-300">
+        <div
+          className={`w-full px-4 sm:px-6 py-2.5 sm:py-3 flex items-center justify-between sm:rounded-2xl transition-all duration-300 ${
+            scrolled
+              ? 'bg-slate-950/90 backdrop-blur-2xl border-b sm:border border-cyan-500/25 shadow-[0_12px_36px_rgba(0,0,0,0.7),0_0_20px_rgba(0,242,254,0.1)]'
+              : 'bg-slate-950/75 backdrop-blur-xl border-b sm:border border-white/[0.12] shadow-[0_8px_32px_rgba(0,0,0,0.4),inset_0_1px_0_rgba(255,255,255,0.08)]'
+          }`}
+        >
+          {/* Brand Logo & Tag */}
+          <Link to="/" className="flex items-center gap-2.5 group shrink-0">
+            <div className="relative p-0.5 rounded-xl bg-gradient-to-br from-red-500/30 to-red-900/40 border border-red-500/30 group-hover:border-cyan-400/50 group-hover:shadow-[0_0_16px_rgba(0,242,254,0.3)] transition-all duration-300">
+              <InspectorLogo size={24} className="sm:w-7 sm:h-7" />
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="font-extrabold text-sm sm:text-base text-white tracking-tight group-hover:text-cyan-300 transition-colors">
+                Sentinel<span className="text-cyan-400">AI</span>
+              </span>
+              <span className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-cyan-500/10 text-cyan-400 border border-cyan-500/30">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                v2.4 Live
+              </span>
+            </div>
+          </Link>
 
-        <nav className="hidden md:flex items-center gap-6 text-xs font-bold text-slate-300">
-          {NAV_LINKS.map((l) => (
+          {/* Desktop Navigation Links */}
+          <nav className="hidden lg:flex items-center gap-1 bg-white/[0.03] p-1 rounded-xl border border-white/[0.06]">
+            {NAV_LINKS.map((l) => {
+              const isActive = location.pathname === l.to
+              return (
+                <Link
+                  key={l.to}
+                  to={l.to}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all duration-200 ${
+                    isActive
+                      ? 'bg-cyan-500/15 text-cyan-300 border border-cyan-400/30 shadow-[0_0_12px_rgba(0,242,254,0.15)] font-bold'
+                      : 'text-slate-300 hover:text-white hover:bg-white/[0.08] border border-transparent'
+                  }`}
+                >
+                  {l.label}
+                </Link>
+              )
+            })}
+          </nav>
+
+          {/* Action CTAs */}
+          <div className="flex items-center gap-2 sm:gap-3">
+            {/* Engine Status Tag for Wide Screens */}
+            <div className="hidden xl:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-[11px] text-emerald-400 font-mono">
+              <Activity size={12} className="animate-pulse text-emerald-400" />
+              <span>150+ Tools</span>
+            </div>
+
+            {/* Desktop / Tablet Sign In */}
             <Link
-              key={l.to}
-              to={l.to}
-              className={`transition-colors ${
-                location.pathname === l.to ? 'text-cyan-400' : 'hover:text-cyan-400'
-              }`}
+              to="/login"
+              className="hidden md:inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold text-slate-300 hover:text-white bg-white/[0.03] hover:bg-white/[0.08] border border-white/10 hover:border-white/20 transition-all"
             >
-              {l.label}
+              <LogIn size={13} className="text-slate-400" />
+              <span>Sign In</span>
             </Link>
-          ))}
-        </nav>
 
-        <div className="flex items-center gap-3">
-          <Link to="/login" className="hidden sm:inline-flex btn-thin">
-            Sign In
-          </Link>
-          <Link
-            to="/login?mode=register&plan=pro"
-            className="btn-rounded-pulse btn-rounded-pulse--sm"
-          >
-            <span>Get Started</span>
-          </Link>
-          <button
-            onClick={() => setMobileOpen(!mobileOpen)}
-            className="md:hidden p-2 rounded-xl bg-white/5 border border-white/10 text-slate-200 cursor-pointer"
-            aria-label="Toggle navigation menu"
-          >
-            {mobileOpen ? <X size={16} /> : <Menu size={16} />}
-          </button>
+            {/* Primary Get Started CTA */}
+            <Link
+              to="/login?mode=register&plan=pro"
+              className="inline-flex items-center gap-1.5 px-3.5 sm:px-4 py-1.5 sm:py-2 rounded-xl text-xs font-bold text-slate-950 bg-gradient-to-r from-cyan-400 via-cyan-300 to-sky-400 hover:from-cyan-300 hover:to-blue-400 shadow-[0_0_18px_rgba(0,242,254,0.4)] hover:shadow-[0_0_26px_rgba(0,242,254,0.7)] hover:scale-[1.02] active:scale-[0.98] transition-all"
+            >
+              <Sparkles size={13} className="hidden sm:inline-block" />
+              <span>Get Started</span>
+              <ArrowRight size={13} />
+            </Link>
+
+            {/* Mobile Hamburger Toggle Button */}
+            <button
+              onClick={() => setMobileOpen(!mobileOpen)}
+              className="lg:hidden p-2 rounded-xl bg-white/5 border border-white/10 text-slate-200 hover:text-cyan-300 hover:border-cyan-400/40 hover:bg-white/10 active:scale-95 transition-all cursor-pointer"
+              aria-label="Toggle navigation menu"
+            >
+              {mobileOpen ? <X size={17} /> : <Menu size={17} />}
+            </button>
+          </div>
         </div>
       </header>
 
-      {/* ── Mobile Navigation Drawer ─────────────────────────────────────── */}
+      {/* ── Mobile Navigation Drawer Backdrop & Modal ────────────────────── */}
       {mobileOpen && (
-        <div className="fixed inset-x-4 top-20 z-40 md:hidden rounded-3xl border border-white/15 shadow-2xl p-4 space-y-1" style={GLASS}>
-          {NAV_LINKS.map((l) => (
-            <Link
-              key={l.to}
-              to={l.to}
-              className={`block px-4 py-2.5 rounded-xl text-sm font-bold transition-colors ${
-                location.pathname === l.to
-                  ? 'bg-cyan-500/15 text-cyan-300 border border-cyan-400/30'
-                  : 'text-slate-300 hover:bg-white/5 hover:text-white'
-              }`}
-            >
-              {l.label}
-            </Link>
-          ))}
-          <Link to="/login" className="block px-4 py-2.5 rounded-xl text-sm font-bold text-slate-300 hover:bg-white/5 hover:text-white">
-            Sign In
-          </Link>
-        </div>
+        <>
+          {/* Backdrop Overlay */}
+          <div
+            className="fixed inset-0 bg-slate-950/80 backdrop-blur-md z-40 lg:hidden transition-opacity"
+            onClick={() => setMobileOpen(false)}
+          />
+
+          {/* Drawer Card */}
+          <div className="fixed inset-x-3 sm:inset-x-6 top-16 sm:top-20 z-50 lg:hidden rounded-2xl sm:rounded-3xl border border-cyan-500/20 bg-slate-950/95 backdrop-blur-2xl shadow-[0_20px_50px_rgba(0,0,0,0.8),0_0_30px_rgba(0,242,254,0.15)] p-4 sm:p-5 space-y-4 max-h-[85vh] overflow-y-auto">
+            {/* Engine Status Banner */}
+            <div className="flex items-center justify-between px-3.5 py-2 rounded-xl bg-cyan-500/10 border border-cyan-500/20 text-xs text-cyan-300">
+              <span className="flex items-center gap-2 font-mono text-[11px]">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                Hexstrike Kali Engine Active
+              </span>
+              <span className="text-[10px] text-slate-400 font-mono">150+ Tools</span>
+            </div>
+
+            {/* Navigation List */}
+            <nav className="space-y-1.5">
+              {NAV_LINKS.map((l) => {
+                const Icon = l.icon
+                const isActive = location.pathname === l.to
+                return (
+                  <Link
+                    key={l.to}
+                    to={l.to}
+                    onClick={() => setMobileOpen(false)}
+                    className={`flex items-center justify-between px-3.5 py-2.5 rounded-xl text-sm font-semibold transition-all ${
+                      isActive
+                        ? 'bg-gradient-to-r from-cyan-500/20 to-blue-500/10 text-cyan-300 border border-cyan-400/30 shadow-[0_0_15px_rgba(0,242,254,0.12)]'
+                        : 'text-slate-300 hover:bg-white/5 hover:text-white border border-transparent'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className={`p-1.5 rounded-lg ${isActive ? 'bg-cyan-500/20 text-cyan-300' : 'bg-white/5 text-slate-400'}`}>
+                        <Icon size={16} />
+                      </div>
+                      <div className="text-left">
+                        <div className="leading-tight">{l.label}</div>
+                        <div className="text-[10px] text-slate-500 font-normal leading-tight mt-0.5">{l.desc}</div>
+                      </div>
+                    </div>
+                    <ChevronRight size={15} className={isActive ? 'text-cyan-400' : 'text-slate-600'} />
+                  </Link>
+                )
+              })}
+            </nav>
+
+            {/* Drawer Action CTAs */}
+            <div className="pt-3 border-t border-white/10 space-y-2">
+              <Link
+                to="/login?mode=register&plan=pro"
+                onClick={() => setMobileOpen(false)}
+                className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl font-bold text-sm text-slate-950 bg-gradient-to-r from-cyan-400 via-cyan-300 to-sky-400 shadow-[0_0_20px_rgba(0,242,254,0.4)] hover:shadow-[0_0_28px_rgba(0,242,254,0.7)] transition-all"
+              >
+                <Sparkles size={15} />
+                <span>Start Free Assessment</span>
+                <ArrowRight size={15} />
+              </Link>
+              <Link
+                to="/login"
+                onClick={() => setMobileOpen(false)}
+                className="w-full flex items-center justify-center gap-2 py-2 px-4 rounded-xl font-semibold text-xs text-slate-300 bg-white/5 border border-white/10 hover:bg-white/10 hover:text-white transition-all"
+              >
+                <LogIn size={14} />
+                <span>Sign In to Platform</span>
+              </Link>
+            </div>
+          </div>
+        </>
       )}
 
       {/* ── Page Content ─────────────────────────────────────────────────── */}
@@ -130,10 +226,10 @@ export default function PublicLayout({ children }) {
               <a href="https://github.com/Iamatto01" target="_blank" rel="noreferrer" aria-label="GitHub" className="p-2 rounded-xl bg-white/5 border border-white/10 text-slate-300 hover:text-cyan-300 hover:border-cyan-400/50 transition-colors">
                 <Github size={15} />
               </a>
-              <a href="https://t.me/" target="_blank" rel="noreferrer" aria-label="Telegram" className="p-2 rounded-xl bg-white/5 border border-white/10 text-slate-300 hover:text-cyan-300 hover:border-cyan-400/50 transition-colors">
+              <a href="https://t.me/sentinelai_telebot" target="_blank" rel="noreferrer" aria-label="Telegram" className="p-2 rounded-xl bg-white/5 border border-white/10 text-slate-300 hover:text-cyan-300 hover:border-cyan-400/50 transition-colors">
                 <Send size={15} />
               </a>
-              <a href="https://discord.com/" target="_blank" rel="noreferrer" aria-label="Discord" className="p-2 rounded-xl bg-white/5 border border-white/10 text-slate-300 hover:text-indigo-300 hover:border-indigo-400/50 transition-colors">
+              <a href="https://discord.com/oauth2/authorize?client_id=1539651318648545420" target="_blank" rel="noreferrer" aria-label="Discord" className="p-2 rounded-xl bg-white/5 border border-white/10 text-slate-300 hover:text-indigo-300 hover:border-indigo-400/50 transition-colors">
                 <MessageCircle size={15} />
               </a>
               <a href="mailto:muhammadsaifudinmj@gmail.com" aria-label="Email" className="p-2 rounded-xl bg-white/5 border border-white/10 text-slate-300 hover:text-emerald-300 hover:border-emerald-400/50 transition-colors">

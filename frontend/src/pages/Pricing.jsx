@@ -94,9 +94,6 @@ export default function Pricing() {
       <div className="max-w-6xl mx-auto px-4 sm:px-8 pt-16 sm:pt-24 pb-12 space-y-24">
         {/* ── Hero + Billing Toggle ────────────────────────────────────────── */}
         <section className="text-center space-y-6">
-          <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-cyan-500/10 border border-cyan-400/30 text-cyan-300 text-xs font-bold uppercase tracking-wider">
-            <Sparkles size={13} className="text-cyan-400" /> Transparent SaaS Pricing
-          </div>
           <h1 className="text-3xl sm:text-5xl font-extrabold text-white tracking-tight leading-tight">
             Simple Plans, <span className="at-home__gradient-text">Enterprise Power</span>
           </h1>
@@ -163,7 +160,7 @@ export default function Pricing() {
             <div className="pt-8">
               <Link
                 to={`/login?mode=register&plan=pro&interval=${interval}`}
-                className="btn-primary w-full justify-center py-3.5 text-xs font-extrabold shadow-glow hover:scale-[1.01] transition-transform flex items-center gap-2"
+                className="btn-shine w-full justify-center py-3.5 text-xs font-extrabold"
               >
                 <span>Subscribe to SentinelAI Pro</span> <ArrowRight size={14} />
               </Link>
@@ -203,7 +200,7 @@ export default function Pricing() {
             <div className="pt-8">
               <Link
                 to={`/login?mode=register&plan=enterprise&interval=${interval}`}
-                className="btn-secondary w-full justify-center py-3.5 text-xs font-extrabold border-white/20 hover:border-cyan-400/50 hover:text-cyan-300 transition-colors flex items-center gap-2"
+                className="btn-neon-draw w-full justify-center py-3.5 text-xs font-extrabold"
               >
                 <span>Subscribe to Enterprise</span> <ArrowRight size={14} />
               </Link>
@@ -325,7 +322,7 @@ export default function Pricing() {
 
               <Link
                 to="/login?mode=register&plan=enterprise&interval=yearly"
-                className="btn-primary w-full justify-center py-3.5 text-xs font-extrabold shadow-glow flex items-center gap-2"
+                className="btn-gradient-flow w-full justify-center py-3.5 text-xs font-extrabold"
               >
                 Start Saving Now <ArrowRight size={14} />
               </Link>
@@ -372,7 +369,7 @@ export default function Pricing() {
             Book a free consultation with the Security Architect to find the right fit for your organization.
           </p>
           <div className="flex justify-center gap-4">
-            <Link to="/contact" className="btn-primary py-3.5 px-8 text-xs sm:text-sm font-extrabold shadow-glow flex items-center gap-2 hover:scale-105 transition-transform">
+            <Link to="/contact" className="btn-border-beam btn-lg">
               Talk to Us <ArrowRight size={16} />
             </Link>
           </div>
