@@ -11,7 +11,7 @@ import fs from 'node:fs'
 
 let db
 
-export function backupDatabase() {
+export async function backupDatabase() {
   try {
     const backupDir = path.join(config.outputDir, 'backups')
     if (!fs.existsSync(backupDir)) {
@@ -21,22 +21,22 @@ export function backupDatabase() {
     const targetPath = path.join(backupDir, `fyp2_backup_${timestamp}.db`)
     const latestPath = path.join(backupDir, `fyp2_latest_backup.db`)
 
-    if (fs.existsSync(config.dbPath)) {
-      fs.copyFileSync(config.dbPath, targetPath)
-      fs.copyFileSync(config.dbPath, latestPath)
-      // Retain maximum of 10 recent backups
-      const files = fs.readdirSync(backupDir)
-        .filter(f => f.startsWith('fyp2_backup_') && f.endsWith('.db'))
-        .map(f => ({ name: f, path: path.join(backupDir, f), time: fs.statSync(path.join(backupDir, f)).mtimeMs }))
-        .sort((a, b) => b.time - a.time)
+    const activeDb = getDb()
+    await activeDb.backup(targetPath)
+    try { fs.copyFileSync(targetPath, latestPath) } catch {}
 
-      if (files.length > 10) {
-        for (const oldFile of files.slice(10)) {
-          try { fs.unlinkSync(oldFile.path) } catch {}
-        }
+    // Retain up to 50 historical snapshots
+    const files = fs.readdirSync(backupDir)
+      .filter(f => f.startsWith('fyp2_backup_') && f.endsWith('.db'))
+      .map(f => ({ name: f, path: path.join(backupDir, f), time: fs.statSync(path.join(backupDir, f)).mtimeMs }))
+      .sort((a, b) => b.time - a.time)
+
+    if (files.length > 50) {
+      for (const oldFile of files.slice(50)) {
+        try { fs.unlinkSync(oldFile.path) } catch {}
       }
-      return { success: true, backupFile: targetPath }
     }
+    return { success: true, backupFile: targetPath }
   } catch (err) {
     console.error('Backup database failed:', err)
   }

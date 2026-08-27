@@ -99,8 +99,8 @@ export const config = {
     dir: resolveDir(process.env.SKILLS_DIR, path.join(PROJECT_ROOT, 'knowledge', 'skills')),
   },
 
-  outputDir: path.join(PROJECT_ROOT, 'output'),
-  dbPath: path.join(PROJECT_ROOT, 'output', 'fyp2.db'),
+  outputDir: resolveDir(process.env.OUTPUT_DIR, fs.existsSync('/mnt/external_hdd') ? '/mnt/external_hdd/SentinelAI_Data' : path.join(PROJECT_ROOT, 'output')),
+  dbPath: resolveDir(process.env.DB_PATH, fs.existsSync('/mnt/external_hdd') ? '/mnt/external_hdd/SentinelAI_Data/fyp2.db' : path.join(PROJECT_ROOT, 'output', 'fyp2.db')),
 
   scan: {
     moduleTimeoutMs: Number(process.env.MODULE_TIMEOUT_MS || 600000),
@@ -120,7 +120,14 @@ export const config = {
   },
 }
 
-// Ensure output dir exists
-fs.mkdirSync(config.outputDir, { recursive: true })
+// Ensure persistent storage and backup directories exist
+try {
+  fs.mkdirSync(config.outputDir, { recursive: true })
+  fs.mkdirSync(path.dirname(config.dbPath), { recursive: true })
+  fs.mkdirSync(path.join(config.outputDir, 'backups'), { recursive: true })
+  fs.mkdirSync(path.join(config.outputDir, 'reports'), { recursive: true })
+} catch (e) {
+  // Ignore permission or preexisting directory notices
+}
 
 export default config

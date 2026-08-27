@@ -40,9 +40,9 @@ def should_ignore(path):
     rel = os.path.relpath(path, PROJECT_ROOT).replace("\\", "/")
     parts = rel.split("/")
     for p in parts:
-        if p in ["node_modules", ".git", "dist", ".system_generated", "__pycache__", ".venv", "venv"]:
+        if p in ["node_modules", ".git", "dist", ".system_generated", "__pycache__", ".venv", "venv", "output", "backups", "reports"]:
             return True
-    if rel.endswith(".tar.gz") or rel.endswith(".log"):
+    if rel.endswith(".tar.gz") or rel.endswith(".log") or rel.endswith(".db") or rel.endswith(".db-wal") or rel.endswith(".db-shm") or rel.endswith(".pdf") or rel.endswith(".sqlite"):
         return True
     if rel in [".env", ".env.local"]:
         return True
