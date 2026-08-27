@@ -127,12 +127,6 @@ export function getUserSubscription(userId) {
 }
 
 /**
- * Toggle for community open-access trial mode.
- * When true, paywalls/hard locks are temporarily relaxed for community testing.
- */
-export const COMMUNITY_FREE_ACCESS_MODE = true
-
-/**
  * Verify subscription & quota before running scan
  */
 export function consumeScanQuota(userId) {
