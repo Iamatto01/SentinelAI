@@ -86,13 +86,13 @@ export default function Projects() {
       await api.deleteProject(id)
       if (selected?.id === id) setSelected(null)
       load()
-    } catch (err) {
-      alert(`Delete failed: ${err.message}`)
+    } catch (e) {
+      setErr(e.message)
     }
   }
 
-  function getProjectCover(project, idx) {
-    if (project.cover) return project.cover
+  function getProjectCover(p, idx) {
+    if (p?.cover) return p.cover
     return COVER_OPTIONS[idx % COVER_OPTIONS.length].id
   }
 

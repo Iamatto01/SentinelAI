@@ -37,6 +37,40 @@ function findingFingerprint(finding) {
   return `${cwe}|${file}|${line}|${category}`
 }
 
+export function getRootDomain(hostname) {
+  if (!hostname) return ''
+  const clean = hostname.replace(/^https?:\/\//i, '').split('/')[0].split(':')[0].toLowerCase().trim()
+  const parts = clean.split('.').filter(Boolean)
+  if (parts.length <= 2) return parts.join('.')
+
+  const secondLevelTlds = new Set([
+    'edu.my', 'com.my', 'net.my', 'org.my', 'gov.my', 'mil.my', 'sch.my',
+    'co.uk', 'org.uk', 'me.uk', 'ltd.uk', 'plc.uk', 'net.uk', 'sch.uk', 'ac.uk', 'gov.uk',
+    'com.au', 'net.au', 'org.au', 'edu.au', 'gov.au',
+    'co.nz', 'net.nz', 'org.nz', 'govt.nz', 'ac.nz',
+    'co.id', 'web.id', 'ac.id', 'go.id', 'my.id', 'sch.id',
+    'co.jp', 'ne.jp', 'or.jp', 'go.jp', 'ac.jp',
+    'com.sg', 'edu.sg', 'gov.sg', 'net.sg', 'org.sg',
+    'com.hk', 'edu.hk', 'gov.hk', 'net.hk', 'org.hk',
+    'co.za', 'gov.za', 'ac.za', 'edu.za',
+    'com.br', 'gov.br', 'edu.br', 'org.br',
+    'co.in', 'net.in', 'org.in', 'gen.in', 'firm.in', 'ind.in',
+    'edu.cn', 'gov.cn', 'com.cn', 'net.cn', 'org.cn',
+  ])
+
+  const lastTwo = parts.slice(-2).join('.')
+  if (secondLevelTlds.has(lastTwo)) {
+    return parts.slice(-3).join('.')
+  }
+  return parts.slice(-2).join('.')
+}
+
+export function joinUrl(base, p) {
+  const b = (base || '').replace(/\/+$/, '')
+  const cleanPath = (p || '').replace(/^\/+/, '')
+  return `${b}/${cleanPath}`
+}
+
 export class UnifiedPipeline {
   constructor({ io } = {}) {
     this.io = io
@@ -657,7 +691,7 @@ export class UnifiedPipeline {
       try { return new URL(/^https?:\/\//i.test(target) ? target : `https://${target}`).hostname }
       catch { return target.replace(/^https?:\/\//i, '').split('/')[0] }
     })()
-    const rootDomain = host.split('.').slice(-2).join('.')   // www.myces-fms.com → myces-fms.com
+    const rootDomain = getRootDomain(host)   // e.g. imaluum.iium.edu.my -> iium.edu.my
     if (!rootDomain || !rootDomain.includes('.')) return
 
     this.log(scanId, 'info', `🔎 Enumerating subdomains for ${rootDomain} (passive + brute-force)...`)
@@ -668,21 +702,23 @@ export class UnifiedPipeline {
       const r = await runNativeTool('subfinder', rootDomain)
       for (const line of (r.stdout || '').split('\n')) {
         const h = line.trim().toLowerCase()
-        if (/^[a-z0-9.-]+\.[a-z]{2,}$/.test(h) && h.endsWith(rootDomain)) subs.add(h)
+        if (/^[a-z0-9.-]+\.[a-z]{2,}$/.test(h) && (h === rootDomain || h.endsWith('.' + rootDomain))) {
+          subs.add(h)
+        }
       }
     } catch { /* optional */ }
 
     // Active: gobuster dns brute-force (with wildcard filter)
-    // Use the ROOT domain (e.g., edu.my) not the full host
     try {
       const probe = await runNativeTool('dnsbrute', `nonexistent-${randomUUID().slice(0, 8)}.${rootDomain}`)
-      const wildcardIps = new Set((probe.stdout || '').split('\n').map(l => l.trim()).filter(l => /^\d+\.\d+\.\d+\.\d+$/.test(l)))
       const brute = await runNativeTool('dnsbrute', rootDomain)
       for (const line of (brute.stdout || '').split('\n')) {
         const m = line.match(/([a-z0-9.-]+\.[a-z]{2,})/i)
-        if (m && m[1].toLowerCase().endsWith(rootDomain)) {
-          // skip wildcard-only matches: gobuster prints "Found: host" lines; keep simple
-          subs.add(m[1].toLowerCase())
+        if (m) {
+          const foundHost = m[1].toLowerCase()
+          if (foundHost === rootDomain || foundHost.endsWith('.' + rootDomain)) {
+            subs.add(foundHost)
+          }
         }
       }
     } catch { /* optional */ }
@@ -706,7 +742,7 @@ export class UnifiedPipeline {
     }
 
     // Probe main target + top subdomains for Swagger / OpenAPI docs
-    const hostsToProbe = [host, ...subs].slice(0, 5)
+    const hostsToProbe = [host, ...subs].filter(h => h === rootDomain || h.endsWith('.' + rootDomain)).slice(0, 5)
     let swaggerHits = 0
     for (const h of hostsToProbe) {
       await this.waitIfPaused(scanId)
@@ -715,10 +751,11 @@ export class UnifiedPipeline {
     }
 
     // ── SUBDOMAIN SCAN CASCADE: scan top subdomains for HTTP headers + sensitive paths ──
-    // This is what turns 15477 discovered subdomains into actual findings
-    if (subs.size > 0) {
-      const topSubs = [...subs].slice(0, 50) // top 50 by discovery order
-      this.log(scanId, 'info', `🔎 Cascading baseline scan to ${topSubs.length} subdomains...`)
+    // Strictly limited to subdomains of the target rootDomain
+    const validSubs = [...subs].filter(s => s === rootDomain || s.endsWith('.' + rootDomain))
+    if (validSubs.length > 0) {
+      const topSubs = validSubs.slice(0, 20) // top 20 subdomains
+      this.log(scanId, 'info', `🔎 Cascading baseline scan to ${topSubs.length} subdomains under ${rootDomain}...`)
       let scanned = 0
       for (const sub of topSubs) {
         await this.waitIfPaused(scanId)
@@ -943,120 +980,163 @@ export class UnifiedPipeline {
 
     // 3. Audit Sensitive Paths (expanded for offensive coverage) — skip if SPA
     if (!isSpaCatchAll) {
-    const paths = ['/robots.txt', '/.git/HEAD', '/.env', '/sitemap.xml',
-      '/.git/config', '/.svn/entries', '/backup.zip', '/backup.tar.gz', '/db.sql', '/dump.sql',
-      '/phpinfo.php', '/server-status', '/actuator', '/actuator/env', '/actuator/heapdump',
-      '/.well-known/security.txt', '/wp-config.php.bak', '/config.php.bak', '/web.config',
-      '/api/.env', '/storage/logs/laravel.log', '/debug/vars', '/metrics', '/.DS_Store',
-      '/crossdomain.xml', '/clientaccesspolicy.xml', '/elmah.axd', '/trace.axd',
-      '/.aws/credentials', '/.dockercfg', '/id_rsa', '/id_ed25519', '/known_hosts',
-      '/.htaccess', '/.htpasswd', '/wp-json/wp/v2/users', '/.tgitconfig',
-      '/WEB-INF/web.xml', '/META-INF/maven', '/package.json', '/composer.json',
-      '/console', '/admin/login', '/administrator', '/wp-admin', '/user/login',
-      '/api/users', '/graphql', '/graphiql', '/.vscode/sftp.json', '/.idea/workspace.xml']
-    for (const p of paths) {
-      await this.waitIfPaused(scanId)
-      try {
-        const checkUrl = `${targetUrl.replace(/\/$/, '')}${p}`
-        const res = await fetch(checkUrl, { method: 'GET' })
-        if (res.status === 200) {
-          const text = await res.text()
-          if (p === '/.git/HEAD' && text.includes('ref:')) {
-            await this.ingestFinding(scanId, {
-              title: 'Exposed Git Repository (/.git/HEAD)',
-              severity: 'high',
-              cweId: 'CWE-538',
-              owaspCategory: 'A05:2021-Security Misconfiguration',
-              description: `Exposed Git directory discovered at ${checkUrl}. Attackers can download the entire source code history.`,
-              remediation: 'Block access to /.git in your web server configuration.',
-              module: 'path-enum',
-            }, { verify })
-          } else if ((p === '/.env' || p === '/api/.env') && (text.includes('DB_') || text.includes('SECRET') || text.includes('KEY'))) {
-            await this.ingestFinding(scanId, {
-              title: `Exposed Environment Credentials File (${p})`,
-              severity: 'critical',
-              cweId: 'CWE-200',
-              owaspCategory: 'A01:2021-Broken Access Control',
-              description: `Exposed environment file at ${checkUrl} containing sensitive credentials/secrets.`,
-              remediation: 'Remove public access to the .env file immediately and rotate all secrets it contains.',
-              module: 'path-enum',
-            }, { verify })
-          } else if (p === '/.git/config' && text.includes('[core]')) {
-            await this.ingestFinding(scanId, {
-              title: 'Exposed Git Config (/.git/config)',
-              severity: 'high',
-              cweId: 'CWE-538',
-              owaspCategory: 'A05:2021-Security Misconfiguration',
-              description: `Git config exposed at ${checkUrl} — may disclose repo remotes and branch info; combined with /.git/HEAD the full source can often be reconstructed.`,
-              remediation: 'Block access to /.git in your web server configuration.',
-              module: 'path-enum',
-            }, { verify })
-          } else if (/backup\.(zip|tar\.gz)|dump\.sql|db\.sql/.test(p) && text.length > 100) {
-            await this.ingestFinding(scanId, {
-              title: `Exposed Backup/Database Dump (${p})`,
-              severity: 'critical',
-              cweId: 'CWE-530',
-              owaspCategory: 'A05:2021-Security Misconfiguration',
-              description: `A backup archive or SQL dump is publicly downloadable at ${checkUrl} (${text.length} bytes). This typically exposes full source code or database contents including credentials.`,
-              remediation: 'Remove backup artifacts from the web root immediately and rotate any credentials they contain.',
-              module: 'path-enum',
-              evidence: { url: checkUrl, bytes: text.length },
-            }, { verify })
-          } else if (p === '/phpinfo.php' && /php version|<title>phpinfo/i.test(text)) {
-            await this.ingestFinding(scanId, {
-              title: 'phpinfo() Page Exposed',
-              severity: 'medium',
-              cweId: 'CWE-200',
-              owaspCategory: 'A05:2021-Security Misconfiguration',
-              description: `phpinfo() at ${checkUrl} discloses PHP version, loaded modules, paths, and environment variables.`,
-              remediation: 'Delete phpinfo.php from production.',
-              module: 'path-enum',
-            }, { verify })
-          } else if (p.startsWith('/actuator') && (text.includes('{') || text.includes('HikariPool'))) {
-            await this.ingestFinding(scanId, {
-              title: `Spring Boot Actuator Exposed (${p})`,
-              severity: p.includes('heapdump') || p.includes('env') ? 'high' : 'medium',
-              cweId: 'CWE-200',
-              owaspCategory: 'A05:2021-Security Misconfiguration',
-              description: `Spring Actuator endpoint ${checkUrl} is publicly accessible — can disclose env vars, beans, mappings, or a full heap dump (session tokens, credentials).`,
-              remediation: 'Restrict actuator endpoints to management port/internal network and require authentication.',
-              module: 'path-enum',
-            }, { verify })
-          } else if (p === '/server-status' && /apache status|server uptime/i.test(text)) {
-            await this.ingestFinding(scanId, {
-              title: 'Apache server-status Exposed',
-              severity: 'medium',
-              cweId: 'CWE-200',
-              owaspCategory: 'A05:2021-Security Misconfiguration',
-              description: `mod_status page at ${checkUrl} discloses requests, vhosts, and internal IPs.`,
-              remediation: 'Disable mod_status or restrict to localhost.',
-              module: 'path-enum',
-            }, { verify })
-          } else if (/laravel\.log|web\.config|wp-config|config\.php\.bak|\.DS_Store|debug\/vars|metrics|\.svn/.test(p) && text.length > 20) {
-            await this.ingestFinding(scanId, {
-              title: `Sensitive File Exposed (${p})`,
-              severity: 'medium',
-              cweId: 'CWE-538',
-              owaspCategory: 'A05:2021-Security Misconfiguration',
-              description: `Sensitive file publicly accessible at ${checkUrl} (${text.length} bytes) — may disclose configuration, credentials, stack traces, or internal metrics.`,
-              remediation: `Block public access to ${p}.`,
-              module: 'path-enum',
-              evidence: { url: checkUrl, snippet: text.slice(0, 300) },
-            }, { verify })
-          } else if (p === '/robots.txt') {
-            await this.ingestFinding(scanId, {
-              title: 'robots.txt Discovered',
-              severity: 'info',
-              cweId: 'CWE-200',
-              owaspCategory: 'A05:2021-Security Misconfiguration',
-              description: `Discovered robots.txt containing hidden endpoints:\n${text.slice(0, 300)}`,
-              remediation: 'Ensure robots.txt does not disclose sensitive administrative endpoints.',
-              module: 'path-enum',
-            }, { verify })
+      const paths = ['/robots.txt', '/.git/HEAD', '/.env', '/sitemap.xml',
+        '/.git/config', '/.svn/entries', '/backup.zip', '/backup.tar.gz', '/db.sql', '/dump.sql',
+        '/phpinfo.php', '/server-status', '/actuator', '/actuator/env', '/actuator/heapdump',
+        '/.well-known/security.txt', '/wp-config.php.bak', '/config.php.bak', '/web.config',
+        '/api/.env', '/storage/logs/laravel.log', '/debug/vars', '/metrics', '/.DS_Store',
+        '/crossdomain.xml', '/clientaccesspolicy.xml', '/elmah.axd', '/trace.axd',
+        '/.aws/credentials', '/.dockercfg', '/id_rsa', '/id_ed25519', '/known_hosts',
+        '/.htaccess', '/.htpasswd', '/wp-json/wp/v2/users', '/.tgitconfig',
+        '/WEB-INF/web.xml', '/META-INF/maven', '/package.json', '/composer.json',
+        '/console', '/admin/login', '/administrator', '/wp-admin', '/user/login',
+        '/api/users', '/graphql', '/graphiql', '/.vscode/sftp.json', '/.idea/workspace.xml']
+      for (const p of paths) {
+        await this.waitIfPaused(scanId)
+        try {
+          const checkUrl = joinUrl(targetUrl, p)
+          const res = await fetch(checkUrl, { method: 'GET', signal: AbortSignal.timeout(8000) })
+          if (res.status === 200) {
+            const contentType = (res.headers.get('content-type') || '').toLowerCase()
+            const text = await res.text()
+            const isHtml = contentType.includes('text/html') || /<!doctype\s+html|<html[\s>]/i.test(text)
+
+            if (p === '/.git/HEAD' && text.includes('ref:') && !isHtml) {
+              await this.ingestFinding(scanId, {
+                title: 'Exposed Git Repository (/.git/HEAD)',
+                severity: 'high',
+                cweId: 'CWE-538',
+                owaspCategory: 'A05:2021-Security Misconfiguration',
+                description: `Exposed Git directory discovered at ${checkUrl}. Attackers can download the entire source code history.`,
+                remediation: 'Block access to /.git in your web server configuration.',
+                module: 'path-enum',
+                evidence: { url: checkUrl, snippet: text.slice(0, 150) },
+              }, { verify })
+            } else if ((p === '/.env' || p === '/api/.env') && !isHtml && (text.includes('DB_') || text.includes('APP_KEY') || text.includes('SECRET') || text.includes('KEY='))) {
+              await this.ingestFinding(scanId, {
+                title: `Exposed Environment Credentials File (${p})`,
+                severity: 'critical',
+                cweId: 'CWE-200',
+                owaspCategory: 'A01:2021-Broken Access Control',
+                description: `Exposed environment file at ${checkUrl} containing sensitive credentials/secrets.`,
+                remediation: 'Remove public access to the .env file immediately and rotate all secrets it contains.',
+                module: 'path-enum',
+                evidence: { url: checkUrl, snippet: text.slice(0, 200).replace(/[A-Za-z0-9_]{16,}/g, '********') },
+              }, { verify })
+            } else if (p === '/.git/config' && text.includes('[core]') && !isHtml) {
+              await this.ingestFinding(scanId, {
+                title: 'Exposed Git Config (/.git/config)',
+                severity: 'high',
+                cweId: 'CWE-538',
+                owaspCategory: 'A05:2021-Security Misconfiguration',
+                description: `Git config exposed at ${checkUrl} — may disclose repo remotes and branch info; combined with /.git/HEAD the full source can often be reconstructed.`,
+                remediation: 'Block access to /.git in your web server configuration.',
+                module: 'path-enum',
+                evidence: { url: checkUrl, snippet: text.slice(0, 200) },
+              }, { verify })
+            } else if (/backup\.(zip|tar\.gz)|dump\.sql|db\.sql/.test(p) && !isHtml && text.length > 100) {
+              await this.ingestFinding(scanId, {
+                title: `Exposed Backup/Database Dump (${p})`,
+                severity: 'critical',
+                cweId: 'CWE-530',
+                owaspCategory: 'A05:2021-Security Misconfiguration',
+                description: `A backup archive or SQL dump is publicly downloadable at ${checkUrl} (${text.length} bytes). This typically exposes full source code or database contents including credentials.`,
+                remediation: 'Remove backup artifacts from the web root immediately and rotate any credentials they contain.',
+                module: 'path-enum',
+                evidence: { url: checkUrl, bytes: text.length },
+              }, { verify })
+            } else if (p === '/phpinfo.php' && (/php version|<title>phpinfo/i.test(text) || text.includes('Configuration File (php.ini) Path'))) {
+              await this.ingestFinding(scanId, {
+                title: 'phpinfo() Page Exposed',
+                severity: 'medium',
+                cweId: 'CWE-200',
+                owaspCategory: 'A05:2021-Security Misconfiguration',
+                description: `phpinfo() at ${checkUrl} discloses PHP version, loaded modules, paths, and environment variables.`,
+                remediation: 'Delete phpinfo.php from production.',
+                module: 'path-enum',
+                evidence: { url: checkUrl },
+              }, { verify })
+            } else if (p === '/actuator/heapdump' && (contentType.includes('octet-stream') || text.startsWith('\x1f\x8b') || text.includes('JAVA PROFILE'))) {
+              await this.ingestFinding(scanId, {
+                title: `Spring Boot Actuator Exposed (${p})`,
+                severity: 'high',
+                cweId: 'CWE-200',
+                owaspCategory: 'A05:2021-Security Misconfiguration',
+                description: `Spring Actuator endpoint ${checkUrl} is publicly accessible — provides a full JVM heap dump with potential memory credentials.`,
+                remediation: 'Restrict actuator endpoints to management port/internal network and require authentication.',
+                module: 'path-enum',
+                evidence: { url: checkUrl, contentType },
+              }, { verify })
+            } else if (p.startsWith('/actuator') && !isHtml && (contentType.includes('json') || (text.trim().startsWith('{') && (text.includes('"_links"') || text.includes('"propertySources"') || text.includes('"activeProfiles"'))))) {
+              await this.ingestFinding(scanId, {
+                title: `Spring Boot Actuator Exposed (${p})`,
+                severity: p.includes('env') ? 'high' : 'medium',
+                cweId: 'CWE-200',
+                owaspCategory: 'A05:2021-Security Misconfiguration',
+                description: `Spring Actuator endpoint ${checkUrl} is publicly accessible — can disclose env vars, beans, mappings, or system metadata.`,
+                remediation: 'Restrict actuator endpoints to management port/internal network and require authentication.',
+                module: 'path-enum',
+                evidence: { url: checkUrl, contentType },
+              }, { verify })
+            } else if (p === '/server-status' && !isHtml && /apache status|server uptime/i.test(text)) {
+              await this.ingestFinding(scanId, {
+                title: 'Apache server-status Exposed',
+                severity: 'medium',
+                cweId: 'CWE-200',
+                owaspCategory: 'A05:2021-Security Misconfiguration',
+                description: `mod_status page at ${checkUrl} discloses requests, vhosts, and internal IPs.`,
+                remediation: 'Disable mod_status or restrict to localhost.',
+                module: 'path-enum',
+                evidence: { url: checkUrl },
+              }, { verify })
+            } else if (p === '/storage/logs/laravel.log' && !isHtml && (text.includes('local.ERROR') || text.includes('production.ERROR') || /\[\d{4}-\d{2}-\d{2}/.test(text))) {
+              await this.ingestFinding(scanId, {
+                title: `Sensitive Laravel Log File Exposed (${p})`,
+                severity: 'medium',
+                cweId: 'CWE-538',
+                owaspCategory: 'A05:2021-Security Misconfiguration',
+                description: `Laravel log file publicly accessible at ${checkUrl} (${text.length} bytes) — discloses application stack traces, queries, and internal state.`,
+                remediation: `Block public access to storage logs in web server configuration.`,
+                module: 'path-enum',
+                evidence: { url: checkUrl, snippet: text.slice(0, 300) },
+              }, { verify })
+            } else if (p === '/metrics' && !isHtml && (text.includes('# HELP') || text.includes('# TYPE') || text.includes('jvm_threads_live'))) {
+              await this.ingestFinding(scanId, {
+                title: `Application Metrics Endpoint Exposed (${p})`,
+                severity: 'low',
+                cweId: 'CWE-200',
+                owaspCategory: 'A05:2021-Security Misconfiguration',
+                description: `Prometheus/application metrics publicly accessible at ${checkUrl} — discloses operational statistics.`,
+                remediation: `Restrict access to metrics endpoints.`,
+                module: 'path-enum',
+                evidence: { url: checkUrl, snippet: text.slice(0, 200) },
+              }, { verify })
+            } else if (p === '/debug/vars' && !isHtml && text.trim().startsWith('{') && text.includes('"cmdline"')) {
+              await this.ingestFinding(scanId, {
+                title: `Go Expvar Debug Variables Exposed (${p})`,
+                severity: 'medium',
+                cweId: 'CWE-200',
+                owaspCategory: 'A05:2021-Security Misconfiguration',
+                description: `Go debug/vars endpoint exposed at ${checkUrl} disclosing internal runtime variables.`,
+                remediation: `Disable expvar in production.`,
+                module: 'path-enum',
+                evidence: { url: checkUrl },
+              }, { verify })
+            } else if (p === '/robots.txt' && !isHtml && /user-agent:|disallow:|allow:/i.test(text)) {
+              await this.ingestFinding(scanId, {
+                title: 'robots.txt Discovered',
+                severity: 'info',
+                cweId: 'CWE-200',
+                owaspCategory: 'A05:2021-Security Misconfiguration',
+                description: `Discovered robots.txt containing crawler directives:\n${text.slice(0, 300)}`,
+                remediation: 'Ensure robots.txt does not disclose sensitive administrative endpoints.',
+                module: 'path-enum',
+                evidence: { url: checkUrl, snippet: text.slice(0, 300) },
+              }, { verify })
+            }
           }
-        }
-      } catch { /* skip */ }
-    }
+        } catch { /* skip */ }
+      }
     } // end if (!isSpaCatchAll)
   }
 

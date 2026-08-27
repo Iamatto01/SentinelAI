@@ -261,8 +261,10 @@ function categorizeFinding(finding) {
   // Malware / Reverse Engineering
   if (/malware|trojan|ransomware|backdoor|dropper|shellcode|payload.*encrypt|code.*obfuscat|anti.*debug|packer|unpack|disassembl|decompil|ghidra|radare|ida.*pro/i.test(title)) return 'Malware Analysis'
   if (/reverse.*engineer|binary.*analysis|firmware.*analy|decompil|disassembl/i.test(title)) return 'Reverse Engineering'
+  // Spring Boot Actuator / Debug / Misconfiguration
+  if (/actuator|laravel\.log|debug\/vars|metrics|misconfig|missing.*header|security.*header|hsts|csp|x.frame.options|server.*header|waf.*bypass/i.test(title)) return 'Security Misconfiguration'
   // Evasion / OPSEC
-  if (/evasion|bypass.*av|bypass.*edr|amsi.*bypass|etw.*bypass|process.*hollow|inject.*shellcode|reflective.*load|sandbox.*detect|opsec|anonymiz|tor|proxy.*chain/i.test(title)) return 'Evasion / OPSEC'
+  if (/evasion|bypass.*av|bypass.*edr|amsi.*bypass|etw.*bypass|process.*hollow|inject.*shellcode|reflective.*load|sandbox.*detect|\bopsec\b|\banonymiz|\btor\b|\bproxy.*chain\b/i.test(title)) return 'Evasion / OPSEC'
   // C2 / Persistence
   if (/c2|command.*control|beacon|listener|sliver|mythic|cobalt.*strike|havoc|persistence|scheduled.*task|registry.*run|startup|service.*install|backdoor.*user/i.test(title)) return 'C2 / Persistence'
   // Phishing / Social Engineering
@@ -275,11 +277,17 @@ function categorizeFinding(finding) {
   if (/cve-|outdated|vulnerable.*version|old.*library|deprecated|unpatched|cvss/i.test(title)) return 'Vulnerable Components'
   // Subdomain Enumeration (fallback)
   if (/subdomain/i.test(title)) return 'Subdomain Enumeration'
-  // Security Misconfiguration
-  if (/misconfig|missing.*header|security.*header|hsts|csp|x.frame.options|debug|server.*header|waf.*bypass/i.test(title)) return 'Security Misconfiguration'
+  // Security Misconfiguration fallback
+  if (/misconfig|missing.*header|security.*header/i.test(title)) return 'Security Misconfiguration'
   // Information Disclosure
-  if (/cwe-200|exposed|disclosure|leak|information.*disclosure|robots\.txt|phpinfo|actuator|backup|dump|banner.*grab/i.test(title)) return 'Information Disclosure'
+  if (/cwe-200|exposed|disclosure|leak|information.*disclosure|robots\.txt|phpinfo|backup|dump|banner.*grab/i.test(title)) return 'Information Disclosure'
   return 'Other'
+}
+
+function joinUrl(base, p) {
+  const b = (base || '').replace(/\/+$/, '')
+  const cleanPath = (p || '').replace(/^\/+/, '')
+  return `${b}/${cleanPath}`
 }
 
 // == Real PoC Payload Generator ===============================================
@@ -457,14 +465,14 @@ function generateRealPoc(v) {
       lines.push('# Step 1: Check security headers:')
       lines.push(`curl -skI "${url}" | grep -i -E "strict-transport-security|content-security-policy|x-frame-options|x-content-type-options"`)
       lines.push('')
-      lines.push('# Step 2: Directory/file enumeration:')
-      lines.push('gobuster dir -u "' + url + '" -w /usr/share/wordlists/dirbuster/directory-list-2.3-medium.txt -x php,asp,aspx,txt,zip,git,env')
+      lines.push('# Step 2: Directory and endpoint enumeration:')
+      lines.push(`gobuster dir -u "${url}" -w /usr/share/wordlists/dirbuster/directory-list-2.3-medium.txt -x php,asp,aspx,txt,zip,git,env`)
       lines.push('')
-      lines.push('# Step 3: Check for debug endpoints:')
-      lines.push(`curl -sk "${url}/.env"`)
-      lines.push(`curl -sk "${url}/.git/config"`)
-      lines.push(`curl -sk "${url}/actuator"`)
-      lines.push(`curl -sk "${url}/phpinfo.php"`)
+      lines.push('# Step 3: Check for debug and sensitive endpoints:')
+      lines.push(`curl -sk "${joinUrl(url, '.env')}"`)
+      lines.push(`curl -sk "${joinUrl(url, '.git/config')}"`)
+      lines.push(`curl -sk "${joinUrl(url, 'actuator')}"`)
+      lines.push(`curl -sk "${joinUrl(url, 'phpinfo.php')}"`)
     }
     else if (category === 'Information Disclosure') {
       lines.push('=== INFORMATION DISCLOSURE PROCEDURE ===')
@@ -473,10 +481,10 @@ function generateRealPoc(v) {
       lines.push('# Step 1: Verify exposed information:')
       lines.push(`curl -skI "${url}" | grep -i -E "server|x-powered-by|x-aspnet-version"`)
       lines.push('')
-      lines.push('# Step 2: Check for sensitive files:')
+      lines.push('# Step 2: Check for sensitive files & crawler directives:')
       lines.push(`curl -sk "${url}" | head -100`)
-      lines.push(`curl -sk "${url}/robots.txt"`)
-      lines.push(`curl -sk "${url}/sitemap.xml"`)
+      lines.push(`curl -sk "${joinUrl(url, 'robots.txt')}"`)
+      lines.push(`curl -sk "${joinUrl(url, 'sitemap.xml')}"`)
     }
     else if (category === 'CORS / CSRF') {
       lines.push('=== CORS / CSRF TEST PROCEDURE ===')
@@ -504,10 +512,9 @@ function generateRealPoc(v) {
       lines.push(`# Target: ${url}`)
       lines.push('')
       lines.push('# Step 1: Enumerate API endpoints:')
-      lines.push(`curl -sk "${url}/api"`)
-      lines.push(`curl -sk "${url}/api/v1"`)
-      lines.push(`curl -sk "${url}/api/v2"`)
-      lines.push(`curl -sk "${url}/graphql"`)
+      lines.push(`curl -sk "${joinUrl(url, 'api')}"`)
+      lines.push(`curl -sk "${joinUrl(url, 'api/v1')}"`)
+      lines.push(`curl -sk "${joinUrl(url, 'graphql')}"`)
       lines.push(`curl -sk "${url}?wsdl"`)
       lines.push('')
       lines.push('# Step 2: Test API authentication bypass:')
@@ -516,7 +523,7 @@ function generateRealPoc(v) {
       lines.push(`curl -sk "${url}" -H "X-API-Key: 1234567890abcdef"`)
       lines.push('')
       lines.push('# Step 3: GraphQL introspection:')
-      lines.push(`curl -sk "${url}" -H "Content-Type: application/json" -d '{"query":"{__schema{types{name}}}"}'`)
+      lines.push(`curl -sk "${joinUrl(url, 'graphql')}" -H "Content-Type: application/json" -d '{"query":"{__schema{types{name}}}"}'`)
       lines.push('')
       lines.push('# Step 4: Rate limit testing:')
       lines.push('for i in $(seq 1 100); do curl -sk -o /dev/null -w "%{http_code}\\\n" "' + url + '" & done; wait')
@@ -541,39 +548,35 @@ function generateRealPoc(v) {
       lines.push('=== CLOUD SECURITY TEST PROCEDURE ===')
       lines.push(`# Target: ${url}`)
       lines.push('')
-      lines.push('# Step 1: Cloud metadata service enumeration:')
-      lines.push('# AWS:')
-      lines.push(`curl -sk "${url}http://169.254.169.254/latest/meta-data/"`)
-      lines.push(`curl -sk "${url}http://169.254.169.254/latest/meta-data/iam/security-credentials/"`)
-      lines.push('# GCP:')
-      lines.push(`curl -sk "${url}http://metadata.google.internal/computeMetadata/v1/" -H "Metadata-Flavor: Google"`)
-      lines.push('# Azure:')
-      lines.push(`curl -sk "${url}http://169.254.169.254/metadata/instance?api-version=2021-02-01" -H "Metadata: true"`)
+      lines.push('# Step 1: Cloud metadata service enumeration (IMDSv1 & IMDSv2):')
+      lines.push('# AWS Metadata:')
+      lines.push(`curl -sk -m 3 "http://169.254.169.254/latest/meta-data/"`)
+      lines.push(`curl -sk -m 3 "http://169.254.169.254/latest/meta-data/iam/security-credentials/"`)
+      lines.push('# GCP Metadata:')
+      lines.push(`curl -sk -m 3 "http://metadata.google.internal/computeMetadata/v1/" -H "Metadata-Flavor: Google"`)
+      lines.push('# Azure Metadata:')
+      lines.push(`curl -sk -m 3 "http://169.254.169.254/metadata/instance?api-version=2021-02-01" -H "Metadata: true"`)
       lines.push('')
-      lines.push('# Step 2: Check for S3 bucket misconfiguration:')
-      lines.push(`curl -sk "${url}"`)
-      lines.push(`curl -sk "${url}" | head -50`)
+      lines.push('# Step 2: Target SSRF Metadata Relay Test:')
+      lines.push(`curl -sk "${url}${url.includes('?') ? '&' : '?'}url=http://169.254.169.254/latest/meta-data/"`)
       lines.push('')
-      lines.push('# Step 3: Test IAM role assumptions:')
-      lines.push('aws sts assume-role --role-arn "arn:aws:iam::ACCOUNT:role/ROLE_NAME" --role-session-name "pentest"')
+      lines.push('# Step 3: Check for Cloud headers & bucket exposure:')
+      lines.push(`curl -skI "${url}" | grep -i -E "x-amz-|x-goog-|cf-ray|server"`)
     }
     else if (category === 'Container Security') {
       lines.push('=== CONTAINER SECURITY TEST PROCEDURE ===')
       lines.push(`# Target: ${url}`)
       lines.push('')
       lines.push('# Step 1: Check for Docker socket exposure:')
-      lines.push(`curl -sk "${url}docker"`)
-      lines.push(`curl -sk "${url}var/run/docker.sock"`)
+      lines.push(`curl -sk "${joinUrl(url, 'docker')}"`)
+      lines.push(`curl -sk "${joinUrl(url, 'var/run/docker.sock')}"`)
       lines.push('')
-      lines.push('# Step 2: Test container escape via debug endpoints:')
+      lines.push('# Step 2: Kubernetes API server probe:')
+      lines.push(`curl -sk "${joinUrl(url, 'api/v1/namespaces')}"`)
+      lines.push(`curl -sk "${joinUrl(url, 'api/v1/secrets')}"`)
+      lines.push('')
+      lines.push('# Step 3: Check for container privilege indicators:')
       lines.push(`curl -sk "${url}" -H "X-Forwarded-For: 127.0.0.1"`)
-      lines.push('')
-      lines.push('# Step 3: Kubernetes API server probe:')
-      lines.push(`curl -sk "${url}api/v1/namespaces"`)
-      lines.push(`curl -sk "${url}api/v1/secrets"`)
-      lines.push('')
-      lines.push('# Step 4: Check for privileged container indicators:')
-      lines.push(`curl -sk "${url}" -H "Authorization: Bearer" | head -100`)
     }
     else if (category === 'Active Directory Security') {
       lines.push('=== ACTIVE DIRECTORY ATTACK PROCEDURE ===')
@@ -1172,7 +1175,7 @@ function renderCoverPage(doc, { reportTitle, scans, project, vulnerabilities, is
     .text(reportTitle.replace(/^(Code Audit|Scan) Report: /, ''), 0, 65, { width: doc.page.width, align: 'center' })
 
   doc.fontSize(11).font('Helvetica').fillColor('#38BDF8')
-    .text('FYP2 - Unified Pentest Platform', 0, 95, { width: doc.page.width, align: 'center' })
+    .text('SentinelAI — AI-Powered Autonomous Pentest Platform', 0, 95, { width: doc.page.width, align: 'center' })
 
   doc.y = 170
 
@@ -1215,10 +1218,10 @@ function renderCoverPage(doc, { reportTitle, scans, project, vulnerabilities, is
     ],
     [
       { label: 'Assessment Mode', val: isWhitebox ? 'WHITEBOX (Source Code Audit)' : (scans[0]?.mode ? scans[0].mode.toUpperCase() : 'N/A') },
-      { label: 'Report Prepared By', val: 'FYP2 Security Assessment Engine' },
+      { label: 'Report Prepared By', val: 'SentinelAI Pentest & Swarm AI Engine' },
     ],
     [
-      { label: 'Project / Client', val: project ? `${project.name} (${project.client || 'N/A'})` : 'FYP2 Pentest' },
+      { label: 'Project / Client', val: project ? `${project.name} (${project.client || 'N/A'})` : 'SentinelAI Platform' },
       { label: 'Vulnerabilities', val: `${vulnerabilities.length} Findings (${vulnerabilities.filter(v => v.severity === 'critical' || v.severity === 'high').length} High/Critical)` },
     ],
   ]
@@ -1274,12 +1277,12 @@ function renderExecutiveSummary(doc, { vulnerabilities, scans, isWhitebox }) {
   doc.fontSize(10).font('Helvetica').fillColor(BRAND.textDark)
   doc.text(
     isWhitebox
-      ? `This report presents the results of a static source code security audit conducted using the FYP2 Unified Pentest Platform. ` +
+      ? `This report presents the results of a static source code security audit conducted using the SentinelAI Autonomous Pentest Platform. ` +
         `A total of ${scans.length} whitebox scan${scans.length !== 1 ? 's' : ''} ${scans.length !== 1 ? 'were' : 'was'} performed against ${targets.length} unique codebase${targets.length !== 1 ? 's' : ''}, ` +
         `combining deterministic pattern matching with three specialist AI audit passes (injection, auth/secrets, and logic/config). ` +
         `Analysis yielded ${vulnerabilities.length} code finding${vulnerabilities.length !== 1 ? 's' : ''}. ` +
         `The overall code risk rating for this assessment is: ${riskRating(vulnerabilities)}.`
-      : `This report presents the results of an automated security assessment conducted using the FYP2 Unified Pentest Platform. ` +
+      : `This report presents the results of an automated security assessment conducted using the SentinelAI Autonomous Pentest Platform. ` +
         `A total of ${scans.length} scan${scans.length !== 1 ? 's' : ''} ${scans.length !== 1 ? 'were' : 'was'} performed against ${targets.length} unique target${targets.length !== 1 ? 's' : ''}, ` +
         `yielding ${vulnerabilities.length} finding${vulnerabilities.length !== 1 ? 's' : ''}. ` +
         `The overall risk rating for this assessment is: ${riskRating(vulnerabilities)}.`,
@@ -1317,7 +1320,7 @@ function renderMethodology(doc, { vulnerabilities, isWhitebox }) {
   doc.fontSize(10).font('Helvetica').fillColor(BRAND.textDark)
   if (isWhitebox) {
     doc.text(
-      'This assessment was performed using the FYP2 Unified Pentest Platform\'s whitebox static code analysis engine. ' +
+      'This assessment was performed using the SentinelAI Autonomous Pentest Platform\'s whitebox static code analysis engine. ' +
       'The analysis combines deterministic pattern-based scanning (regex rules for SQL injection, command injection, hardcoded secrets, ' +
       'weak cryptography, insecure deserialization, and path traversal) with three specialist AI audit passes targeting injection flaws, ' +
       'authentication/secrets, and business logic/configuration issues. Findings are deduplicated by fingerprint and severity-upgraded on merge. ' +
@@ -1326,7 +1329,7 @@ function renderMethodology(doc, { vulnerabilities, isWhitebox }) {
     )
   } else {
     doc.text(
-      'This assessment was performed using the FYP2 Unified Pentest Platform, an automated security testing platform that ' +
+      'This assessment was performed using the SentinelAI Autonomous Pentest Platform, an automated security testing platform that ' +
       'orchestrates multiple scanning modules covering network, web application, and configuration security. ' +
       'Findings are deduplicated by root cause and assigned an evidence-validation tier. AI review is advisory and is not treated as proof of exploitability. ' +
       'Methodology follows OWASP Testing Guide v4.2 and NIST SP 800-115.',
@@ -1341,21 +1344,25 @@ function renderMethodology(doc, { vulnerabilities, isWhitebox }) {
   const keys = usedModules(vulnerabilities)
   for (const [key, info] of Object.entries(MODULE_DESCRIPTIONS)) {
     if (!keys.has(key)) continue
-    ensureSpace(doc, 30)
+    const titleW = 210
+    const descW = w - titleW - 25
+    const descH = doc.fontSize(8.5).font('Helvetica').heightOfString(info.description, { width: descW })
+    const boxH = Math.max(28, descH + 12)
+    ensureSpace(doc, boxH + 6)
     const curY = doc.y
-    doc.rect(x, curY, w, 26).fillAndStroke('#F8FAFC', '#E2E8F0')
-    doc.fontSize(9.5).font('Helvetica-Bold').fillColor(BRAND.primary).text(`• ${info.name}`, x + 10, curY + 7)
-    doc.fontSize(8.5).font('Helvetica').fillColor(BRAND.textMuted).text(info.description.slice(0, 110), x + 160, curY + 7, { width: w - 170 })
-    doc.y = curY + 30
+    doc.rect(x, curY, w, boxH).fillAndStroke('#F8FAFC', '#E2E8F0')
+    doc.fontSize(9).font('Helvetica-Bold').fillColor(BRAND.primary).text(`• ${info.name}`, x + 10, curY + 7, { width: titleW - 10 })
+    doc.fontSize(8.5).font('Helvetica').fillColor(BRAND.textMuted).text(info.description, x + titleW + 10, curY + 7, { width: descW })
+    doc.y = curY + boxH + 4
   }
 
-  // AI Agent Personas section
+  // AI Agent Personas section (53 Specialist Personas)
   ensureSpace(doc, 40)
   doc.moveDown(1)
-  doc.fontSize(12).font('Helvetica-Bold').fillColor(BRAND.accent).text('AI Agent Personas (50 Specialist Agents)', x, doc.y)
+  doc.fontSize(12).font('Helvetica-Bold').fillColor(BRAND.accent).text('AI Agent Personas (53 Specialist Agents)', x, doc.y)
   doc.moveDown(0.5)
   doc.fontSize(9).font('Helvetica').fillColor(BRAND.textDark).text(
-    'The FYP2 platform deploys 50 specialist AI agent personas, each trained on a specific security domain. ' +
+    'The SentinelAI platform deploys 53 specialist AI agent personas, each trained on a specific security domain. ' +
     'Each agent provides expert-level analysis for findings within its domain. The agents available for this assessment are:',
     x, doc.y, { width: w },
   )
@@ -1412,6 +1419,9 @@ function renderMethodology(doc, { vulnerabilities, isWhitebox }) {
     ['Attack Planner', 'Multi-step attack chains, exploitation path optimization, lateral movement strategy'],
     ['Swarm Orchestrator', 'Multi-agent coordination, autonomous red team, parallel exploitation workflows'],
     ['Bug Bounty Specialist', 'Bounty methodology, scope prioritization, vulnerability report writing'],
+    ['CI/CD Red Teamer', 'Pipeline poisoning, GitHub Actions workflow abuse, secret leakage, artifact tampering'],
+    ['Whitebox Fuzzer', 'Source code instrumentation, AST branch analysis, coverage-guided fuzzing, invariant checking'],
+    ['Debugger Analyst', 'Dynamic tracing, memory inspection, breakpoint analysis, symbol resolution, crash triage'],
   ]
 
   doc.fontSize(8.5).font('Helvetica').fillColor(BRAND.textDark)
@@ -1685,10 +1695,20 @@ function renderDetailedFindings(doc, { vulnerabilities, isWhitebox }) {
         else if (ev && typeof ev === 'object') {
           if (ev.url) evText += `URL: ${ev.url}\n`
           if (ev.file) evText += `File: ${ev.file}${ev.line ? ` (Line ${ev.line})` : ''}\n`
-          const primaryEvidence = ev.raw || ev.code || ev.output || ev.snippet
+          const primaryEvidence = ev.raw || ev.code || ev.output || ev.snippet || ev.body || ev.server
           if (primaryEvidence) evText += String(primaryEvidence)
           else if (ev.missing) evText += `Missing: ${[].concat(ev.missing).join(', ')}`
-          else evText += JSON.stringify(ev, null, 2)
+          else if (ev.count && ev.subdomains) evText += `Discovered ${ev.count} subdomains for ${ev.rootDomain || 'target'}:\n${ev.subdomains.slice(0, 15).join('\n')}`
+          else {
+            const cleanEv = { ...ev }
+            delete cleanEv.validationTier
+            delete cleanEv.fingerprint
+            delete cleanEv.sources
+            delete cleanEv.aiEvidenceTier
+            if (Object.keys(cleanEv).length > 0) {
+              evText += Object.entries(cleanEv).map(([k, val]) => `${k}: ${typeof val === 'object' ? JSON.stringify(val) : val}`).join('\n')
+            }
+          }
         }
         evText = cleanPdfText(evText).trim()
 
@@ -1817,14 +1837,16 @@ function renderAppendix(doc, { scans, project, isWhitebox }) {
   doc.moveDown(0.5)
 
   for (const s of scans) {
-    ensureSpace(doc, 90)
+    ensureSpace(doc, 105)
     const curY = doc.y
-    doc.rect(x, curY, w, 85).fillAndStroke(BRAND.cardBg, BRAND.cardBorder)
+    doc.rect(x, curY, w, 100).fillAndStroke(BRAND.cardBg, BRAND.cardBorder)
 
     if (isWhitebox) {
       doc.fontSize(10).font('Helvetica-Bold').fillColor(BRAND.primary).text(`Code Audit: ${s.files || 'Unknown files'}`, x + 12, curY + 8)
+      doc.fontSize(8).font('Helvetica-Bold').fillColor(BRAND.textMuted).text('Scan ID: ', x + 12, curY + 26, { continued: true })
+      doc.fontSize(8.5).font('Helvetica').fillColor(BRAND.textDark).text(s.id || 'N/A')
+
       const details = [
-        ['Scan ID', s.id || 'N/A'],
         ['Mode', s.mode || 'N/A'],
         ['Status', s.status || 'N/A'],
         ['Language', s.language || 'N/A'],
@@ -1833,32 +1855,40 @@ function renderAppendix(doc, { scans, project, isWhitebox }) {
         ['Risk Score', `${Number(s.risk_score ?? 0).toFixed(1)} / 10`],
         ['Total Findings', String(s._findingCount ?? 0)],
       ]
+      const colWidth = (w - 24) / 3
       for (let i = 0; i < details.length; i++) {
         const [lbl, val] = details[i]
-        const posX = x + 12 + (i % 3) * 160
-        const posY = curY + 28 + Math.floor(i / 3) * 24
+        const col = i % 3
+        const row = Math.floor(i / 3)
+        const posX = x + 12 + col * colWidth
+        const posY = curY + 44 + row * 24
         doc.fontSize(8).font('Helvetica-Bold').fillColor(BRAND.textMuted).text(lbl, posX, posY)
-        doc.fontSize(9).font('Helvetica').fillColor(BRAND.textDark).text(String(val), posX, posY + 10)
+        doc.fontSize(8.5).font('Helvetica').fillColor(BRAND.textDark).text(String(val), posX, posY + 10)
       }
     } else {
       doc.fontSize(10).font('Helvetica-Bold').fillColor(BRAND.primary).text(`Target: ${s.target || 'Unknown'}`, x + 12, curY + 8)
+      doc.fontSize(8).font('Helvetica-Bold').fillColor(BRAND.textMuted).text('Scan ID: ', x + 12, curY + 26, { continued: true })
+      doc.fontSize(8.5).font('Helvetica').fillColor(BRAND.textDark).text(s.id || 'N/A')
+
       const details = [
-        ['Scan ID', s.id || 'N/A'],
         ['Mode', s.mode || 'N/A'],
         ['Status', s.status || 'N/A'],
         ['Duration', duration(s.started_at, s.finished_at)],
         ['Risk Score', `${Number(s.risk_score ?? 0).toFixed(1)} / 10`],
         ['Total Findings', String(s._findingCount ?? 0)],
       ]
+      const colWidth = (w - 24) / 3
       for (let i = 0; i < details.length; i++) {
         const [lbl, val] = details[i]
-        const posX = x + 12 + (i % 3) * 160
-        const posY = curY + 28 + Math.floor(i / 3) * 24
+        const col = i % 3
+        const row = Math.floor(i / 3)
+        const posX = x + 12 + col * colWidth
+        const posY = curY + 44 + row * 24
         doc.fontSize(8).font('Helvetica-Bold').fillColor(BRAND.textMuted).text(lbl, posX, posY)
-        doc.fontSize(9).font('Helvetica').fillColor(BRAND.textDark).text(String(val), posX, posY + 10)
+        doc.fontSize(8.5).font('Helvetica').fillColor(BRAND.textDark).text(String(val), posX, posY + 10)
       }
     }
-    doc.y = curY + 95
+    doc.y = curY + 110
   }
 
   ensureSpace(doc, 70)
@@ -1866,9 +1896,9 @@ function renderAppendix(doc, { scans, project, isWhitebox }) {
   doc.moveDown(0.5)
 
   const tools = [
-    ['Platform', 'FYP2 - Unified Pentest Platform v1.0.0'],
-    ['Engine', 'HexStrike AI v6 + Native Security Toolchain'],
-    ['AI Engine', '53 Specialist Agent Personas'],
+    ['Platform', 'SentinelAI Autonomous Pentest Platform v2.0'],
+    ['Engine', 'HexStrike AI Swarm + Native Kali Security Toolchain'],
+    ['AI Engine', '53 Autonomous Specialist Agent Personas'],
     ['PDF Engine', 'PDFKit Visual Engine'],
     ['Report Generated', fmtDateTime(new Date())],
   ]
@@ -1952,9 +1982,9 @@ async function renderPdf({ file, reportTitle, scans, project, vulnerabilities, i
       margins: { top: 50, bottom: 50, left: 40, right: 40 },
       info: {
         Title: reportTitle,
-        Author: 'FYP2 Unified Pentest Platform',
+        Author: 'SentinelAI Autonomous Pentest Platform',
         Subject: 'Security Assessment Report',
-        Creator: 'FYP2 v1.0.0',
+        Creator: 'SentinelAI v2.0',
       },
       bufferPages: true,
     })
@@ -2012,7 +2042,7 @@ async function renderPdf({ file, reportTitle, scans, project, vulnerabilities, i
 
       // Footer
       doc.fontSize(8).font('Helvetica-Bold').fillColor('#94A3B8')
-        .text('FYP2 - CONFIDENTIAL SECURITY REPORT', 40, doc.page.height - 35, { lineBreak: false })
+        .text('SENTINELAI — CONFIDENTIAL SECURITY REPORT', 40, doc.page.height - 35, { lineBreak: false })
       doc.fontSize(8).font('Helvetica').fillColor('#94A3B8')
         .text(`Page ${i + 1} of ${range.start + totalPages}`, doc.page.width - 120, doc.page.height - 35, { lineBreak: false })
       doc.restore()

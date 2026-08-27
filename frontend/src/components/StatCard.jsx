@@ -47,29 +47,48 @@ export default function StatCard({ icon: Icon, label, value, sub, tone = 'cyan',
 
   const boxClass = iconBoxes[tone] || 'icon-box-cyan'
   const animated = useCountUp(value)
+  const isLive = trend === 'Live' || (trend && trend.toLowerCase() === 'live')
 
   return (
-    <div className="card glass-in p-5 relative overflow-hidden group hover:border-cyan-400/40 hover-lift transition-all duration-300">
+    <div className="card glass-in p-5 relative overflow-hidden group hover:border-cyan-400/40 hover-lift transition-all duration-300 h-full min-h-[118px] flex flex-col justify-between">
       <div className="absolute top-0 right-0 w-24 h-24 bg-cyan-500/5 rounded-full blur-xl pointer-events-none group-hover:bg-cyan-500/10 transition-colors" />
-      <div className="flex items-center justify-between">
-        <div>
-          <p className="text-[11px] uppercase tracking-wider font-bold text-slate-400">{label}</p>
-          <div className="flex items-baseline gap-2 mt-1">
-            <p className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight count-up">{animated}</p>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <p className="text-[11px] uppercase tracking-wider font-bold text-slate-400 truncate">{label}</p>
+          <div className="flex items-center gap-2 mt-1.5">
+            <p className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight count-up leading-none">{animated}</p>
             {trend && (
-              <span className={`text-[11px] font-bold px-1.5 py-0.5 rounded-md ${trend.startsWith('+') ? 'bg-emerald-500/15 text-emerald-400' : 'bg-slate-800 text-slate-400'}`}>
-                {trend}
-              </span>
+              isLive ? (
+                <span className="text-[11px] font-extrabold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-400/50 shadow-[0_0_12px_rgba(16,185,129,0.35)] animate-pulse flex items-center gap-1.5">
+                  <span className="relative flex h-2 w-2">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                  </span>
+                  Live
+                </span>
+              ) : (
+                <span className={`text-[11px] font-bold px-1.5 py-0.5 rounded-md ${
+                  trend.startsWith('+')
+                    ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/20'
+                    : 'bg-slate-800/80 text-slate-400 border border-white/5'
+                }`}>
+                  {trend}
+                </span>
+              )
             )}
           </div>
-          {sub && <p className="mt-1 text-xs text-slate-400 font-medium">{sub}</p>}
         </div>
         {Icon && (
-          <div className={`icon-box ${boxClass} group-hover:scale-110 transition-transform duration-300`}>
-            <Icon size={22} />
+          <div className={`icon-box ${boxClass} group-hover:scale-110 transition-transform duration-300 shrink-0 !p-2.5`}>
+            <Icon size={20} />
           </div>
         )}
       </div>
+      {sub ? (
+        <p className="mt-2 text-xs text-slate-400 font-medium truncate">{sub}</p>
+      ) : (
+        <div className="h-4" />
+      )}
     </div>
   )
 }

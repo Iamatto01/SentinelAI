@@ -39,9 +39,17 @@ export default function Dashboard() {
         </div>
 
         <div className="flex items-center gap-3 z-10 shrink-0">
-          {data?.runningScans > 0 && (
-            <span className="chip bg-cyan-500/15 text-cyan-300 border border-cyan-400/40 animate-pulse px-3.5 py-1.5 text-xs">
-              <Activity size={14} className="mr-1.5" /> {data.runningScans} Scans Running
+          {data?.runningScans > 0 ? (
+            <span className="chip bg-emerald-500/20 text-emerald-300 border border-emerald-400/50 shadow-[0_0_12px_rgba(16,185,129,0.4)] animate-pulse px-3.5 py-1.5 text-xs font-extrabold flex items-center">
+              <span className="relative flex h-2 w-2 mr-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+              </span>
+              {data.runningScans} Scans Running
+            </span>
+          ) : (
+            <span className="chip bg-slate-900/60 text-slate-400 border border-white/10 px-3.5 py-1.5 text-xs font-semibold">
+              <Activity size={13} className="mr-1.5 text-slate-500" /> Engines Ready
             </span>
           )}
           <Link to="/app/findings" className="btn-primary text-xs py-2 px-4 shadow-glow flex items-center gap-1.5">
@@ -119,12 +127,46 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Stat Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="motion-fade-up motion-delay-1"><StatCard icon={FolderKanban} label="Total Scans Executed" value={data?.totals?.scans || 0} tone="cyan" trend="+12%" /></div>
-        <div className="motion-fade-up motion-delay-2"><StatCard icon={Bug} label="Discovered Findings" value={data?.totals?.findings || 0} tone="critical" sub={`${criticalCount} Critical Vulnerabilities`} /></div>
-        <div className="motion-fade-up motion-delay-3"><StatCard icon={Activity} label="Active Engine Scans" value={data?.runningScans || 0} tone="emerald" trend="Live" /></div>
-        <div className="motion-fade-up motion-delay-4"><StatCard icon={Cpu} label="AI Agents Online" value={data?.agentsCount || 53} tone="purple" sub="Active Personas" /></div>
+      {/* Stat Cards - Equal Dimensions & Live Green Pulse */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 items-stretch">
+        <div className="motion-fade-up motion-delay-1 h-full">
+          <StatCard
+            icon={FolderKanban}
+            label="Total Scans Executed"
+            value={data?.totals?.scans || 0}
+            tone="cyan"
+            trend="+12%"
+            sub={`${data?.totals?.projects || 0} Project Folders • All-Time`}
+          />
+        </div>
+        <div className="motion-fade-up motion-delay-2 h-full">
+          <StatCard
+            icon={Bug}
+            label="Discovered Findings"
+            value={data?.totals?.findings || 0}
+            tone="critical"
+            sub={`${criticalCount} Critical Vulnerabilities`}
+          />
+        </div>
+        <div className="motion-fade-up motion-delay-3 h-full">
+          <StatCard
+            icon={Activity}
+            label="Active Engine Scans"
+            value={data?.runningScans || 0}
+            tone="emerald"
+            trend={data?.runningScans > 0 ? "Live" : "Idle"}
+            sub={data?.runningScans > 0 ? `${data.runningScans} Live Assessment(s) Active` : "All Toolchains Standby"}
+          />
+        </div>
+        <div className="motion-fade-up motion-delay-4 h-full">
+          <StatCard
+            icon={Cpu}
+            label="AI Agents Online"
+            value={data?.agentsCount || 53}
+            tone="purple"
+            sub="53 Active Specialist Personas"
+          />
+        </div>
       </div>
 
       {/* Charts & Security Health */}
