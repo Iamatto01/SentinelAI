@@ -28,7 +28,7 @@ import * as msf from './exploits/msf-client.js'
 import { matchExploits, classifyRisk } from './exploits/registry.js'
 import { sendScanRequestNotification, sendAnonymousFeedbackNotification } from './email.js'
 import { GitHubClient, parseGitHubWebhook } from './integrations/github.js'
-import { PLANS, getUserSubscription, consumeScanQuota, activateSubscription, getPaymentHistory } from './billing.js'
+import { PLANS, getUserSubscription, consumeScanQuota, activateSubscription, getPaymentHistory, COMMUNITY_FREE_ACCESS_MODE } from './billing.js'
 import { channelGateway } from './channels/index.js'
 
 // CORS: only whitelisted origins (config.corsOrigins from CLIENT_ORIGIN).
@@ -529,25 +529,30 @@ app.post('/api/admin/clients/:id/subscription', requireAuth, requireRole('admin'
 
 // ── Projects ─────────────────────────────────────────────────────────────────
 app.get('/api/projects', requireAuth, (req, res) => {
+  const allProjs = db.all(`SELECT * FROM projects ORDER BY created_at DESC`)
   if (req.user?.role === 'client') {
+    if (COMMUNITY_FREE_ACCESS_MODE) {
+      return res.json(allProjs)
+    }
     const userEmail = (req.user.email || '').toLowerCase()
     const username = (req.user.username || '').toLowerCase()
     const userProjId = req.user.projectId
-    const allProjs = db.all(`SELECT * FROM projects ORDER BY created_at DESC`)
     const filtered = allProjs.filter((p) => {
       if (userProjId && p.id === userProjId) return true
+      if (p.user_id && p.user_id === req.user.id) return true
+      if (p.client_id && p.client_id === req.user.id) return true
       const clientName = (p.client || '').toLowerCase()
       const projName = (p.name || '').toLowerCase()
       return (
-        (userEmail && clientName.includes(userEmail)) ||
-        (username && clientName.includes(username)) ||
-        (userEmail && projName.includes(userEmail)) ||
-        (username && projName.includes(username))
+        (userEmail && (userEmail.includes(clientName) || clientName.includes(userEmail))) ||
+        (username && (username.includes(clientName) || clientName.includes(username))) ||
+        (userEmail && (userEmail.includes(projName) || projName.includes(userEmail))) ||
+        (username && (username.includes(projName) || projName.includes(username)))
       )
     })
     return res.json(filtered)
   }
-  return res.json(db.all(`SELECT * FROM projects ORDER BY created_at DESC`))
+  return res.json(allProjs)
 })
 
 app.post('/api/projects', requireAuth, (req, res) => {
@@ -556,8 +561,8 @@ app.post('/api/projects', requireAuth, (req, res) => {
   const assignedClient = client || req.user?.email || req.user?.username || 'client'
   const id = `proj_${randomUUID()}`
   const now = new Date().toISOString()
-  db.run(`INSERT INTO projects (id, name, client, description, scope, cover, risk_level, status, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)`,
-    id, name.trim(), assignedClient, description.trim(), scope.trim(), cover, riskLevel, 'active', now, now)
+  db.run(`INSERT INTO projects (id, name, client, description, scope, cover, risk_level, status, created_at, updated_at, user_id) VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+    id, name.trim(), assignedClient, description.trim(), scope.trim(), cover, riskLevel, 'active', now, now, req.user?.id)
   audit(req.user.username, 'project:create', name)
   res.status(201).json(db.get(`SELECT * FROM projects WHERE id = ?`, id))
 })
@@ -647,14 +652,26 @@ app.get('/api/scans', requireAuth, (req, res) => {
       const userId = req.user.id
       const userProjId = req.user.projectId
 
+      // In Community Beta / Preview, return all scans so clients can review sample reports
+      if (COMMUNITY_FREE_ACCESS_MODE) {
+        const allScans = db.all(`
+          SELECT s.*, (SELECT COUNT(*) FROM findings f WHERE f.scan_id = s.id) AS findings_count
+          FROM scans s ORDER BY s.created_at DESC LIMIT 200
+        `)
+        return res.json(allScans || [])
+      }
+
       const allProjs = db.all(`SELECT * FROM projects`)
       const matchProjs = allProjs.filter((p) => {
         if (userProjId && p.id === userProjId) return true
         if (p.user_id && p.user_id === userId) return true
+        if (p.client_id && p.client_id === userId) return true
         const c = (p.client || '').toLowerCase()
         const n = (p.name || '').toLowerCase()
-        return (userEmail && c.includes(userEmail)) || (username && c.includes(username)) ||
-               (userEmail && n.includes(userEmail)) || (username && n.includes(username))
+        return (userEmail && (userEmail.includes(c) || c.includes(userEmail))) ||
+               (username && (username.includes(c) || c.includes(username))) ||
+               (userEmail && (userEmail.includes(n) || n.includes(userEmail))) ||
+               (username && (username.includes(n) || n.includes(username)))
       })
       const projIds = matchProjs.map(p => p.id)
 
@@ -1108,7 +1125,7 @@ app.get('/api/findings', requireAuth, (req, res) => {
   `
   const params = []
   // Client-portal users see findings from their own projects or direct scans
-  if (req.user?.role === 'client') {
+  if (req.user?.role === 'client' && !COMMUNITY_FREE_ACCESS_MODE) {
     const userEmail = (req.user.email || '').toLowerCase().trim()
     const username = (req.user.username || '').toLowerCase().trim()
     const userId = req.user.id
@@ -2057,7 +2074,7 @@ app.get('/api/dashboard', requireAuth, (req, res) => {
   let scans = []
   let projsCount = 0
 
-  if (req.user?.role === 'client') {
+  if (req.user?.role === 'client' && !COMMUNITY_FREE_ACCESS_MODE) {
     const userEmail = (req.user.email || '').toLowerCase()
     const username = (req.user.username || '').toLowerCase()
     const userId = req.user.id

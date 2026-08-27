@@ -64,6 +64,8 @@ export const PLANS = {
   },
 }
 
+export const COMMUNITY_FREE_ACCESS_MODE = process.env.COMMUNITY_FREE_ACCESS_MODE !== 'false'
+
 /**
  * Get or initialize user subscription (defaults to Free Trial with 3 scans)
  */
