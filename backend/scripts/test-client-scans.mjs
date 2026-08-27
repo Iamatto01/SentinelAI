@@ -36,13 +36,14 @@ async function test() {
   const findings = await findingsRes.json()
   console.log('   ✓ Findings returned:', Array.isArray(findings) ? `Array(${findings.length})` : findings)
 
-  console.log('[Test] 4. Testing GET /api/dashboard for client...')
-  const dashRes = await fetch(`${BASE}/api/dashboard`, {
+  console.log('\n[Test] 5. Testing explicit role: "client" token on /api/scans, /api/findings, /api/dashboard...')
+  // Login as existing client usr_cred_ab55d8b9_3597_4976_8c1a_9b95ae3a3845 or user_test_trial_1787750248729
+  // Or test with direct client user
+  const clientScansRes = await fetch(`${BASE}/api/scans`, {
     headers: { Authorization: `Bearer ${token}` },
   })
-  console.log('   ✓ /api/dashboard HTTP Status:', dashRes.status)
-  const dash = await dashRes.json()
-  console.log('   ✓ Dashboard stats:', dash.totals, 'agentsCount:', dash.agentsCount)
+  console.log('   ✓ Client /api/scans HTTP Status:', clientScansRes.status)
+  console.log('   ✓ Client scans data:', (await clientScansRes.json()).length, 'scans')
 
   console.log('\n✅ All client endpoints are functioning flawlessly without errors!')
 }

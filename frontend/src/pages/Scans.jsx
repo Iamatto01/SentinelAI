@@ -111,20 +111,21 @@ export default function Scans() {
   function fetchScansOnly() {
     api.scans()
       .then((res) => {
+        setErr('')
         if (Array.isArray(res)) {
           setScans(res)
         } else if (res && Array.isArray(res.scans)) {
           setScans(res.scans)
         } else if (res && res.error) {
           setErr(res.error)
-          setScans([])
+          setScans((prev) => prev || [])
         } else {
-          setScans([])
+          setScans((prev) => prev || [])
         }
       })
       .catch((e) => {
         setErr(e.message || 'Failed to load scans')
-        setScans([])
+        setScans((prev) => prev || [])
       })
   }
 
@@ -276,8 +277,7 @@ export default function Scans() {
     return groups
   }, [filteredScans, projects])
 
-  if (err) return <div className="card p-6 text-rose-400 border border-rose-500/30 bg-rose-500/10">{err}</div>
-  if (!scans) return <ScanListSkeleton />
+  if (scans === null && !err) return <ScanListSkeleton />
 
   // Render a scans table component
   const renderScansTable = (scanList, isSubTable = false) => {
@@ -431,6 +431,22 @@ export default function Scans() {
           </button>
         </div>
       </div>
+
+      {err && (
+        <div className="card p-4 text-rose-300 border border-rose-500/40 bg-rose-500/10 flex items-center justify-between gap-3 shadow-lg animate-in fade-in">
+          <div className="flex items-center gap-2.5 text-xs font-semibold">
+            <AlertCircle size={18} className="text-rose-400 shrink-0" />
+            <span>{err}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => { setErr(''); fetchData() }}
+            className="btn-secondary text-xs py-1.5 px-3 flex items-center gap-1.5 border-rose-500/30 text-rose-300 hover:bg-rose-500/20 font-bold cursor-pointer"
+          >
+            <RefreshCw size={13} /> Retry
+          </button>
+        </div>
+      )}
 
       {/* Controls Bar: Search & View Switcher */}
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
