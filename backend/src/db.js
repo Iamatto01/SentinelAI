@@ -302,6 +302,49 @@ function migrate(d) {
     created_at TEXT NOT NULL,
     FOREIGN KEY (campaign_id) REFERENCES exploit_campaigns(id) ON DELETE CASCADE
   );
+
+  CREATE TABLE IF NOT EXISTS subscriptions (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL UNIQUE,
+    plan_id TEXT NOT NULL DEFAULT 'trial',
+    plan_name TEXT NOT NULL DEFAULT 'Free Trial',
+    status TEXT NOT NULL DEFAULT 'active',
+    scan_quota_total INTEGER NOT NULL DEFAULT 3,
+    scan_quota_used INTEGER NOT NULL DEFAULT 0,
+    current_period_end TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+  );
+
+  CREATE TABLE IF NOT EXISTS transactions (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    plan_id TEXT NOT NULL,
+    plan_name TEXT NOT NULL,
+    amount REAL NOT NULL,
+    currency TEXT NOT NULL DEFAULT 'USD',
+    interval TEXT NOT NULL DEFAULT 'monthly',
+    provider TEXT NOT NULL DEFAULT 'stripe',
+    status TEXT NOT NULL DEFAULT 'completed',
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+  );
+
+  CREATE TABLE IF NOT EXISTS consultation_requests (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    service_type TEXT NOT NULL,
+    consultant_name TEXT NOT NULL DEFAULT 'Any Specialist',
+    scan_id TEXT,
+    preferred_date TEXT,
+    preferred_time TEXT,
+    channel TEXT NOT NULL DEFAULT 'Google Meet',
+    notes TEXT,
+    status TEXT NOT NULL DEFAULT 'pending',
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+  );
   `)
 
   // Migration: add layman_impact column for existing databases

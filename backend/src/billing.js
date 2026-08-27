@@ -68,16 +68,24 @@ export const PLANS = {
  * Get or initialize user subscription (defaults to Free Trial with 3 scans)
  */
 export function getUserSubscription(userId) {
+  if (!userId) return null
   let sub = db.get(`SELECT * FROM subscriptions WHERE user_id = ?`, userId)
   if (!sub) {
+    const userExists = db.get(`SELECT id FROM users WHERE id = ?`, userId)
+    if (!userExists) return null
     const id = `sub_${randomUUID().slice(0, 12)}`
     const now = new Date().toISOString()
-    db.run(
-      `INSERT INTO subscriptions (id, user_id, plan_id, plan_name, status, scan_quota_total, scan_quota_used, current_period_end, created_at, updated_at)
-       VALUES (?, ?, 'trial', 'Free Trial', 'active', 3, 0, NULL, ?, ?)`,
-      id, userId, now, now
-    )
-    sub = db.get(`SELECT * FROM subscriptions WHERE user_id = ?`, userId)
+    try {
+      db.run(
+        `INSERT INTO subscriptions (id, user_id, plan_id, plan_name, status, scan_quota_total, scan_quota_used, current_period_end, created_at, updated_at)
+         VALUES (?, ?, 'trial', 'Free Trial', 'active', 3, 0, NULL, ?, ?)`,
+        id, userId, now, now
+      )
+      sub = db.get(`SELECT * FROM subscriptions WHERE user_id = ?`, userId)
+    } catch (e) {
+      console.warn('[billing] subscription init warning:', e.message)
+      return null
+    }
   } else if (sub.plan_id === 'none' && sub.status === 'inactive') {
     // Upgrade existing inactive empty accounts to Free Trial with 3 credits
     db.run(
@@ -86,6 +94,8 @@ export function getUserSubscription(userId) {
     )
     sub = db.get(`SELECT * FROM subscriptions WHERE user_id = ?`, userId)
   }
+
+  if (!sub) return null
 
   // Check period expiry (only for paid plans with set expiration)
   let isExpired = false
