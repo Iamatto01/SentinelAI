@@ -353,9 +353,15 @@ app.post('/api/auth/register', loginLimiter, (req, res) => {
 })
 
 app.get('/api/users/me', requireAuth, (req, res) => {
-  const u = getUser(req.user.username)
+  const u = getUser(req.user.username) || db.get(`SELECT * FROM users WHERE id = ?`, req.user.id)
   if (!u) return res.json({ id: req.user.sub, username: req.user.username, role: req.user.role, email: req.user.email || null, lastLogin: null })
   res.json({ id: u.id, username: u.username, role: u.role, email: u.email, lastLogin: u.last_login })
+})
+
+app.get('/api/auth/me', requireAuth, (req, res) => {
+  const u = getUser(req.user.username) || db.get(`SELECT * FROM users WHERE id = ?`, req.user.id)
+  if (!u) return res.json({ ok: true, user: req.user })
+  res.json({ ok: true, user: { id: u.id, username: u.username, role: u.role, email: u.email, lastLogin: u.last_login } })
 })
 
 app.put('/api/users/me', requireAuth, (req, res) => {
@@ -2052,7 +2058,7 @@ app.get('/api/billing/subscription', requireAuth, (req, res) => {
 })
 
 // Create checkout / Upgrade subscription plan
-app.post('/api/billing/checkout', requireAuth, (req, res) => {
+const handleCheckoutUpgrade = (req, res) => {
   const { planId, billingInterval = 'monthly', provider = 'stripe' } = req.body || {}
   if (!planId || !PLANS[planId]) return res.status(400).json({ error: 'Valid planId is required' })
 
@@ -2071,11 +2077,14 @@ app.post('/api/billing/checkout', requireAuth, (req, res) => {
 
   audit(req.user.username, 'billing:upgrade', `Subscribed to ${plan.name} ($${amount})`)
   res.json({
+    ok: true,
     success: true,
     message: `Successfully upgraded to ${plan.name}`,
     subscription: updatedSub,
   })
-})
+}
+app.post('/api/billing/checkout', requireAuth, handleCheckoutUpgrade)
+app.post('/api/billing/upgrade', requireAuth, handleCheckoutUpgrade)
 
 // Payment transaction history
 app.get('/api/billing/history', requireAuth, (req, res) => {

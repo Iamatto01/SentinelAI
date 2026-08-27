@@ -126,6 +126,8 @@ export function getUserSubscription(userId) {
   }
 }
 
+
+
 /**
  * Verify subscription & quota before running scan
  */
