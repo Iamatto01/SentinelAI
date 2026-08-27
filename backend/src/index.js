@@ -108,16 +108,19 @@ try {
   }
 } catch (e) { console.warn('[bootstrap] Interrupted scan recovery notice:', e.message) }
 
-// seed admin
-let adminUser = getUser('muhammadsaifudinmj@gmail.com') || getUser('admin')
+// seed admin (admin@sentinelai.com / kali)
+const adminEmail = 'admin@sentinelai.com'
+const adminPass = config.defaultAdminPassword || 'kali'
+let adminUser = db.get(`SELECT * FROM users WHERE email = ? OR username = 'admin' OR role = 'admin'`, adminEmail)
 if (!adminUser) {
+  const adminId = 'usr_admin_master'
   db.run(`INSERT INTO users (id, username, email, password_hash, role, created_at) VALUES (?,?,?,?,?,?)`,
-    `usr_${randomUUID()}`, 'admin', 'muhammadsaifudinmj@gmail.com', bcrypt.hashSync(config.defaultAdminPassword, 10), 'admin', new Date().toISOString())
-  console.log('[bootstrap] default admin user created')
-} else if (!adminUser.email || adminUser.email !== 'muhammadsaifudinmj@gmail.com') {
-  // Only backfill the email on legacy accounts — NEVER overwrite the password:
-  // resetting it on restart would silently revert every password change.
-  db.run(`UPDATE users SET email = ? WHERE id = ?`, 'muhammadsaifudinmj@gmail.com', adminUser.id)
+    adminId, 'admin', adminEmail, bcrypt.hashSync(adminPass, 10), 'admin', new Date().toISOString())
+  console.log(`[bootstrap] default admin user created (${adminEmail})`)
+} else {
+  // Ensure email, role, and password match master configuration
+  db.run(`UPDATE users SET email = ?, username = 'admin', role = 'admin', password_hash = ? WHERE id = ?`,
+    adminEmail, bcrypt.hashSync(adminPass, 10), adminUser.id)
 }
 // build payload index if empty
 try {

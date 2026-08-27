@@ -186,14 +186,14 @@ export default function Login() {
 
           <div className="space-y-1">
             <label className="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
-              <User size={13} className="text-cyan-400" /> Username
+              <User size={13} className="text-cyan-400" /> Username or Email
             </label>
             <input
               name="sentinel_auth_user"
               className="input py-2.5 text-sm text-slate-100 placeholder-slate-500 focus:border-cyan-400 transition-all"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
-              placeholder="Username"
+              placeholder="admin@sentinelai.com"
               autoComplete="new-password"
               required
             />
