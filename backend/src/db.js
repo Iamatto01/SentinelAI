@@ -344,6 +344,29 @@ function migrate(d) {
     created_at TEXT NOT NULL,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
   );
+
+  CREATE TABLE IF NOT EXISTS github_integrations (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL UNIQUE,
+    github_username TEXT,
+    access_token TEXT,
+    avatar_url TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+  );
+
+  CREATE TABLE IF NOT EXISTS github_repos (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    repo_name TEXT NOT NULL,
+    repo_full_name TEXT NOT NULL,
+    default_branch TEXT DEFAULT 'main',
+    webhook_id TEXT,
+    webhook_active INTEGER DEFAULT 0,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+  );
   `)
 
   // Migration: add layman_impact column for existing databases
@@ -367,5 +390,8 @@ function migrate(d) {
 export function run(sql, ...args) { return getDb().prepare(sql).run(...args) }
 export function get(sql, ...args) { return getDb().prepare(sql).get(...args) }
 export function all(sql, ...args) { return getDb().prepare(sql).all(...args) }
+export function transaction(fn) { return getDb().transaction(fn) }
+export function exec(sql) { return getDb().exec(sql) }
+export function prepare(sql) { return getDb().prepare(sql) }
 
-export default { getDb, run, get, all }
+export default { getDb, run, get, all, transaction, exec, prepare, backupDatabase }

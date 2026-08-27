@@ -81,10 +81,14 @@ export default function Projects() {
   }
 
   async function remove(id) {
-    if (!window.confirm('Are you sure you want to delete this project?')) return
-    await api.deleteProject(id)
-    if (selected?.id === id) setSelected(null)
-    load()
+    if (!window.confirm('Are you sure you want to delete this folder/project? Associated scans will be unlinked and preserved.')) return
+    try {
+      await api.deleteProject(id)
+      if (selected?.id === id) setSelected(null)
+      load()
+    } catch (err) {
+      alert(`Delete failed: ${err.message}`)
+    }
   }
 
   function getProjectCover(project, idx) {

@@ -232,6 +232,18 @@ export default function Scans() {
     setScanModalOpen(true)
   }
 
+  async function handleDeleteFolder(folderId, folderName, e) {
+    if (e) e.stopPropagation()
+    if (!window.confirm(`Are you sure you want to delete folder "${folderName}"? Associated scans will be kept safe as Standalone Scans.`)) return
+    try {
+      await api.deleteProject(folderId)
+      setProjects((prev) => (prev || []).filter((p) => p.id !== folderId))
+      fetchScansOnly()
+    } catch (err2) {
+      alert(`Delete folder failed: ${err2.message}`)
+    }
+  }
+
   const filteredScans = useMemo(() => {
     if (!scans) return null
     if (!searchQuery.trim()) return scans
@@ -591,6 +603,16 @@ export default function Scans() {
                     >
                       <Plus size={12} /> Launch Scan
                     </button>
+
+                    {!isClient && group.id !== '_standalone' && (
+                      <button
+                        onClick={(e) => handleDeleteFolder(group.id, group.name, e)}
+                        className="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 transition-colors"
+                        title={`Delete folder "${group.name}"`}
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    )}
                   </div>
                 </div>
 

@@ -153,21 +153,27 @@ const requireStaff = (req, res, next) => {
 /** Resolve the project IDs a client-portal user may see; null = unrestricted (staff). */
 function visibleProjectIds(user) {
   if (user?.role !== 'client') return null
-  if (user.projectId) return [user.projectId]
   const userEmail = (user.email || '').toLowerCase().trim()
   const username = (user.username || '').toLowerCase().trim()
-  // STRICT matching only: exact email/username equality against the project's
-  // client field, or direct ownership. Substring matching was spoofable — a user
-  // could set their email to any substring of another project's client string.
+  
+  // 1. Check client_credentials table
+  const credRows = db.all(
+    `SELECT project_id FROM client_credentials WHERE LOWER(email) = ? OR LOWER(email) = ?`,
+    userEmail, username
+  )
+  const projIds = new Set(credRows.map(r => r.project_id).filter(Boolean))
+  if (user.projectId) projIds.add(user.projectId)
+
+  // 2. Check direct project ownership or exact client matches
   const allProjs = db.all(`SELECT id, client, name, user_id FROM projects`)
-  const ids = allProjs
-    .filter((p) => {
-      if (p.user_id && p.user_id === user.id) return true
-      const c = (p.client || '').toLowerCase().trim()
-      return (userEmail && c === userEmail) || (username && c === username)
-    })
-    .map((p) => p.id)
-  return ids.length ? ids : []
+  for (const p of allProjs) {
+    if (p.user_id && p.user_id === user.id) { projIds.add(p.id); continue }
+    const c = (p.client || '').toLowerCase().trim()
+    if (c && userEmail && (userEmail === c || userEmail.endsWith(`@${c}.com`) || userEmail.includes(c))) {
+      projIds.add(p.id)
+    }
+  }
+  return Array.from(projIds)
 }
 
 /** Guard a scan-scoped request: 404 unless the scan belongs to the client or their project. */
@@ -403,76 +409,108 @@ app.get('/api/admin/overview', requireAuth, requireRole('admin'), (req, res) => 
 
 // GET /api/admin/clients — list all users with their subscription info
 app.get('/api/admin/clients', requireAuth, requireRole('admin'), (req, res) => {
-  const users = db.all(`
-    SELECT u.id, u.username, u.email, u.role, u.created_at, u.last_login,
-           s.plan_id, s.plan_name, s.status as sub_status,
-           s.scan_quota_total, s.scan_quota_used, s.current_period_end,
-           (SELECT COUNT(*) FROM scans WHERE user_id = u.id) as scans_run,
-           (SELECT github_username FROM github_integrations WHERE user_id = u.id LIMIT 1) as github_username
-    FROM users u
-    LEFT JOIN subscriptions s ON s.user_id = u.id
-    WHERE u.role != 'admin'
-    ORDER BY u.created_at DESC
-  `)
+  try {
+    const users = db.all(`
+      SELECT u.id, u.username, u.email, u.role, u.created_at, u.last_login,
+             s.plan_id, s.plan_name, s.status as sub_status,
+             s.scan_quota_total, s.scan_quota_used, s.current_period_end,
+             (SELECT COUNT(*) FROM scans WHERE user_id = u.id) as scans_run
+      FROM users u
+      LEFT JOIN subscriptions s ON s.user_id = u.id
+      WHERE u.role != 'admin'
+      ORDER BY u.created_at DESC
+    `)
 
-  const clients = users.map(u => {
-    const quotaTotal = u.scan_quota_total || 0
-    const quotaUsed = u.scan_quota_used || 0
-    const expiresAt = u.current_period_end || null
-    const isUnlimited = quotaTotal >= 9000
+    const clients = users.map(u => {
+      const quotaTotal = u.scan_quota_total || 0
+      const quotaUsed = u.scan_quota_used || 0
+      const expiresAt = u.current_period_end || null
+      const isUnlimited = quotaTotal >= 9000
 
-    // Determine effective status (expired if past period end)
-    let effectiveStatus = u.sub_status || 'inactive'
-    if (effectiveStatus === 'active' && expiresAt && new Date(expiresAt) < new Date()) {
-      effectiveStatus = 'expired'
-    }
+      // Determine effective status (expired if past period end)
+      let effectiveStatus = u.sub_status || 'inactive'
+      if (effectiveStatus === 'active' && expiresAt && new Date(expiresAt) < new Date()) {
+        effectiveStatus = 'expired'
+      }
 
-    return {
-      id: u.id,
-      username: u.username,
-      email: u.email,
-      role: u.role,
-      created_at: u.created_at,
-      last_login: u.last_login,
-      github_username: u.github_username || null,
-      plan_id: u.plan_id || 'none',
-      plan_name: u.plan_name || 'No Plan',
-      sub_status: u.sub_status || 'inactive',
-      effective_status: effectiveStatus,
-      scan_quota_total: quotaTotal,
-      scan_quota_used: quotaUsed,
-      remaining_quota: isUnlimited ? '∞' : Math.max(0, quotaTotal - quotaUsed),
-      current_period_end: expiresAt,
-      total_scans: u.scans_run || 0,
-    }
-  })
+      // Safe check for github username
+      let ghUsername = null
+      try {
+        const gh = db.get(`SELECT github_username FROM github_integrations WHERE user_id = ? LIMIT 1`, u.id)
+        if (gh) ghUsername = gh.github_username
+      } catch {}
 
-  // Summary counts
-  const totalClients = clients.length
-  const activeSubscriptions = clients.filter(c => c.effective_status === 'active').length
-  const expiredInactive = clients.filter(c => c.effective_status !== 'active').length
-  const totalScansExecuted = clients.reduce((sum, c) => sum + (c.total_scans || 0), 0)
+      return {
+        id: u.id,
+        username: u.username,
+        email: u.email,
+        role: u.role,
+        created_at: u.created_at,
+        last_login: u.last_login,
+        github_username: ghUsername,
+        plan_id: u.plan_id || 'trial',
+        plan_name: u.plan_name || 'Free Trial',
+        sub_status: u.sub_status || 'active',
+        effective_status: effectiveStatus,
+        scan_quota_total: quotaTotal || 3,
+        scan_quota_used: quotaUsed || 0,
+        remaining_quota: isUnlimited ? '∞' : Math.max(0, (quotaTotal || 3) - (quotaUsed || 0)),
+        current_period_end: expiresAt,
+        total_scans: u.scans_run || 0,
+      }
+    })
 
-  res.json({ clients, totalClients, activeSubscriptions, expiredInactive, totalScansExecuted })
+    // Summary counts
+    const totalClients = clients.length
+    const activeSubscriptions = clients.filter(c => c.effective_status === 'active').length
+    const expiredInactive = clients.filter(c => c.effective_status !== 'active').length
+    const totalScansExecuted = clients.reduce((sum, c) => sum + (c.total_scans || 0), 0)
+
+    res.json({ clients, totalClients, activeSubscriptions, expiredInactive, totalScansExecuted })
+  } catch (err) {
+    console.error('Failed to load admin clients:', err)
+    res.status(500).json({ error: 'Failed to load clients: ' + err.message })
+  }
 })
 
 // GET /api/admin/clients/:id/details — full workspace details for one user
 app.get('/api/admin/clients/:id/details', requireAuth, requireRole('admin'), (req, res) => {
-  const u = db.get(`SELECT id, username, email, role, created_at, last_login FROM users WHERE id = ?`, req.params.id)
-  if (!u) return res.status(404).json({ error: 'User not found' })
+  try {
+    const u = db.get(`SELECT id, username, email, role, created_at, last_login FROM users WHERE id = ?`, req.params.id)
+    if (!u) return res.status(404).json({ error: 'User not found' })
 
-  const sub = db.get(`SELECT * FROM subscriptions WHERE user_id = ?`, u.id)
-  const projects = db.all(`SELECT * FROM projects WHERE user_id = ? OR client_id = ? ORDER BY created_at DESC`, u.id, u.id)
-  const scans = db.all(`SELECT id, target, status, created_at, risk_score FROM scans WHERE user_id = ? ORDER BY created_at DESC LIMIT 20`, u.id)
-  const github = db.get(`SELECT github_username, avatar_url, created_at FROM github_integrations WHERE user_id = ?`, u.id)
+    const sub = db.get(`SELECT * FROM subscriptions WHERE user_id = ?`, u.id)
+    
+    // Find projects from direct ownership, client_credentials, or client domain
+    const credRows = db.all(`SELECT project_id FROM client_credentials WHERE LOWER(email) = ? OR LOWER(email) = ?`, (u.email || '').toLowerCase(), (u.username || '').toLowerCase())
+    const credProjIds = credRows.map(r => r.project_id).filter(Boolean)
+    
+    let projects = []
+    if (credProjIds.length > 0) {
+      const placeholders = credProjIds.map(() => '?').join(',')
+      projects = db.all(`SELECT * FROM projects WHERE id IN (${placeholders}) OR user_id = ? OR client_id = ? ORDER BY created_at DESC`, ...credProjIds, u.id, u.id)
+    } else {
+      projects = db.all(`SELECT * FROM projects WHERE user_id = ? OR client_id = ? ORDER BY created_at DESC`, u.id, u.id)
+    }
 
-  res.json({
-    user: { id: u.id, username: u.username, email: u.email, role: u.role, createdAt: u.created_at, lastLogin: u.last_login },
-    subscription: sub || null,
-    projects,
-    recentScans: scans,
-    github: github || null,
-  })
+    const scans = db.all(`SELECT id, target, status, created_at, risk_score FROM scans WHERE user_id = ? ORDER BY created_at DESC LIMIT 20`, u.id)
+    
+    let github = null
+    try {
+      github = db.get(`SELECT github_username, avatar_url, created_at FROM github_integrations WHERE user_id = ?`, u.id)
+    } catch {}
+
+    res.json({
+      user: u,
+      subscription: sub,
+      projects,
+      scans,
+      github,
+    })
+  } catch (err) {
+    console.error('Failed to load client details:', err)
+    res.status(500).json({ error: 'Failed to load client details: ' + err.message })
+  }
 })
 
 // POST /api/admin/clients/:id/projects — create a project for a client
@@ -529,30 +567,16 @@ app.post('/api/admin/clients/:id/subscription', requireAuth, requireRole('admin'
 
 // ── Projects ─────────────────────────────────────────────────────────────────
 app.get('/api/projects', requireAuth, (req, res) => {
-  const allProjs = db.all(`SELECT * FROM projects ORDER BY created_at DESC`)
   if (req.user?.role === 'client') {
-    if (COMMUNITY_FREE_ACCESS_MODE) {
-      return res.json(allProjs)
+    const allowed = visibleProjectIds(req.user)
+    if (!allowed || allowed.length === 0) {
+      return res.json([])
     }
-    const userEmail = (req.user.email || '').toLowerCase()
-    const username = (req.user.username || '').toLowerCase()
-    const userProjId = req.user.projectId
-    const filtered = allProjs.filter((p) => {
-      if (userProjId && p.id === userProjId) return true
-      if (p.user_id && p.user_id === req.user.id) return true
-      if (p.client_id && p.client_id === req.user.id) return true
-      const clientName = (p.client || '').toLowerCase()
-      const projName = (p.name || '').toLowerCase()
-      return (
-        (userEmail && (userEmail.includes(clientName) || clientName.includes(userEmail))) ||
-        (username && (username.includes(clientName) || clientName.includes(username))) ||
-        (userEmail && (userEmail.includes(projName) || projName.includes(userEmail))) ||
-        (username && (username.includes(projName) || projName.includes(username)))
-      )
-    })
-    return res.json(filtered)
+    const placeholders = allowed.map(() => '?').join(',')
+    const clientProjects = db.all(`SELECT * FROM projects WHERE id IN (${placeholders}) ORDER BY created_at DESC`, ...allowed)
+    return res.json(clientProjects || [])
   }
-  return res.json(allProjs)
+  return res.json(db.all(`SELECT * FROM projects ORDER BY created_at DESC`))
 })
 
 app.post('/api/projects', requireAuth, (req, res) => {
@@ -571,10 +595,8 @@ app.put('/api/projects/:id', requireAuth, (req, res) => {
   const existing = db.get(`SELECT * FROM projects WHERE id = ?`, req.params.id)
   if (!existing) return res.status(404).json({ error: 'Project not found' })
   if (req.user?.role === 'client') {
-    const userEmail = (req.user.email || '').toLowerCase()
-    const username = (req.user.username || '').toLowerCase()
-    const c = (existing.client || '').toLowerCase()
-    if (!c.includes(userEmail) && !c.includes(username) && req.user.projectId !== existing.id) {
+    const allowed = visibleProjectIds(req.user) || []
+    if (!allowed.includes(existing.id)) {
       return res.status(403).json({ error: 'Cannot modify this project' })
     }
   }
@@ -587,22 +609,28 @@ app.put('/api/projects/:id', requireAuth, (req, res) => {
 })
 
 app.delete('/api/projects/:id', requireAuth, (req, res) => {
-  const existing = db.get(`SELECT * FROM projects WHERE id = ?`, req.params.id)
-  if (!existing) return res.status(404).json({ error: 'Project not found' })
-  if (req.user?.role === 'client') {
-    const userEmail = (req.user.email || '').toLowerCase()
-    const username = (req.user.username || '').toLowerCase()
-    const c = (existing.client || '').toLowerCase()
-    if (!c.includes(userEmail) && !c.includes(username) && req.user.projectId !== existing.id) {
-      return res.status(403).json({ error: 'Cannot delete this project' })
+  const { id } = req.params
+  try {
+    const existing = db.get(`SELECT * FROM projects WHERE id = ?`, id)
+    if (!existing) return res.status(404).json({ error: 'Project not found' })
+    if (req.user?.role === 'client' && !COMMUNITY_FREE_ACCESS_MODE) {
+      const allowed = visibleProjectIds(req.user) || []
+      if (!allowed.includes(existing.id)) {
+        return res.status(403).json({ error: 'Cannot delete this project' })
+      }
     }
+    const deleteTx = db.transaction(() => {
+      db.run(`DELETE FROM client_credentials WHERE project_id = ?`, id)
+      db.run(`UPDATE scans SET project_id = NULL WHERE project_id = ?`, id)
+      db.run(`DELETE FROM projects WHERE id = ?`, id)
+    })
+    deleteTx()
+    audit(req.user.username, 'project:delete', id)
+    res.json({ ok: true, deletedId: id })
+  } catch (err) {
+    console.error('Delete project failed:', err)
+    res.status(500).json({ error: 'Delete project failed: ' + err.message })
   }
-  db.transaction(() => {
-    db.run(`DELETE FROM client_credentials WHERE project_id = ?`, req.params.id)
-    db.run(`DELETE FROM projects WHERE id = ?`, req.params.id)
-  })()
-  audit(req.user.username, 'project:delete', req.params.id)
-  res.json({ ok: true })
 })
 
 // ── Client Credentials for Project Portals ────────────────────────────────────
@@ -647,53 +675,26 @@ app.delete('/api/projects/:id/credentials/:credId', requireAuth, requireStaff, (
 app.get('/api/scans', requireAuth, (req, res) => {
   try {
     if (req.user?.role === 'client') {
-      const userEmail = (req.user.email || '').toLowerCase()
-      const username = (req.user.username || '').toLowerCase()
+      const allowed = visibleProjectIds(req.user) || []
       const userId = req.user.id
-      const userProjId = req.user.projectId
-
-      // In Community Beta / Preview, return all scans so clients can review sample reports
-      if (COMMUNITY_FREE_ACCESS_MODE) {
-        const allScans = db.all(`
-          SELECT s.*, (SELECT COUNT(*) FROM findings f WHERE f.scan_id = s.id) AS findings_count
-          FROM scans s ORDER BY s.created_at DESC LIMIT 200
-        `)
-        return res.json(allScans || [])
-      }
-
-      const allProjs = db.all(`SELECT * FROM projects`)
-      const matchProjs = allProjs.filter((p) => {
-        if (userProjId && p.id === userProjId) return true
-        if (p.user_id && p.user_id === userId) return true
-        if (p.client_id && p.client_id === userId) return true
-        const c = (p.client || '').toLowerCase()
-        const n = (p.name || '').toLowerCase()
-        return (userEmail && (userEmail.includes(c) || c.includes(userEmail))) ||
-               (username && (username.includes(c) || c.includes(username))) ||
-               (userEmail && (userEmail.includes(n) || n.includes(userEmail))) ||
-               (username && (username.includes(n) || n.includes(username)))
-      })
-      const projIds = matchProjs.map(p => p.id)
 
       let scans = []
-      if (projIds.length > 0) {
-        const placeholders = projIds.map(() => '?').join(',')
+      if (allowed.length > 0) {
+        const placeholders = allowed.map(() => '?').join(',')
         scans = db.all(`
           SELECT s.*, (SELECT COUNT(*) FROM findings f WHERE f.scan_id = s.id) AS findings_count
           FROM scans s 
           WHERE s.project_id IN (${placeholders}) 
-             OR (s.user_id IS NOT NULL AND s.user_id = ?) 
-             OR (s.client IS NOT NULL AND (LOWER(s.client) = ? OR LOWER(s.client) = ?))
+             OR (s.user_id IS NOT NULL AND s.user_id = ?)
           ORDER BY s.created_at DESC LIMIT 200
-        `, ...projIds, userId, username, userEmail)
+        `, ...allowed, userId)
       } else {
         scans = db.all(`
           SELECT s.*, (SELECT COUNT(*) FROM findings f WHERE f.scan_id = s.id) AS findings_count
           FROM scans s 
-          WHERE (s.user_id IS NOT NULL AND s.user_id = ?) 
-             OR (s.client IS NOT NULL AND (LOWER(s.client) = ? OR LOWER(s.client) = ?))
+          WHERE (s.user_id IS NOT NULL AND s.user_id = ?)
           ORDER BY s.created_at DESC LIMIT 200
-        `, userId, username, userEmail)
+        `, userId)
       }
       return res.json(scans || [])
     }
@@ -834,17 +835,43 @@ app.post('/api/scans/:id/stop', requireAuth, requireStaff, (req, res) => {
   res.json({ ok: true })
 })
 
-app.delete('/api/scans/:id', requireAuth, requireStaff, (req, res) => {
+app.delete('/api/scans/:id', requireAuth, (req, res) => {
   const { id } = req.params
-  pipeline.stopScan(id) // abort any running scan
-  db.transaction(() => {
-    db.run(`DELETE FROM logs WHERE scan_id = ?`, id)
-    db.run(`DELETE FROM scan_configs WHERE scan_id = ?`, id)
-    db.run(`DELETE FROM findings WHERE scan_id = ?`, id)
-    db.run(`DELETE FROM scans WHERE id = ?`, id)
-  })()
-  audit(req.user.username, 'scan:delete', id)
-  res.json({ ok: true })
+  try {
+    const scan = db.get(`SELECT * FROM scans WHERE id = ?`, id)
+    if (!scan) return res.status(404).json({ error: 'Scan not found' })
+
+    if (req.user?.role === 'client' && !COMMUNITY_FREE_ACCESS_MODE) {
+      const allowedProjs = visibleProjectIds(req.user) || []
+      const isOwner = scan.user_id === req.user.id || (scan.project_id && allowedProjs.includes(scan.project_id))
+      if (!isOwner) {
+        return res.status(403).json({ error: 'You do not have permission to delete this scan' })
+      }
+    }
+
+    pipeline.stopScan(id) // abort any running scan
+    const deleteTx = db.transaction(() => {
+      // Clean up finding notes for this scan's findings
+      db.run(`DELETE FROM finding_notes WHERE finding_id IN (SELECT id FROM findings WHERE scan_id = ?)`, id)
+      db.run(`DELETE FROM logs WHERE scan_id = ?`, id)
+      db.run(`DELETE FROM scan_configs WHERE scan_id = ?`, id)
+      db.run(`DELETE FROM findings WHERE scan_id = ?`, id)
+      db.run(`DELETE FROM scans WHERE id = ?`, id)
+    })
+    deleteTx()
+
+    // Clean up cached PDF report if present
+    try {
+      const pdfPath = `${config.outputDir}/report-${id}.pdf`
+      if (fs.existsSync(pdfPath)) fs.unlinkSync(pdfPath)
+    } catch {}
+
+    audit(req.user.username, 'scan:delete', id)
+    res.json({ ok: true, deletedId: id })
+  } catch (err) {
+    console.error('Delete scan failed:', err)
+    res.status(500).json({ error: 'Delete scan failed: ' + err.message })
+  }
 })
 
 app.post('/api/scans/:id/re-run', requireAuth, requireStaff, async (req, res) => {
@@ -1124,31 +1151,18 @@ app.get('/api/findings', requireAuth, (req, res) => {
     WHERE 1=1
   `
   const params = []
-  // Client-portal users see findings from their own projects or direct scans
-  if (req.user?.role === 'client' && !COMMUNITY_FREE_ACCESS_MODE) {
-    const userEmail = (req.user.email || '').toLowerCase().trim()
-    const username = (req.user.username || '').toLowerCase().trim()
+  // Client-portal users see findings strictly from their authorized projects or direct scans
+  if (req.user?.role === 'client') {
+    const allowed = visibleProjectIds(req.user) || []
     const userId = req.user.id
-    const userProjId = req.user.projectId
 
-    const allProjs = db.all(`SELECT id, client, name, user_id FROM projects`)
-    const matchProjs = allProjs.filter((p) => {
-      if (userProjId && p.id === userProjId) return true
-      if (p.user_id && p.user_id === userId) return true
-      const c = (p.client || '').toLowerCase().trim()
-      const n = (p.name || '').toLowerCase().trim()
-      return (userEmail && c === userEmail) || (username && c === username) ||
-             (userEmail && n === userEmail) || (username && n === username)
-    })
-    const projIds = matchProjs.map(p => p.id)
-
-    if (projIds.length > 0) {
-      const placeholders = projIds.map(() => '?').join(',')
-      sql += ` AND (s.project_id IN (${placeholders}) OR (s.user_id IS NOT NULL AND s.user_id = ?) OR (s.client IS NOT NULL AND (LOWER(s.client) = ? OR LOWER(s.client) = ?)))`
-      params.push(...projIds, userId, username, userEmail)
+    if (allowed.length > 0) {
+      const placeholders = allowed.map(() => '?').join(',')
+      sql += ` AND (s.project_id IN (${placeholders}) OR (s.user_id IS NOT NULL AND s.user_id = ?))`
+      params.push(...allowed, userId)
     } else {
-      sql += ` AND ((s.user_id IS NOT NULL AND s.user_id = ?) OR (s.client IS NOT NULL AND (LOWER(s.client) = ? OR LOWER(s.client) = ?)))`
-      params.push(userId, username, userEmail)
+      sql += ` AND (s.user_id IS NOT NULL AND s.user_id = ?)`
+      params.push(userId)
     }
   }
   if (status && status !== 'all') { sql += ' AND f.status = ?'; params.push(status) }
@@ -2074,40 +2088,25 @@ app.get('/api/dashboard', requireAuth, (req, res) => {
   let scans = []
   let projsCount = 0
 
-  if (req.user?.role === 'client' && !COMMUNITY_FREE_ACCESS_MODE) {
-    const userEmail = (req.user.email || '').toLowerCase()
-    const username = (req.user.username || '').toLowerCase()
+  if (req.user?.role === 'client') {
+    const allowed = visibleProjectIds(req.user) || []
     const userId = req.user.id
-    const userProjId = req.user.projectId
+    projsCount = allowed.length
 
-    const allProjs = db.all(`SELECT * FROM projects`)
-    const matchProjs = allProjs.filter((p) => {
-      if (userProjId && p.id === userProjId) return true
-      if (p.user_id && p.user_id === userId) return true
-      const c = (p.client || '').toLowerCase()
-      const n = (p.name || '').toLowerCase()
-      return (userEmail && c.includes(userEmail)) || (username && c.includes(username)) ||
-             (userEmail && n.includes(userEmail)) || (username && n.includes(username))
-    })
-    projsCount = matchProjs.length
-    const projIds = matchProjs.map(p => p.id)
-
-    if (projIds.length > 0) {
-      const placeholders = projIds.map(() => '?').join(',')
+    if (allowed.length > 0) {
+      const placeholders = allowed.map(() => '?').join(',')
       scans = db.all(`
         SELECT * FROM scans 
         WHERE project_id IN (${placeholders}) 
            OR (user_id IS NOT NULL AND user_id = ?) 
-           OR (client IS NOT NULL AND (LOWER(client) = ? OR LOWER(client) = ?))
         ORDER BY created_at DESC
-      `, ...projIds, userId, username, userEmail)
+      `, ...allowed, userId)
     } else {
       scans = db.all(`
         SELECT * FROM scans 
         WHERE (user_id IS NOT NULL AND user_id = ?) 
-           OR (client IS NOT NULL AND (LOWER(client) = ? OR LOWER(client) = ?))
         ORDER BY created_at DESC
-      `, userId, username, userEmail)
+      `, userId)
     }
   } else {
     scans = db.all(`SELECT * FROM scans ORDER BY created_at DESC`)
