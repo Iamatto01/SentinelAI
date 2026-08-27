@@ -104,6 +104,15 @@ function migrate(d) {
     created_at TEXT NOT NULL,
     started_at TEXT,
     finished_at TEXT,
+    whitebox_meta TEXT,
+    blackbox_meta TEXT,
+    token_usage TEXT DEFAULT '{}',
+    trigger_source TEXT DEFAULT 'manual',
+    repo_name TEXT,
+    commit_hash TEXT,
+    email_notify TEXT,
+    user_id TEXT,
+    client TEXT,
     FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE SET NULL
   );
 
@@ -298,8 +307,16 @@ function migrate(d) {
   try { d.exec(`ALTER TABLE findings ADD COLUMN layman_impact TEXT`) } catch { /* already exists */ }
   try { d.exec(`ALTER TABLE findings ADD COLUMN fingerprint TEXT`) } catch { /* already exists */ }
   try { d.exec(`CREATE INDEX IF NOT EXISTS idx_findings_fingerprint ON findings(scan_id, fingerprint)`) } catch { /* already exists */ }
-  // Migration: store structured whitebox audit metadata (files checked, tool passes, timing)
+  // Migration: store structured whitebox & blackbox metadata and user/client columns
   try { d.exec(`ALTER TABLE scans ADD COLUMN whitebox_meta TEXT`) } catch { /* already exists */ }
+  try { d.exec(`ALTER TABLE scans ADD COLUMN blackbox_meta TEXT`) } catch { /* already exists */ }
+  try { d.exec(`ALTER TABLE scans ADD COLUMN token_usage TEXT DEFAULT '{}'`) } catch { /* already exists */ }
+  try { d.exec(`ALTER TABLE scans ADD COLUMN trigger_source TEXT DEFAULT 'manual'`) } catch { /* already exists */ }
+  try { d.exec(`ALTER TABLE scans ADD COLUMN repo_name TEXT`) } catch { /* already exists */ }
+  try { d.exec(`ALTER TABLE scans ADD COLUMN commit_hash TEXT`) } catch { /* already exists */ }
+  try { d.exec(`ALTER TABLE scans ADD COLUMN email_notify TEXT`) } catch { /* already exists */ }
+  try { d.exec(`ALTER TABLE scans ADD COLUMN user_id TEXT`) } catch { /* already exists */ }
+  try { d.exec(`ALTER TABLE scans ADD COLUMN client TEXT`) } catch { /* already exists */ }
 }
 
 // ── generic helpers ──────────────────────────────────────────────────────────
