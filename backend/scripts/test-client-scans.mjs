@@ -2,14 +2,15 @@ import { config } from '../src/config.js'
 
 async function test() {
   const BASE = 'http://localhost:5000'
-  const email = `client_${Date.now()}@example.com`
+  const username = `client_${Date.now()}`
+  const email = `${username}@example.com`
   const password = 'Password123!'
 
-  console.log(`[Test] 1. Registering new client: ${email}...`)
+  console.log(`[Test] 1. Registering new client: ${username} (${email})...`)
   const regRes = await fetch(`${BASE}/api/auth/register`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, password, planId: 'trial' }),
+    body: JSON.stringify({ username, email, password, planId: 'trial' }),
   })
   const regData = await regRes.json()
   if (!regData.token) {
