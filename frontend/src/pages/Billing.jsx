@@ -21,6 +21,11 @@ export default function Billing() {
   const [successMsg, setSuccessMsg] = useState('')
   const [error, setError] = useState('')
 
+  const [promoCodeInput, setPromoCodeInput] = useState('')
+  const [appliedPromo, setAppliedPromo] = useState(null)
+  const [validatingPromo, setValidatingPromo] = useState(false)
+  const [promoError, setPromoError] = useState('')
+
   const loadData = async () => {
     setLoading(true)
     setError('')
@@ -46,7 +51,27 @@ export default function Billing() {
 
   const handleOpenCheckout = (plan) => {
     setSelectedPlan(plan)
+    setPromoCodeInput('')
+    setAppliedPromo(null)
+    setPromoError('')
     setModalOpen(true)
+  }
+
+  const handleApplyPromo = async () => {
+    if (!promoCodeInput.trim() || !selectedPlan) return
+    setValidatingPromo(true)
+    setPromoError('')
+    try {
+      const res = await api.billingValidatePromo(promoCodeInput.trim(), selectedPlan.id, interval)
+      if (res.valid) {
+        setAppliedPromo(res)
+      }
+    } catch (e) {
+      setAppliedPromo(null)
+      setPromoError(e.message || 'Invalid promo code')
+    } finally {
+      setValidatingPromo(false)
+    }
   }
 
   const handleConfirmCheckout = async () => {
@@ -56,7 +81,8 @@ export default function Billing() {
     setSuccessMsg('')
 
     try {
-      const res = await api.billingCheckout(selectedPlan.id, interval)
+      const promoToSend = appliedPromo ? appliedPromo.code : ''
+      const res = await api.billingCheckout(selectedPlan.id, interval, promoToSend)
       setSuccessMsg(`🎉 Success! Upgraded to ${selectedPlan.name}. Your quota has been updated.`)
       setModalOpen(false)
       await loadData()
@@ -384,11 +410,71 @@ export default function Billing() {
                 <span>Scan Quota:</span>
                 <span className="font-bold text-white">{selectedPlan.scanQuota >= 9000 ? 'Unlimited' : `${selectedPlan.scanQuota} scans/mo`}</span>
               </div>
+              
+              {/* Promo Code Discount Line */}
+              {appliedPromo && (
+                <div className="flex justify-between text-xs text-emerald-400 font-semibold pt-1 border-t border-white/5">
+                  <span>Promo ({appliedPromo.code}):</span>
+                  <span>-${appliedPromo.discountAmount} USD ({appliedPromo.formattedDiscount})</span>
+                </div>
+              )}
+
               <div className="h-px bg-white/10 my-2" />
               <div className="flex justify-between text-sm font-bold text-white">
                 <span>Total Due:</span>
-                <span className="text-cyan-400">${interval === 'yearly' ? selectedPlan.priceYearly : selectedPlan.priceMonthly} USD</span>
+                <span className="text-cyan-400 font-mono text-base">
+                  ${appliedPromo ? appliedPromo.finalPrice : (interval === 'yearly' ? selectedPlan.priceYearly : selectedPlan.priceMonthly)} USD
+                </span>
               </div>
+            </div>
+
+            {/* Promo Code Voucher Input */}
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between text-xs font-semibold text-slate-300">
+                <label>Have a Promo Code?</label>
+                {appliedPromo && (
+                  <span className="text-[11px] text-emerald-400 font-bold flex items-center gap-1">
+                    <CheckCircle2 size={12} /> Applied
+                  </span>
+                )}
+              </div>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  placeholder="e.g. SENTINEL50"
+                  value={promoCodeInput}
+                  onChange={(e) => {
+                    setPromoCodeInput(e.target.value.toUpperCase())
+                    setPromoError('')
+                  }}
+                  className="input font-mono text-xs uppercase flex-1"
+                  disabled={validatingPromo || !!appliedPromo}
+                />
+                {appliedPromo ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAppliedPromo(null)
+                      setPromoCodeInput('')
+                    }}
+                    className="btn-ghost text-xs text-rose-400 hover:text-rose-300 px-3"
+                  >
+                    Remove
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleApplyPromo}
+                    disabled={validatingPromo || !promoCodeInput.trim()}
+                    className="btn-secondary text-xs px-3.5 border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/10"
+                  >
+                    {validatingPromo ? <Loader2 size={12} className="animate-spin" /> : 'Apply'}
+                  </button>
+                )}
+              </div>
+              {promoError && (
+                <p className="text-[11px] text-rose-400 font-semibold">{promoError}</p>
+              )}
             </div>
 
             {/* Payment Method Selector */}

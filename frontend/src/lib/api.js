@@ -113,8 +113,23 @@ export const api = {
   // ── Billing & Subscriptions ──
   billingPlans: () => apiFetch('/api/billing/plans'),
   billingSubscription: () => apiFetch('/api/billing/subscription'),
-  billingCheckout: (planId, billingInterval = 'monthly') => apiFetch('/api/billing/checkout', { method: 'POST', body: { planId, billingInterval } }),
+  billingCheckout: (planId, billingInterval = 'monthly', promoCode = '') => apiFetch('/api/billing/checkout', { method: 'POST', body: { planId, billingInterval, promoCode } }),
+  billingValidatePromo: (code, planId, billingInterval = 'monthly') => apiFetch('/api/billing/validate-promo', { method: 'POST', body: { code, planId, billingInterval } }),
   billingHistory: () => apiFetch('/api/billing/history'),
+
+  // ── Admin Plans & Promo Codes Management ──
+  adminPlans: () => apiFetch('/api/admin/plans'),
+  adminCreatePlan: (body) => apiFetch('/api/admin/plans', { method: 'POST', body }),
+  adminUpdatePlan: (id, body) => apiFetch(`/api/admin/plans/${id}`, { method: 'PUT', body }),
+  adminTogglePlanStatus: (id, isOpen) => apiFetch(`/api/admin/plans/${id}/toggle-status`, { method: 'PATCH', body: { isOpen } }),
+  adminDeletePlan: (id) => apiFetch(`/api/admin/plans/${id}`, { method: 'DELETE' }),
+
+  adminPromoCodes: () => apiFetch('/api/admin/promo-codes'),
+  adminCreatePromoCode: (body) => apiFetch('/api/admin/promo-codes', { method: 'POST', body }),
+  adminUpdatePromoCode: (id, body) => apiFetch(`/api/admin/promo-codes/${id}`, { method: 'PUT', body }),
+  adminTogglePromoCode: (id, isActive) => apiFetch(`/api/admin/promo-codes/${id}/toggle-status`, { method: 'PATCH', body: { isActive } }),
+  adminDeletePromoCode: (id) => apiFetch(`/api/admin/promo-codes/${id}`, { method: 'DELETE' }),
+  adminCustomSubscriptionOverride: (body) => apiFetch('/api/admin/subscriptions/custom-override', { method: 'POST', body }),
 
   // ── Admin Panel ──
   adminClients: () => apiFetch('/api/admin/clients'),

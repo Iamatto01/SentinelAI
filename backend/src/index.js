@@ -27,8 +27,28 @@ import { ExploitOrchestrator } from './exploits/orchestrator.js'
 import * as msf from './exploits/msf-client.js'
 import { matchExploits, classifyRisk } from './exploits/registry.js'
 import { sendScanRequestNotification, sendAnonymousFeedbackNotification } from './email.js'
-import { GitHubClient, parseGitHubWebhook } from './integrations/github.js'
-import { PLANS, getUserSubscription, consumeScanQuota, activateSubscription, getPaymentHistory, COMMUNITY_FREE_ACCESS_MODE } from './billing.js'
+import {
+  PLANS,
+  getAllPlans,
+  getPlan,
+  createPlan,
+  updatePlan,
+  togglePlanStatus,
+  deletePlan,
+  getAllPromoCodes,
+  getPromoCode,
+  createPromoCode,
+  updatePromoCode,
+  togglePromoCodeStatus,
+  deletePromoCode,
+  validatePromoCode,
+  getUserSubscription,
+  consumeScanQuota,
+  activateSubscription,
+  adminUpdateClientSubscription,
+  getPaymentHistory,
+  COMMUNITY_FREE_ACCESS_MODE
+} from './billing.js'
 import { channelGateway } from './channels/index.js'
 
 // CORS: only whitelisted origins (config.corsOrigins from CLIENT_ORIGIN).
@@ -2049,9 +2069,26 @@ app.post('/api/github/webhook', (req, res) => {
 
 // ── Billing & Subscriptions API ───────────────────────────────────────────────
 
-// Get all subscription plans
+// Get all open/active subscription plans (public/client)
 app.get('/api/billing/plans', (req, res) => {
-  res.json({ plans: Object.values(PLANS) })
+  try {
+    const plans = getAllPlans({ onlyOpen: true })
+    res.json({ plans })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// Validate a promo code against a plan
+app.post('/api/billing/validate-promo', (req, res) => {
+  try {
+    const { code, planId, billingInterval = 'monthly' } = req.body || {}
+    if (!code || !planId) return res.status(400).json({ error: 'Code and planId are required' })
+    const result = validatePromoCode(code, planId, billingInterval)
+    res.json({ ok: true, ...result })
+  } catch (err) {
+    res.status(400).json({ error: err.message })
+  }
 })
 
 // Get current user subscription & quota status
@@ -2060,31 +2097,35 @@ app.get('/api/billing/subscription', requireAuth, (req, res) => {
   res.json(sub)
 })
 
-// Create checkout / Upgrade subscription plan
+// Create checkout / Upgrade subscription plan (with promo code support)
 const handleCheckoutUpgrade = (req, res) => {
-  const { planId, billingInterval = 'monthly', provider = 'stripe' } = req.body || {}
-  if (!planId || !PLANS[planId]) return res.status(400).json({ error: 'Valid planId is required' })
+  const { planId, billingInterval = 'monthly', provider = 'stripe', promoCode = '', amount } = req.body || {}
+  if (!planId) return res.status(400).json({ error: 'Valid planId is required' })
 
-  const plan = PLANS[planId]
-  const amount = billingInterval === 'yearly' ? plan.priceYearly : plan.priceMonthly
+  const plan = getPlan(planId)
+  if (!plan) return res.status(404).json({ error: `Plan '${planId}' not found` })
 
-  // NOTE: In production, integrate with Stripe/PayPal checkout session here.
-  // Currently this activates subscriptions instantly for testing/simulation.
-  const updatedSub = activateSubscription({
-    userId: req.user.id,
-    planId,
-    amount,
-    provider,
-    referenceId: `ch_${randomUUID().slice(0, 16)}`,
-  })
+  try {
+    const updatedSub = activateSubscription({
+      userId: req.user.id,
+      planId,
+      amount,
+      provider,
+      interval: billingInterval,
+      promoCode,
+      referenceId: `ch_${randomUUID().slice(0, 16)}`,
+    })
 
-  audit(req.user.username, 'billing:upgrade', `Subscribed to ${plan.name} ($${amount})`)
-  res.json({
-    ok: true,
-    success: true,
-    message: `Successfully upgraded to ${plan.name}`,
-    subscription: updatedSub,
-  })
+    audit(req.user.username, 'billing:upgrade', `Subscribed to ${plan.name} (${billingInterval}) [promo: ${promoCode || 'NONE'}]`)
+    res.json({
+      ok: true,
+      success: true,
+      message: `Successfully upgraded to ${plan.name}`,
+      subscription: updatedSub,
+    })
+  } catch (err) {
+    res.status(400).json({ error: err.message })
+  }
 }
 app.post('/api/billing/checkout', requireAuth, handleCheckoutUpgrade)
 app.post('/api/billing/upgrade', requireAuth, handleCheckoutUpgrade)
@@ -2093,6 +2134,146 @@ app.post('/api/billing/upgrade', requireAuth, handleCheckoutUpgrade)
 app.get('/api/billing/history', requireAuth, (req, res) => {
   const history = getPaymentHistory(req.user.id)
   res.json({ transactions: history })
+})
+
+// ── Admin Subscription & Plans Management API ────────────────────────────────
+
+// GET /api/admin/plans — list all plans (including closed & custom)
+app.get('/api/admin/plans', requireAuth, requireRole('admin'), (req, res) => {
+  try {
+    const plans = getAllPlans({ onlyOpen: false })
+    res.json({ plans })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// POST /api/admin/plans — create a new plan
+app.post('/api/admin/plans', requireAuth, requireRole('admin'), (req, res) => {
+  try {
+    const plan = createPlan(req.body)
+    audit(req.user.username, 'admin:create-plan', `Created plan '${plan.name}' (${plan.id})`)
+    res.status(201).json({ ok: true, plan })
+  } catch (err) {
+    res.status(400).json({ error: err.message })
+  }
+})
+
+// PUT /api/admin/plans/:id — update a plan
+app.put('/api/admin/plans/:id', requireAuth, requireRole('admin'), (req, res) => {
+  try {
+    const plan = updatePlan(req.params.id, req.body)
+    audit(req.user.username, 'admin:update-plan', `Updated plan '${plan.name}' (${plan.id})`)
+    res.json({ ok: true, plan })
+  } catch (err) {
+    res.status(400).json({ error: err.message })
+  }
+})
+
+// PATCH /api/admin/plans/:id/toggle-status — toggle open/closed
+app.patch('/api/admin/plans/:id/toggle-status', requireAuth, requireRole('admin'), (req, res) => {
+  try {
+    const { isOpen, is_open } = req.body || {}
+    const targetStatus = isOpen !== undefined ? isOpen : is_open
+    const plan = togglePlanStatus(req.params.id, Boolean(targetStatus))
+    audit(req.user.username, 'admin:toggle-plan', `Plan '${plan.name}' is now ${plan.isOpen ? 'OPEN' : 'CLOSED'}`)
+    res.json({ ok: true, plan })
+  } catch (err) {
+    res.status(400).json({ error: err.message })
+  }
+})
+
+// DELETE /api/admin/plans/:id — delete a plan
+app.delete('/api/admin/plans/:id', requireAuth, requireRole('admin'), (req, res) => {
+  try {
+    const result = deletePlan(req.params.id)
+    audit(req.user.username, 'admin:delete-plan', `Deleted plan '${req.params.id}'`)
+    res.json({ ok: true, ...result })
+  } catch (err) {
+    res.status(400).json({ error: err.message })
+  }
+})
+
+// ── Admin Promo Codes Management API ─────────────────────────────────────────
+
+// GET /api/admin/promo-codes — list all promo codes
+app.get('/api/admin/promo-codes', requireAuth, requireRole('admin'), (req, res) => {
+  try {
+    const promoCodes = getAllPromoCodes()
+    res.json({ promoCodes })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// POST /api/admin/promo-codes — create new promo code
+app.post('/api/admin/promo-codes', requireAuth, requireRole('admin'), (req, res) => {
+  try {
+    const promo = createPromoCode(req.body)
+    audit(req.user.username, 'admin:create-promo', `Created promo code '${promo.code}'`)
+    res.status(201).json({ ok: true, promo })
+  } catch (err) {
+    res.status(400).json({ error: err.message })
+  }
+})
+
+// PUT /api/admin/promo-codes/:id — update promo code
+app.put('/api/admin/promo-codes/:id', requireAuth, requireRole('admin'), (req, res) => {
+  try {
+    const promo = updatePromoCode(req.params.id, req.body)
+    audit(req.user.username, 'admin:update-promo', `Updated promo code '${promo.code}'`)
+    res.json({ ok: true, promo })
+  } catch (err) {
+    res.status(400).json({ error: err.message })
+  }
+})
+
+// PATCH /api/admin/promo-codes/:id/toggle-status — toggle active/inactive
+app.patch('/api/admin/promo-codes/:id/toggle-status', requireAuth, requireRole('admin'), (req, res) => {
+  try {
+    const { isActive, is_active } = req.body || {}
+    const targetStatus = isActive !== undefined ? isActive : is_active
+    const promo = togglePromoCodeStatus(req.params.id, Boolean(targetStatus))
+    audit(req.user.username, 'admin:toggle-promo', `Promo code '${promo.code}' is now ${promo.isActive ? 'ACTIVE' : 'INACTIVE'}`)
+    res.json({ ok: true, promo })
+  } catch (err) {
+    res.status(400).json({ error: err.message })
+  }
+})
+
+// DELETE /api/admin/promo-codes/:id — delete promo code
+app.delete('/api/admin/promo-codes/:id', requireAuth, requireRole('admin'), (req, res) => {
+  try {
+    const result = deletePromoCode(req.params.id)
+    audit(req.user.username, 'admin:delete-promo', `Deleted promo code '${req.params.id}'`)
+    res.json({ ok: true, ...result })
+  } catch (err) {
+    res.status(400).json({ error: err.message })
+  }
+})
+
+// POST /api/admin/subscriptions/custom-override — assign bespoke plan, custom discount, or custom quota
+app.post('/api/admin/subscriptions/custom-override', requireAuth, requireRole('admin'), (req, res) => {
+  try {
+    const { userId, planId, planName, quotaTotal, quotaUsed, status, discountPercent, customNotes, extendDays } = req.body || {}
+    if (!userId) return res.status(400).json({ error: 'userId is required' })
+
+    const updatedSub = adminUpdateClientSubscription(userId, {
+      planId,
+      planName,
+      quotaTotal,
+      quotaUsed,
+      status,
+      discountPercent,
+      customNotes,
+      extendDays
+    })
+
+    audit(req.user.username, 'admin:custom-override', `Updated custom subscription for user ${userId}`)
+    res.json({ ok: true, subscription: updatedSub })
+  } catch (err) {
+    res.status(400).json({ error: err.message })
+  }
 })
 
 // ── Dashboard ────────────────────────────────────────────────────────────────
