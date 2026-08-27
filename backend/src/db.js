@@ -76,6 +76,7 @@ function migrate(d) {
     cover TEXT,
     risk_level TEXT DEFAULT 'medium',
     status TEXT DEFAULT 'active',
+    user_id TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
   );
@@ -317,6 +318,7 @@ function migrate(d) {
   try { d.exec(`ALTER TABLE scans ADD COLUMN email_notify TEXT`) } catch { /* already exists */ }
   try { d.exec(`ALTER TABLE scans ADD COLUMN user_id TEXT`) } catch { /* already exists */ }
   try { d.exec(`ALTER TABLE scans ADD COLUMN client TEXT`) } catch { /* already exists */ }
+  try { d.exec(`ALTER TABLE projects ADD COLUMN user_id TEXT`) } catch { /* already exists */ }
 }
 
 // ── generic helpers ──────────────────────────────────────────────────────────

@@ -167,8 +167,8 @@ const tx = targetDb.transaction(() => {
 
   // Projects
   const insProject = targetDb.prepare(`
-    INSERT INTO projects (id, name, client, description, scope, risk_level, status, created_at, updated_at, cover, client_id, user_id)
-    VALUES (@id, @name, @client, @description, @scope, @risk_level, @status, @created_at, @updated_at, @cover, @client_id, @user_id)
+    INSERT INTO projects (id, name, client, description, scope, cover, risk_level, status, user_id, created_at, updated_at)
+    VALUES (@id, @name, @client, @description, @scope, @cover, @risk_level, @status, @user_id, @created_at, @updated_at)
     ON CONFLICT(id) DO NOTHING
   `)
   for (const p of allProjects.values()) {
@@ -178,13 +178,12 @@ const tx = targetDb.transaction(() => {
       client: p.client || null,
       description: p.description || '',
       scope: p.scope || '',
+      cover: p.cover || null,
       risk_level: p.risk_level || 'medium',
       status: p.status || 'active',
+      user_id: p.user_id || null,
       created_at: p.created_at || new Date().toISOString(),
       updated_at: p.updated_at || new Date().toISOString(),
-      cover: p.cover || null,
-      client_id: p.client_id || null,
-      user_id: p.user_id || null,
     })
   }
 

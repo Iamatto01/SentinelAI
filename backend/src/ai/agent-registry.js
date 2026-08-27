@@ -4,7 +4,6 @@ import { config } from '../config.js'
 
 /**
  * Agent Registry — loads all 53 pentest-ai-agents specialist personas and
- * routes findings/tasks to the right specialist. This is the reasoning layer
  * that SentinelAI lacked (it only had ~5 hardcoded personas).
  */
 export class AgentRegistry {
