@@ -317,16 +317,15 @@ function migrate(d) {
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
   );
 
-  CREATE TABLE IF NOT EXISTS transactions (
+  CREATE TABLE IF NOT EXISTS payment_transactions (
     id TEXT PRIMARY KEY,
     user_id TEXT NOT NULL,
-    plan_id TEXT NOT NULL,
-    plan_name TEXT NOT NULL,
     amount REAL NOT NULL,
     currency TEXT NOT NULL DEFAULT 'USD',
-    interval TEXT NOT NULL DEFAULT 'monthly',
-    provider TEXT NOT NULL DEFAULT 'stripe',
     status TEXT NOT NULL DEFAULT 'completed',
+    provider TEXT NOT NULL DEFAULT 'stripe',
+    reference_id TEXT,
+    plan_id TEXT NOT NULL,
     created_at TEXT NOT NULL,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
   );
