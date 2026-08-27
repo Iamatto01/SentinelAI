@@ -1,4 +1,4 @@
-﻿async function test() {
+async function test() {
   for (const ident of ['admin@sentinelai.com', 'admin']) {
     const res = await fetch('http://localhost:5000/api/auth/login', {
       method: 'POST',
@@ -15,6 +15,20 @@
       })
       const dashData = await dash.json()
       console.log(`Dashboard access: HTTP ${dash.status} | Total Scans: ${dashData.totals?.scans} | Total Findings: ${dashData.totals?.findings}`)
+
+      // Test clients list (must be 0)
+      const clients = await fetch('http://localhost:5000/api/admin/clients', {
+        headers: { Authorization: `Bearer ${data.token}` }
+      })
+      const clientsData = await clients.json()
+      console.log(`Admin Clients list: HTTP ${clients.status} | Total Clients: ${clientsData.totalClients} (Array: ${clientsData.clients?.length})`)
+
+      // Test scans list
+      const scans = await fetch('http://localhost:5000/api/scans', {
+        headers: { Authorization: `Bearer ${data.token}` }
+      })
+      const scansData = await scans.json()
+      console.log(`Scans access: HTTP ${scans.status} | Visible Scans: ${scansData.length}`)
     }
   }
 
