@@ -1,7 +1,7 @@
 import { config } from '../src/config.js'
 
 async function test() {
-  const BASE = 'http://localhost:5000'
+  const BASE = process.env.BASE_URL || 'http://localhost:5000'
   const username = `client_${Date.now()}`
   const email = `${username}@example.com`
   const password = 'Password123!'
