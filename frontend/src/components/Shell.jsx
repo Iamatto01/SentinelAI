@@ -4,7 +4,7 @@ import {
   LayoutDashboard, Radar, Bug, FolderKanban, Plug, LogOut, Shield, Plus,
   Hexagon, Activity, Settings as SettingsIcon, Crosshair, Menu, X,
   ChevronLeft, ChevronRight, Search, Bell, Sparkles, GitBranch, CreditCard,
-  Users, AlertTriangle, UserCheck, Briefcase, Award, ArrowRight, Lock, CheckCircle2, Zap, Terminal
+  Users, AlertTriangle, UserCheck, Briefcase, Award, ArrowRight, Lock, CheckCircle2, Zap, Terminal, Network
 } from 'lucide-react'
 import { useAuth } from '../lib/AuthContext.jsx'
 import { api } from '../lib/api.js'
@@ -56,6 +56,7 @@ export default function Shell() {
     { to: '/app/findings', label: 'Findings', icon: Bug },
     { to: '/app/monitoring', label: 'Monitoring', icon: Activity },
     { to: '/app/consultants', label: 'Consultations', icon: UserCheck },
+    { to: '/app/architecture', label: 'Architecture & Docs', icon: Network },
     { to: '/app/integrations', label: 'Integrations', icon: Plug },
     { to: '/app/billing', label: 'Billing & Plans', icon: CreditCard },
     { to: '/app/settings', label: 'Settings', icon: SettingsIcon },
@@ -67,6 +68,7 @@ export default function Shell() {
     { to: '/app/github', label: 'GitHub Automation', icon: GitBranch },
     { to: '/app/findings', label: 'Vulnerability Findings', icon: Bug },
     { to: '/app/consultants', label: 'Hire Security Expert', icon: UserCheck },
+    { to: '/app/architecture', label: 'Architecture & Docs', icon: Network },
     { to: '/app/billing', label: 'Billing & Quota', icon: CreditCard },
     { to: '/app/settings', label: 'Settings', icon: SettingsIcon },
   ]

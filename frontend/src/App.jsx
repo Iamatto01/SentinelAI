@@ -28,6 +28,7 @@ import Billing from './pages/Billing.jsx'
 import ClientsManagement from './pages/ClientsManagement.jsx'
 import KaliControl from './pages/KaliControl.jsx'
 import Consultants from './pages/Consultants.jsx'
+import ArchitectureViewer from './pages/ArchitectureViewer.jsx'
 
 class ErrorBoundary extends React.Component {
   constructor(props) {
@@ -115,6 +116,7 @@ export default function App() {
           <Route path="/billing" element={<Navigate to="/app/billing" replace />} />
           <Route path="/consultants" element={<Navigate to="/app/consultants" replace />} />
           <Route path="/kali-control" element={<Navigate to="/app/kali-control" replace />} />
+          <Route path="/architecture" element={<Navigate to="/app/architecture" replace />} />
           <Route path="/settings" element={<Navigate to="/app/settings" replace />} />
 
           {/* Main Protected Application */}
@@ -131,6 +133,7 @@ export default function App() {
             <Route path="github" element={<GitHubAutomation />} />
             <Route path="billing" element={<Billing />} />
             <Route path="consultants" element={<Consultants />} />
+            <Route path="architecture" element={<ArchitectureViewer />} />
             <Route path="integrations" element={<Integrations />} />
             <Route path="exploits" element={<Exploits />} />
             <Route path="exploits/:id" element={<ExploitCampaign />} />

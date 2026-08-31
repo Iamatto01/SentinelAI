@@ -7,8 +7,10 @@ import { Server as SocketIOServer } from 'socket.io'
 import { randomUUID, createHmac, timingSafeEqual } from 'node:crypto'
 import bcrypt from 'bcryptjs'
 import fs from 'node:fs'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 
-import { config } from './config.js'
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
 import * as db from './db.js'
 import { authMiddleware, requireAuth, signToken, getUser } from './auth.js'
 import { requireRole } from './auth.js'
@@ -230,6 +232,9 @@ app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(openapiSpec, {
   customCss: '.topbar{display:none} .swagger-ui{color-scheme:dark}',
 }))
 app.get('/api/openapi.json', (req, res) => res.json(openapiSpec))
+
+// ── Archify System Diagrams — public visual architecture specifications ─────
+app.use('/diagrams', express.static(path.resolve(__dirname, '../../docs/diagrams')))
 
 // ── Health & status ──────────────────────────────────────────────────────────
 app.get('/api/health', (req, res) => res.json({ ok: true, time: new Date().toISOString(), agentsCount: agentRegistry.list().length }))
