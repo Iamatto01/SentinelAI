@@ -11,6 +11,8 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
+
+import { config } from './config.js'
 import * as db from './db.js'
 import { authMiddleware, requireAuth, signToken, getUser } from './auth.js'
 import { requireRole } from './auth.js'
