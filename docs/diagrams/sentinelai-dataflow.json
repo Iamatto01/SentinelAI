@@ -1,0 +1,89 @@
+{
+  "schema_version": 1,
+  "diagram_type": "dataflow",
+  "meta": {
+    "title": "SentinelAI Security Dataflow Pipeline",
+    "output": "docs/diagrams/sentinelai-dataflow.html",
+    "viewBox": [1080, 760],
+    "animation": "trace",
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "raw-ingest",
+        "label": "Telemetry Ingest Path",
+        "focus": ["repo_target", "manual_scope", "kali_exec", "raw_parser"],
+        "note": "Raw scan stdout ingestion and AST code token extraction."
+      },
+      {
+        "id": "rag-enrichment",
+        "label": "RAG & Knowledge Cross-Ref",
+        "focus": ["raw_parser", "cwe_mapper", "rag_vectors", "sqlite_vault"],
+        "note": "PayloadsAllTheThings vector lookup and CWE vulnerability classification."
+      },
+      {
+        "id": "remediation-delivery",
+        "label": "AI Remediation & PDF Export",
+        "focus": ["rag_vectors", "sqlite_vault", "ai_advisory", "pdf_output"],
+        "note": "Multi-agent consensus generating automated patches and executive PDF reports."
+      }
+    ]
+  },
+  "stages": [
+    { "label": "Target Intake" },
+    { "label": "Kali Execution" },
+    { "label": "Normalization" },
+    { "label": "Intelligence Store" },
+    { "label": "Actionable Output" }
+  ],
+  "nodes": [
+    { "id": "repo_target", "type": "frontend", "label": "Git Repository", "sublabel": "GitHub Webhook", "stage": 0, "row": 0, "tag": "source" },
+    { "id": "manual_scope", "type": "frontend", "label": "Target URL / IP", "sublabel": "Web Pentest Scope", "stage": 0, "row": 2, "tag": "source" },
+    { "id": "kali_exec", "type": "security", "label": "Kali Tool Pool", "sublabel": "150+ Tool Engines", "stage": 1, "row": 1, "tag": "CLI Runner" },
+    { "id": "raw_parser", "type": "backend", "label": "Evidence Parser", "sublabel": "JSON / Stdout Normalizer", "stage": 2, "row": 0, "tag": "Stream" },
+    { "id": "cwe_mapper", "type": "security", "label": "OWASP Classifier", "sublabel": "CWE / CVSS Scoring", "stage": 2, "row": 2, "tag": "Enrichment" },
+    { "id": "rag_vectors", "type": "database", "label": "Payloads RAG", "sublabel": "Vector Embeddings", "stage": 3, "row": 0, "tag": "Knowledge" },
+    { "id": "sqlite_vault", "type": "database", "label": "SQLite Store", "sublabel": "fyp2.db Database", "stage": 3, "row": 2, "tag": "Storage" },
+    { "id": "ai_advisory", "type": "backend", "label": "AI Remediation", "sublabel": "Fix Diff Generator", "stage": 4, "row": 0, "tag": "53 Agents" },
+    { "id": "pdf_output", "type": "cloud", "label": "Executive PDF", "sublabel": "Audit Deliverable", "stage": 4, "row": 2, "tag": "Reports" }
+  ],
+  "flows": [
+    { "id": "f1", "from": "repo_target", "to": "kali_exec", "label": "webhook event", "classification": "SAST code", "variant": "emphasis" },
+    { "id": "f2", "from": "manual_scope", "to": "kali_exec", "label": "target probe", "classification": "DAST URLs", "variant": "default" },
+    { "id": "f3", "from": "kali_exec", "to": "raw_parser", "label": "raw output stream", "classification": "stdout JSON", "variant": "emphasis" },
+    { "id": "f4", "from": "kali_exec", "to": "cwe_mapper", "label": "detected flags", "classification": "banners", "variant": "default" },
+    { "id": "f5", "from": "raw_parser", "to": "rag_vectors", "label": "vector match", "classification": "PoC search", "variant": "emphasis" },
+    { "id": "f6", "from": "cwe_mapper", "to": "sqlite_vault", "label": "classified findings", "classification": "audit records", "variant": "security" },
+    { "id": "f7", "from": "rag_vectors", "to": "ai_advisory", "label": "exploit context", "classification": "RAG tokens", "variant": "emphasis" },
+    { "id": "f8", "from": "sqlite_vault", "to": "pdf_output", "label": "evidence rollup", "classification": "audit summary", "variant": "default" },
+    { "id": "f9", "from": "ai_advisory", "to": "pdf_output", "label": "remediation diffs", "classification": "patch code", "variant": "emphasis", "labelDy": 24 }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Ingress & Kali Normalization",
+      "items": [
+        "Repository and URL targets ingest into isolated execution threads",
+        "Raw command outputs stream directly through stdout chunk normalizers",
+        "Non-blocking async pipelines prevent server bottlenecks"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Vector RAG & CWE Mapping",
+      "items": [
+        "SecLists and PayloadsAllTheThings provide instant exploit verification vectors",
+        "OWASP Top 10 categories and CVSS v3.1 scores assigned automatically",
+        "Evidence records persisted durably in external SQLite storage"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "Actionable Remediation & Output",
+      "items": [
+        "53 AI specialist agents synthesize exact unified code fix patches",
+        "Executive PDF generation creates client-ready audit deliverables",
+        "Real-time notifications pushed to Telegram and Discord channels"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SentinelAI — System Architecture & Workflow Diagrams</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;800&family=Plus+Jakarta+Sans:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #030712;
+      --card-bg: rgba(15, 23, 42, 0.75);
+      --border: rgba(56, 189, 248, 0.2);
+      --primary: #00f2fe;
+      --accent: #4facfe;
+      --text: #f8fafc;
+      --muted: #94a3b8;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 40px 20px;
+    }
+    .header {
+      text-align: center;
+      max-width: 800px;
+      margin-bottom: 40px;
+    }
+    .badge {
+      display: inline-block;
+      background: rgba(0, 242, 254, 0.1);
+      color: var(--primary);
+      border: 1px solid rgba(0, 242, 254, 0.3);
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      font-weight: 700;
+      padding: 4px 12px;
+      border-radius: 9999px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: 16px;
+    }
+    h1 {
+      font-size: 32px;
+      font-weight: 800;
+      background: linear-gradient(135deg, #00f2fe 0%, #4facfe 50%, #a855f7 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 12px;
+    }
+    p.subtitle {
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.6;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+      gap: 24px;
+      max-width: 1200px;
+      width: 100%;
+    }
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      backdrop-filter: blur(12px);
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      text-decoration: none;
+      color: inherit;
+      position: relative;
+      overflow: hidden;
+    }
+    .card:hover {
+      transform: translateY(-4px);
+      border-color: var(--primary);
+      box-shadow: 0 12px 30px rgba(0, 242, 254, 0.15);
+    }
+    .card-type {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--primary);
+      text-transform: uppercase;
+      margin-bottom: 8px;
+    }
+    .card h2 {
+      font-size: 18px;
+      font-weight: 700;
+      margin-bottom: 10px;
+      color: #fff;
+    }
+    .card p {
+      font-size: 13px;
+      color: var(--muted);
+      line-height: 1.5;
+      margin-bottom: 20px;
+    }
+    .card-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-top: 1px solid rgba(255, 255, 255, 0.08);
+      padding-top: 14px;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--primary);
+    }
+    .features {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      margin-bottom: 16px;
+    }
+    .feature-tag {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      font-size: 10px;
+      padding: 3px 8px;
+      border-radius: 6px;
+      color: #cbd5e1;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="badge">Archify v2.16 — Showcase Verified</div>
+    <h1>SentinelAI Visual Architecture Suite</h1>
+    <p class="subtitle">
+      Self-contained, interactive HTML & SVG diagrams with motion tracing, dark/light themes, and export capabilities for the complete SentinelAI autonomous pentest system.
+    </p>
+  </div>
+
+  <div class="grid">
+    <!-- Architecture -->
+    <a href="sentinelai-architecture.html" class="card">
+      <div>
+        <div class="card-type">01. Architecture Topology</div>
+        <h2>Enterprise System Architecture</h2>
+        <p>Vite React frontend, Express API core, 53 AI consensus engine, Hexstrike FastMCP server, and 150+ native Kali Linux security tools on 192.168.68.132.</p>
+        <div class="features">
+          <span class="feature-tag">Zero-Trust WAF</span>
+          <span class="feature-tag">Express :5000</span>
+          <span class="feature-tag">FastMCP :8888</span>
+          <span class="feature-tag">Kali ELF Binaries</span>
+        </div>
+      </div>
+      <div class="card-footer">
+        <span>Explore Diagram</span>
+        <span>→</span>
+      </div>
+    </a>
+
+    <!-- Workflow -->
+    <a href="sentinelai-workflow.html" class="card">
+      <div>
+        <div class="card-type">02. Autonomous Workflow</div>
+        <h2>Autonomous Pentest Pipeline</h2>
+        <p>End-to-end multi-stage pipeline across intake, scope guard, active Kali DAST fuzzing, PayloadsAllTheThings RAG enrichment, and consensus report delivery.</p>
+        <div class="features">
+          <span class="feature-tag">ScopeGuard</span>
+          <span class="feature-tag">Subfinder / Amass</span>
+          <span class="feature-tag">Nuclei / Ffuf</span>
+          <span class="feature-tag">AI Consensus</span>
+        </div>
+      </div>
+      <div class="card-footer">
+        <span>Explore Diagram</span>
+        <span>→</span>
+      </div>
+    </a>
+
+    <!-- Sequence -->
+    <a href="sentinelai-sequence.html" class="card">
+      <div>
+        <div class="card-type">03. Real-Time Sequence</div>
+        <h2>Scan Execution & Telemetry Trace</h2>
+        <p>Sub-second WebSocket telemetry streaming, asynchronous Kali CLI process spawning, multi-agent AI verification, and Telegram bot notification sequence.</p>
+        <div class="features">
+          <span class="feature-tag">WebSocket Streaming</span>
+          <span class="feature-tag">Process-Group Signals</span>
+          <span class="feature-tag">Telegram Dispatch</span>
+        </div>
+      </div>
+      <div class="card-footer">
+        <span>Explore Diagram</span>
+        <span>→</span>
+      </div>
+    </a>
+
+    <!-- Dataflow -->
+    <a href="sentinelai-dataflow.html" class="card">
+      <div>
+        <div class="card-type">04. Dataflow Pipeline</div>
+        <h2>Security Intelligence & Dataflow</h2>
+        <p>Target intake, raw stdout log ingestion, CWE / OWASP classification, PayloadsAllTheThings vector matching, and automated remediation patch generation.</p>
+        <div class="features">
+          <span class="feature-tag">Stdout Normalizer</span>
+          <span class="feature-tag">CWE Mapping</span>
+          <span class="feature-tag">Vector Embeddings</span>
+          <span class="feature-tag">PDF Rollup</span>
+        </div>
+      </div>
+      <div class="card-footer">
+        <span>Explore Diagram</span>
+        <span>→</span>
+      </div>
+    </a>
+
+    <!-- Lifecycle -->
+    <a href="sentinelai-lifecycle.html" class="card">
+      <div>
+        <div class="card-type">05. State Machine</div>
+        <h2>Scan & Finding Lifecycle Machine</h2>
+        <p>5-stage main lifecycle rail with cooperative operator pause states, active exploitation approval gates, self-healing tool retry loops, and clean terminal exits.</p>
+        <div class="features">
+          <span class="feature-tag">Cooperative Pause</span>
+          <span class="feature-tag">Exploit Gates</span>
+          <span class="feature-tag">Self-Healing Retries</span>
+          <span class="feature-tag">Zero Leaks</span>
+        </div>
+      </div>
+      <div class="card-footer">
+        <span>Explore Diagram</span>
+        <span>→</span>
+      </div>
+    </a>
+  </div>
+</body>
+</html>
