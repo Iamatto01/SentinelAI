@@ -1,0 +1,692 @@
+CONFIDENTIAL SECURITY REPORT
+http://imaluum.iium.edu.my/
+FYP2 - Unified Pentest Platform
+ASSESSMENT RISK RATING
+MEDIUM
+77 total vulnerabilities identified
+Assessment Information
+Target / Scope
+http://imaluum.iium.edu.my/
+Assessment Date
+28 August 2026
+Assessment Mode
+BLACKBOX
+Report Prepared By
+FYP2 Security Assessment Engine
+Project / Client
+ITALEEM (IIUM)
+Vulnerabilities
+77 Findings (2 High/Critical)
+This document contains confidential security assessment findings. Authorized distribution only.
+
+-- 1 of 17 --
+
+Table of Contents
+1. Executive Summary
+Overview of target security posture & vulnerability breakdown
+2. Methodology
+Testing frameworks, scanning tools & verification standards
+3. Findings Summary
+Severity distribution chart, module breakdown & OWASP mapping
+4. Detailed Findings
+In-depth vulnerability analysis, evidence, PoC & remediation guidance
+5. Appendix
+Scan execution statistics, engine details & disclaimer
+FYP2 - CONFIDENTIAL SECURITY REPORT Page 2 of 17
+
+-- 2 of 17 --
+
+1. Executive Summary
+This report presents the results of an automated security assessment conducted using the FYP2 Unified Pentest
+Platform. A total of 1 scan was performed against 1 unique target, yielding 77 findings. The overall risk rating for this
+assessment is: MEDIUM.
+Vulnerability Severity Breakdown
+CRITICAL Must fix immediately - validated exploitability and high business impact 0
+HIGH Fix urgently - significant security risk that could lead to data breach or system
+compromise
+2
+MEDIUM Fix soon - moderate risk that should be addressed in the next development cycle 5
+LOW Fix when convenient - minor issue with limited direct security impact 5
+INFO For awareness - informational finding that may assist in security hardening 65
+2. Methodology
+This assessment was performed using the FYP2 Unified Pentest Platform, an automated security testing platform
+that orchestrates multiple scanning modules covering network, web application, and configuration security. Findings
+are deduplicated by root cause and assigned an evidence-validation tier. AI review is advisory and is not treated as
+proof of exploitability. Methodology follows OWASP Testing Guide v4.2 and NIST SP 800-115.
+Scanning Modules Executed
+• HTTP Headers Analysis Examines HTTP response headers for security misconfigurations including missing
+Content-Security-Policy, HSTS,
+• Exposed Paths Discovery Probes for exposed sensitive files and directories (.git, .env, robots.txt, backups, admin
+panels) that may le
+• Web Server Scanning (Nikto) Comprehensive web server scanning for dangerous files, outdated server software, and
+server misconfigurations.
+• Subdomain Enumeration (Subfinder)	Passive subdomain discovery to expand the assessment attack surface.
+• HTTP Probing (httpx) HTTP service probing with technology fingerprinting and status analysis.
+AI Agent Personas (50 Specialist Agents)
+The FYP2 platform deploys 50 specialist AI agent personas, each trained on a specific security domain. Each agent provides
+expert-level analysis for findings within its domain. The agents available for this assessment are:
+• Web Hunter: Web application pentesting, directory brute-force, parameter fuzzing, XSS detection
+• API Security: REST/GraphQL API testing, OAuth/OIDC, JWT attacks, API enumeration
+• SQL Injection Specialist: SQLi detection & exploitation across MySQL, PostgreSQL, MSSQL, Oracle
+• NoSQL Injection Specialist: MongoDB, Redis, Couchbase injection techniques
+• XSS Specialist: Reflected, stored, DOM-based XSS, CSP bypass, payload crafting
+• Command Injection Expert: OS command injection, RCE, blind/out-of-band detection
+• Path Traversal / LFI Expert: Directory traversal, local file inclusion, PHP wrappers
+• SSRF Expert: Server-side request forgery, cloud metadata, blind SSRF
+• Business Logic Hunter: Workflow bypass, race conditions, price manipulation, mass assignment
+• Broken Access Control Expert: IDOR, privilege escalation, authorization bypass, method tampering
+• Authentication Specialist: Login bypass, session management, OAuth flaws, SSO testing
+• Password Attacks Expert: Brute-force, credential stuffing, password spraying, hash cracking
+FYP2 - CONFIDENTIAL SECURITY REPORT Page 3 of 17
+
+-- 3 of 17 --
+
+• Session Management Analyst: Session fixation, token predictability, cookie attributes, timeout testing
+• CORS / CSRF Specialist: Cross-origin misconfig, cross-site request forgery, same-origin policy bypass
+• Security Misconfiguration Expert: Security headers, default credentials, debug endpoints, WAF bypass
+• Information Disclosure Analyst: Sensitive data exposure, banner grabbing, directory listing, error pages
+• Subdomain Enumeration Expert: Passive/active subdomain discovery, DNS brute-force, zone transfer
+• Cloud Security Expert: AWS/Azure/GCP pentesting, IAM escalation, S3 bucket, container security, K8s
+• Container Security Expert: Docker escape, Kubernetes pod escape, runc CVEs, container breakout
+• Active Directory Expert: Kerberos attacks, BloodHound, DCsync, golden/silver tickets, pass-the-hash
+• Network Security Analyst: Port scanning, service detection, NSE scripts, SMB/SNMP/SSH vulns
+• IoT Security Expert: Firmware analysis, UART/JTAG, BLE/Zigbee, embedded device pentesting
+• Mobile Security Expert: Android/iOS pentesting, APK analysis, certificate pinning bypass, app reverse
+• Wireless Security Expert: WiFi pentesting, WPA/WPA3 attacks, evil twin, rogue AP, deauth, handshake capture
+• SCADA / ICS Security Expert: Modbus/DNP3/S7comm, PLC/HMI enumeration, Purdue model attacks
+• Cryptographic Failures Analyst: Weak ciphers, TLS/SSL testing, hash cracking, JWT secrets, padding oracles
+• LLM / AI Red Teamer: Prompt injection, jailbreak, RAG poisoning, model extraction, MCP exploitation
+• Malware Analyst: Trojan/ransomware analysis, shellcode reversing, obfuscation deobfuscation
+• Reverse Engineer: Binary analysis, firmware reversing, Ghidra/Radare2/IDA, decompilation
+• Evasion / OPSEC Specialist: AV/EDR bypass, AMSI/ETW bypass, process hollowing, sandbox evasion
+• C2 / Persistence Expert: C2 infrastructure, beacon tuning, Sliver/Mythic/Cobalt Strike, persistence
+• Phishing / Social Engineer: Phishing infrastructure, Evilginx, credential harvesting, pretexting
+• OSINT / Reconnaissance Expert: DNS enumeration, email harvesting, Shodan/Censys, GitHub dorking
+• Compliance / STIG Analyst: PCI DSS, HIPAA, NIST 800-53, ISO 27001, CIS controls, STIG hardening
+• Vulnerable Components Scanner: CVE identification, dependency scanning, outdated library detection
+• Exploit Developer: Exploit chaining, vulnerability validation, PoC generation, Metasploit integration
+• Payload Crafter: Shellcode generation, reverse shell payloads, msfvenom, encoding/obfuscation
+• Privilege Escalation Expert: Linux/Windows privesc, SUID, scheduled tasks, service misconfig, token abuse
+• Lateral Movement Expert: Pass-the-hash/ticket, PsExec, WMI, WinRM, DCOM, SSH tunneling
+• Data Exfiltration Expert: DNS tunneling, HTTPS exfil, ICMP exfil, protocol abuse, DLP testing
+• Forensics Analyst: Memory forensics, disk forensics, timeline analysis, incident response
+• Detection Engineer: SIEM rules, threat hunting, log analysis, detection signatures
+• Threat Modeler: Attack surface analysis, STRIDE/DREAD, trust boundaries, attack trees
+• Traffic Analyst: PCAP analysis, protocol dissection, session reconstruction, credential extraction
+• Risk Scorer: CVSS 4.0 scoring, EPSS enrichment, CISA KEV, business impact adjustment
+• Report Generator: Report compilation, executive summary, finding formatting, remediation guidance
+• Engagement Planner: Penetration test planning, scope definition, rules of engagement, MITRE ATT&CK mapping
+• Attack Planner: Multi-step attack chains, exploitation path optimization, lateral movement strategy
+• Swarm Orchestrator: Multi-agent coordination, autonomous red team, parallel exploitation workflows
+• Bug Bounty Specialist: Bounty methodology, scope prioritization, vulnerability report writing
+3. Findings Summary
+Severity Distribution
+CRITICAL 0
+HIGH 2
+MEDIUM 5
+LOW 5
+INFO 65
+[!] High-Priority Fix Items (2 Total)
+HIGH Spring Boot Actuator Exposed (/actuator/env)
+HIGH Spring Boot Actuator Exposed (/actuator/heapdump)
+FYP2 - CONFIDENTIAL SECURITY REPORT Page 4 of 17
+
+-- 4 of 17 --
+
+4. Detailed Findings
+Session Management
+1 Insecure cookie flags - missing Secure, SameSite CVSS 5.5	MEDIUM
+Asset: http://imaluum.iium.edu.my/
+Category: Session Management
+OWASP: A07:2025-Authentication Failures
+References: CWE-614
+Vulnerability Description:
+Cookies set by http://imaluum.iium.edu.my/ are missing Secure, SameSite. Without Secure, cookies transmit over HTTP.
+Without HttpOnly, JS can steal them. Without SameSite, CSRF is easier.
+AI Review (web-hunter) - 35% Confidence
+Unable to verify via AI or heuristics. Low-confidence finding surfaced for manual review.
+Technical Evidence:
+URL: http://imaluum.iium.edu.my/
+Missing: Secure, SameSite
+Proof of Concept (Copy-Paste Ready):
+=== SESSION MANAGEMENT TEST PROCEDURE ===
+# Target: http://imaluum.iium.edu.my/
+# Step 1: Check session cookie attributes:
+curl -skI "http://imaluum.iium.edu.my/" | grep -i set-cookie
+# Step 2: Session fixation test:
+curl -sk "http://imaluum.iium.edu.my/" -H "Cookie: SESSIONID=FIXEDVALUE"
+# Step 3: Predictable session token test:
+for i in $(seq 1 5); do
+curl -skI "http://imaluum.iium.edu.my/" 2>&1 | grep -i set-cookie
+done
+# Step 4: Test for missing session timeout:
+curl -sk "http://imaluum.iium.edu.my/" -H "Authorization: Bearer OLD_TOKEN" -w "HTTP %{http_code}\\n"
+Remediation & Fix Guidance:
+Set Secure, HttpOnly, and SameSite=Lax/Strict on all session cookies.
+Security Misconfiguration
+2 Sensitive File Exposed (/debug/vars) CVSS 5.5	MEDIUM
+Asset: http://imaluum.iium.edu.my/
+Category: Security Misconfiguration
+OWASP: A02:2025-Security Misconfiguration
+References: CWE-538
+Vulnerability Description:
+Sensitive file publicly accessible at https://www.dashboard.polibanting.edu.my/debug/vars (11946 bytes) - may disclose
+configuration, credentials, stack traces, or internal metrics.
+FYP2 - CONFIDENTIAL SECURITY REPORT Page 5 of 17
+
+-- 5 of 17 --
+
+AI Review (code-auditor) - 60% Confidence
+Sensitive path/file discovered. Informational - requires further investigation.
+Technical Evidence:
+URL: https://www.dashboard.polibanting.edu.my/debug/vars
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<script>
+(function(){
+setTimeout(function(){
+window.location.reload();
+</script>
+<link rel="icon"
+Proof of Concept (Copy-Paste Ready):
+=== SECURITY MISCONFIGURATION PROCEDURE ===
+# Target: https://www.dashboard.polibanting.edu.my/debug/vars
+# Step 1: Check security headers:
+curl -skI "https://www.dashboard.polibanting.edu.my/debug/vars" | grep -i -E "strict-transport-security|content-security-policy|x-frame-options|x-
+content-type-options"
+# Step 2: Directory/file enumeration:
+gobuster dir -u "https://www.dashboard.polibanting.edu.my/debug/vars" -w /usr/share/wordlists/dirbuster/directory-list-2.3-medium.txt -x
+php,asp,aspx,txt,zip,git,env
+# Step 3: Check for debug endpoints:
+curl -sk "https://www.dashboard.polibanting.edu.my/debug/vars/.env"
+curl -sk "https://www.dashboard.polibanting.edu.my/debug/vars/.git/config"
+curl -sk "https://www.dashboard.polibanting.edu.my/debug/vars/actuator"
+curl -sk "https://www.dashboard.polibanting.edu.my/debug/vars/phpinfo.php"
+Remediation & Fix Guidance:
+Block public access to /debug/vars.
+3 Missing Security Headers (2) CVSS 3.0	LOW
+Asset: http://imaluum.iium.edu.my/
+Category: Security Misconfiguration
+OWASP: A02:2025-Security Misconfiguration
+References: CWE-693
+Vulnerability Description:
+The target https://mail.sraikulim.edu.my is missing 2 recommended HTTP security headers: X-Frame-Options, Permissions-
+Policy. This weakens defenses against clickjacking, MIME-sniffing, and XSS.
+AI Review (web-hunter) - 95% Confidence
+The response headers explicitly show X-Frame-Options and Permissions-Policy are missing, which qualifies as a true positive…
+Technical Evidence:
+URL: https://mail.sraikulim.edu.my
+Missing: X-Frame-Options, Permissions-Policy
+FYP2 - CONFIDENTIAL SECURITY REPORT Page 6 of 17
+
+-- 6 of 17 --
+
+Proof of Concept (Copy-Paste Ready):
+=== SECURITY MISCONFIGURATION PROCEDURE ===
+# Target: https://mail.sraikulim.edu.my
+# Step 1: Check security headers:
+curl -skI "https://mail.sraikulim.edu.my" | grep -i -E "strict-transport-security|content-security-policy|x-frame-options|x-content-type-options"
+# Step 2: Directory/file enumeration:
+gobuster dir -u "https://mail.sraikulim.edu.my" -w /usr/share/wordlists/dirbuster/directory-list-2.3-medium.txt -x php,asp,aspx,txt,zip,git,env
+# Step 3: Check for debug endpoints:
+curl -sk "https://mail.sraikulim.edu.my/.env"
+curl -sk "https://mail.sraikulim.edu.my/.git/config"
+curl -sk "https://mail.sraikulim.edu.my/actuator"
+curl -sk "https://mail.sraikulim.edu.my/phpinfo.php"
+Remediation & Fix Guidance:
+Add X-Frame-Options: DENY (or SAMEORIGIN) and a Permissions-Policy header such as 'camera=(), microphone=(),
+geolocation=()' at the web server or reverse proxy for all responses.
+4 Missing Security Headers (3) CVSS 3.0	LOW
+Asset: http://imaluum.iium.edu.my/
+Category: Security Misconfiguration
+OWASP: A02:2025-Security Misconfiguration
+References: CWE-693
+Vulnerability Description:
+The target https://www.umcced.umcced.edu.my is missing 3 recommended HTTP security headers: Content-Security-Policy
+(CSP), Referrer-Policy, Permissions-Policy. This weakens defenses against clickjacking, MIME-sniffing, and XSS.
+AI Review (web-hunter) - 100% Confidence
+The response headers confirm three security headers (Content-Security-Policy, Referrer-Policy, Permissions-Policy) are absent,
+which is a true positive configuration weakness but has no demonstrated exploitation path, so severity is capped at low per…
+Technical Evidence:
+URL: https://www.umcced.umcced.edu.my
+Missing: Content-Security-Policy (CSP), Referrer-Policy, Permissions-Policy
+Proof of Concept (Copy-Paste Ready):
+=== SECURITY MISCONFIGURATION PROCEDURE ===
+# Target: https://www.umcced.umcced.edu.my
+# Step 1: Check security headers:
+curl -skI "https://www.umcced.umcced.edu.my" | grep -i -E "strict-transport-security|content-security-policy|x-frame-options|x-content-type-options"
+# Step 2: Directory/file enumeration:
+gobuster dir -u "https://www.umcced.umcced.edu.my" -w /usr/share/wordlists/dirbuster/directory-list-2.3-medium.txt -x php,asp,aspx,txt,zip,git,env
+# Step 3: Check for debug endpoints:
+curl -sk "https://www.umcced.umcced.edu.my/.env"
+curl -sk "https://www.umcced.umcced.edu.my/.git/config"
+curl -sk "https://www.umcced.umcced.edu.my/actuator"
+curl -sk "https://www.umcced.umcced.edu.my/phpinfo.php"
+Remediation & Fix Guidance:
+Add Content-Security-Policy, Referrer-Policy, and Permissions-Policy response headers with appropriate restrictive values on
+all responses, e.g., Content-Security-Policy: default-src 'self'; Referrer-Policy: strict-origin-when-cross-origin; Permissions-
+Policy: geolocation=(), microphone=(), camera=().
+FYP2 - CONFIDENTIAL SECURITY REPORT Page 7 of 17
+
+-- 7 of 17 --
+
+5 Missing Security Headers (4) CVSS 3.0	LOW
+Asset: http://imaluum.iium.edu.my/
+Category: Security Misconfiguration
+OWASP: A02:2025-Security Misconfiguration
+References: CWE-693
+Vulnerability Description:
+The target https://www.dashboard.polibanting.edu.my is missing 4 recommended HTTP security headers: Content-Security-
+Policy (CSP), X-Frame-Options, Referrer-Policy, Permissions-Policy. This weakens defenses against clickjacking, MIME-
+sniffing, and XSS.
+AI Review (web-hunter) - 95% Confidence
+The response headers for https://www.dashboard.polibanting.edu.my confirm the absence of CSP, X-Frame-Options, Referrer-
+Policy, and Permissions-Policy, which is a true positive missing-header configuration issue but has no demonstrated exploitation…
+Technical Evidence:
+URL: https://www.dashboard.polibanting.edu.my
+Missing: Content-Security-Policy (CSP), X-Frame-Options, Referrer-Policy, Permissions-Policy
+Proof of Concept (Copy-Paste Ready):
+=== SECURITY MISCONFIGURATION PROCEDURE ===
+# Target: https://www.dashboard.polibanting.edu.my
+# Step 1: Check security headers:
+curl -skI "https://www.dashboard.polibanting.edu.my" | grep -i -E "strict-transport-security|content-security-policy|x-frame-options|x-content-type-
+options"
+# Step 2: Directory/file enumeration:
+gobuster dir -u "https://www.dashboard.polibanting.edu.my" -w /usr/share/wordlists/dirbuster/directory-list-2.3-medium.txt -x
+php,asp,aspx,txt,zip,git,env
+# Step 3: Check for debug endpoints:
+curl -sk "https://www.dashboard.polibanting.edu.my/.env"
+curl -sk "https://www.dashboard.polibanting.edu.my/.git/config"
+curl -sk "https://www.dashboard.polibanting.edu.my/actuator"
+curl -sk "https://www.dashboard.polibanting.edu.my/phpinfo.php"
+Remediation & Fix Guidance:
+Add the missing security headers to the web server/application responses: Content-Security-Policy (e.g., default-src 'self'), X-
+Frame-Options (DENY or SAMEORIGIN), Referrer-Policy (strict-origin-when-cross-origin), and Permissions-Policy (e.g.,
+geolocation=(), camera=(), microphone=()).
+6 Missing Security Headers (5) CVSS 3.0	LOW
+Asset: http://imaluum.iium.edu.my/
+Category: Security Misconfiguration
+OWASP: A02:2025-Security Misconfiguration
+References: CWE-693
+Vulnerability Description:
+The target https://sales.impach.edu.my is missing 5 recommended HTTP security headers: Content-Security-Policy (CSP), X-
+Frame-Options, X-Content-Type-Options, Referrer-Policy, Permissions-Policy. This weakens defenses against clickjacking,
+MIME-sniffing, and XSS.
+AI Review (web-hunter) - 95% Confidence
+The response from https://sales.impach.edu.my lacks the five listed security headers, which is a confirmed configuration weaknes…
+FYP2 - CONFIDENTIAL SECURITY REPORT Page 8 of 17
+
+-- 8 of 17 --
+
+Technical Evidence:
+URL: https://sales.impach.edu.my
+Missing: Content-Security-Policy (CSP), X-Frame-Options, X-Content-Type-Options, Referrer-Policy, Permissions-Policy
+Proof of Concept (Copy-Paste Ready):
+=== SECURITY MISCONFIGURATION PROCEDURE ===
+# Target: https://sales.impach.edu.my
+# Step 1: Check security headers:
+curl -skI "https://sales.impach.edu.my" | grep -i -E "strict-transport-security|content-security-policy|x-frame-options|x-content-type-options"
+# Step 2: Directory/file enumeration:
+gobuster dir -u "https://sales.impach.edu.my" -w /usr/share/wordlists/dirbuster/directory-list-2.3-medium.txt -x php,asp,aspx,txt,zip,git,env
+# Step 3: Check for debug endpoints:
+curl -sk "https://sales.impach.edu.my/.env"
+curl -sk "https://sales.impach.edu.my/.git/config"
+curl -sk "https://sales.impach.edu.my/actuator"
+curl -sk "https://sales.impach.edu.my/phpinfo.php"
+Remediation & Fix Guidance:
+Add Content-Security-Policy, X-Frame-Options, X-Content-Type-Options, Referrer-Policy, and Permissions-Policy headers via
+the Vercel/Cloudflare edge configuration or application middleware, using restrictive values such as 'frame-ancestors none',
+'nosniff', and a minimal CSP.
+7 Missing Security Headers (6) CVSS 3.0	LOW
+Asset: http://imaluum.iium.edu.my/
+Category: Security Misconfiguration
+OWASP: A02:2025-Security Misconfiguration
+References: CWE-693
+Vulnerability Description:
+The target http://imaluum.iium.edu.my/ is missing 6 recommended HTTP security headers: Strict-Transport-Security (HSTS),
+Content-Security-Policy (CSP), X-Frame-Options, X-Content-Type-Options, Referrer-Policy, Permissions-Policy. This weakens
+defenses against clickjacking, MIME-sniffing, and XSS.
+AI Review (web-hunter) - 95% Confidence
+The response headers collected from http://imaluum.iium.edu.my/ confirm six recommended security headers are absent, which i…
+Technical Evidence:
+URL: http://imaluum.iium.edu.my/
+Missing: Strict-Transport-Security (HSTS), Content-Security-Policy (CSP), X-Frame-Options, X-Content-Type-Options, Referrer-Policy,
+Permissions-Policy
+Proof of Concept (Copy-Paste Ready):
+=== SECURITY MISCONFIGURATION PROCEDURE ===
+# Target: http://imaluum.iium.edu.my/
+# Step 1: Check security headers:
+curl -skI "http://imaluum.iium.edu.my/" | grep -i -E "strict-transport-security|content-security-policy|x-frame-options|x-content-type-options"
+# Step 2: Directory/file enumeration:
+gobuster dir -u "http://imaluum.iium.edu.my/" -w /usr/share/wordlists/dirbuster/directory-list-2.3-medium.txt -x php,asp,aspx,txt,zip,git,env
+# Step 3: Check for debug endpoints:
+curl -sk "http://imaluum.iium.edu.my//.env"
+curl -sk "http://imaluum.iium.edu.my//.git/config"
+curl -sk "http://imaluum.iium.edu.my//actuator"
+curl -sk "http://imaluum.iium.edu.my//phpinfo.php"
+FYP2 - CONFIDENTIAL SECURITY REPORT Page 9 of 17
+
+-- 9 of 17 --
+
+Remediation & Fix Guidance:
+Configure the web server to send the missing response headers: Strict-Transport-Security: max-age=31536000;
+includeSubDomains, Content-Security-Policy with a restrictive policy, X-Frame-Options: DENY, X-Content-Type-Options:
+nosniff, Referrer-Policy: strict-origin-when-cross-origin, and Permissions-Policy: geolocation=(), microphone=(), camera=().
+Cloud Security
+8 nikto: [999106] /: Cloudflare detected via cf-ray header. Recommend
+proxying via Burp or mitmproxy to avoid TLS fingerprint blocks. See:
+https://gi
+CVSS 0.5	INFO
+Asset: http://imaluum.iium.edu.my/
+Category: Cloud Security
+OWASP: A04:2025-Cryptographic Failures
+Vulnerability Description:
++ [999106] /: Cloudflare detected via cf-ray header. Recommend proxying via Burp or mitmproxy to avoid TLS fingerprint
+blocks. See: https://github.com/sullo/nikto/wiki/Using-a-Proxy
+AI Review (cloud-security) - 95% Confidence
+The finding detects Cloudflare via cf-ray header, which is a server/header disclosure considered true positive at info severity per…
+Technical Evidence:
++ [999106] /: Cloudflare detected via cf-ray header. Recommend proxying via Burp or mitmproxy to avoid TLS fingerprint blocks. See: https://
+github.com/sullo/nikto/wiki/Using-a-Proxy
+Proof of Concept (Copy-Paste Ready):
+=== CLOUD SECURITY TEST PROCEDURE ===
+# Target: http://imaluum.iium.edu.my
+# Step 1: Cloud metadata service enumeration:
+# AWS:
+curl -sk "http://imaluum.iium.edu.myhttp://169.254.169.254/latest/meta-data/"
+curl -sk "http://imaluum.iium.edu.myhttp://169.254.169.254/latest/meta-data/iam/security-credentials/"
+# GCP:
+curl -sk "http://imaluum.iium.edu.myhttp://metadata.google.internal/computeMetadata/v1/" -H "Metadata-Flavor: Google"
+# Azure:
+curl -sk "http://imaluum.iium.edu.myhttp://169.254.169.254/metadata/instance?api-version=2021-02-01" -H "Metadata: true"
+# Step 2: Check for S3 bucket misconfiguration:
+curl -sk "http://imaluum.iium.edu.my"
+curl -sk "http://imaluum.iium.edu.my" | head -50
+# Step 3: Test IAM role assumptions:
+aws sts assume-role --role-arn "arn:aws:iam::ACCOUNT:role/ROLE_NAME" --role-session-name "pentest"
+Remediation & Fix Guidance:
+No remediation required for mere Cloudflare detection; this is informational only. If testing requires bypassing Cloudflare
+protections, use Burp/mitmproxy as suggested in the finding.
+SCADA / ICS Security
+FYP2 - CONFIDENTIAL SECURITY REPORT Page 10 of 17
+
+-- 10 of 17 --
+
+9 Sensitive File Exposed (/metrics) CVSS 5.5	MEDIUM
+Asset: http://imaluum.iium.edu.my/
+Category: SCADA / ICS Security
+OWASP: A02:2025-Security Misconfiguration
+References: CWE-538
+Vulnerability Description:
+Sensitive file publicly accessible at https://www.dashboard.polibanting.edu.my/metrics (11941 bytes) - may disclose
+configuration, credentials, stack traces, or internal metrics.
+AI Review (code-auditor) - 60% Confidence
+Sensitive path/file discovered. Informational - requires further investigation.
+Technical Evidence:
+URL: https://www.dashboard.polibanting.edu.my/metrics
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<script>
+(function(){
+setTimeout(function(){
+window.location.reload();
+</script>
+<link rel="icon"
+Proof of Concept (Copy-Paste Ready):
+=== SCADA / ICS SECURITY TEST PROCEDURE ===
+# Target: https://www.dashboard.polibanting.edu.my/metrics
+# Step 1: Check for SCADA web interfaces:
+curl -sk "https://www.dashboard.polibanting.edu.my/metrics" | head -200
+# Step 2: Test for default SCADA credentials:
+curl -sk -u admin:admin "https://www.dashboard.polibanting.edu.my/metrics"
+curl -sk -u root:root "https://www.dashboard.polibanting.edu.my/metrics"
+Remediation & Fix Guidance:
+Block public access to /metrics.
+Evasion / OPSEC
+10 Spring Boot Actuator Exposed (/actuator/env) CVSS 7.5	HIGH
+Asset: http://imaluum.iium.edu.my/
+Category: Evasion / OPSEC
+OWASP: A02:2025-Security Misconfiguration
+References: CWE-200
+Vulnerability Description:
+Spring Actuator endpoint https://webmail.mes.edu.my/actuator/env is publicly accessible - can disclose env vars, beans,
+mappings, or a full heap dump (session tokens, credentials).
+AI Review (api-security) - 35% Confidence
+Unable to verify via AI or heuristics. Low-confidence finding surfaced for manual review.
+FYP2 - CONFIDENTIAL SECURITY REPORT Page 11 of 17
+
+-- 11 of 17 --
+
+Technical Evidence:
+"validationTier": "observed",
+"fingerprint": "cwe-200|||spring boot actuator exposed (/actuator/env)",
+"sources": [
+"path-enum"
+Proof of Concept (Copy-Paste Ready):
+=== EVASION / OPSEC TEST PROCEDURE ===
+# Target: http://imaluum.iium.edu.my
+# Step 1: Test WAF bypass with payload obfuscation:
+curl -sk "http://imaluum.iium.edu.my?id=1+UNION/**/SELECT+1,2,3"
+curl -sk "http://imaluum.iium.edu.my?id=1+UNION%0d%0aSELECT+1,2,3"
+# Step 2: Test with different user agents:
+curl -sk "http://imaluum.iium.edu.my" -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+# Step 3: Test with IP rotation (if proxy available):
+curl -sk "http://imaluum.iium.edu.my" --proxy http://127.0.0.1:8080
+Remediation & Fix Guidance:
+Restrict actuator endpoints to management port/internal network and require authentication.
+11 Spring Boot Actuator Exposed (/actuator/heapdump) CVSS 7.5	HIGH
+Asset: http://imaluum.iium.edu.my/
+Category: Evasion / OPSEC
+OWASP: A02:2025-Security Misconfiguration
+References: CWE-200
+Vulnerability Description:
+Spring Actuator endpoint https://webmail.mes.edu.my/actuator/heapdump is publicly accessible - can disclose env vars,
+beans, mappings, or a full heap dump (session tokens, credentials).
+AI Review (api-security) - 35% Confidence
+Unable to verify via AI or heuristics. Low-confidence finding surfaced for manual review.
+Technical Evidence:
+"validationTier": "observed",
+"fingerprint": "cwe-200|||spring boot actuator exposed (/actuator/heapdump)",
+"sources": [
+"path-enum"
+Proof of Concept (Copy-Paste Ready):
+=== EVASION / OPSEC TEST PROCEDURE ===
+# Target: http://imaluum.iium.edu.my
+# Step 1: Test WAF bypass with payload obfuscation:
+curl -sk "http://imaluum.iium.edu.my?id=1+UNION/**/SELECT+1,2,3"
+curl -sk "http://imaluum.iium.edu.my?id=1+UNION%0d%0aSELECT+1,2,3"
+# Step 2: Test with different user agents:
+curl -sk "http://imaluum.iium.edu.my" -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+# Step 3: Test with IP rotation (if proxy available):
+curl -sk "http://imaluum.iium.edu.my" --proxy http://127.0.0.1:8080
+Remediation & Fix Guidance:
+Restrict actuator endpoints to management port/internal network and require authentication.
+FYP2 - CONFIDENTIAL SECURITY REPORT Page 12 of 17
+
+-- 12 of 17 --
+
+12 Spring Boot Actuator Exposed (/actuator) CVSS 5.5	MEDIUM
+Asset: http://imaluum.iium.edu.my/
+Category: Evasion / OPSEC
+OWASP: A02:2025-Security Misconfiguration
+References: CWE-200
+Vulnerability Description:
+Spring Actuator endpoint https://webmail.mes.edu.my/actuator is publicly accessible - can disclose env vars, beans,
+mappings, or a full heap dump (session tokens, credentials).
+AI Review (api-security) - 35% Confidence
+Unable to verify via AI or heuristics. Low-confidence finding surfaced for manual review.
+Technical Evidence:
+"validationTier": "observed",
+"fingerprint": "cwe-200|||spring boot actuator exposed (/actuator)",
+"sources": [
+"path-enum"
+Proof of Concept (Copy-Paste Ready):
+=== EVASION / OPSEC TEST PROCEDURE ===
+# Target: http://imaluum.iium.edu.my
+# Step 1: Test WAF bypass with payload obfuscation:
+curl -sk "http://imaluum.iium.edu.my?id=1+UNION/**/SELECT+1,2,3"
+curl -sk "http://imaluum.iium.edu.my?id=1+UNION%0d%0aSELECT+1,2,3"
+# Step 2: Test with different user agents:
+curl -sk "http://imaluum.iium.edu.my" -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+# Step 3: Test with IP rotation (if proxy available):
+curl -sk "http://imaluum.iium.edu.my" --proxy http://127.0.0.1:8080
+Remediation & Fix Guidance:
+Restrict actuator endpoints to management port/internal network and require authentication.
+13 Sensitive File Exposed (/storage/logs/laravel.log) CVSS 5.5	MEDIUM
+Asset: http://imaluum.iium.edu.my/
+Category: Evasion / OPSEC
+OWASP: A02:2025-Security Misconfiguration
+References: CWE-538
+Vulnerability Description:
+Sensitive file publicly accessible at https://www.dashboard.polibanting.edu.my/storage/logs/laravel.log (11927 bytes) - may
+disclose configuration, credentials, stack traces, or internal metrics.
+AI Review (code-auditor) - 60% Confidence
+Sensitive path/file discovered. Informational - requires further investigation.
+Technical Evidence:
+URL: https://www.dashboard.polibanting.edu.my/storage/logs/laravel.log
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<script>
+(function(){
+setTimeout(function(){
+window.location.reload();
+</script>
+<link rel="icon"
+FYP2 - CONFIDENTIAL SECURITY REPORT Page 13 of 17
+
+-- 13 of 17 --
+
+Proof of Concept (Copy-Paste Ready):
+=== EVASION / OPSEC TEST PROCEDURE ===
+# Target: https://www.dashboard.polibanting.edu.my/storage/logs/laravel.log
+# Step 1: Test WAF bypass with payload obfuscation:
+curl -sk "https://www.dashboard.polibanting.edu.my/storage/logs/laravel.log?id=1+UNION/**/SELECT+1,2,3"
+curl -sk "https://www.dashboard.polibanting.edu.my/storage/logs/laravel.log?id=1+UNION%0d%0aSELECT+1,2,3"
+# Step 2: Test with different user agents:
+curl -sk "https://www.dashboard.polibanting.edu.my/storage/logs/laravel.log" -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+# Step 3: Test with IP rotation (if proxy available):
+curl -sk "https://www.dashboard.polibanting.edu.my/storage/logs/laravel.log" --proxy http://127.0.0.1:8080
+Remediation & Fix Guidance:
+Block public access to /storage/logs/laravel.log.
+FYP2 - CONFIDENTIAL SECURITY REPORT Page 14 of 17
+
+-- 14 of 17 --
+
+4b. Informational Observations
+The following 64 informational findings are reconnaissance observations, not actionable vulnerabilities. They are listed for
+completeness.
+# Observation Category Severity
+1 robots.txt Discovered Information Disclosu INFO
+2 Server Header Information Disclosure (Apache) Security Misconfigur INFO
+3 Server Header Information Disclosure (Apache/2.4.6 (CentOS) PHP/5.6.22
+OpenSSL/1.0.2k-fips)
+Security Misconfigur INFO
+4 Server Header Information Disclosure (cloudflare) Cloud Security INFO
+5 Server Header Information Disclosure (LiteSpeed) Security Misconfigur INFO
+6 Server Header Information Disclosure (Microsoft-IIS/10.0) Security Misconfigur INFO
+7 Server Header Information Disclosure (nginx) Security Misconfigur INFO
+8 Subdomain enumeration - 47253 subdomains discovered OSINT / Reconnaissan INFO
+9 httpx: target responded HTTP 200 Other INFO
+10 Subdomain: 107-150-172-90.x.com Subdomain Enumeratio INFO
+11 Subdomain: 220-n3d24.x.com Subdomain Enumeratio INFO
+12 Subdomain: 220-raid10.x.com Subdomain Enumeratio INFO
+13 Subdomain: 220-se20160512.x.com Subdomain Enumeratio INFO
+14 Subdomain: 220-se20160614-2.x.com Subdomain Enumeratio INFO
+15 Subdomain: 220-swedish-2017-04-12-xzjian-4off-787889789.x.com Subdomain Enumeratio INFO
+16 Subdomain: ads.x.com Subdomain Enumeratio INFO
+17 Subdomain: agent-tools.payments-web.money-staging.x.com Subdomain Enumeratio INFO
+18 Subdomain: api-lb-atl.money-dev.x.com Subdomain Enumeratio INFO
+19 Subdomain: api-xcorp-pdx.money-staging.x.com Subdomain Enumeratio INFO
+20 Subdomain: api.payments-staging.x.com Subdomain Enumeratio INFO
+21 Subdomain: argocd-internal.money-dev.x.com Subdomain Enumeratio INFO
+22 Subdomain: argocd-internal.staging.unute.x.com Subdomain Enumeratio INFO
+23 Subdomain: atls.vault.x.com Subdomain Enumeratio INFO
+24 Subdomain: business.x.com Subdomain Enumeratio INFO
+25 Subdomain: careers.x.com Subdomain Enumeratio INFO
+26 Subdomain: check-ocr.money-dev.x.com Subdomain Enumeratio INFO
+27 Subdomain: classifier.dat Subdomain Enumeratio INFO
+28 Subdomain: crf.dat Subdomain Enumeratio INFO
+29 Subdomain: customer.payments-web.money.x.com Subdomain Enumeratio INFO
+30 Subdomain: data.money-dev-onprem.x.com Subdomain Enumeratio INFO
+31 Subdomain: data.money-dev1.x.com Subdomain Enumeratio INFO
+32 Subdomain: dev.console.x.com Subdomain Enumeratio INFO
+33 Subdomain: documents-client.payments-web.money-dev.x.com Subdomain Enumeratio INFO
+34 Subdomain: documents-client.payments-web.money.x.com Subdomain Enumeratio INFO
+35 Subdomain: edge.help.x.com Subdomain Enumeratio INFO
+FYP2 - CONFIDENTIAL SECURITY REPORT Page 15 of 17
+
+-- 15 of 17 --
+
+36 Subdomain: envoy-standalone.money.x.com Subdomain Enumeratio INFO
+37 Subdomain: estonia.20171129-78989fs5fs.raid10.x.com Subdomain Enumeratio INFO
+38 Subdomain: games.x.com Subdomain Enumeratio INFO
+39 Subdomain: grafana.money-dev1.x.com Subdomain Enumeratio INFO
+40 Subdomain: kubernetes.help.x.com Cloud Security INFO
+41 Subdomain: l705.x.com Subdomain Enumeratio INFO
+42 Subdomain: lab.money-dev.x.com Subdomain Enumeratio INFO
+43 Subdomain: launchpad.x.com Subdomain Enumeratio INFO
+44 Subdomain: ldapmaster.pdxs.vault.x.com Active Directory Sec INFO
+45 Subdomain: mobile-api.lab.money-dev.x.com Mobile Security INFO
+46 Subdomain: mobile-api.money-dev.money-dev1.x.com Mobile Security INFO
+47 Subdomain: mx4.x.com Subdomain Enumeratio INFO
+48 Subdomain: n1-d3-1.x.com Subdomain Enumeratio INFO
+49 Subdomain: none.x.com Subdomain Enumeratio INFO
+50 Subdomain: numex.dat Subdomain Enumeratio INFO
+51 Subdomain: orchestrator-grpc.money.x.com Evasion / OPSEC INFO
+52 Subdomain: p.payments-prod.x.com Subdomain Enumeratio INFO
+53 Subdomain: parser.tar.gz Subdomain Enumeratio INFO
+54 Subdomain: payments-web.money-dev.x.com Subdomain Enumeratio INFO
+55 Subdomain: payments-web.money.x.com Subdomain Enumeratio INFO
+56 Subdomain: phrases.dat Subdomain Enumeratio INFO
+57 Subdomain: pic.x.com Subdomain Enumeratio INFO
+58 Subdomain: server-8.x.com Subdomain Enumeratio INFO
+59 Subdomain: stream.api.x.com Subdomain Enumeratio INFO
+60 Subdomain: test.caps.x.com Subdomain Enumeratio INFO
+61 Subdomain: uk-api-xcorp.money.x.com Subdomain Enumeratio INFO
+62 Subdomain: vocab.trie Subdomain Enumeratio INFO
+63 Subdomain: webhooks.money-dev.money-dev2.x.com Subdomain Enumeratio INFO
+64 Subdomain: webhooks.uk.money-dev.x.com Subdomain Enumeratio INFO
+Total informational observations: 64
+5. Appendix
+A. Scan Details
+Target: http://imaluum.iium.edu.my/
+Scan ID
+scan_cd8b86f4-ebd4-4bcc-a72e-4cc28d32d011
+Mode
+blackbox
+Status
+completed
+Duration
+02:22:38
+Risk Score
+9.0 / 10
+Total Findings
+77
+FYP2 - CONFIDENTIAL SECURITY REPORT Page 16 of 17
+
+-- 16 of 17 --
+
+B. Platform Information
+Platform: FYP2 - Unified Pentest Platform v1.0.0
+Engine: HexStrike AI v6 + Native Security Toolchain
+AI Engine: 53 Specialist Agent Personas
+PDF Engine: PDFKit Visual Engine
+Report Generated: 28 Aug 2026, 00:30
+C. Disclaimer
+This report reflects the security posture of the assessed target(s) at the time of testing. Security vulnerabilities may exist that were not
+identified during this assessment due to scope limitations, network conditions, or other factors. This report is intended for the
+authorised recipient only and should be treated as confidential. The findings and recommendations provided are based on automated
+analysis and AI-assisted verification, and should be validated by qualified security professionals before implementation.
+FYP2 - CONFIDENTIAL SECURITY REPORT Page 17 of 17
+
+-- 17 of 17 --
+

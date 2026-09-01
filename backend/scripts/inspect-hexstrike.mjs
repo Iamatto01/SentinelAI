@@ -13,3 +13,4 @@ console.log('Total /api/tools/ routes:', toolRoutes.length)
 console.log('Sample tool routes:', toolRoutes.slice(0, 30))
 console.log('Intelligence routes:', routes.filter(r => r.includes('/api/intelligence/')))
 console.log('Filesystem routes:', routes.filter(r => r.includes('/api/filesystem/')))
+
