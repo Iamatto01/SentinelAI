@@ -4,6 +4,7 @@ import PDFDocument from 'pdfkit'
 import { config } from './config.js'
 import * as db from './db.js'
 import { OWASP } from './owasp.js'
+import { aiEngine } from './ai/ai-engine.js'
 
 /**
  * FYP2 Report Generator - Modern, High-Visual PDF Pentest Report.
@@ -1297,29 +1298,117 @@ function renderTableOfContents(doc) {
   }
 }
 
-function renderExecutiveSummary(doc, { vulnerabilities, scans, isWhitebox }) {
+function renderExecutiveSummary(doc, { vulnerabilities, scans, isWhitebox, aiNarrative = null, aiAttackChain = null }) {
   drawSectionTitle(doc, '1.  Executive Summary')
   const x = doc.page.margins.left
   const w = doc.page.width - doc.page.margins.left - doc.page.margins.right
 
   const targets = [...new Set(scans.map((s) => s.target).filter(Boolean))]
+
+  // ── Static overview (brief — 2 sentences max) ──
   doc.fontSize(10).font('Helvetica').fillColor(BRAND.textDark)
   doc.text(
     isWhitebox
       ? `This report presents the results of a static source code security audit conducted using the SentinelAI Autonomous Pentest Platform. ` +
-        `A total of ${scans.length} whitebox scan${scans.length !== 1 ? 's' : ''} ${scans.length !== 1 ? 'were' : 'was'} performed against ${targets.length} unique codebase${targets.length !== 1 ? 's' : ''}, ` +
-        `combining deterministic pattern matching with three specialist AI audit passes (injection, auth/secrets, and logic/config). ` +
-        `Analysis yielded ${vulnerabilities.length} code finding${vulnerabilities.length !== 1 ? 's' : ''}. ` +
-        `The overall code risk rating for this assessment is: ${riskRating(vulnerabilities)}.`
+        `${scans.length} whitebox scan${scans.length !== 1 ? 's' : ''} ${scans.length !== 1 ? 'were' : 'was'} performed against ${targets.length} codebase${targets.length !== 1 ? 's' : ''}, ` +
+        `yielding ${vulnerabilities.length} finding${vulnerabilities.length !== 1 ? 's' : ''}. Risk rating: ${riskRating(vulnerabilities)}.`
       : `This report presents the results of an automated security assessment conducted using the SentinelAI Autonomous Pentest Platform. ` +
-        `A total of ${scans.length} scan${scans.length !== 1 ? 's' : ''} ${scans.length !== 1 ? 'were' : 'was'} performed against ${targets.length} unique target${targets.length !== 1 ? 's' : ''}, ` +
-        `yielding ${vulnerabilities.length} finding${vulnerabilities.length !== 1 ? 's' : ''}. ` +
-        `The overall risk rating for this assessment is: ${riskRating(vulnerabilities)}.`,
+        `${scans.length} scan${scans.length !== 1 ? 's' : ''} ${scans.length !== 1 ? 'were' : 'was'} performed against ${targets.length} target${targets.length !== 1 ? 's' : ''}, ` +
+        `yielding ${vulnerabilities.length} finding${vulnerabilities.length !== 1 ? 's' : ''}. Risk rating: ${riskRating(vulnerabilities)}.`,
     x, doc.y, { width: w },
   )
-  doc.moveDown(1.2)
+  doc.moveDown(1)
 
-  // Severity Breakdown Table
+  // ── AI ANALYSIS ── The AI's independent assessment (unique to SentinelAI) ──
+  if (aiNarrative) {
+    ensureSpace(doc, 80)
+    doc.fontSize(12).font('Helvetica-Bold').fillColor(BRAND.accent).text('AI Security Analysis', x, doc.y)
+    doc.moveDown(0.5)
+    // AI badge
+    const badgeY = doc.y
+    doc.roundedRect(x, badgeY, 60, 16, 3).fill(BRAND.accent)
+    doc.fontSize(7).font('Helvetica-Bold').fillColor('#FFFFFF').text('AI GENERATED', x + 4, badgeY + 4, { width: 52, align: 'center' })
+    doc.y = badgeY + 20
+
+    doc.fontSize(9.5).font('Helvetica').fillColor(BRAND.textDark)
+    // Split into paragraphs
+    const paragraphs = aiNarrative.split(/\n\n+|\r\n\r\n+/)
+    for (const para of paragraphs) {
+      const clean = para.trim()
+      if (!clean) continue
+      ensureSpace(doc, 40)
+      const paraH = doc.heightOfString(clean, { width: w, fontSize: 9.5 })
+      ensureSpace(doc, paraH + 10)
+      doc.text(clean, x, doc.y, { width: w })
+      doc.moveDown(0.6)
+    }
+    doc.moveDown(0.5)
+  }
+
+  // ── AI ATTACK CHAIN ANALYSIS ── How findings chain together ──
+  if (aiAttackChain) {
+    ensureSpace(doc, 100)
+    doc.fontSize(12).font('Helvetica-Bold').fillColor(BRAND.accent).text('AI Attack Chain Analysis', x, doc.y)
+    doc.moveDown(0.5)
+    const badgeY = doc.y
+    doc.roundedRect(x, badgeY, 60, 16, 3).fill(BRAND.accent)
+    doc.fontSize(7).font('Helvetica-Bold').fillColor('#FFFFFF').text('AI GENERATED', x + 4, badgeY + 4, { width: 52, align: 'center' })
+    doc.y = badgeY + 20
+
+    doc.fontSize(9.5).font('Helvetica').fillColor(BRAND.textDark)
+
+    if (aiAttackChain.primaryAttackChain && Array.isArray(aiAttackChain.primaryAttackChain)) {
+      ensureSpace(doc, aiAttackChain.primaryAttackChain.length * 20 + 10)
+      doc.fontSize(10).font('Helvetica-Bold').fillColor(BRAND.primary).text('Primary Attack Chain:', x, doc.y)
+      doc.moveDown(0.3)
+      aiAttackChain.primaryAttackChain.forEach((step, i) => {
+        ensureSpace(doc, 20)
+        doc.fontSize(9.5).font('Helvetica').fillColor(BRAND.textDark).text(`  ${i + 1}. ${step}`, x + 10, doc.y, { width: w - 10 })
+        doc.moveDown(0.3)
+      })
+      doc.moveDown(0.4)
+    }
+
+    if (aiAttackChain.crownJewel) {
+      ensureSpace(doc, 30)
+      doc.fontSize(10).font('Helvetica-Bold').fillColor('#DC2626').text('Crown Jewel (Worst-Case):', x, doc.y)
+      doc.moveDown(0.3)
+      doc.fontSize(9.5).font('Helvetica').fillColor(BRAND.textDark).text(aiAttackChain.crownJewel, x + 10, doc.y, { width: w - 10 })
+      doc.moveDown(0.4)
+    }
+
+    if (aiAttackChain.criticalBreaker) {
+      ensureSpace(doc, 30)
+      doc.fontSize(10).font('Helvetica-Bold').fillColor(BRAND.primary).text('Priority Fix:', x, doc.y)
+      doc.moveDown(0.3)
+      doc.fontSize(9.5).font('Helvetica').fillColor(BRAND.textDark).text(aiAttackChain.criticalBreaker, x + 10, doc.y, { width: w - 10 })
+      doc.moveDown(0.4)
+    }
+
+    if (aiAttackChain.hiddenCombinations && Array.isArray(aiAttackChain.hiddenCombinations) && aiAttackChain.hiddenCombinations.length) {
+      ensureSpace(doc, aiAttackChain.hiddenCombinations.length * 20 + 10)
+      doc.fontSize(10).font('Helvetica-Bold').fillColor('#D97706').text('Hidden Risk Combinations:', x, doc.y)
+      doc.moveDown(0.3)
+      aiAttackChain.hiddenCombinations.forEach(hc => {
+        ensureSpace(doc, 20)
+        doc.fontSize(9.5).font('Helvetica').fillColor(BRAND.textDark).text(`  ⚠ ${hc}`, x + 10, doc.y, { width: w - 10 })
+        doc.moveDown(0.3)
+      })
+      doc.moveDown(0.3)
+    }
+
+    if (aiAttackChain.overallRisk && aiAttackChain.riskJustification) {
+      ensureSpace(doc, 30)
+      doc.fontSize(10).font('Helvetica-Bold').fillColor(BRAND.accent).text(`Overall AI Risk Assessment: ${aiAttackChain.overallRisk}`, x, doc.y)
+      doc.moveDown(0.3)
+      doc.fontSize(9.5).font('Helvetica').fillColor(BRAND.textMuted).text(aiAttackChain.riskJustification, x + 10, doc.y, { width: w - 10 })
+      doc.moveDown(0.5)
+    }
+  }
+
+  doc.moveDown(0.8)
+
+  // ── Severity Breakdown Table (kept — it's useful data) ──
   doc.fontSize(12).font('Helvetica-Bold').fillColor(BRAND.primary).text('Vulnerability Severity Breakdown', x, doc.y)
   doc.moveDown(0.5)
 
@@ -1541,10 +1630,11 @@ function renderDetailedFindings(doc, { vulnerabilities, isWhitebox }) {
     else realFindings.push(v)
   }
 
-  // Group real findings by category, then sort by severity within each category
+  // Group real findings by OWASP category, then sort by severity within each category
   const grouped = {}
   for (const v of realFindings) {
-    const cat = v.category || 'Other'
+    const rawCat = (v.owaspCategory || '').split(':')[0].trim().toUpperCase()
+    const cat = rawCat || v.category || 'OTH'
     if (!grouped[cat]) grouped[cat] = []
     grouped[cat].push(v)
   }
@@ -1557,8 +1647,12 @@ function renderDetailedFindings(doc, { vulnerabilities, isWhitebox }) {
     })
   }
 
-  // Sort categories by the defined order
-  const sortedCategories = [...new Set([...FINDING_CATEGORY_ORDER.filter(c => grouped[c]), ...Object.keys(grouped).filter(c => !FINDING_CATEGORY_ORDER.includes(c))])]
+  // Sort categories by OWASP order (A01-A10, then OTH, then others)
+  const OWASP_SORT_ORDER = ['A01', 'A02', 'A03', 'A04', 'A05', 'A06', 'A07', 'A08', 'A09', 'A10', 'OTH']
+  const sortedCategories = [...new Set([
+    ...OWASP_SORT_ORDER.filter(c => grouped[c]),
+    ...Object.keys(grouped).filter(c => !OWASP_SORT_ORDER.includes(c))
+  ])]
 
   // ── Render real findings as full detailed entries ──
   let globalIndex = 0
@@ -1566,11 +1660,13 @@ function renderDetailedFindings(doc, { vulnerabilities, isWhitebox }) {
     const items = grouped[category] || []
     if (!items.length) continue
 
-    // Category section header
+    // Category section header (OWASP code + name)
     ensureSpace(doc, 35)
     doc.rect(x, doc.y, w, 24).fill(BRAND.primary)
+    const owaspMeta = OWASP[Object.keys(OWASP).find(k => k.toUpperCase().startsWith(category)) || '']
+    const catLabel = owaspMeta ? `${category} — ${owaspMeta.name}` : category
     doc.fontSize(13).font('Helvetica-Bold').fillColor('#FFFFFF')
-      .text(category, x + 12, doc.y + 5, { width: w - 24 })
+      .text(catLabel, x + 12, doc.y + 5, { width: w - 24 })
     doc.moveDown(1.5)
 
     for (let i = 0; i < items.length; i++) {
@@ -1758,7 +1854,10 @@ function renderDetailedFindings(doc, { vulnerabilities, isWhitebox }) {
 
       // REAL Proof of Concept Payload - copy-paste ready
       if (v.pocPayload) {
-        const pocLabel = isWhitebox ? 'Exploitation Steps (Code Audit):' : 'Proof of Concept (Copy-Paste Ready):'
+        const isAiPoc = v.pocSource === 'ai-generated'
+        const pocLabel = isAiPoc
+          ? (isWhitebox ? 'AI-Generated Exploit (Code Audit):' : 'AI-Generated Proof of Concept:')
+          : (isWhitebox ? 'Exploitation Steps (Code Audit):' : 'Proof of Concept (Copy-Paste Ready):')
         const pocText = v.pocPayload
         const pocLinesHeight = doc.fontSize(7.5).font('Helvetica').heightOfString(pocText, { width: w - 24 })
         const pocBoxH = Math.min(pocLinesHeight + 16, 260)
@@ -1768,6 +1867,15 @@ function renderDetailedFindings(doc, { vulnerabilities, isWhitebox }) {
 
         doc.fontSize(9.5).font('Helvetica-Bold').fillColor('#DC2626').text(pocLabel, x, doc.y)
         doc.moveDown(0.2)
+
+        // AI badge for AI-generated PoCs
+        if (isAiPoc) {
+          const aiBadgeY = doc.y
+          doc.roundedRect(x, aiBadgeY, 60, 14, 3).fill(BRAND.accent)
+          doc.fontSize(6.5).font('Helvetica-Bold').fillColor('#FFFFFF').text('AI GENERATED', x + 3, aiBadgeY + 3, { width: 54, align: 'center' })
+          doc.y = aiBadgeY + 16
+        }
+
         const pocY = doc.y
 
         // Red left border accent
@@ -1967,7 +2075,7 @@ export async function generateReport(scanId, minSeverity = 'info', statusFilter 
     sql += ` AND status = ?`
     params.push(statusFilter)
   }
-  sql += ` ORDER BY CASE severity WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 ELSE 4 END`
+  sql += ` ORDER BY owasp_category ASC, CASE severity WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 ELSE 4 END`
 
   const rows = db.all(sql, ...params).filter(r => allowedSeverities.includes(r.severity))
 
@@ -1979,11 +2087,62 @@ export async function generateReport(scanId, minSeverity = 'info', statusFilter 
   const isWhitebox = scan.mode === 'whitebox' || scan.target_type === 'code'
   const reportTitle = isWhitebox ? `Code Audit Report: ${project?.name || scan.target || 'Source Code'}` : `Scan Report: ${scan.target || 'Unknown Target'}`
 
-  const file = path.join(config.outputDir, `report-${scanId}.pdf`)
-  await renderPdf({ file, reportTitle, scans, project, vulnerabilities, isWhitebox })
-
+  // ── AI-GENERATED INSIGHTS ──
+  // These are the AI's INDEPENDENT analysis — not a regurgitation of scanner output.
+  // This is what makes the audit report different from raw scanner results.
   const counts = { critical: 0, high: 0, medium: 0, low: 0, info: 0 }
   for (const v of vulnerabilities) counts[v.severity] = (counts[v.severity] || 0) + 1
+  const owaspCategories = [...new Set(vulnerabilities.map(v => v.owaspCategory).filter(Boolean))]
+  const modules = [...new Set(vulnerabilities.map(v => v.module).filter(Boolean))]
+  const topFindings = vulnerabilities
+    .filter(v => ['critical', 'high'].includes(v.severity))
+    .slice(0, 10)
+    .map(v => ({ title: v.title, severity: v.severity, owaspCategory: v.owaspCategory }))
+
+  let aiNarrative = null
+  let aiAttackChain = null
+  try {
+    aiNarrative = await aiEngine.summarize({
+      target: scan.target, totalFindings: vulnerabilities.length,
+      severityCounts: counts, topFindings, owaspCategories, isWhitebox, modules,
+    })
+  } catch { /* non-fatal */ }
+  try {
+    aiAttackChain = await aiEngine.generateAttackChain(vulnerabilities, scan.target)
+  } catch { /* non-fatal */ }
+
+  // ── AI-GENERATED PoC EXPLOITS for critical/high findings ──
+  // The AI produces tailored, copy-pasteable exploits using the ACTUAL
+  // vulnerable code — far more useful than generic template PoCs.
+  const pocCandidates = vulnerabilities.filter(v =>
+    ['critical', 'high'].includes(v.severity) && (v.evidence?.code || v.evidence?.snippet)
+  ).slice(0, 8) // limit to avoid excessive LLM calls
+  if (pocCandidates.length) {
+    const targetType = isWhitebox ? 'code' : 'url'
+    const pocPromises = pocCandidates.map(async v => {
+      try {
+        const aiPoc = await aiEngine.generateExploitPoc(v, targetType)
+        if (aiPoc) {
+          // Build a rich PoC payload replacing the template-generated one
+          const steps = (aiPoc.exploitSteps || []).map((s, i) => `${i + 1}. ${s}`).join('\n')
+          v.pocPayload = [
+            aiPoc.attackCommand ? `Attack Command:\n${aiPoc.attackCommand}` : '',
+            aiPoc.pocPayload ? `\nPayload:\n${aiPoc.pocPayload}` : '',
+            steps ? `\nExploitation Steps:\n${steps}` : '',
+            aiPoc.impact ? `\nImpact:\n${aiPoc.impact}` : '',
+            aiPoc.prerequisites ? `\nPrerequisites:\n${aiPoc.prerequisites}` : '',
+          ].filter(Boolean).join('\n')
+          v.pocSource = 'ai-generated'
+        }
+      } catch { /* keep template PoC on failure */ }
+      return v
+    })
+    await Promise.all(pocPromises)
+  }
+
+  const file = path.join(config.outputDir, `report-${scanId}.pdf`)
+  await renderPdf({ file, reportTitle, scans, project, vulnerabilities, isWhitebox, aiNarrative, aiAttackChain })
+
   return { file, counts, riskScore: scan.risk_score }
 }
 
@@ -1994,17 +2153,41 @@ export async function generateProjectReport(projectId) {
   const vulnerabilities = []
   for (const s of scans) {
     const rows = db.all(`SELECT * FROM findings WHERE scan_id = ? ORDER BY
+      owasp_category ASC,
       CASE severity WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 ELSE 4 END`, s.id)
     s._findingCount = rows.length
     vulnerabilities.push(...rows.map(r => toView(r, s.target)))
   }
   const isWhitebox = scans.some(s => s.mode === 'whitebox' || s.target_type === 'code')
+
+  // ── AI-GENERATED INSIGHTS for project report ──
+  const counts = { critical: 0, high: 0, medium: 0, low: 0, info: 0 }
+  for (const v of vulnerabilities) counts[v.severity] = (counts[v.severity] || 0) + 1
+  const owaspCategories = [...new Set(vulnerabilities.map(v => v.owaspCategory).filter(Boolean))]
+  const modules = [...new Set(vulnerabilities.map(v => v.module).filter(Boolean))]
+  const topFindings = vulnerabilities
+    .filter(v => ['critical', 'high'].includes(v.severity))
+    .slice(0, 10)
+    .map(v => ({ title: v.title, severity: v.severity, owaspCategory: v.owaspCategory }))
+
+  let aiNarrative = null
+  let aiAttackChain = null
+  try {
+    aiNarrative = await aiEngine.summarize({
+      target: project.name, totalFindings: vulnerabilities.length,
+      severityCounts: counts, topFindings, owaspCategories, isWhitebox, modules,
+    })
+  } catch { /* non-fatal */ }
+  try {
+    aiAttackChain = await aiEngine.generateAttackChain(vulnerabilities, project.name)
+  } catch { /* non-fatal */ }
+
   const file = path.join(config.outputDir, `report-project-${projectId}.pdf`)
-  await renderPdf({ file, reportTitle: `Project Report: ${project.name}`, scans, project, vulnerabilities, isWhitebox })
+  await renderPdf({ file, reportTitle: `Project Report: ${project.name}`, scans, project, vulnerabilities, isWhitebox, aiNarrative, aiAttackChain })
   return { file }
 }
 
-async function renderPdf({ file, reportTitle, scans, project, vulnerabilities, isWhitebox }) {
+async function renderPdf({ file, reportTitle, scans, project, vulnerabilities, isWhitebox, aiNarrative = null, aiAttackChain = null }) {
   await new Promise((resolve, reject) => {
     const doc = new PDFDocument({
       size: 'A4',
@@ -2026,7 +2209,7 @@ async function renderPdf({ file, reportTitle, scans, project, vulnerabilities, i
     renderTableOfContents(doc)
 
     doc.addPage()
-    renderExecutiveSummary(doc, { vulnerabilities, scans, isWhitebox })
+    renderExecutiveSummary(doc, { vulnerabilities, scans, isWhitebox, aiNarrative, aiAttackChain })
 
     const smartBreak = () => {
       const usable = doc.page.height - doc.page.margins.top - doc.page.margins.bottom

@@ -49,7 +49,6 @@ export function getDb() {
   db.pragma('journal_mode = WAL')
   db.pragma('foreign_keys = ON')
   migrate(db)
-  backupDatabase()
   return db
 }
 
@@ -317,15 +316,16 @@ function migrate(d) {
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
   );
 
-  CREATE TABLE IF NOT EXISTS payment_transactions (
+  CREATE TABLE IF NOT EXISTS transactions (
     id TEXT PRIMARY KEY,
     user_id TEXT NOT NULL,
+    plan_id TEXT NOT NULL,
+    plan_name TEXT NOT NULL,
     amount REAL NOT NULL,
     currency TEXT NOT NULL DEFAULT 'USD',
-    status TEXT NOT NULL DEFAULT 'completed',
+    interval TEXT NOT NULL DEFAULT 'monthly',
     provider TEXT NOT NULL DEFAULT 'stripe',
-    reference_id TEXT,
-    plan_id TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'completed',
     created_at TEXT NOT NULL,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
   );
@@ -344,66 +344,10 @@ function migrate(d) {
     created_at TEXT NOT NULL,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
   );
-
-  CREATE TABLE IF NOT EXISTS github_integrations (
-    id TEXT PRIMARY KEY,
-    user_id TEXT NOT NULL UNIQUE,
-    github_username TEXT,
-    access_token TEXT,
-    avatar_url TEXT,
-    created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL,
-    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-  );
-
-  CREATE TABLE IF NOT EXISTS github_repos (
-    id TEXT PRIMARY KEY,
-    user_id TEXT NOT NULL,
-    repo_name TEXT NOT NULL,
-    repo_full_name TEXT NOT NULL,
-    default_branch TEXT DEFAULT 'main',
-    webhook_id TEXT,
-    webhook_active INTEGER DEFAULT 0,
-    created_at TEXT NOT NULL,
-    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-  );
-  CREATE TABLE IF NOT EXISTS plans (
-    id TEXT PRIMARY KEY,
-    name TEXT NOT NULL,
-    description TEXT,
-    price_monthly REAL NOT NULL DEFAULT 0,
-    price_yearly REAL NOT NULL DEFAULT 0,
-    currency TEXT NOT NULL DEFAULT 'USD',
-    scan_quota INTEGER NOT NULL DEFAULT 10,
-    max_repos INTEGER NOT NULL DEFAULT 1,
-    features TEXT NOT NULL DEFAULT '[]',
-    is_popular INTEGER NOT NULL DEFAULT 0,
-    is_open INTEGER NOT NULL DEFAULT 1,
-    is_custom INTEGER NOT NULL DEFAULT 0,
-    badge TEXT,
-    sort_order INTEGER NOT NULL DEFAULT 0,
-    created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL
-  );
-
-  CREATE TABLE IF NOT EXISTS promo_codes (
-    id TEXT PRIMARY KEY,
-    code TEXT UNIQUE NOT NULL,
-    discount_type TEXT NOT NULL DEFAULT 'percentage',
-    discount_value REAL NOT NULL,
-    applicable_plans TEXT DEFAULT 'all',
-    max_uses INTEGER DEFAULT 0,
-    used_count INTEGER NOT NULL DEFAULT 0,
-    min_purchase_amount REAL DEFAULT 0,
-    expires_at TEXT,
-    is_active INTEGER NOT NULL DEFAULT 1,
-    note TEXT,
-    created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL
-  );
   `)
 
   // Migration: add layman_impact column for existing databases
+  try { d.exec(`ALTER TABLE findings ADD COLUMN target TEXT`) } catch { /* already exists */ }
   try { d.exec(`ALTER TABLE findings ADD COLUMN layman_impact TEXT`) } catch { /* already exists */ }
   try { d.exec(`ALTER TABLE findings ADD COLUMN fingerprint TEXT`) } catch { /* already exists */ }
   try { d.exec(`CREATE INDEX IF NOT EXISTS idx_findings_fingerprint ON findings(scan_id, fingerprint)`) } catch { /* already exists */ }
@@ -417,125 +361,13 @@ function migrate(d) {
   try { d.exec(`ALTER TABLE scans ADD COLUMN email_notify TEXT`) } catch { /* already exists */ }
   try { d.exec(`ALTER TABLE scans ADD COLUMN user_id TEXT`) } catch { /* already exists */ }
   try { d.exec(`ALTER TABLE scans ADD COLUMN client TEXT`) } catch { /* already exists */ }
+  try { d.exec(`ALTER TABLE scans ADD COLUMN owasp_categories TEXT`) } catch { /* already exists */ }
   try { d.exec(`ALTER TABLE projects ADD COLUMN user_id TEXT`) } catch { /* already exists */ }
-  try { d.exec(`ALTER TABLE subscriptions ADD COLUMN discount_percent REAL DEFAULT 0`) } catch { /* already exists */ }
-  try { d.exec(`ALTER TABLE subscriptions ADD COLUMN custom_notes TEXT`) } catch { /* already exists */ }
-  try { d.exec(`ALTER TABLE payment_transactions ADD COLUMN discount_amount REAL DEFAULT 0`) } catch { /* already exists */ }
-  try { d.exec(`ALTER TABLE payment_transactions ADD COLUMN promo_code TEXT`) } catch { /* already exists */ }
-
-  // Seed default plans if empty
-  try {
-    const count = d.prepare('SELECT COUNT(*) as c FROM plans').get()?.c || 0
-    if (count === 0) {
-      const now = new Date().toISOString()
-      const seedPlans = [
-        {
-          id: 'trial',
-          name: 'Free Trial',
-          description: 'Explore the full power of SentinelAI autonomous scanning with 3 trial credits.',
-          price_monthly: 0,
-          price_yearly: 0,
-          currency: 'USD',
-          scan_quota: 3,
-          max_repos: 1,
-          features: JSON.stringify([
-            '3 Free Autonomous Security Scans',
-            'Hexstrike 150+ Kali Toolchain (DAST + SAST)',
-            'Multi-LLM Consensus AI Verification',
-            'Executive Summary & Remediation Diff',
-          ]),
-          is_popular: 0,
-          is_open: 1,
-          is_custom: 0,
-          badge: 'Starter',
-          sort_order: 1,
-        },
-        {
-          id: 'pro',
-          name: 'SentinelAI Pro',
-          description: 'Designed for engineering teams, pentesting consultants, and continuous security audits.',
-          price_monthly: 19,
-          price_yearly: 190,
-          currency: 'USD',
-          scan_quota: 50,
-          max_repos: 5,
-          features: JSON.stringify([
-            '5 Linked GitHub Repositories',
-            '50 AI Code Audits / month',
-            'Continuous Webhooks (Push & PR)',
-            'Automated Email PDF Delivery',
-            'AI Auto-Fix & Remediation Diffs',
-            'Priority Security Agent Analysis',
-          ]),
-          is_popular: 1,
-          is_open: 1,
-          is_custom: 0,
-          badge: 'Most Popular',
-          sort_order: 2,
-        },
-        {
-          id: 'enterprise',
-          name: 'SentinelAI Enterprise',
-          description: 'Unlimited security power with dedicated 1-on-1 virtual CISO advisory and customized workflows.',
-          price_monthly: 79,
-          price_yearly: 790,
-          currency: 'USD',
-          scan_quota: 9999,
-          max_repos: 999,
-          features: JSON.stringify([
-            'Unlimited GitHub Repositories',
-            'Unlimited AI Code Audits',
-            '👨‍💼 1-on-1 Certified Security Consultant & Advisory (Guided Remediation & Virtual CISO)',
-            'GitHub PR Bot Inline Review',
-            'Real-time Slack / Discord Webhooks',
-            'Executive White-label PDF Reports',
-            'Dedicated SLA & 24/7 VIP Support',
-          ]),
-          is_popular: 0,
-          is_open: 1,
-          is_custom: 0,
-          badge: 'Full Power',
-          sort_order: 3,
-        },
-      ]
-
-      for (const p of seedPlans) {
-        d.prepare(`
-          INSERT INTO plans (id, name, description, price_monthly, price_yearly, currency, scan_quota, max_repos, features, is_popular, is_open, is_custom, badge, sort_order, created_at, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `).run(p.id, p.name, p.description, p.price_monthly, p.price_yearly, p.currency, p.scan_quota, p.max_repos, p.features, p.is_popular, p.is_open, p.is_custom, p.badge, p.sort_order, now, now)
-      }
-    }
-  } catch (e) {
-    console.warn('[db] plans seed warning:', e.message)
-  }
-
-  // Seed default promo codes if empty
-  try {
-    const promoCount = d.prepare('SELECT COUNT(*) as c FROM promo_codes').get()?.c || 0
-    if (promoCount === 0) {
-      const now = new Date().toISOString()
-      d.prepare(`
-        INSERT INTO promo_codes (id, code, discount_type, discount_value, applicable_plans, max_uses, used_count, min_purchase_amount, expires_at, is_active, note, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run('promo_sentinel50', 'SENTINEL50', 'percentage', 50, 'all', 0, 0, 0, null, 1, 'Launch Celebration 50% Off Discount', now, now)
-
-      d.prepare(`
-        INSERT INTO promo_codes (id, code, discount_type, discount_value, applicable_plans, max_uses, used_count, min_purchase_amount, expires_at, is_active, note, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run('promo_fyp2026', 'FYP2026', 'fixed', 10, 'all', 0, 0, 0, null, 1, 'Academic & FYP Special Voucher ($10 off)', now, now)
-    }
-  } catch (e) {
-    console.warn('[db] promo seed warning:', e.message)
-  }
 }
 
 // ── generic helpers ──────────────────────────────────────────────────────────
 export function run(sql, ...args) { return getDb().prepare(sql).run(...args) }
 export function get(sql, ...args) { return getDb().prepare(sql).get(...args) }
 export function all(sql, ...args) { return getDb().prepare(sql).all(...args) }
-export function transaction(fn) { return getDb().transaction(fn) }
-export function exec(sql) { return getDb().exec(sql) }
-export function prepare(sql) { return getDb().prepare(sql) }
 
-export default { getDb, run, get, all, transaction, exec, prepare, backupDatabase }
+export default { getDb, run, get, all }

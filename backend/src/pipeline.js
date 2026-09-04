@@ -152,9 +152,13 @@ export class UnifiedPipeline {
     let f = enrichWithOwasp(rawFinding)
     // 2. RAG PoC cross-reference
     try { f = payloadsRag.crossReference(f) } catch { /* non-fatal */ }
-    // 3. AI verification (specialist-routed)
+    // 3. AI verification (specialist-routed) — SKIP for AI-generated findings
+    // (code-audit:* / ai-audit modules) since they are already LLM-verified.
+    // Circular re-verification destroys the rich AI analysis and replaces
+    // detailed descriptions with a 1-sentence verdict.
     let verdict = null
-    if (verify) {
+    const isAiGenerated = (f.module || '').startsWith('code-audit') || (f.module || '') === 'ai-audit'
+    if (verify && !isAiGenerated) {
       try {
         const v = await aiEngine.verifyFinding(f, targetType)
         verdict = v
@@ -165,6 +169,10 @@ export class UnifiedPipeline {
         if (v.refined) f = v.refined
         if (v.evidenceTier) f.evidence = { ...(f.evidence || {}), aiEvidenceTier: v.evidenceTier }
       } catch { /* keep original on error */ }
+    } else if (isAiGenerated) {
+      // AI-generated findings are pre-verified — assign high confidence
+      verdict = { agent: f.module, isTruePositive: true, confidence: 85, verdict: 'Verified by AI specialist agent during code audit.' }
+      f.evidence = { ...(f.evidence || {}), aiEvidenceTier: 'validated' }
     }
     // 4. (sanitize removed — raw evidence preserved)
     const tier = f.evidence?.aiEvidenceTier === 'needs-validation' ? 'needs-validation' : evidenceTier(f, targetType)
@@ -177,10 +185,28 @@ export class UnifiedPipeline {
       const evidence = JSON.parse(existing.evidence || '{}')
       const sources = new Set([...(evidence.sources || [existing.module]), f.module || 'unknown'])
       const severity = SEVERITY_RANK[f.severity] > SEVERITY_RANK[existing.severity] ? f.severity : existing.severity
-      db.run(`UPDATE findings SET severity = ?, cvss = ?, evidence = ? WHERE id = ?`, severity,
-        Math.max(existing.cvss || 0, f.cvss || SEVERITY_SCORE[f.severity] || 0),
-        JSON.stringify({ ...evidence, sources: [...sources] }), existing.id)
-      this.log(scanId, 'info', `↪ Deduplicated finding: ${f.title}`)
+
+      // When merging, prefer AI-generated descriptions over pattern-scan boilerplate.
+      // AI findings carry richer attack-path analysis, remediation with code examples,
+      // and layman impact — the pattern-scan templates are generic by comparison.
+      const isExistingPattern = existing.module === 'pattern-scan'
+      const isNewAi = (f.module || '').startsWith('code-audit') || (f.module || '') === 'ai-audit'
+      if (isExistingPattern && isNewAi) {
+        db.run(`UPDATE findings SET severity = ?, cvss = ?, description = ?, layman_impact = ?, remediation = ?, evidence = ? WHERE id = ?`,
+          severity,
+          Math.max(existing.cvss || 0, f.cvss || SEVERITY_SCORE[f.severity] || 0),
+          f.description || existing.description,
+          f.laymanImpact || existing.layman_impact,
+          f.remediation || existing.remediation,
+          JSON.stringify({ ...evidence, sources: [...sources], aiPreferred: true }),
+          existing.id)
+        this.log(scanId, 'info', `↪ Merged: AI description replaced pattern-scan boilerplate for: ${f.title}`)
+      } else {
+        db.run(`UPDATE findings SET severity = ?, cvss = ?, evidence = ? WHERE id = ?`, severity,
+          Math.max(existing.cvss || 0, f.cvss || SEVERITY_SCORE[f.severity] || 0),
+          JSON.stringify({ ...evidence, sources: [...sources] }), existing.id)
+        this.log(scanId, 'info', `↪ Deduplicated finding: ${f.title}`)
+      }
       return db.get(`SELECT * FROM findings WHERE id = ?`, existing.id)
     }
     f.evidence = { ...f.evidence, fingerprint, sources: [f.module || 'unknown'] }
@@ -217,12 +243,18 @@ export class UnifiedPipeline {
   }
 
   // ── BLACKBOX ───────────────────────────────────────────────────────────────
-  async runBlackbox(scan, { modules = [], objective = 'comprehensive', maxTools = 6, verify = true, depth = 'standard' } = {}) {
+  async runBlackbox(scan, { modules = [], objective = 'comprehensive', maxTools = 6, verify = true, depth = 'standard', owaspCategories = [] } = {}) {
     const scanId = scan.id
     const target = scan.target
     this._currentTarget = target
-    this.log(scanId, 'info', `▶ Blackbox scan started on ${target} (depth=offensive — all probes active)`)
+    const catLabel = owaspCategories.length ? ` [OWASP: ${owaspCategories.join(',')}]` : ''
+    this.log(scanId, 'info', `▶ Blackbox scan started on ${target} (depth=offensive — all probes active)${catLabel}`)
     this.progress(scanId, 2)
+
+    // Store OWASP categories for reference in findings display
+    if (owaspCategories.length) {
+      try { db.run(`UPDATE scans SET owasp_categories = ? WHERE id = ?`, JSON.stringify(owaspCategories), scanId) } catch { /* non-critical */ }
+    }
 
     const engine = await hexstrike.engineStatus()
     if (!engine.available) {
@@ -1219,14 +1251,20 @@ export class UnifiedPipeline {
   }
 
   // ── WHITEBOX ───────────────────────────────────────────────────────────────
-  async runWhitebox(scan, { files = [], language = '', focus = '', verify = true, depth = 'standard' } = {}) {
+  async runWhitebox(scan, { files = [], language = '', focus = '', verify = true, depth = 'standard', owaspCategories = [], whiteboxPasses = null } = {}) {
     const scanId = scan.id
     // ALWAYS full offensive: pattern scanner + 3 specialist AI passes
-    this.log(scanId, 'info', `▶ Whitebox static analysis started (${files.length} files, depth=offensive)`)
+    const catLabel = owaspCategories.length ? ` [OWASP: ${owaspCategories.join(',')}]` : ''
+    this.log(scanId, 'info', `▶ Whitebox static analysis started (${files.length} files, depth=offensive)${catLabel}`)
     if (!files.length) {
       this.log(scanId, 'warn', 'No source files provided for whitebox analysis')
       this.finish(scanId, 'failed')
       return
+    }
+
+    // Store OWASP categories for reference in findings display
+    if (owaspCategories.length) {
+      try { db.run(`UPDATE scans SET owasp_categories = ? WHERE id = ?`, JSON.stringify(owaspCategories), scanId) } catch { /* non-critical */ }
     }
 
     // ── Structured whitebox metadata for the "Audit Details" section ──
@@ -1265,12 +1303,19 @@ export class UnifiedPipeline {
       }
       this.progress(scanId, 15)
 
-      // 3 specialist AI audit passes — always runs
-      const passes = [
-        { tag: 'injection', focus: `${focus || 'security'} — focus EXCLUSIVELY on injection flaws: SQL injection, command injection, XSS, template injection, LDAP/XPath injection, unsafe eval/exec/deserialization. Trace user input to sinks.` },
-        { tag: 'auth-secrets', focus: `${focus || 'security'} — focus EXCLUSIVELY on broken authentication, session management, JWT misuse, hardcoded credentials/secrets/API keys, weak crypto, insecure password storage, missing rate limiting.` },
-        { tag: 'logic-config', focus: `${focus || 'security'} — focus EXCLUSIVELY on business-logic flaws, broken access control (IDOR, missing authz checks), SSRF, path traversal, file upload, CORS misconfiguration, security headers, debug endpoints left enabled.` },
+      // 3 specialist AI audit passes — always runs unless filtered by OWASP categories
+      const allPasses = [
+        { tag: 'injection', focus: `${focus || 'security'} — focus EXCLUSIVELY on injection flaws: SQL injection, command injection, XSS, template injection, LDAP/XPath injection, unsafe eval/exec/deserialization. Trace user input to sinks.`, owaspCats: ['A05'] },
+        { tag: 'auth-secrets', focus: `${focus || 'security'} — focus EXCLUSIVELY on broken authentication, session management, JWT misuse, hardcoded credentials/secrets/API keys, weak crypto, insecure password storage, missing rate limiting.`, owaspCats: ['A04', 'A07'] },
+        { tag: 'logic-config', focus: `${focus || 'security'} — focus EXCLUSIVELY on business-logic flaws, broken access control (IDOR, missing authz checks), SSRF, path traversal, file upload, CORS misconfiguration, security headers, debug endpoints left enabled.`, owaspCats: ['A01', 'A02', 'A03', 'A06', 'A08', 'A09', 'A10'] },
       ]
+      // Filter passes by OWASP categories if provided
+      const passes = whiteboxPasses
+        ? allPasses.filter(p => {
+            if (whiteboxPasses.includes('pattern')) return true
+            return whiteboxPasses.includes(p.tag)
+          })
+        : allPasses
 
       // AI passes span 15% → 97%
       const aiStart = 15, aiEnd = 97

@@ -22,6 +22,7 @@ export default function ScanDetail() {
   const [showMapping, setShowMapping] = useState(false)
   const [whiteboxMeta, setWhiteboxMeta] = useState(null)
   const [showFiles, setShowFiles] = useState(false)
+  const [owaspExpandedKey, setOwaspExpandedKey] = useState(null) // for collapsible OWASP findings groups
   const termRef = useRef(null)
 
   // AI Audio Briefing player state (Fish Audio via OpenRouter) - MUST be declared at top level
@@ -296,20 +297,66 @@ export default function ScanDetail() {
           <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-200 mb-3">
             <Bug size={16} className="text-sev-high" /> Findings ({findings.length})
           </h3>
-          <div className="space-y-2.5 max-h-96 overflow-auto pr-1">
+          <div className="space-y-3 max-h-[28rem] overflow-auto pr-1">
             {findings.length === 0 && <p className="text-sm text-slate-600 py-10 text-center">No findings yet.</p>}
-            {findings.map((f, i) => (
-              <div key={f.id || i} onClick={() => setSelected(f)} className="rounded-lg bg-ink-800/60 border border-ink-700/60 p-3.5 cursor-pointer hover:border-ink-500 transition-colors">
-                <div className="flex items-start justify-between gap-3">
-                  <p className="text-sm font-medium text-slate-200 leading-snug">{f.title}</p>
-                  <SeverityBadge severity={f.severity} />
-                </div>
-                <div className="flex flex-wrap gap-1.5 mt-1.5">
-                  {f.owasp_category && <span className="text-[11px] text-accent/80">{f.owasp_category}</span>}
-                </div>
-                {f.agent_verdict && <p className="mt-1 text-[11px] text-slate-500 italic line-clamp-2">{f.agent_verdict}</p>}
-              </div>
-            ))}
+            {(() => {
+              // Group findings by OWASP category (normalized to A01-A10 or OTH)
+              const OWASP_ORDER = ['A01', 'A02', 'A03', 'A04', 'A05', 'A06', 'A07', 'A08', 'A09', 'A10', 'OTH']
+              const OWASP_NAMES = {
+                A01: 'Broken Access Control', A02: 'Security Misconfiguration', A03: 'Software Supply Chain Failures',
+                A04: 'Cryptographic Failures', A05: 'Injection', A06: 'Insecure Design',
+                A07: 'Authentication Failures', A08: 'Software or Data Integrity Failures',
+                A09: 'Security Logging and Alerting Failures', A10: 'Mishandling of Exceptional Conditions',
+                OTH: 'Other Findings',
+              }
+              const grouped = {}
+              const uncategorized = []
+              findings.forEach((f) => {
+                const cat = (f.owasp_category || '').split(':')[0].trim().toUpperCase()
+                if (cat && OWASP_ORDER.includes(cat)) {
+                  if (!grouped[cat]) grouped[cat] = []
+                  grouped[cat].push(f)
+                } else {
+                  uncategorized.push(f)
+                }
+              })
+              if (uncategorized.length) {
+                grouped['OTH'] = uncategorized
+              }
+              return OWASP_ORDER.filter((code) => grouped[code]).map((code) => {
+                const items = grouped[code]
+                const [expandedKey, setExpandedKey] = [owaspExpandedKey, setOwaspExpandedKey]
+                const isExpanded = expandedKey === code
+                return (
+                  <div key={code} className="rounded-lg border border-ink-700/60 bg-ink-800/40 overflow-hidden">
+                    <div
+                      onClick={() => setOwaspExpandedKey(isExpanded ? null : code)}
+                      className="flex items-center gap-2 p-2.5 cursor-pointer hover:bg-ink-700/40 transition-colors"
+                    >
+                      {isExpanded ? <ChevronDown size={14} className="text-slate-400" /> : <ChevronRight size={14} className="text-slate-400" />}
+                      <span className="text-xs font-bold text-accent/90">{code}</span>
+                      <span className="text-xs text-slate-300">{OWASP_NAMES[code]}</span>
+                      <span className="ml-auto text-[10px] px-1.5 py-0.5 rounded-full bg-slate-700/60 text-slate-300 font-semibold">
+                        {items.length}
+                      </span>
+                    </div>
+                    {isExpanded && (
+                      <div className="space-y-2 p-2 pt-0">
+                        {items.map((f, i) => (
+                          <div key={f.id || i} onClick={() => setSelected(f)} className="rounded-lg bg-ink-800/60 border border-ink-700/60 p-3.5 cursor-pointer hover:border-ink-500 transition-colors">
+                            <div className="flex items-start justify-between gap-3">
+                              <p className="text-sm font-medium text-slate-200 leading-snug">{f.title}</p>
+                              <SeverityBadge severity={f.severity} />
+                            </div>
+                            {f.agent_verdict && <p className="mt-1 text-[11px] text-slate-500 italic line-clamp-2">{f.agent_verdict}</p>}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )
+              })
+            })()}
           </div>
         </div>
       </div>

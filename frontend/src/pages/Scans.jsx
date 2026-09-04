@@ -111,21 +111,20 @@ export default function Scans() {
   function fetchScansOnly() {
     api.scans()
       .then((res) => {
-        setErr('')
         if (Array.isArray(res)) {
           setScans(res)
         } else if (res && Array.isArray(res.scans)) {
           setScans(res.scans)
         } else if (res && res.error) {
           setErr(res.error)
-          setScans((prev) => prev || [])
+          setScans([])
         } else {
-          setScans((prev) => prev || [])
+          setScans([])
         }
       })
       .catch((e) => {
         setErr(e.message || 'Failed to load scans')
-        setScans((prev) => prev || [])
+        setScans([])
       })
   }
 
@@ -232,18 +231,6 @@ export default function Scans() {
     setScanModalOpen(true)
   }
 
-  async function handleDeleteFolder(folderId, folderName, e) {
-    if (e) e.stopPropagation()
-    if (!window.confirm(`Are you sure you want to delete folder "${folderName}"? Associated scans will be kept safe as Standalone Scans.`)) return
-    try {
-      await api.deleteProject(folderId)
-      setProjects((prev) => (prev || []).filter((p) => p.id !== folderId))
-      fetchScansOnly()
-    } catch (err2) {
-      alert(`Delete folder failed: ${err2.message}`)
-    }
-  }
-
   const filteredScans = useMemo(() => {
     if (!scans) return null
     if (!searchQuery.trim()) return scans
@@ -289,7 +276,8 @@ export default function Scans() {
     return groups
   }, [filteredScans, projects])
 
-  if (scans === null && !err) return <ScanListSkeleton />
+  if (err) return <div className="card p-6 text-rose-400 border border-rose-500/30 bg-rose-500/10">{err}</div>
+  if (!scans) return <ScanListSkeleton />
 
   // Render a scans table component
   const renderScansTable = (scanList, isSubTable = false) => {
@@ -444,22 +432,6 @@ export default function Scans() {
         </div>
       </div>
 
-      {err && (
-        <div className="card p-4 text-rose-300 border border-rose-500/40 bg-rose-500/10 flex items-center justify-between gap-3 shadow-lg animate-in fade-in">
-          <div className="flex items-center gap-2.5 text-xs font-semibold">
-            <AlertCircle size={18} className="text-rose-400 shrink-0" />
-            <span>{err}</span>
-          </div>
-          <button
-            type="button"
-            onClick={() => { setErr(''); fetchData() }}
-            className="btn-secondary text-xs py-1.5 px-3 flex items-center gap-1.5 border-rose-500/30 text-rose-300 hover:bg-rose-500/20 font-bold cursor-pointer"
-          >
-            <RefreshCw size={13} /> Retry
-          </button>
-        </div>
-      )}
-
       {/* Controls Bar: Search & View Switcher */}
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
         <div className="relative flex-1">
@@ -603,16 +575,6 @@ export default function Scans() {
                     >
                       <Plus size={12} /> Launch Scan
                     </button>
-
-                    {!isClient && group.id !== '_standalone' && (
-                      <button
-                        onClick={(e) => handleDeleteFolder(group.id, group.name, e)}
-                        className="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 transition-colors"
-                        title={`Delete folder "${group.name}"`}
-                      >
-                        <Trash2 size={14} />
-                      </button>
-                    )}
                   </div>
                 </div>
 

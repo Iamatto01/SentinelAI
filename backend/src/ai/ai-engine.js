@@ -418,12 +418,99 @@ Respond ONLY with JSON:
     }
   }
 
-  /** Summarize scan results into an executive narrative (uses fast model). */
+  /**
+   * Summarize scan results into a rich executive narrative.
+   * Uses the HEAVY tier model for deeper analysis — this is the AI's
+   * independent assessment of the security posture, NOT a regurgitation
+   * of scanner output. Produces unique insights about attack surface,
+   * risk posture, and recommended remediation priorities.
+   */
   async summarize(scanStats) {
     if (!this.llm.isConfigured()) return null
-    const prompt = `Summarize these penetration test results into a concise executive summary (3-4 sentences, no jargon):\n${JSON.stringify(scanStats)}`
+    const { target, totalFindings, severityCounts, topFindings, owaspCategories, isWhitebox, modules } = scanStats
+    const prompt = `You are an elite security consultant writing an executive summary for a ${isWhitebox ? 'source code security audit' : 'penetration test'} report.
+
+ASSESSMENT TARGET: ${target || 'Unknown'}
+ASSESSMENT TYPE: ${isWhitebox ? 'Whitebox (Static Code Analysis)' : 'Blackbox (External Penetration Test)'}
+TOOLS/MODULES USED: ${modules?.join(', ') || 'N/A'}
+OWASP CATEGORIES AFFECTED: ${(owaspCategories || []).join(', ') || 'N/A'}
+
+FINDINGS BREAKDOWN:
+- Critical: ${severityCounts?.critical || 0}
+- High: ${severityCounts?.high || 0}
+- Medium: ${severityCounts?.medium || 0}
+- Low: ${severityCounts?.low || 0}
+- Info: ${severityCounts?.info || 0}
+- Total: ${totalFindings}
+
+TOP FINDINGS:
+${(topFindings || []).map((f, i) => `${i + 1}. [${f.severity.toUpperCase()}] ${f.title}${f.owaspCategory ? ' (' + f.owaspCategory + ')' : ''}`).join('\n')}
+
+Write a comprehensive executive summary (4-6 paragraphs) that:
+1. Opens with a blunt assessment of the overall security posture (is this system secure or not?)
+2. Explains the MOST critical risks and their business impact — not just "X vulnerabilities found" but WHAT an attacker could actually DO
+3. Identifies the attack chain: how could an attacker combine these findings to achieve full compromise?
+4. Prioritizes remediation — what should they fix FIRST, and why?
+5. Notes any systemic issues (e.g., "auth is broadly broken" not just "one missing auth check")
+6. Closes with a clear recommendation on risk acceptance or rejection
+
+Write in professional but accessible language. Do NOT use generic templates. Be specific about the actual findings.`
     try {
-      return await this.llm.analyze(prompt, { context: { operation: 'summary' }, useFast: true, maxTokens: 400 })
+      return await this.llm.analyze(prompt, {
+        context: { operation: 'executive-summary' },
+        maxTokens: 1200, timeoutMs: 60000,
+      })
+    } catch { return null }
+  }
+
+  /**
+   * Generate an independent AI attack-chain analysis — how an attacker
+   * could chain multiple findings together to achieve full compromise.
+   * This is the AI's UNIQUE value-add: pattern scanners can't do this.
+   */
+  async generateAttackChain(findings, target) {
+    if (!this.llm.isConfigured() || !findings.length) return null
+    const topFindings = findings
+      .filter(f => ['critical', 'high', 'medium'].includes(f.severity))
+      .slice(0, 15)
+    if (!topFindings.length) return null
+
+    const findingList = topFindings.map((f, i) =>
+      `${i + 1}. [${f.severity.toUpperCase()}] ${f.title}
+   File: ${f.evidence?.file || 'N/A'}:${f.evidence?.line || ''}
+   Description: ${f.description || 'N/A'}
+   OWASP: ${f.owaspCategory || 'N/A'}
+   CWE: ${f.cweId || f.cwe || 'N/A'}`
+    ).join('\n\n')
+
+    const prompt = `You are an elite red team operator analyzing vulnerability findings from a security assessment of: ${target || 'a web application'}
+
+VERIFIED VULNERABILITIES:
+${findingList}
+
+Analyze how an attacker could CHAIN these vulnerabilities together to achieve maximum impact. Think like a real attacker:
+
+1. What is the most dangerous attack chain? (Step 1: exploit X, Step 2: use X to access Y, Step 3: ...)
+2. What is the "crown jewel" — what's the worst thing an attacker could achieve?
+3. Which finding, if fixed first, would break the most attack chains?
+4. Are there any findings that look low-severity individually but become critical when combined?
+
+Respond ONLY with JSON:
+{
+  "primaryAttackChain": ["Step 1: ...", "Step 2: ...", "Step 3: ..."],
+  "crownJewel": "description of the worst-case outcome",
+  "criticalBreaker": "which finding to fix first and why",
+  "hiddenCombinations": ["description of low-severity findings that become critical when combined"],
+  "overallRisk": "LOW | MEDIUM | HIGH | CRITICAL",
+  "riskJustification": "1-2 sentence justification"
+}`
+
+    try {
+      const raw = await this.llm.analyze(prompt, {
+        context: { operation: 'attack-chain' },
+        maxTokens: 1000, timeoutMs: 60000,
+      })
+      return this.llm.parseJSON(raw)
     } catch { return null }
   }
 

@@ -79,6 +79,7 @@ export const api = {
   audioBriefing: (scanId) => apiFetch(`/api/scans/${scanId}/audio-briefing`, { method: 'POST' }),
   browseFilesystem: (path) => apiFetch(`/api/filesystem/browse${path ? `?path=${encodeURIComponent(path)}` : ''}`),
   startWhiteboxFolder: (body) => apiFetch('/api/scans/whitebox-folder', { method: 'POST', body }),
+  owaspTools: () => apiFetch('/api/owasp-tools'),
 
   // ── Exploit Engine ──
   msfStatus: () => apiFetch('/api/exploits/msf/status'),

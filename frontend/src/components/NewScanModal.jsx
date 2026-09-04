@@ -1,12 +1,136 @@
 import React, { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import {
-  X, Globe, FileCode2, Loader2, FolderOpen, ChevronRight, ChevronUp, Plus,
-  Trash2, Code2, ShieldCheck, Swords, User, Zap, Check, CheckCircle2
+  X, Globe, FileCode2, Loader2, FolderOpen, ChevronRight, ChevronUp, ChevronDown, Plus,
+  Trash2, Code2, ShieldCheck, Swords, User, Zap, Check, CheckCircle2, ShieldAlert
 } from 'lucide-react'
 import { api } from '../lib/api.js'
 
 const BLACKBOX_MODULES = ['nmap', 'httpx', 'whatweb', 'wafw00f', 'subfinder', 'amass', 'dnsbrute', 'katana', 'ffuf', 'gobuster', 'nikto', 'nuclei', 'sqlmap', 'dalfox', 'arjun', 'wpscan']
+
+// ── OWASP Top 10 (2025) Category Definitions ─────────────────────────
+const OWASP_CATEGORIES = [
+  { code: 'A01', id: 'A01:2025', name: 'Broken Access Control', icon: '🔐', color: 'rose' },
+  { code: 'A02', id: 'A02:2025', name: 'Security Misconfiguration', icon: '⚙️', color: 'amber' },
+  { code: 'A03', id: 'A03:2025', name: 'Software Supply Chain Failures', icon: '📦', color: 'orange' },
+  { code: 'A04', id: 'A04:2025', name: 'Cryptographic Failures', icon: '🔑', color: 'purple' },
+  { code: 'A05', id: 'A05:2025', name: 'Injection', icon: '💉', color: 'red' },
+  { code: 'A06', id: 'A06:2025', name: 'Insecure Design', icon: '🏗️', color: 'blue' },
+  { code: 'A07', id: 'A07:2025', name: 'Authentication Failures', icon: '👤', color: 'cyan' },
+  { code: 'A08', id: 'A08:2025', name: 'Software or Data Integrity Failures', icon: '🔄', color: 'teal' },
+  { code: 'A09', id: 'A09:2025', name: 'Security Logging and Alerting Failures', icon: '📋', color: 'indigo' },
+  { code: 'A10', id: 'A10:2025', name: 'Mishandling of Exceptional Conditions', icon: '⚠️', color: 'yellow' },
+]
+
+// Tool → OWASP mapping (blackbox tools)
+const OWASP_BLACKBOX_TOOLS = {
+  A01: [
+    { tool: 'nmap', desc: 'NSE scripts: smb-enum-shares, rdp-vuln, path traversal' },
+    { tool: 'ffuf', desc: 'Forced browsing — discovers hidden paths & IDOR endpoints' },
+    { tool: 'gobuster', desc: 'Directory/path brute force — exposes restricted areas' },
+    { tool: 'katana', desc: 'Crawler — discovers parameterized routes (IDOR surface)' },
+    { tool: 'arjun', desc: 'Hidden parameter discovery — access control bypass' },
+  ],
+  A02: [
+    { tool: 'nikto', desc: 'Security headers, debug pages, misconfig checks' },
+    { tool: 'nuclei', desc: 'Misconfiguration templates (CORS, debug, exposure)' },
+    { tool: 'whatweb', desc: 'Server header / tech stack exposure detection' },
+    { tool: 'wafw00f', desc: 'WAF fingerprint & security posture' },
+    { tool: 'httpx', desc: 'HTTP probe — banner, response headers' },
+    { tool: 'ffuf', desc: 'Directory listing, .htaccess exposure' },
+  ],
+  A03: [
+    { tool: 'nuclei', desc: 'CVE templates for vulnerable components & libraries' },
+    { tool: 'nikto', desc: 'Outdated software / server version detection' },
+    { tool: 'whatweb', desc: 'Technology fingerprint — identifies dependency versions' },
+    { tool: 'nmap', desc: 'Service version detection — flags known-vulnerable versions' },
+  ],
+  A04: [
+    { tool: 'nmap', desc: 'NSE: ssl-cert, ssl-enum-ciphers, weak protocols' },
+    { tool: 'nuclei', desc: 'TLS/SSL misconfig & weak cipher templates' },
+    { tool: 'whatweb', desc: 'Detects HTTP vs HTTPS, cert validity' },
+    { tool: 'wafw00f', desc: 'TLS inspection' },
+  ],
+  A05: [
+    { tool: 'sqlmap', desc: 'SQL injection — automated union-based to time-blind' },
+    { tool: 'dalfox', desc: 'XSS — reflected, stored, DOM-based injection' },
+    { tool: 'arjun', desc: 'Hidden parameter discovery for injection vectors' },
+    { tool: 'nuclei', desc: 'Injection templates (SSTI, SSRF, code injection)' },
+    { tool: 'nikto', desc: 'CGI & injection-prone endpoint detection' },
+    { tool: 'katana', desc: 'Crawl parameterized URLs for injection testing' },
+    { tool: 'ffuf', desc: 'Fuzz parameters for error-based injection' },
+  ],
+  A06: [
+    { tool: 'nikto', desc: 'Default credentials & insecure defaults' },
+    { tool: 'nuclei', desc: 'Weak design patterns (missing rate-limit, etc.)' },
+    { tool: 'nmap', desc: 'Default-creds NSE scripts across services' },
+  ],
+  A07: [
+    { tool: 'nikto', desc: 'Authentication misconfig & session cookie flags' },
+    { tool: 'nuclei', desc: 'Auth bypass, JWT, session templates' },
+    { tool: 'nmap', desc: 'Default credentials NSE on SSH/FTP/HTTP' },
+    { tool: 'wpscan', desc: 'WordPress auth & user enumeration (WP only)' },
+  ],
+  A08: [
+    { tool: 'nuclei', desc: 'Deserialization & integrity check templates' },
+    { tool: 'nikto', desc: 'Unsafe file inclusion / deserialization endpoints' },
+    { tool: 'nmap', desc: 'Service-level integrity probing' },
+  ],
+  A09: [
+    { tool: 'nikto', desc: 'Missing security headers (X-Frame, CSP, HSTS)' },
+    { tool: 'nuclei', desc: 'Information disclosure & logging failure templates' },
+    { tool: 'whatweb', desc: 'Error page & verbose output detection' },
+  ],
+  A10: [
+    { tool: 'nmap', desc: 'NSE: http-errors, service crash, DoS probes' },
+    { tool: 'nuclei', desc: 'Error-handling & crash disclosure templates' },
+    { tool: 'nikto', desc: 'Verbose error & stack trace exposure' },
+  ],
+}
+
+// Method → OWASP mapping (whitebox SAST)
+const OWASP_WHITEBOX_METHODS = {
+  A01: [
+    { tool: 'Pattern Scanner', desc: 'Path traversal, IDOR, open redirect, CSRF detection' },
+    { tool: 'AI Security Agent', desc: 'Broken access control & business logic analysis' },
+  ],
+  A02: [
+    { tool: 'Pattern Scanner', desc: 'CORS misconfig, debug mode, XXE, file upload detection' },
+    { tool: 'AI Security Agent', desc: 'Security headers & misconfiguration review' },
+  ],
+  A03: [
+    { tool: 'Pattern Scanner', desc: 'Dependency version & vulnerable component detection' },
+    { tool: 'AI Security Agent', desc: 'Outdated library & supply chain risk analysis' },
+  ],
+  A04: [
+    { tool: 'Pattern Scanner', desc: 'MD5/SHA1, weak crypto, hardcoded keys detection' },
+    { tool: 'AI Security Agent', desc: 'Cryptographic failure & TLS misconfig review' },
+  ],
+  A05: [
+    { tool: 'Pattern Scanner', desc: 'SQLi, XSS, SSTI, command injection, eval/exec detection' },
+    { tool: 'AI Security Agent', desc: 'Injection flaw & user-input-to-sink tracing' },
+  ],
+  A06: [
+    { tool: 'Pattern Scanner', desc: 'Missing rate limit, weak password policy detection' },
+    { tool: 'AI Security Agent', desc: 'Insecure design & business logic review' },
+  ],
+  A07: [
+    { tool: 'Pattern Scanner', desc: 'Hardcoded credentials, JWT misuse detection' },
+    { tool: 'AI Security Agent', desc: 'Authentication & session management review' },
+  ],
+  A08: [
+    { tool: 'Pattern Scanner', desc: 'Unsafe deserialization, pickle, yaml.load detection' },
+    { tool: 'AI Security Agent', desc: 'Data integrity & untrusted deserialization review' },
+  ],
+  A09: [
+    { tool: 'Pattern Scanner', desc: 'console.log, missing logging, log injection detection' },
+    { tool: 'AI Security Agent', desc: 'Security logging & monitoring gap review' },
+  ],
+  A10: [
+    { tool: 'Pattern Scanner', desc: 'Swallowed errors, empty catch detection' },
+    { tool: 'AI Security Agent', desc: 'Exception handling & error management review' },
+  ],
+}
 
 export default function NewScanModal({ onClose, onStarted, initialProjectId = '', initialTarget = '', initialClientId = '' }) {
   const [mode, setMode] = useState('blackbox')
@@ -23,6 +147,8 @@ export default function NewScanModal({ onClose, onStarted, initialProjectId = ''
   const [target, setTarget] = useState(initialTarget)
   const [objective, setObjective] = useState('offensive')
   const [modules, setModules] = useState(BLACKBOX_MODULES) // all ticked
+  const [owaspCategories, setOwaspCategories] = useState(OWASP_CATEGORIES.map(c => c.code)) // all ticked by default
+  const [owaspExpanded, setOwaspExpanded] = useState(null) // which OWASP section is expanded (null = all collapsed)
   const [depth, setDepth] = useState('offensive')
   const [verify, setVerify] = useState(true)
   const [code, setCode] = useState('')
@@ -113,6 +239,10 @@ export default function NewScanModal({ onClose, onStarted, initialProjectId = ''
   const toggle = (m) => setModules((p) => (p.includes(m) ? p.filter((x) => x !== m) : [...p, m]))
   const toggleDynamic = (m) => setDynamicModules((p) => (p.includes(m) ? p.filter((x) => x !== m) : [...p, m]))
 
+  const toggleOwasp = (code) => setOwaspCategories((p) => p.includes(code) ? p.filter((x) => x !== code) : [...p, code])
+  const allOwaspCodes = OWASP_CATEGORIES.map(c => c.code)
+  const toggleAllOwasp = () => setOwaspCategories(owaspCategories.length === allOwaspCodes.length ? [] : [...allOwaspCodes])
+
   // Filter projects if a client is selected
   const selectedClientObj = clients.find(c => c.id === targetClientId)
   const filteredProjects = projects.filter(p => {
@@ -144,6 +274,7 @@ export default function NewScanModal({ onClose, onStarted, initialProjectId = ''
           target: target.trim(),
           objective,
           modules,
+          owaspCategories,
           verify,
           depth,
         }
@@ -158,6 +289,7 @@ export default function NewScanModal({ onClose, onStarted, initialProjectId = ''
           deductQuota,
           language,
           focus: 'security',
+          owaspCategories,
           verify,
           depth,
           maxFiles: sd.maxFiles,
@@ -176,6 +308,7 @@ export default function NewScanModal({ onClose, onStarted, initialProjectId = ''
           files: [{ path: filename || 'snippet.txt', content: code }],
           language,
           focus: 'security',
+          owaspCategories,
           verify,
           depth,
         }
@@ -424,32 +557,76 @@ export default function NewScanModal({ onClose, onStarted, initialProjectId = ''
                 </div>
               </div>
 
-              <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <label className="label text-xs font-bold text-slate-200">Modules ({modules.length}/{BLACKBOX_MODULES.length})</label>
+              {/* OWASP Top 10 Category Selector — controls which tools run */}
+              <div className="rounded-xl bg-slate-950/60 border border-white/10 p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
+                    <ShieldAlert size={14} className="text-cyan-400" />
+                    OWASP Top 10 Categories ({owaspCategories.length}/10)
+                  </label>
                   <button
                     type="button"
-                    onClick={() => setModules(modules.length === BLACKBOX_MODULES.length ? [] : BLACKBOX_MODULES)}
+                    onClick={toggleAllOwasp}
                     className="text-[11px] text-cyan-400 hover:underline cursor-pointer"
                   >
-                    {modules.length === BLACKBOX_MODULES.length ? 'untick all' : 'tick all'}
+                    {owaspCategories.length === allOwaspCodes.length ? 'untick all' : 'tick all'}
                   </button>
                 </div>
-                <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto p-2.5 rounded-xl bg-slate-950/60 border border-white/10">
-                  {BLACKBOX_MODULES.map((m) => (
-                    <button
-                      key={m}
-                      type="button"
-                      onClick={() => toggle(m)}
-                      className={`text-[10px] px-2 py-0.5 rounded-md uppercase font-mono transition-all cursor-pointer ${
-                        modules.includes(m)
-                          ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 font-bold'
-                          : 'bg-white/5 text-slate-500 border border-white/5'
-                      }`}
-                    >
-                      {m}
-                    </button>
-                  ))}
+                <p className="text-[10px] text-slate-500 leading-relaxed">
+                  Tick the OWASP categories to scan. Tools under unticked categories will be skipped.
+                </p>
+                <div className="space-y-1.5 max-h-80 overflow-y-auto pr-1">
+                  {OWASP_CATEGORIES.map((cat) => {
+                    const isTicked = owaspCategories.includes(cat.code)
+                    const isExpanded = owaspExpanded === cat.code
+                    const tools = OWASP_BLACKBOX_TOOLS[cat.code] || []
+                    return (
+                      <div key={cat.code} className={`rounded-lg border transition-all ${isTicked ? 'border-cyan-500/40 bg-cyan-950/20' : 'border-white/10 bg-slate-900/40'}`}>
+                        <div className="flex items-center gap-2 p-2">
+                          <button
+                            type="button"
+                            onClick={() => toggleOwasp(cat.code)}
+                            className={`w-5 h-5 rounded-md border flex items-center justify-center transition-all shrink-0 cursor-pointer ${
+                              isTicked
+                                ? 'bg-cyan-500 border-cyan-400 text-slate-950'
+                                : 'border-slate-600 hover:border-slate-400'
+                            }`}
+                          >
+                            {isTicked && <Check size={12} strokeWidth={3} />}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setOwaspExpanded(isExpanded ? null : cat.code)}
+                            className="flex items-center gap-1.5 flex-1 min-w-0 text-left cursor-pointer"
+                          >
+                            <span className="text-[14px]">{cat.icon}</span>
+                            <span className={`text-[11px] font-bold ${isTicked ? 'text-cyan-300' : 'text-slate-400'}`}>
+                              {cat.code}
+                            </span>
+                            <span className={`text-[11px] truncate ${isTicked ? 'text-slate-200' : 'text-slate-500'}`}>
+                              {cat.name}
+                            </span>
+                            <span className="text-[9px] text-slate-500 ml-auto shrink-0">
+                              {tools.length} tools
+                            </span>
+                            {isExpanded
+                              ? <ChevronDown size={12} className="text-slate-500 shrink-0" />
+                              : <ChevronRight size={12} className="text-slate-500 shrink-0" />}
+                          </button>
+                        </div>
+                        {isExpanded && (
+                          <div className="px-2 pb-2 space-y-1">
+                            {tools.map((t, i) => (
+                              <div key={i} className="flex items-start gap-1.5 p-1.5 rounded bg-slate-950/40">
+                                <span className="text-[10px] font-mono font-bold text-cyan-400 shrink-0">{t.tool}</span>
+                                <span className="text-[10px] text-slate-400 leading-snug">{t.desc}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
                 </div>
               </div>
             </>
@@ -541,6 +718,79 @@ export default function NewScanModal({ onClose, onStarted, initialProjectId = ''
                   </div>
                 </div>
               )}
+
+              {/* OWASP Top 10 Category Selector for Whitebox — controls which SAST checks run */}
+              <div className="rounded-xl bg-slate-950/60 border border-white/10 p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
+                    <ShieldAlert size={14} className="text-cyan-400" />
+                    OWASP Top 10 Categories ({owaspCategories.length}/10)
+                  </label>
+                  <button
+                    type="button"
+                    onClick={toggleAllOwasp}
+                    className="text-[11px] text-cyan-400 hover:underline cursor-pointer"
+                  >
+                    {owaspCategories.length === allOwaspCodes.length ? 'untick all' : 'tick all'}
+                  </button>
+                </div>
+                <p className="text-[10px] text-slate-500 leading-relaxed">
+                  Tick the OWASP categories to audit. SAST checks under unticked categories will be skipped.
+                </p>
+                <div className="space-y-1.5 max-h-80 overflow-y-auto pr-1">
+                  {OWASP_CATEGORIES.map((cat) => {
+                    const isTicked = owaspCategories.includes(cat.code)
+                    const isExpanded = owaspExpanded === cat.code
+                    const methods = OWASP_WHITEBOX_METHODS[cat.code] || []
+                    return (
+                      <div key={cat.code} className={`rounded-lg border transition-all ${isTicked ? 'border-cyan-500/40 bg-cyan-950/20' : 'border-white/10 bg-slate-900/40'}`}>
+                        <div className="flex items-center gap-2 p-2">
+                          <button
+                            type="button"
+                            onClick={() => toggleOwasp(cat.code)}
+                            className={`w-5 h-5 rounded-md border flex items-center justify-center transition-all shrink-0 cursor-pointer ${
+                              isTicked
+                                ? 'bg-cyan-500 border-cyan-400 text-slate-950'
+                                : 'border-slate-600 hover:border-slate-400'
+                            }`}
+                          >
+                            {isTicked && <Check size={12} strokeWidth={3} />}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setOwaspExpanded(isExpanded ? null : cat.code)}
+                            className="flex items-center gap-1.5 flex-1 min-w-0 text-left cursor-pointer"
+                          >
+                            <span className="text-[14px]">{cat.icon}</span>
+                            <span className={`text-[11px] font-bold ${isTicked ? 'text-cyan-300' : 'text-slate-400'}`}>
+                              {cat.code}
+                            </span>
+                            <span className={`text-[11px] truncate ${isTicked ? 'text-slate-200' : 'text-slate-500'}`}>
+                              {cat.name}
+                            </span>
+                            <span className="text-[9px] text-slate-500 ml-auto shrink-0">
+                              {methods.length} methods
+                            </span>
+                            {isExpanded
+                              ? <ChevronDown size={12} className="text-slate-500 shrink-0" />
+                              : <ChevronRight size={12} className="text-slate-500 shrink-0" />}
+                          </button>
+                        </div>
+                        {isExpanded && (
+                          <div className="px-2 pb-2 space-y-1">
+                            {methods.map((t, i) => (
+                              <div key={i} className="flex items-start gap-1.5 p-1.5 rounded bg-slate-950/40">
+                                <span className="text-[10px] font-mono font-bold text-cyan-400 shrink-0">{t.tool}</span>
+                                <span className="text-[10px] text-slate-400 leading-snug">{t.desc}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
             </>
           )}
 
