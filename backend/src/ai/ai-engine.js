@@ -71,21 +71,27 @@ export class AIEngine {
     } catch { /* skills RAG unavailable — non-fatal */ }
 
     const system = persona
-      ? `${persona}\n\nYou are a security verification specialist. Verify this finding with PRECISION. Only confirm TRUE positive when evidence clearly shows exploitable vulnerability. Default to FALSE positive when evidence is ambiguous or only shows configuration without exploitation path. Respond ONLY with JSON.`
-      : 'You are a security verification specialist. Verify with PRECISION. Only confirm when evidence is clear. Respond ONLY with JSON.'
+      ? `${persona}\n\nYou are a security verification specialist. Verify this finding in BALANCED MODE. Confirm TRUE positive when tool output factually supports the finding. Only mark FALSE positive when evidence clearly contradicts the finding. Respond ONLY with JSON.`
+      : 'You are a security verification specialist. Verify in BALANCED MODE. Confirm when tool output supports the finding. Only reject when evidence contradicts it. Respond ONLY with JSON.'
 
-    const prompt = `Verify this security finding on a ${targetType} target. You are in PRECISION MODE — only confirm TRUE positive when the evidence unambiguously proves exploitability. Mark FALSE positive for ambiguous, speculative, or configuration-only findings.
+    const prompt = `Verify this security finding on a ${targetType} target. You are in BALANCED MODE — confirm TRUE positive when the finding is factually observable (tool output confirms it). Mark FALSE positive only when the evidence clearly shows the finding is wrong (tool explicitly negated, or finding is pure tool chatter).
 
 Rules:
-- is_true_positive: TRUE only when evidence clearly shows a source-to-sink exploitation path, or confirmed tool output (e.g., sqlmap "injectable", nuclei template match, exposed credential file with actual content). FALSE for everything else — speculative, ambiguous, "could be", configuration-only, version-only.
+- is_true_positive: TRUE when the tool output factually confirms the finding (open port, missing header, exposed file, matched vulnerability, discovered path). FALSE only when the evidence contradicts the finding (tool said "not vulnerable", "no parameters found", or line is tool status/progress output).
 - Evidence tier: "validated" when evidence proves the vulnerable configuration AND source-to-sink path. "exploited" when the evidence shows successful exploitation. "observed" for a literal match without exploitation proof. "needs-validation" when exploitability is NOT proven.
-- MISSING security headers (HSTS, CSP, etc.) are TRUE positive but at LOW severity — never upgrade to medium/high/critical for missing headers alone.
+- MISSING security headers (HSTS, CSP, etc.) are TRUE positive at LOW severity — never upgrade to medium/high/critical for missing headers alone.
 - Exposed .git/.env with verified content is TRUE positive.
-- Subdomain enumeration, open port discovery, HTML form detection, server headers, login surface discovery are TRUE positive at INFO severity — NEVER upgrade.
-- CRITICAL: Only adjust severity UPWARD when the FINDING ITSELF provides exploitation evidence. DOWNGRADE severity when the finding is speculative, configuration-only, or version-only without exploitation proof.
-- Code-only findings: TRUE positive when a dangerous function (eval, exec, raw SQL, file read/write, os command, unsafe deserialization) is found in source code. Mark as 'observed' (not 'validated') when data flow from user input cannot be confirmed — static scanners cannot trace all data paths. Do NOT reject a finding just because the immediate call site uses hardcoded values; the function may be called from user-controlled paths elsewhere.
-- npm audit / dependency scan version-only matches without exploitation evidence are FALSE positive.
-- console.log, missing rate limiting, debug endpoints are LOW severity — never upgrade to critical/high.
+- Subdomain enumeration, open port discovery, HTTP probe results, server headers, login surface discovery, robots.txt, directory/path discovery are TRUE positive at INFO severity — NEVER upgrade.
+- nikto findings (lines starting with "+") are TRUE positive — nikto only reports actual issues it found. Severity based on issue type.
+- nmap open ports are TRUE positive — nmap confirmed the port is open.
+- ffuf/gobuster discovered paths are TRUE positive — the path was confirmed to exist (HTTP response).
+- arjun discovered parameters are TRUE positive — the parameter was confirmed to exist.
+- wafw00f WAF detection is TRUE positive — the WAF was confirmed.
+- SQL injection: TRUE positive only when sqlmap says "is vulnerable" or "injectable". FALSE when sqlmap says "not injectable" or "do not appear to be injectable".
+- XSS: TRUE positive when dalfox shows [POC] or [V]. FALSE only when dalfox explicitly says "no XSS".
+- CVE matches from nmap vulners: TRUE positive at INFO severity (version-based, needs manual verification).
+- CRITICAL: Do NOT reject findings just because they are low severity or informational. Security tools only report what they found — if the tool says it found something, it found it.
+- Do NOT reject findings because the evidence is "just configuration" — missing headers, exposed paths, server banners ARE valid security findings.
 
 FINDING:
 ${JSON.stringify({ title: finding.title, severity: finding.severity, cweId: finding.cweId, description: finding.description, evidence: finding.evidence }, null, 2)}

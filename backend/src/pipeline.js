@@ -156,15 +156,41 @@ export class UnifiedPipeline {
     // (code-audit:* / ai-audit modules) since they are already LLM-verified.
     // Circular re-verification destroys the rich AI analysis and replaces
     // detailed descriptions with a 1-sentence verdict.
+    //
+    // ALSO SKIP AI verification for factual/observational findings that are
+    // inherently true — their existence IS the evidence. Running AI verify
+    // on these wastes LLM calls and risks the AI wrongly discarding facts.
     let verdict = null
     const isAiGenerated = (f.module || '').startsWith('code-audit') || (f.module || '') === 'ai-audit'
-    if (verify && !isAiGenerated) {
+
+    // Factual modules: the finding IS the evidence (nmap saw an open port,
+    // HTTP response lacked a header, DNS resolved a subdomain, etc.)
+    const factualModules = ['http-headers', 'path-enum', 'hexstrike:nmap', 'native:nmap',
+      'hexstrike:subfinder', 'native:subfinder', 'hexstrike:amass', 'native:amass',
+      'hexstrike:httpx', 'native:httpx', 'hexstrike:dnsbrute', 'native:dnsbrute',
+      'hexstrike:katana', 'native:katana']
+    const isFactual = factualModules.includes(f.module) ||
+      // Low/info findings from hexstrike/native tools are observational
+      ((f.module || '').startsWith('hexstrike:') || (f.module || '').startsWith('native:')) &&
+      (f.severity === 'info' || f.severity === 'low')
+    // Missing security headers, server banner, robots.txt, subdomain, open port — always factual
+    const factualTitles = /missing.*security.*header|server.*header.*information|robots\.txt|subdomain|open port|httpx:|ffuf:|discovered/i
+    const isFactualFinding = isFactual || factualTitles.test(f.title || '')
+
+    if (verify && !isAiGenerated && !isFactualFinding) {
       try {
         const v = await aiEngine.verifyFinding(f, targetType)
         verdict = v
         if (!v.isTruePositive) {
-          this.log(scanId, 'info', `🤖 [${v.agent}] discarded false positive: ${f.title}`)
-          return null
+          // Don't blindly discard — if AI confidence is low (< 60), keep the
+          // finding with downgraded severity. The AI might be wrong.
+          if (v.confidence != null && v.confidence < 60) {
+            this.log(scanId, 'info', `🤖 [${v.agent}] low-confidence rejection (conf=${v.confidence}) — keeping as info: ${f.title}`)
+            f.severity = 'info'
+          } else {
+            this.log(scanId, 'info', `🤖 [${v.agent}] discarded false positive (conf=${v.confidence}): ${f.title}`)
+            return null
+          }
         }
         if (v.refined) f = v.refined
         if (v.evidenceTier) f.evidence = { ...(f.evidence || {}), aiEvidenceTier: v.evidenceTier }
@@ -2016,8 +2042,13 @@ function extractFindingsFromOutput(tool, output, target = '') {
   // ── arjun: discovered hidden parameters ──
   if (tool === 'arjun') {
     for (const line of lines) {
-      if (/parameters found|param.*found|GET:|POST:/i.test(line) && !/testing|probing/i.test(line)) {
-        push(`arjun: ${line.trim().slice(0, 140)}`, 'low', line.trim())
+      const t = line.trim()
+      // arjun output: "[✓] Parameters found:", "[+] Parameters found:", "GET param:", "POST param:"
+      if (/parameters?\s*found|param.*found|GET:|POST:|reflect/i.test(t) && !/testing|probing|scanning|starting|no parameter|not reflect/i.test(t)) {
+        push(`arjun: ${t.slice(0, 140)}`, 'low', t)
+        // Extract URLs for chaining
+        const urlMatch = t.match(/https?:\/\/\S+/i)
+        if (urlMatch) discoveredUrls.push(urlMatch[0])
       }
     }
     if (findings.length) return { findings: findings.slice(0, 30), discoveredUrls }
@@ -2026,7 +2057,7 @@ function extractFindingsFromOutput(tool, output, target = '') {
   // Lines that are tool chatter, NOT vulnerabilities — never extract from these.
   const CHATTER = /^\[(info|warning|critical)\]\s+(testing|starting|checking|fetching|resuming|heuristic|no parameter|all tested|connection to|target url|using|loaded|parsed|there were|it is recommended|do you want|please wait|initializing|scanning|enumerating|waiting|the back-end|got a |redirecting to)/i
   // A line must carry a real signal to be considered evidence.
-  const SIGNAL = /(vulnerab|CVE-\d{4}-\d+|matched|found \d|identified|confirmed|injectable|exposed|detected|Template:|template-id|\[critical\]|\[high\]|\[medium\]|\[low\])/i
+  const SIGNAL = /(vulnerab|CVE-\d{4}-\d+|matched|found \d|identified|confirmed|injectable|exposed|detected|Template:|template-id|\[critical\]|\[high\]|\[medium\]|\[low\]|OSVDB|\+ |discovered|missing|uncommon|leak|obsolete|deprecat|outdated|default config|enabled|directory listing|cookie|header|alias|redirect|banner|server:|x-powered|debug)/i
 
   // Nuclei JSONL first (authoritative) — also collect URLs with params for chaining
   for (const line of lines) {
@@ -2073,35 +2104,73 @@ function extractFindingsFromOutput(tool, output, target = '') {
       const dupes = ['strict-transport-security', 'content-security-policy', 'x-frame-options', 'x-content-type-options', 'referrer-policy', 'permissions-policy']
       if (dupes.includes(h)) continue
     }
-    if (/(\/|OSVDB|CVE|vulnerab|indexing|directory|config|admin|backup|\.git|\.env|sql|xss|rfi|lfi)/i.test(line)) {
-      const sev = /osvdb|cve|vulnerab|\.git|\.env|sql|xss/i.test(line) ? 'medium' : 'low'
+    // Broader pattern: capture any finding line (skip pure info chatter)
+    if (/\/|OSVDB|CVE|vulnerab|indexing|directory|config|admin|backup|\.git|\.env|sql|xss|rfi|lfi|header|cookie|server banner|leak|expos|default|credential|password|phpinfo|shell|upload|debug|options|trace|method|rewrite|internal|error|warning|obsolete|deprecated|outdated/i.test(line)) {
+      const sev = /osvdb|cve|vulnerab|\.git|\.env|sql|xss|rfi|lfi|credential|password|shell/i.test(line) ? 'medium' : 'low'
       push(`nikto: ${line.replace(/^\+\s*/, '').replace(/\s+/g, ' ').slice(0, 140)}`, sev, line)
     }
   }
   if (findings.length) return { findings: findings.slice(0, 30), discoveredUrls }
 
-  // ffuf directory fuzzing results — extract discovered paths with status codes
+  // ffuf / gobuster directory fuzzing results — extract discovered paths with status codes
   const ffufPaths = []
-  for (const line of lines) {
-    // ffuf -s output: just the path (one per line)
-    // ffuf normal output: [Status: 200, Size: 1234, ...] /path
-    const pathMatch = line.match(/^\[Status:\s*(\d+).*?\]\s+(\S+)/i) || line.match(/^(\/\S+)$/)
-    if (pathMatch) {
-      const path = pathMatch[2] || pathMatch[1]
-      const status = pathMatch[1] || null
-      if (path && path.length > 1 && !path.includes('FUZZ')) {
-        ffufPaths.push({ path, status: status || '200' })
+  const dirTool = (tool === 'ffuf' || tool === 'gobuster')
+  if (dirTool) {
+    for (const line of lines) {
+      // ffuf -s output: just the path (one per line)
+      // ffuf normal output: [Status: 200, Size: 1234, ...] /path
+      const ffufMatch = line.match(/^\[Status:\s*(\d+).*?\]\s+(\S+)/i)
+      if (ffufMatch) {
+        const status = ffufMatch[1]
+        const path = ffufMatch[2]
+        if (path && path.length > 1 && !path.includes('FUZZ')) {
+          ffufPaths.push({ path, status })
+        }
+        continue
+      }
+      // gobuster output: /path (Status: 200) [Size: 1234]
+      const gobusterMatch = line.match(/^(\/\S+)\s+\(Status:\s*(\d+)\)/i)
+      if (gobusterMatch) {
+        const path = gobusterMatch[1]
+        const status = gobusterMatch[2]
+        if (path && path.length > 1) {
+          ffufPaths.push({ path, status })
+        }
+        continue
+      }
+      // gobuster v2 output: /path           [Status: 200, Size: 1234, Words: 456]
+      const gobusterV2 = line.match(/^(\/[^\s]+)\s+\[Status:\s*(\d+)/i)
+      if (gobusterV2) {
+        const path = gobusterV2[1]
+        const status = gobusterV2[2]
+        if (path && path.length > 1) {
+          ffufPaths.push({ path, status })
+        }
+        continue
+      }
+      // ffuf -s (silent): just the path on a line by itself
+      const pathMatch = line.match(/^(\/\S+)$/)
+      if (pathMatch) {
+        const path = pathMatch[1]
+        if (path.length > 1 && !path.includes('FUZZ')) {
+          ffufPaths.push({ path, status: '200' })
+        }
       }
     }
   }
   if (ffufPaths.length) {
-    // SPA catch-all detection: if >90% of ffuf results are 200 with similar size, it's a catch-all
+    // SPA catch-all detection: if >90% of results are 200 with similar size, it's a catch-all
     // Single-page apps route all paths to index.html — every path is a false positive
     const status200Count = ffufPaths.filter(p => p.status === '200').length
     const isSpaFuzz = ffufPaths.length > 50 && status200Count / ffufPaths.length > 0.9
     if (isSpaFuzz) {
-      // Don't feed catch-all paths into chaining — they're all the same SPA page
-      return { findings: [], discoveredUrls: [] }
+      // Still surface an informational finding about the SPA routing
+      push(`${tool}: SPA catch-all routing detected (${ffufPaths.length} paths all return 200)`, 'info',
+        `${tool} discovered ${ffufPaths.length} paths but all return HTTP 200 — likely SPA catch-all. Individual path findings suppressed.`)
+      // Still feed discovered paths into chaining pool (base URL + path)
+      const base = (target || '').replace(/\/$/, '')
+      for (const p of ffufPaths.slice(0, 20)) discoveredUrls.push(`${base}${p.path.startsWith('/') ? '' : '/'}${p.path}`)
+      return { findings, discoveredUrls }
     }
     // Feed ALL discovered paths into the chaining pool (base URL + path)
     const base = (target || '').replace(/\/$/, '')
@@ -2111,13 +2180,24 @@ function extractFindingsFromOutput(tool, output, target = '') {
     const interesting = ffufPaths.filter(p => /admin|backup|config|\.git|\.env|api|dashboard|login|phpmyadmin|debug|internal/i.test(p.path))
     const others = ffufPaths.filter(p => !/admin|backup|config|\.git|\.env|api|dashboard|login|phpmyadmin|debug|internal/i.test(p.path))
     for (const p of interesting.slice(0, 10)) {
-      push(`ffuf: Discovered ${p.path} (HTTP ${p.status})`, /admin|backup|\.git|\.env|config/i.test(p.path) ? 'medium' : 'low', `ffuf discovered ${p.path} with HTTP status ${p.status}`)
+      push(`${tool}: Discovered ${p.path} (HTTP ${p.status})`, /admin|backup|\.git|\.env|config/i.test(p.path) ? 'medium' : 'low', `${tool} discovered ${p.path} with HTTP status ${p.status}`)
     }
     if (others.length) {
-      push(`ffuf: ${others.length} additional paths discovered`, 'info', `Paths: ${others.slice(0, 5).map(p => p.path).join(', ')}${others.length > 5 ? '...' : ''}`)
+      push(`${tool}: ${others.length} additional paths discovered`, 'info', `Paths: ${others.slice(0, 5).map(p => p.path).join(', ')}${others.length > 5 ? '...' : ''}`)
     }
   }
   if (findings.length) return { findings: findings.slice(0, 30), discoveredUrls }
+
+  // wafw00f — WAF detection
+  if (tool === 'wafw00f') {
+    for (const line of lines) {
+      const m = line.match(/is\s+behind\s+(.+?)(?:\s|$)/i)
+      if (m) {
+        push(`WAF Detected: ${m[1].trim()}`, 'info', line.trim())
+      }
+    }
+    if (findings.length) return { findings: findings.slice(0, 10), discoveredUrls }
+  }
 
   // Keyword heuristics for non-tagged output — but only on lines that look like findings,
   // never from tool banner/info logs. Requires the vulnerability keyword AND a host/url/parameter context.
