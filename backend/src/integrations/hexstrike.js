@@ -46,7 +46,7 @@ export async function engineStatus(force = false) {
   if (!force && cachedHealth && Date.now() - healthAt < 30000) return cachedHealth
   try {
     const ctrl = new AbortController()
-    const t = setTimeout(() => ctrl.abort(), 5000)
+    const t = setTimeout(() => ctrl.abort(), 15000)
     const res = await fetch(`${BASE}/health`, { signal: ctrl.signal })
     clearTimeout(t)
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
