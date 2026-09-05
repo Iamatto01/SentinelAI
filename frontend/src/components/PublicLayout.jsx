@@ -6,7 +6,6 @@ import {
   ChevronRight, Home, Tag, Activity, Globe2, Shield, Sun, Moon
 } from 'lucide-react'
 import InspectorLogo from './InspectorLogo.jsx'
-import CyberDoorTransition from './CyberDoorTransition.jsx'
 import { useTheme } from '../lib/ThemeContext.jsx'
 
 const NAV_LINKS = [
@@ -23,11 +22,6 @@ export default function PublicLayout({ children }) {
   const [mobileOpen, setMobileOpen] = useState(false)
   const [scrolled, setScrolled] = useState(false)
   const location = useLocation()
-
-  // Open Door Animation on entering website (once per session or on demand)
-  const [showDoor, setShowDoor] = useState(() => {
-    return !sessionStorage.getItem('sentinel_door_entered')
-  })
 
   // Track scroll position for dynamic glass elevation
   useEffect(() => {
@@ -46,16 +40,6 @@ export default function PublicLayout({ children }) {
 
   return (
     <div className="at-home min-h-screen relative overflow-x-hidden">
-      {/* ── Open Door Entrance Animation ─────────────────────────────────── */}
-      {showDoor && (
-        <CyberDoorTransition
-          onComplete={() => {
-            sessionStorage.setItem('sentinel_door_entered', 'true')
-            setShowDoor(false)
-          }}
-        />
-      )}
-
       {/* Ambient Grid & Background Blobs */}
       <div className="at-home__grid" />
       <div className="at-home__noise" />
@@ -104,16 +88,6 @@ export default function PublicLayout({ children }) {
 
           {/* Action CTAs */}
           <div className="flex items-center gap-2 sm:gap-3">
-            {/* Replay Door Entrance Button */}
-            <button
-              onClick={() => setShowDoor(true)}
-              className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-zinc-300 hover:text-cyan-300 bg-white/[0.03] hover:bg-white/[0.08] border border-white/10 hover:border-cyan-400/40 transition-all cursor-pointer"
-              title="Open Cyber Vault Door Animation"
-            >
-              <Sparkles size={13} className="text-cyan-400" />
-              <span>Gate</span>
-            </button>
-
             {/* Dark / Light Mode Toggle */}
             <button
               onClick={toggleNightMode}
@@ -212,20 +186,13 @@ export default function PublicLayout({ children }) {
 
             {/* Drawer Action CTAs */}
             <div className="pt-3 border-t border-white/10 space-y-2">
-              <div className="flex items-center gap-2">
+              <div className="flex items-center">
                 <button
                   onClick={toggleNightMode}
-                  className="flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-xl text-xs font-semibold bg-white/5 border border-white/10 text-slate-200 cursor-pointer"
+                  className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-xl text-xs font-semibold bg-white/5 border border-white/10 text-slate-200 cursor-pointer"
                 >
                   {isNight ? <Sun size={14} className="text-amber-400" /> : <Moon size={14} className="text-indigo-400" />}
-                  <span>{isNight ? 'Light Mode' : 'Dark Mode'}</span>
-                </button>
-                <button
-                  onClick={() => { setMobileOpen(false); setShowDoor(true); }}
-                  className="flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-xl text-xs font-semibold bg-white/5 border border-white/10 text-cyan-300 cursor-pointer"
-                >
-                  <Sparkles size={14} />
-                  <span>Replay Gate</span>
+                  <span>{isNight ? 'Switch to Light Mode' : 'Switch to Dark Mode'}</span>
                 </button>
               </div>
 

@@ -66,20 +66,15 @@ export default function CyberDoorTransition({ onComplete }) {
           0%, 100% { transform: scale(1) rotate(0deg); border-color: rgba(56, 189, 248, 0.4); }
           50% { transform: scale(1.08) rotate(180deg); border-color: rgba(0, 242, 254, 0.85); box-shadow: 0 0 35px rgba(0, 242, 254, 0.5); }
         }
-        @keyframes doorLightBurst {
-          0% { opacity: 0; width: 2px; }
-          50% { opacity: 1; width: 60px; filter: blur(12px); }
-          100% { opacity: 0; width: 200px; filter: blur(30px); }
-        }
       `}</style>
 
       {/* ── LEFT DOOR PANEL ────────────────────────────────────────────── */}
       <div
-        className={`absolute top-0 left-0 bottom-0 w-1/2 bg-[#0a0c13] border-r-2 border-cyan-400/60 transition-transform duration-800 ease-in-out will-change-transform ${
+        className={`absolute top-0 left-0 bottom-0 w-1/2 bg-[#0a0c13] border-r border-white/10 transition-transform duration-800 ease-in-out will-change-transform ${
           isOpening ? '-translate-x-full' : 'translate-x-0'
         }`}
         style={{
-          boxShadow: isOpening ? 'none' : 'inset -15px 0 35px rgba(0,0,0,0.8), 6px 0 25px rgba(14,165,233,0.35)',
+          boxShadow: isOpening ? 'none' : 'inset -15px 0 35px rgba(0,0,0,0.8), 6px 0 25px rgba(14,165,233,0.2)',
           backgroundImage: `
             linear-gradient(135deg, rgba(255,255,255,0.02) 25%, transparent 25%),
             linear-gradient(225deg, rgba(255,255,255,0.02) 25%, transparent 25%),
@@ -107,11 +102,11 @@ export default function CyberDoorTransition({ onComplete }) {
 
       {/* ── RIGHT DOOR PANEL ───────────────────────────────────────────── */}
       <div
-        className={`absolute top-0 right-0 bottom-0 w-1/2 bg-[#0a0c13] border-l-2 border-cyan-400/60 transition-transform duration-800 ease-in-out will-change-transform ${
+        className={`absolute top-0 right-0 bottom-0 w-1/2 bg-[#0a0c13] border-l border-white/10 transition-transform duration-800 ease-in-out will-change-transform ${
           isOpening ? 'translate-x-full' : 'translate-x-0'
         }`}
         style={{
-          boxShadow: isOpening ? 'none' : 'inset 15px 0 35px rgba(0,0,0,0.8), -6px 0 25px rgba(14,165,233,0.35)',
+          boxShadow: isOpening ? 'none' : 'inset 15px 0 35px rgba(0,0,0,0.8), -6px 0 25px rgba(14,165,233,0.2)',
           backgroundImage: `
             linear-gradient(135deg, rgba(255,255,255,0.02) 25%, transparent 25%),
             linear-gradient(225deg, rgba(255,255,255,0.02) 25%, transparent 25%),
@@ -137,18 +132,10 @@ export default function CyberDoorTransition({ onComplete }) {
         </div>
       </div>
 
-      {/* ── VERTICAL LASER SEAM IN CENTER ──────────────────────────────── */}
+      {/* ── VERTICAL LASER SEAM IN CENTER (DISAPPEARS ON OPEN) ─────────── */}
       {!isOpening && (
         <div
-          className="absolute top-0 bottom-0 left-1/2 -translate-x-1/2 w-0.5 bg-cyan-400 shadow-[0_0_18px_#00f2fe,0_0_35px_#38bdf8] pointer-events-none z-10 transition-opacity duration-300"
-        />
-      )}
-
-      {/* ── LIGHT BURST WHEN DOORS OPEN ────────────────────────────────── */}
-      {isOpening && (
-        <div
-          className="absolute inset-y-0 left-1/2 -translate-x-1/2 bg-gradient-to-r from-transparent via-cyan-300 to-transparent pointer-events-none z-20"
-          style={{ animation: 'doorLightBurst 0.9s cubic-bezier(0.16, 1, 0.3, 1) forwards' }}
+          className="absolute top-0 bottom-0 left-1/2 -translate-x-1/2 w-0.5 bg-cyan-400 shadow-[0_0_12px_#00f2fe] pointer-events-none z-10 transition-opacity duration-200"
         />
       )}
 

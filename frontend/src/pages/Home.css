@@ -88,19 +88,48 @@
   animation: atGradientShift 6s ease infinite;
 }
 
-@keyframes atVisualFloat {
-  0%, 100% { transform: translateY(0px); }
-  50% { transform: translateY(-8px); }
+/* ── Tactile Box Placement Physics Animations ───────────────────── */
+@keyframes atBoxPlaceDown {
+  0% {
+    opacity: 0;
+    transform: translateY(-24px) scale(0.96);
+    filter: blur(4px);
+    box-shadow: 0 0 0 rgba(0, 0, 0, 0);
+  }
+  65% {
+    opacity: 1;
+    transform: translateY(2px) scale(1.006);
+    filter: blur(0px);
+    box-shadow: 0 20px 40px -10px rgba(0, 0, 0, 0.5), 0 0 25px rgba(56, 189, 248, 0.12);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    filter: blur(0px);
+    box-shadow: 0 15px 35px -5px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  }
+}
+
+@keyframes atDockItemIn {
+  0% {
+    opacity: 0;
+    transform: translateY(-10px) scale(0.98);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
 .at-home__visual-frame {
-  animation: atVisualFloat 5s ease-in-out infinite;
-  transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.4s ease;
+  animation: atBoxPlaceDown 0.85s cubic-bezier(0.16, 1, 0.3, 1) 0.22s both;
+  transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.35s ease, border-color 0.35s ease;
 }
 
 .at-home__visual-frame:hover {
-  transform: translateY(-10px) scale(1.01);
-  box-shadow: 0 20px 40px -10px rgba(56, 189, 248, 0.25), 0 0 30px 2px rgba(34, 211, 238, 0.2);
+  transform: translateY(-6px) scale(1.008);
+  box-shadow: 0 24px 50px -10px rgba(0, 0, 0, 0.7), 0 0 35px 2px rgba(34, 211, 238, 0.18);
+  border-color: rgba(56, 189, 248, 0.35);
 }
 
 @keyframes atFadeSlideUp {
@@ -109,9 +138,18 @@
 }
 
 .at-stagger-1 { animation: atFadeSlideUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) 0.1s both; }
-.at-stagger-2 { animation: atFadeSlideUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) 0.2s both; }
-.at-stagger-3 { animation: atFadeSlideUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) 0.3s both; }
-.at-stagger-4 { animation: atFadeSlideUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) 0.4s both; }
+.at-stagger-2 { animation: atBoxPlaceDown 0.75s cubic-bezier(0.16, 1, 0.3, 1) 0.18s both; }
+.at-stagger-3 { animation: atBoxPlaceDown 0.8s cubic-bezier(0.16, 1, 0.3, 1) 0.28s both; }
+.at-stagger-4 { animation: atBoxPlaceDown 0.85s cubic-bezier(0.16, 1, 0.3, 1) 0.38s both; }
+
+.at-box-placed-1 { animation: atBoxPlaceDown 0.7s cubic-bezier(0.16, 1, 0.3, 1) 0.08s both; }
+.at-box-placed-2 { animation: atBoxPlaceDown 0.75s cubic-bezier(0.16, 1, 0.3, 1) 0.18s both; }
+.at-box-placed-3 { animation: atBoxPlaceDown 0.8s cubic-bezier(0.16, 1, 0.3, 1) 0.28s both; }
+.at-box-placed-4 { animation: atBoxPlaceDown 0.85s cubic-bezier(0.16, 1, 0.3, 1) 0.38s both; }
+
+.at-dock-1 { animation: atDockItemIn 0.5s cubic-bezier(0.16, 1, 0.3, 1) 0.42s both; }
+.at-dock-2 { animation: atDockItemIn 0.5s cubic-bezier(0.16, 1, 0.3, 1) 0.52s both; }
+.at-dock-3 { animation: atDockItemIn 0.5s cubic-bezier(0.16, 1, 0.3, 1) 0.62s both; }
 
 .at-home__header {
   position: sticky;
@@ -196,11 +234,11 @@
 }
 
 .at-home__content {
-  width: min(1600px, calc(100% - 2.6rem));
+  width: min(1200px, calc(100% - 2.6rem));
   margin: 0 auto;
-  padding: 4.5rem 0 3.5rem;
+  padding: 4rem 0 2.5rem;
   display: grid;
-  grid-template-columns: 1.05fr 0.95fr;
+  grid-template-columns: 1.08fr 0.92fr;
   gap: 3.5rem;
   align-items: center;
 }

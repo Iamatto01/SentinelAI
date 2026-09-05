@@ -83,6 +83,8 @@ export class UnifiedPipeline {
     this.control = new Map()
     // scanId -> blackbox metadata (tools/urls/subdomains) used by retry logic
     this._blackboxMeta = new Map()
+    // scanId -> Set of discovered URLs queued for injection chaining
+    this._urlPool = new Map()
   }
 
   emit(scanId, event, data) {
@@ -1176,6 +1178,19 @@ export class UnifiedPipeline {
     this.log(scanId, 'info', `🔍 [${tool}] parser extracted ${findings.length} findings — passing to AI verification`)
     for (const f of findings) {
       await this.ingestFinding(scanId, { ...f, module: `native:${tool}` }, { verify, targetType })
+    }
+  }
+
+  /** Queue discovered URLs for injection chaining (dalfox/sqlmap). */
+  _collectUrls(scanId, urls) {
+    if (!Array.isArray(urls) || !urls.length) return
+    let pool = this._urlPool.get(scanId)
+    if (!pool) {
+      pool = new Set()
+      this._urlPool.set(scanId, pool)
+    }
+    for (const u of urls) {
+      if (typeof u === 'string' && /^https?:\/\//i.test(u)) pool.add(u)
     }
   }
 

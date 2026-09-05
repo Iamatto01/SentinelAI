@@ -87,6 +87,7 @@ export default function Login() {
     try {
       if (mode === 'login') {
         await login(username.trim(), password)
+        sessionStorage.setItem('sentinel_gate_trigger', 'true')
         nav(loc.state?.from?.pathname || '/app/dashboard', { replace: true })
       } else {
         // Register with Plan
@@ -100,6 +101,7 @@ export default function Login() {
         })
         setToken(res.token)
         setUser(res.user)
+        sessionStorage.setItem('sentinel_gate_trigger', 'true')
         nav('/app/dashboard', { replace: true })
       }
     } catch (e2) {

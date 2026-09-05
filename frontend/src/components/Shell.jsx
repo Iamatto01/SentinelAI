@@ -14,6 +14,7 @@ import InspectorLogo from './InspectorLogo.jsx'
 import AIChatWidget from './AIChatWidget.jsx'
 import Tooltip from './Tooltip.jsx'
 import AIBackgroundCanvas from './AIBackgroundCanvas.jsx'
+import CyberDoorTransition from './CyberDoorTransition.jsx'
 import { useTheme } from '../lib/ThemeContext.jsx'
 
 export default function Shell() {
@@ -21,6 +22,14 @@ export default function Shell() {
   const { randomizeNow, isNight, toggleNightMode } = useTheme()
   const nav = useNavigate()
   const location = useLocation()
+  const [showGate, setShowGate] = useState(() => {
+    const trigger = sessionStorage.getItem('sentinel_gate_trigger') === 'true'
+    if (trigger) {
+      sessionStorage.removeItem('sentinel_gate_trigger')
+      return true
+    }
+    return false
+  })
   const [showNew, setShowNew] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
   const [pinned, setPinned] = useState(() => {
@@ -103,6 +112,11 @@ export default function Shell() {
 
   return (
     <div className="min-h-screen relative selection:bg-cyan-500 selection:text-slate-950">
+      {/* Cinematic Cyber Gate Transition (after successful login) */}
+      {showGate && (
+        <CyberDoorTransition onComplete={() => setShowGate(false)} />
+      )}
+
       {/* Dynamic Background Canvas (Wallpaper + Minimalist Overlay) */}
       <AIBackgroundCanvas />
 

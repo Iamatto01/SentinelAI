@@ -136,16 +136,16 @@ export default function Landing() {
             </a>
           </div>
 
-          <div className="at-home__metrics at-stagger-2">
-            <article>
+          <div className="at-home__metrics at-box-placed-2">
+            <article className="hover:border-cyan-400/40 hover:-translate-y-1 transition-all duration-300">
               <h3 className="text-cyan-400 font-extrabold text-xl sm:text-2xl tracking-tight">150+ Tools</h3>
               <p className="text-xs text-zinc-400">Native Kali Engine</p>
             </article>
-            <article>
+            <article className="hover:border-sky-400/40 hover:-translate-y-1 transition-all duration-300">
               <h3 className="text-sky-300 font-extrabold text-xl sm:text-2xl tracking-tight">{agentsCount} Personas</h3>
               <p className="text-xs text-zinc-400">Specialist AI Agents</p>
             </article>
-            <article>
+            <article className="hover:border-emerald-400/40 hover:-translate-y-1 transition-all duration-300">
               <h3 className="text-emerald-400 font-extrabold text-xl sm:text-2xl tracking-tight">0% Noise</h3>
               <p className="text-xs text-zinc-400">False-Positive Filter</p>
             </article>
@@ -153,7 +153,7 @@ export default function Landing() {
         </div>
 
         {/* Right Column Hero Visual Card */}
-        <div className="at-home__visual at-stagger-2">
+        <div className="at-home__visual at-box-placed-2">
           <div className="at-home__visual-frame p-7 sm:p-8 rounded-3xl flex flex-col justify-between relative overflow-hidden bg-[#11131a] border border-white/[0.08] shadow-[0_20px_50px_rgba(0,0,0,0.6),inset_0_1px_0_rgba(255,255,255,0.06)]">
             {/* Top subtle cyber accent line */}
             <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-cyan-500/50 to-transparent" />
@@ -177,7 +177,7 @@ export default function Landing() {
             </div>
 
             <div className="my-6 space-y-3 font-mono text-xs">
-              <div className="p-3.5 rounded-xl bg-black/40 border border-white/[0.06] flex items-center justify-between hover:border-cyan-400/40 transition-colors">
+              <div className="at-dock-1 p-3.5 rounded-xl bg-black/40 border border-white/[0.06] flex items-center justify-between hover:border-cyan-400/40 transition-colors">
                 <div className="flex items-center gap-2.5">
                   <div className="p-1 rounded-lg bg-cyan-500/10 text-cyan-400">
                     <Radar size={14} />
@@ -188,7 +188,7 @@ export default function Landing() {
                   <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" /> Live Probing
                 </span>
               </div>
-              <div className="p-3.5 rounded-xl bg-black/40 border border-white/[0.06] flex items-center justify-between hover:border-sky-400/40 transition-colors">
+              <div className="at-dock-2 p-3.5 rounded-xl bg-black/40 border border-white/[0.06] flex items-center justify-between hover:border-sky-400/40 transition-colors">
                 <div className="flex items-center gap-2.5">
                   <div className="p-1 rounded-lg bg-sky-500/10 text-sky-400">
                     <Code2 size={14} />
@@ -197,7 +197,7 @@ export default function Landing() {
                 </div>
                 <span className="text-sky-300 font-semibold text-[11px] bg-sky-500/10 px-2 py-0.5 rounded border border-sky-500/20">OWASP Top 10</span>
               </div>
-              <div className="p-3.5 rounded-xl bg-black/40 border border-white/[0.06] flex items-center justify-between hover:border-indigo-400/40 transition-colors">
+              <div className="at-dock-3 p-3.5 rounded-xl bg-black/40 border border-white/[0.06] flex items-center justify-between hover:border-indigo-400/40 transition-colors">
                 <div className="flex items-center gap-2.5">
                   <div className="p-1 rounded-lg bg-indigo-500/10 text-indigo-400">
                     <Bot size={14} />
@@ -221,9 +221,9 @@ export default function Landing() {
       </main>
 
       {/* ── Upper Hero Extension: Signal Strip & FYP Creator Showcase ──────── */}
-      <div className="max-w-6xl mx-auto px-4 sm:px-8 space-y-8 mt-12 sm:mt-16 mb-24 sm:mb-32">
+      <div className="max-w-6xl mx-auto px-4 sm:px-8 space-y-8 mt-10 sm:mt-14 mb-24 sm:mb-32">
         {/* Ticker / Signal Strip */}
-        <div className="at-home__signal-strip at-stagger-3 my-0 bg-[#111111] border border-white/[0.07]">
+        <div className="at-home__signal-strip at-box-placed-3 my-0 bg-[#111111] border border-white/[0.07]">
           <div className="at-home__signal-track">
             <span>NMAP PORT RECON</span>
             <span>SQLMAP INJECTION PROBE</span>
@@ -236,7 +236,7 @@ export default function Landing() {
         </div>
 
         {/* ── FYP Creator & Lead Security Architect Showcase Banner ─────────────── */}
-        <section className="scroll-mt-32 my-0">
+        <section className="scroll-mt-32 my-0 at-box-placed-4">
           <div className="p-6 sm:p-8 rounded-3xl shadow-xl relative overflow-hidden bg-[#11131a] border border-cyan-500/30 hover:border-cyan-400/50 transition-colors">
             <div className="flex flex-col sm:flex-row items-center sm:items-start gap-6 sm:gap-8">
               {/* Creator Photo - Strictly constrained 120x120 square with centered face */}
