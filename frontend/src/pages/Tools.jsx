@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react'
+import React, { useState, useMemo, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import {
   ArrowRight, Search, Terminal, Bot, DatabaseZap, Radar, Globe2,
@@ -7,8 +7,8 @@ import {
 import PublicLayout from '../components/PublicLayout.jsx'
 
 const GLASS_CARD = {
-  background: '#161616',
-  border: '1px solid rgba(255, 255, 255, 0.06)',
+  background: '#11131a',
+  border: '1px solid rgba(255, 255, 255, 0.08)',
 }
 
 // ── Kali Tool Catalog (grouped by pipeline stage & DAST / SAST) ─────────────

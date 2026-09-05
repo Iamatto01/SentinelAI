@@ -902,3 +902,121 @@
 .btn-sm { padding: 0.42rem 1.05rem !important; font-size: 0.74rem !important; }
 .btn-lg { padding: 0.95rem 2.1rem !important; font-size: 0.9rem !important; }
 
+/* ==========================================================================
+   LIGHT MODE SUPPORT (body.day-mode) FOR SENTINELAI
+   ========================================================================== */
+body.day-mode .at-home {
+  --at-bg-a: #f8fafc;
+  --at-bg-b: #ffffff;
+  --at-text: #0f172a;
+  --at-muted: #64748b;
+  --at-line: rgba(15, 23, 42, 0.08);
+  --at-cyan: #0284c7;
+  --at-amber: #d97706;
+  --at-card: #ffffff;
+  --at-glass: #ffffff;
+  --at-glass-border: rgba(15, 23, 42, 0.08);
+  --at-glass-highlight: rgba(0, 0, 0, 0.02);
+  color: #0f172a;
+  background-color: #f8fafc;
+  background-image:
+    radial-gradient(ellipse 90% 55% at 50% -15%, rgba(14, 165, 233, 0.08), transparent 70%),
+    radial-gradient(ellipse 60% 40% at 85% 15%, rgba(99, 102, 241, 0.04), transparent 60%);
+}
+
+body.day-mode .at-home__grid {
+  background-image:
+    linear-gradient(to right, rgba(15, 23, 42, 0.04) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(15, 23, 42, 0.04) 1px, transparent 1px);
+}
+
+body.day-mode .at-home header > div {
+  background: rgba(255, 255, 255, 0.92) !important;
+  border-color: rgba(15, 23, 42, 0.08) !important;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.04) !important;
+}
+
+body.day-mode .at-home__title {
+  color: #0f172a !important;
+}
+
+body.day-mode .at-home__subtitle {
+  color: #64748b !important;
+}
+
+body.day-mode .at-home__metrics article {
+  background: #ffffff !important;
+  border-color: rgba(15, 23, 42, 0.08) !important;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.04) !important;
+}
+
+body.day-mode .at-home__metrics article:hover {
+  border-color: rgba(2, 132, 199, 0.4) !important;
+  box-shadow: 0 8px 30px rgba(2, 132, 199, 0.1) !important;
+}
+
+body.day-mode .at-home__metrics p {
+  color: #64748b !important;
+}
+
+body.day-mode .at-home__visual-frame {
+  background: #ffffff !important;
+  border-color: rgba(15, 23, 42, 0.08) !important;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.06) !important;
+}
+
+body.day-mode .at-home__visual-frame h3 {
+  color: #0f172a !important;
+}
+
+body.day-mode .at-home__visual-frame .bg-black\/40 {
+  background: #f1f5f9 !important;
+  border-color: rgba(15, 23, 42, 0.08) !important;
+}
+
+body.day-mode .at-home__visual-frame span.text-slate-200,
+body.day-mode .at-home__visual-frame span.text-slate-300 {
+  color: #1e293b !important;
+}
+
+body.day-mode .at-home__signal-strip {
+  background: #ffffff !important;
+  border-color: rgba(15, 23, 42, 0.08) !important;
+}
+
+body.day-mode .at-home__signal-track span {
+  color: #64748b !important;
+}
+
+body.day-mode .btn-neon-draw {
+  color: #0f172a !important;
+  background: rgba(15, 23, 42, 0.04) !important;
+  border-color: rgba(15, 23, 42, 0.15) !important;
+}
+
+body.day-mode .btn-neon-draw:hover {
+  background: rgba(15, 23, 42, 0.08) !important;
+  border-color: #0284c7 !important;
+}
+
+body.day-mode .card {
+  background: #ffffff !important;
+  border-color: rgba(15, 23, 42, 0.08) !important;
+}
+
+body.day-mode .text-white {
+  color: #0f172a !important;
+}
+
+body.day-mode .text-slate-300,
+body.day-mode .text-slate-400 {
+  color: #475569 !important;
+}
+
+body.day-mode .bg-\[\#11131a\],
+body.day-mode .bg-\[\#161616\],
+body.day-mode .bg-\[\#161822\] {
+  background-color: #ffffff !important;
+}
+
+

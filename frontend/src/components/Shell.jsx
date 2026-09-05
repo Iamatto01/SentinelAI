@@ -4,7 +4,8 @@ import {
   LayoutDashboard, Radar, Bug, FolderKanban, Plug, LogOut, Shield, Plus,
   Hexagon, Activity, Settings as SettingsIcon, Crosshair, Menu, X,
   ChevronLeft, ChevronRight, Search, Bell, Sparkles, GitBranch, CreditCard,
-  Users, AlertTriangle, UserCheck, Briefcase, Award, ArrowRight, Lock, CheckCircle2, Zap, Terminal
+  Users, AlertTriangle, UserCheck, Briefcase, Award, ArrowRight, Lock, CheckCircle2, Zap, Terminal,
+  Sun, Moon
 } from 'lucide-react'
 import { useAuth } from '../lib/AuthContext.jsx'
 import { api } from '../lib/api.js'
@@ -17,7 +18,7 @@ import { useTheme } from '../lib/ThemeContext.jsx'
 
 export default function Shell() {
   const { user, logout } = useAuth()
-  const { randomizeNow } = useTheme()
+  const { randomizeNow, isNight, toggleNightMode } = useTheme()
   const nav = useNavigate()
   const location = useLocation()
   const [showNew, setShowNew] = useState(false)
@@ -139,13 +140,23 @@ export default function Shell() {
           </div>
         </div>
 
-        <button
-          onClick={handleScanButtonClick}
-          className="btn-primary text-xs py-1.5 px-3.5 shadow-glow flex items-center gap-1.5"
-        >
-          {isSubscriptionExpired ? <Lock size={14} /> : <Plus size={14} />}
-          <span>{isSubscriptionExpired ? 'Subscribe' : 'New Scan'}</span>
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={toggleNightMode}
+            className="p-1.5 rounded-xl bg-white/5 border border-white/10 text-slate-200 hover:text-white cursor-pointer"
+            title={isNight ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+            aria-label="Toggle Theme"
+          >
+            {isNight ? <Sun size={15} className="text-amber-400" /> : <Moon size={15} className="text-indigo-400" />}
+          </button>
+          <button
+            onClick={handleScanButtonClick}
+            className="btn-primary text-xs py-1.5 px-3.5 shadow-glow flex items-center gap-1.5"
+          >
+            {isSubscriptionExpired ? <Lock size={14} /> : <Plus size={14} />}
+            <span>{isSubscriptionExpired ? 'Subscribe' : 'New Scan'}</span>
+          </button>
+        </div>
       </header>
 
       {/* Mobile Drawer Overlay Backdrop */}
@@ -340,7 +351,19 @@ export default function Shell() {
               </Link>
             )}
 
-
+            {/* Dark / Light Mode Toggle */}
+            <button
+              onClick={toggleNightMode}
+              className="p-1.5 rounded-xl border border-white/10 hover:border-white/20 bg-white/5 text-slate-300 hover:text-white transition-all cursor-pointer flex items-center justify-center"
+              title={isNight ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+              aria-label="Toggle Theme"
+            >
+              {isNight ? (
+                <Sun size={15} className="text-amber-400 hover:rotate-90 transition-transform duration-300" />
+              ) : (
+                <Moon size={15} className="text-indigo-400 hover:-rotate-12 transition-transform duration-300" />
+              )}
+            </button>
           </div>
         </header>
 
