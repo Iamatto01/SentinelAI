@@ -10,6 +10,7 @@ import SystemTree from '../components/SystemTree.jsx'
 import PageTurnTransition from '../components/PageTurnTransition.jsx'
 import PublicLayout from '../components/PublicLayout.jsx'
 import MermaidDiagram from '../components/MermaidDiagram.jsx'
+import DiagonalThemeSelector from '../components/DiagonalThemeSelector.jsx'
 import './Home.css'
 
 export default function Landing() {
@@ -17,6 +18,16 @@ export default function Landing() {
   const [archMode, setArchMode] = useState('tree') // 'tree' | 'flow' | 'mermaid'
   const [hoveredStep, setHoveredStep] = useState(null)
   const [agentsCount, setAgentsCount] = useState(53)
+  const [showThemeIntro, setShowThemeIntro] = useState(() => {
+    return !sessionStorage.getItem('sentinel_theme_choice')
+  })
+
+  // Listen for replay event from navbar
+  useEffect(() => {
+    const handleReplay = () => setShowThemeIntro(true)
+    window.addEventListener('sentinel_replay_theme_intro', handleReplay)
+    return () => window.removeEventListener('sentinel_replay_theme_intro', handleReplay)
+  }, [])
 
   useEffect(() => {
     fetch('/api/public/stats')
@@ -110,6 +121,12 @@ export default function Landing() {
 
   return (
     <PublicLayout>
+      {/* ── Interactive Diagonal Split-Screen Theme Selector ─────────────── */}
+      <DiagonalThemeSelector
+        isOpen={showThemeIntro}
+        onClose={() => setShowThemeIntro(false)}
+      />
+
       {/* ── Main Hero Content (Original 2-Column Side-by-Side Layout) ──────── */}
       <main className="at-home__content">
         {/* Left Column Hero Text */}
@@ -136,7 +153,7 @@ export default function Landing() {
             </a>
           </div>
 
-          <div className="at-home__metrics at-box-placed-2">
+          <div className="at-home__metrics at-stagger-2 at-box-placed-2">
             <article className="hover:border-cyan-400/40 hover:-translate-y-1 transition-all duration-300">
               <h3 className="text-cyan-400 font-extrabold text-xl sm:text-2xl tracking-tight">150+ Tools</h3>
               <p className="text-xs text-zinc-400">Native Kali Engine</p>
@@ -153,7 +170,7 @@ export default function Landing() {
         </div>
 
         {/* Right Column Hero Visual Card */}
-        <div className="at-home__visual at-box-placed-2">
+        <div className="at-home__visual at-stagger-2 at-box-placed-2">
           <div className="at-home__visual-frame p-7 sm:p-8 rounded-3xl flex flex-col justify-between relative overflow-hidden bg-[#11131a] border border-white/[0.08] shadow-[0_20px_50px_rgba(0,0,0,0.6),inset_0_1px_0_rgba(255,255,255,0.06)]">
             {/* Top subtle cyber accent line */}
             <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-cyan-500/50 to-transparent" />
@@ -221,9 +238,9 @@ export default function Landing() {
       </main>
 
       {/* ── Upper Hero Extension: Signal Strip & FYP Creator Showcase ──────── */}
-      <div className="max-w-6xl mx-auto px-4 sm:px-8 space-y-8 mt-10 sm:mt-14 mb-24 sm:mb-32">
+      <div className="max-w-6xl mx-auto px-4 sm:px-8 space-y-8 mt-12 sm:mt-16 mb-24 sm:mb-32">
         {/* Ticker / Signal Strip */}
-        <div className="at-home__signal-strip at-box-placed-3 my-0 bg-[#111111] border border-white/[0.07]">
+        <div className="at-home__signal-strip at-stagger-3 at-box-placed-3 my-0 bg-[#111111] border border-white/[0.07]">
           <div className="at-home__signal-track">
             <span>NMAP PORT RECON</span>
             <span>SQLMAP INJECTION PROBE</span>

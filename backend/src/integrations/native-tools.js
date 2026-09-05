@@ -274,6 +274,64 @@ export const NATIVE_TOOLS = {
     desc: 'Arbitrary command execution',
     timeout: 120000, // 2 min default — customizable per invocation
   },
+
+  // ─────────────────────────────────────────────────────────────────
+  // EXPANDED REGISTRY — deep content discovery, TLS audit, OSINT
+  // ─────────────────────────────────────────────────────────────────
+
+  // Recursive directory fuzzing — finds nested paths ffuf/gobuster miss
+  // (e.g. /admin/config/backup/). --depth-limits caps recursion so a huge
+  // Moodle tree doesn't blow the timeout.
+  feroxbuster: {
+    bin: 'feroxbuster',
+    args: (t) => ['-u', toUrl(t), '-w', '/usr/share/seclists/Discovery/Web-Content/common.txt',
+      '-d', '2', '-t', '30', '--timeout', '15', '-s', '200,204,301,302,307,401,403', '-q'],
+    desc: 'Recursive directory brute-force',
+    timeout: 300000,
+  },
+  // dirsearch — alternative dir fuzzer with a different default wordlist;
+  // catches paths common.txt misses (extension-based: .bak, .zip, .sql).
+  dirsearch: {
+    bin: 'python3',
+    args: (t) => ['-u', '-m', 'dirsearch', '-u', toUrl(t), '-t', '30', '--timeout=10',
+      '-x', '404,400', '--no-color', '-q', '-F', 'php,html,bak,zip,sql,txt,json'],
+    desc: 'Extension-aware directory search',
+    timeout: 300000,
+  },
+  // gau — fetch known URLs from Wayback/CommonCrawl/OTX. Finds legacy
+  // endpoints (old logins, debug pages, deprecated APIs) that live crawls miss.
+  gau: {
+    bin: 'gau',
+    args: (t) => [toHost(t), '--threads', '10', '--timeout', '30', '--o', '/dev/stdout'],
+    altArgs: (t) => [toHost(t)],
+    desc: 'Wayback/CommonCrawl/OTX URL harvesting',
+    timeout: 180000,
+  },
+  // sslscan — fast TLS cipher/protocol audit (weak ciphers, SSLv3/TLS1.0,
+  // self-signed/expired certs). Complements nmap NSE ssl-* scripts.
+  sslscan: {
+    bin: 'sslscan',
+    args: (t) => ['--no-colour', toHost(t)],
+    desc: 'TLS/SSL cipher and protocol audit',
+    timeout: 120000,
+  },
+  // masscan — ultra-fast port sweep across the full 65535 range. nmap -sCV
+  // only covers top ports; masscan finds the odd high-port service.
+  // --rate capped to be network-polite on shared LANs.
+  masscan: {
+    bin: 'masscan',
+    args: (t) => [toHost(t), '-p', '1-65535', '--rate', '500', '--wait', '3', '--open-only'],
+    desc: 'Full-range fast port sweep',
+    timeout: 240000,
+  },
+  // searchsploit — local ExploitDB search. Run against fingerprinted
+  // software (whatweb/nmap output) to map CVEs to public exploits.
+  searchsploit: {
+    bin: 'searchsploit',
+    args: (t) => ['--color', '-t', toHost(t)],
+    desc: 'ExploitDB search',
+    timeout: 60000,
+  },
 }
 
 /** Check availability of all native tools. */

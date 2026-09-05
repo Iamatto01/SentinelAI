@@ -85,6 +85,8 @@ export class UnifiedPipeline {
     this._blackboxMeta = new Map()
     // scanId -> Set of discovered URLs queued for injection chaining
     this._urlPool = new Map()
+    // scanId -> Array of harvested login forms {url, userField, passField, extra}
+    this._loginForms = new Map()
   }
 
   emit(scanId, event, data) {
@@ -175,8 +177,9 @@ export class UnifiedPipeline {
       'native:nikto', 'native:nuclei',
       'native:arjun', 'native:ffuf',
       'native:gobuster',
+      'native:feroxbuster', 'native:dirsearch', 'native:gau', 'native:sslscan', 'native:masscan',
       'offensive:service-probe', 'offensive:login-surface', 'response-body-scan',
-      'cookie-audit', 'cors-audit', 'form-harvest', 'api-discovery']
+      'cookie-audit', 'cors-audit', 'form-harvest', 'api-discovery', 'offensive:default-creds']
     const isFactual = factualModules.includes(f.module) ||
       // Low/info findings from native tools are observational
       ((f.module || '').startsWith('native:') || (f.module || '').startsWith('chain:')) &&
@@ -325,16 +328,17 @@ export class UnifiedPipeline {
     // If no explicit modules → run the full default toolchain natively
     if (!modules.length) {
       this.log(scanId, 'info', `No modules selected — running full default toolchain (objective=${objective})`)
-      modules = ['nmap', 'whatweb', 'nikto', 'ffuf', 'katana', 'nuclei', 'arjun', 'dalfox']
+      modules = ['nmap', 'whatweb', 'nikto', 'ffuf', 'katana', 'nuclei', 'arjun', 'dalfox',
+        'feroxbuster', 'gau', 'sslscan']
     }
 
     // Run chosen tools in parallel batches (grouped so concurrent tools don't
     // saturate the network/CPU against the same target)
     {
-      const reconBatch = modules.filter(m => ['nmap', 'whatweb', 'wafw00f'].includes(m))
-      const crawlBatch = modules.filter(m => ['katana', 'ffuf', 'gobuster', 'nuclei'].includes(m))
+      const reconBatch = modules.filter(m => ['nmap', 'whatweb', 'wafw00f', 'sslscan', 'masscan'].includes(m))
+      const crawlBatch = modules.filter(m => ['katana', 'ffuf', 'gobuster', 'nuclei', 'feroxbuster', 'dirsearch', 'gau'].includes(m))
       const vulnBatch = modules.filter(m => ['nikto', 'arjun', 'dalfox', 'sqlmap', 'wpscan'].includes(m))
-      const otherBatch = modules.filter(m => !['nmap', 'whatweb', 'wafw00f', 'katana', 'ffuf', 'gobuster', 'nuclei', 'nikto', 'arjun', 'dalfox', 'sqlmap', 'wpscan'].includes(m))
+      const otherBatch = modules.filter(m => !['nmap', 'whatweb', 'wafw00f', 'sslscan', 'masscan', 'katana', 'ffuf', 'gobuster', 'nuclei', 'feroxbuster', 'dirsearch', 'gau', 'nikto', 'arjun', 'dalfox', 'sqlmap', 'wpscan'].includes(m))
       const batches = [reconBatch, crawlBatch, vulnBatch, otherBatch].filter(b => b.length)
       let done = 0
       for (const batch of batches) {
@@ -375,8 +379,16 @@ export class UnifiedPipeline {
     this.progress(scanId, 90)
 
     // ── COOKIE + CORS + HTML FORM HARVESTING ──
+    // Runs BEFORE default-cred testing: this stage harvests login forms
+    // (password + user/email inputs) into this._loginForms for the stage below.
     await this._auditCookiesCors(scanId, target, { verify })
     this.progress(scanId, 95)
+
+    // ── DEFAULT-CREDENTIAL BRUTE-FORCE STAGE ──
+    // Actually interact with discovered login forms: try common default
+    // credential pairs (admin/admin, admin/password, ...) via HTTP POST.
+    // Must run AFTER _auditCookiesCors so harvested login forms are available.
+    await this._tryDefaultCreds(scanId, target, { verify })
 
     this.finish(scanId, 'completed')
   }
@@ -444,6 +456,79 @@ export class UnifiedPipeline {
         module: 'offensive:login-surface',
         evidence: { url: u },
       }, { verify })
+    }
+  }
+
+  /**
+   * OFFENSIVE: actually interact with discovered login forms — try common
+   * default credential pairs via HTTP POST. This is real interaction with
+   * the target (fills + submits the form), not just URL pattern matching.
+   * Only fires on forms we've harvested with detected password fields.
+   */
+  async _tryDefaultCreds(scanId, target, { verify } = {}) {
+    const base = /^https?:\/\//i.test(target) ? target : `https://${target}`
+    const forms = this._loginForms?.get(scanId) || []
+    if (!forms.length) {
+      this.log(scanId, 'info', '🔑 No login forms harvested — skipping default-credential test')
+      return
+    }
+    this.log(scanId, 'info', `🔑 Testing ${forms.length} login form(s) with default credentials...`)
+
+    // Common default credential pairs (top-10, keeps requests polite)
+    const CREDS = [
+      ['admin', 'admin'], ['admin', 'password'], ['admin', '123456'],
+      ['root', 'root'], ['root', 'toor'], ['admin', 'admin123'],
+      ['test', 'test'], ['guest', 'guest'], ['user', 'user'],
+      ['administrator', 'password'],
+    ]
+
+    for (const form of forms.slice(0, 3)) {
+      await this.waitIfPaused(scanId)
+      const { url, userField, passField, extra } = form
+      this.log(scanId, 'info', `🔑 Probing ${url.slice(0, 90)} (user="${userField}", pass="${passField}")`)
+      let lastStatus = null
+      let lastBody = ''
+      let lastUrl = ''
+      for (const [user, pass] of CREDS) {
+        try {
+          const body = new URLSearchParams({ [userField]: user, [passField]: pass, ...extra })
+          const res = await fetch(url, {
+            method: 'POST',
+            body,
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) SentinelAI' },
+            redirect: 'follow', // follow redirects so we see the FINAL page, not the 303 stub
+            signal: AbortSignal.timeout(10000),
+          })
+          lastStatus = res.status
+          lastBody = (await res.text()).slice(0, 5000)
+          lastUrl = res.url || url
+          // ── Success detection (strict — avoids Moodle-style false positives) ──
+          // Moodle (and many apps) 303-redirect BACK to /login/index.php on FAILURE.
+          // A real login success lands on a non-login page whose body no longer
+          // contains the login form NOR any auth-failure error string.
+          const landedOnLogin = /login|signin|auth|logon/i.test(lastUrl)
+          const hasLoginForm = /<form[^>]*>/i.test(lastBody) && /type=["']?password/i.test(lastBody)
+          const hasAuthError = /(invalid|wrong|incorrect|failed|error|denied|try again|bad (user|login|password))/i.test(lastBody)
+          const success = !landedOnLogin && !hasLoginForm && !hasAuthError
+          if (success) {
+            await this.ingestFinding(scanId, {
+              title: `Default credentials accepted — ${user}:${pass} @ ${url.slice(0, 80)}`,
+              severity: 'critical',
+              cweId: 'CWE-798',
+              owaspCategory: 'A07:2025-Authentication Failures',
+              description: `The login form at ${url} accepted the default credential pair ${user}:${pass}. The scanner filled and submitted the form via HTTP POST, followed the redirect chain, and landed on ${lastUrl.slice(0, 80)} (HTTP ${res.status}) — a non-login page with no authentication-error message, confirming successful authentication. This grants immediate unauthorized access.`,
+              remediation: 'Remove all default credentials. Force password change on first login. Enforce MFA.',
+              module: 'offensive:default-creds',
+              evidence: { url, user, pass: '***', status: res.status, landedOn: lastUrl.slice(0, 120) },
+            }, { verify })
+            this.log(scanId, 'info', `🔑💥 DEFAULT CREDS ACCEPTED: ${user}:*** @ ${url.slice(0, 80)}`)
+            break
+          }
+        } catch { /* network error — try next cred */ }
+        // Polite delay between attempts to avoid tripping rate-limiters hard
+        await new Promise(r => setTimeout(r, 400))
+      }
+      if (lastStatus) this.log(scanId, 'info', `🔑 ${url.slice(0, 70)} — ${CREDS.length} pairs tried, last response ${lastStatus}`)
     }
   }
 
@@ -633,26 +718,62 @@ export class UnifiedPipeline {
         const forms = formMatches.map(f => {
           const action = (f.match(/action\s*=\s*["']([^"']+)["']/i) || [])[1] || ''
           const method = ((f.match(/method\s*=\s*["']([^"']+)["']/i) || [])[1] || 'get').toUpperCase()
-          const inputs = [...f.matchAll(/<input[^>]*name\s*=\s*["']([^"']+)["'][^>]*>/gi)].map(m => m[1])
+          // Extract inputs WITH type info — password fields identify login forms,
+          // search boxes identify reflection surfaces, hidden fields carry tokens
+          const inputs = [...f.matchAll(/<input[^>]*>/gi)].map(m => {
+            const tag = m[0]
+            const name = (tag.match(/name\s*=\s*["']([^"']+)["']/i) || [])[1] || ''
+            const type = ((tag.match(/type\s*=\s*["']([^"']+)["']/i) || [])[1] || 'text').toLowerCase()
+            const value = (tag.match(/value\s*=\s*["']([^"']+)["']/i) || [])[1] || ''
+            return { name, type, value }
+          }).filter(i => i.name)
           return { action, method, inputs }
         }).filter(f => f.inputs.length)
         if (forms.length) {
+          const totalInputs = forms.reduce((s, f) => s + f.inputs.length, 0)
+          const typeCounts = {}
+          for (const f of forms) for (const i of f.inputs) typeCounts[i.type] = (typeCounts[i.type] || 0) + 1
           await this.ingestFinding(scanId, {
             title: `HTML forms discovered — ${forms.length} injection surfaces`,
             severity: 'info',
             cweId: 'CWE-200',
             owaspCategory: 'A05:2025-Injection',
-            description: `${forms.length} HTML forms with ${forms.reduce((s,f) => s + f.inputs.length, 0)} input fields found at ${base}. Every form field is a potential injection vector.`,
+            description: `${forms.length} HTML forms with ${totalInputs} input fields found at ${base}. Field types: ${Object.entries(typeCounts).map(([t, n]) => `${t}×${n}`).join(', ')}. Every form field is a potential injection vector.`,
             remediation: 'Ensure all form inputs are validated and sanitized server-side.',
             module: 'form-harvest',
-            evidence: { url: base, forms: forms.slice(0, 5) },
+            evidence: { url: base, forms: forms.slice(0, 5).map(f => ({ action: f.action, method: f.method, inputs: f.inputs.map(i => ({ name: i.name, type: i.type })) })) },
           }, { verify })
+
+          // ── LOGIN FORM DETECTION ──
+          // A form with a password field = login form. Record it for the
+          // default-credential stage (real form fill + submit).
+          const loginForms = []
+          for (const f of forms) {
+            const passInput = f.inputs.find(i => i.type === 'password')
+            if (!passInput) continue
+            const userInput = f.inputs.find(i => /user|email|login|name|account|mail/i.test(i.name) && i.type !== 'hidden')
+              || f.inputs.find(i => i.type === 'email')
+              || f.inputs.find(i => i.type === 'text')
+            if (!userInput) continue
+            const isAbsolute = /^https?:\/\//i.test(f.action)
+            const formUrl = f.action ? (isAbsolute ? f.action : new URL(f.action, base).href) : base
+            // Carry hidden fields (CSRF tokens etc.) so the POST is accepted
+            const extra = Object.fromEntries(f.inputs.filter(i => i.type === 'hidden' && i.value).map(i => [i.name, i.value]))
+            loginForms.push({ url: formUrl, userField: userInput.name, passField: passInput.name, extra })
+          }
+          if (loginForms.length) {
+            let pool = this._loginForms.get(scanId)
+            if (!pool) { pool = []; this._loginForms.set(scanId, pool) }
+            pool.push(...loginForms)
+            this.log(scanId, 'info', `🔑 Detected ${loginForms.length} login form(s) — queued for default-credential testing`)
+          }
+
           // Queue form actions for injection chaining
           const formUrls = forms.map(f => {
             const action = f.action || base
             const isAbsolute = /^https?:\/\//i.test(action)
             const formUrl = isAbsolute ? action : new URL(action, base).href
-            const params = f.inputs.map((n,i) => `${n}=${i+1}`).join('&')
+            const params = f.inputs.map((n, i) => `${n.name}=${i + 1}`).join('&')
             return `${formUrl}${formUrl.includes('?') ? '&' : '?'}${params}`
           })
           this._collectUrls(scanId, formUrls)
@@ -1918,14 +2039,15 @@ function extractFindingsFromOutput(tool, output, target = '') {
   }
 
   // ── whatweb: technology fingerprinting (text mode) ──
-  // Format: https://host [200 OK] Title=[...], HTTPServer=[nginx], PHP=[7.4.33], WordPress=[6.0]
+  // Format: https://host [200 OK] Title=[...], HTTPServer[nginx], PHP[7.4.33], WordPress[6.0]
+  // NOTE: whatweb emits `Key[value]` with NO `=` separator (aggressive mode adds some with `=`).
   if (tool === 'whatweb') {
     for (const line of lines) {
       const m = line.match(/^(https?:\/\/\S+)\s*\[(\d{3})[^\]]*\]\s*(.*)$/i)
       if (!m) continue
       const [, url, , rest] = m
-      const server = rest.match(/HTTPServer=\[([^\]]*)\]/i)?.[1]
-      const techs = [...rest.matchAll(/\b([A-Za-z][A-Za-z0-9_-]{1,30})=\[([^\]]*)\]/g)]
+      const server = rest.match(/HTTPServer=?\[([^\]]*)\]/i)?.[1]
+      const techs = [...rest.matchAll(/\b([A-Za-z][A-Za-z0-9_-]{1,30})=?\[([^\]]*)\]/g)]
         .map((x) => (x[2] ? `${x[1]} ${x[2]}` : x[1]))
         .filter((t) => !/^(IP|Country|Title|HTTPServer)\b/i.test(t))
       const stack = [server, ...techs].filter(Boolean)
@@ -2140,6 +2262,150 @@ function extractFindingsFromOutput(tool, output, target = '') {
       }
     }
     if (findings.length) return { findings: findings.slice(0, 10), discoveredUrls }
+  }
+
+  // ── feroxbuster: recursive directory brute-force ──
+  // Format: `200      GET       5l      10w     100c https://host/path`
+  if (tool === 'feroxbuster') {
+    const paths = []
+    for (const line of lines) {
+      const m = line.match(/^(\d{3})\s+(?:GET|POST|HEAD)\s+\d+l\s+\d+w\s+\d+c\s+(\S+)$/i)
+      if (m) paths.push({ status: m[1], url: m[2] })
+    }
+    if (paths.length) {
+      // SPA catch-all guard (same as ffuf)
+      const s200 = paths.filter(p => p.status === '200').length
+      if (paths.length > 50 && s200 / paths.length > 0.9) {
+        push(`feroxbuster: SPA catch-all routing detected (${paths.length} paths all return 200)`, 'info',
+          `feroxbuster discovered ${paths.length} paths but all return HTTP 200 — likely SPA catch-all.`)
+        for (const p of paths.slice(0, 20)) discoveredUrls.push(p.url)
+        return { findings, discoveredUrls }
+      }
+      for (const p of paths) discoveredUrls.push(p.url)
+      const interesting = paths.filter(p => /admin|backup|config|\.git|\.env|api|dashboard|login|phpmyadmin|debug|internal|upload|\.sql|\.bak|\.zip/i.test(p.url))
+      for (const p of interesting.slice(0, 10)) {
+        push(`feroxbuster: Discovered ${p.url.replace(/^https?:\/\/[^/]+/i, '')} (HTTP ${p.status})`,
+          /admin|backup|\.git|\.env|config|\.sql|\.bak/i.test(p.url) ? 'medium' : 'low',
+          `feroxbuster discovered ${p.url} with HTTP status ${p.status}`)
+      }
+      const others = paths.length - interesting.length
+      if (others > 0) push(`feroxbuster: ${others} additional paths discovered`, 'info', `Total: ${paths.length} paths`)
+    }
+    if (findings.length || discoveredUrls.length) return { findings: findings.slice(0, 30), discoveredUrls }
+  }
+
+  // ── dirsearch: extension-aware directory search ──
+  // Format: `[12:34:56] 200 -   123B - /path - /url`
+  if (tool === 'dirsearch') {
+    const paths = []
+    for (const line of lines) {
+      const m = line.match(/\[\d{2}:\d{2}:\d{2}\]\s+(\d{3})\s+-\s+.*?-\s+(https?:\/\/\S+|\/\S+)/i)
+      if (m && m[2] && m[2].length > 1) paths.push({ status: m[1], path: m[2] })
+    }
+    if (paths.length) {
+      const base = (target || '').replace(/\/$/, '')
+      for (const p of paths) {
+        const url = /^https?:/i.test(p.path) ? p.path : `${base}${p.path.startsWith('/') ? '' : '/'}${p.path}`
+        discoveredUrls.push(url)
+        if (/admin|backup|config|\.git|\.env|\.sql|\.bak|\.zip|upload|debug/i.test(p.path)) {
+          push(`dirsearch: Discovered ${p.path} (HTTP ${p.status})`, 'medium', `dirsearch discovered ${p.path} with HTTP status ${p.status}`)
+        }
+      }
+      if (!findings.length && paths.length) {
+        push(`dirsearch: ${paths.length} paths discovered`, 'info', `Paths: ${paths.slice(0, 5).map(p => p.path).join(', ')}${paths.length > 5 ? '...' : ''}`)
+      }
+    }
+    if (findings.length || discoveredUrls.length) return { findings: findings.slice(0, 30), discoveredUrls }
+  }
+
+  // ── gau: URL harvesting from Wayback/CommonCrawl/OTX ──
+  // One URL per line — historical URLs often reveal forgotten endpoints & params
+  if (tool === 'gau') {
+    const seen = new Set()
+    let paramCount = 0
+    for (const line of lines) {
+      const u = line.trim()
+      if (!/^https?:\/\//i.test(u) || seen.has(u)) continue
+      seen.add(u)
+      discoveredUrls.push(u)
+      if (/\?[^=]+=/.test(u)) paramCount++
+    }
+    if (discoveredUrls.length) {
+      push(`gau: ${discoveredUrls.length} historical URLs harvested (${paramCount} with parameters)`, 'info',
+        `gau (Wayback/CommonCrawl/OTX) found ${discoveredUrls.length} archived URLs for this host. ${paramCount} carry query parameters — all queued for injection testing. Forgotten endpoints (.bak, old admin panels, debug pages) often appear only in archives.`)
+      // Flag juicy archived endpoints
+      const juicy = discoveredUrls.filter(u => /admin|backup|\.git|\.env|\.bak|\.sql|phpmyadmin|debug|console|test|staging/i.test(u)).slice(0, 5)
+      for (const u of juicy) {
+        push(`gau: Sensitive archived endpoint — ${u.slice(0, 120)}`, 'medium', `Historical URL: ${u}`, { url: u })
+      }
+    }
+    if (findings.length || discoveredUrls.length) return { findings: findings.slice(0, 30), discoveredUrls }
+  }
+
+  // ── sslscan: TLS/SSL cipher and protocol audit ──
+  if (tool === 'sslscan') {
+    const weakProtocols = lines.filter(l => /^\s*(SSLv2|SSLv3|TLSv1\.0|TLSv1\.1)\s/i.test(l) && /\d{3}\s*bits|enabled/i.test(l))
+    const weakCiphers = lines.filter(l => /(RC4|3DES|DES-CBC|EXP-|NULL|MD5|anon|EXPORT)/i.test(l) && /^\s*(SSL|TLS)/.test(l))
+    const selfSigned = lines.find(l => /self-signed/i.test(l))
+    const expired = lines.find(l => /expired/i.test(l))
+    const weakSig = lines.find(l => /Signature Algorithm:\s*(sha1|md5)/i.test(l))
+    if (weakProtocols.length) {
+      const protos = [...new Set(weakProtocols.map(l => l.trim().match(/^(SSLv\d(?:\.\d)?|TLSv\d\.\d)/i)?.[0]))].filter(Boolean)
+      push(`Weak TLS protocols enabled — ${protos.join(', ')}`, 'medium',
+        `sslscan found deprecated protocols enabled: ${protos.join(', ')}. These are vulnerable to downgrade attacks (POODLE, BEAST) and are flagged by all modern scanners.`,
+        { cweId: 'CWE-327', owaspCategory: 'A02:2025-Security Misconfiguration' })
+    }
+    if (weakCiphers.length) {
+      push(`Weak TLS ciphers offered (${weakCiphers.length} cipher suites)`, 'medium',
+        `sslscan found weak ciphers: ${weakCiphers.slice(0, 3).map(l => l.trim().slice(0, 60)).join(' | ')}`,
+        { cweId: 'CWE-327', owaspCategory: 'A02:2025-Security Misconfiguration' })
+    }
+    if (selfSigned) {
+      push(`Self-signed TLS certificate`, 'medium', selfSigned.trim(), { cweId: 'CWE-477', owaspCategory: 'A02:2025-Security Misconfiguration' })
+    }
+    if (expired) {
+      push(`Expired TLS certificate`, 'high', expired.trim(), { cweId: 'CWE-298', owaspCategory: 'A02:2025-Security Misconfiguration' })
+    }
+    if (weakSig) {
+      push(`Certificate signed with weak hash (${weakSig.match(/Signature Algorithm:\s*(\S+)/i)?.[1] || 'weak'})`, 'low', weakSig.trim(), { cweId: 'CWE-327' })
+    }
+    if (findings.length) return { findings: findings.slice(0, 15), discoveredUrls }
+  }
+
+  // ── masscan: full-range fast port sweep ──
+  // Format: `Discovered open port 22/tcp on 192.168.1.1`
+  if (tool === 'masscan') {
+    const risky = { 21: 'FTP', 22: 'SSH', 23: 'Telnet', 25: 'SMTP', 445: 'SMB', 3389: 'RDP', 3306: 'MySQL', 5432: 'PostgreSQL', 6379: 'Redis', 27017: 'MongoDB', 9200: 'Elasticsearch', 1433: 'MSSQL', 5900: 'VNC', 11211: 'Memcached' }
+    const seen = new Set()
+    for (const line of lines) {
+      const m = line.match(/Discovered open port\s+(\d+)\/(tcp|udp)\s+on\s+(\S+)/i)
+      if (!m) continue
+      const key = `${m[3]}:${m[1]}`
+      if (seen.has(key)) continue
+      seen.add(key)
+      const port = parseInt(m[1])
+      const isRisky = risky[port]
+      push(`masscan: Open port ${port}/${m[2]} on ${m[3]}${isRisky ? ` [${isRisky}]` : ''}`,
+        isRisky ? 'medium' : 'info', line.trim(), { port, service: isRisky || 'unknown' })
+    }
+    if (findings.length) return { findings: findings.slice(0, 40), discoveredUrls }
+  }
+
+  // ── searchsploit: ExploitDB search ──
+  // Format: `Apache 2.4.49 - Path Traversal & RCE | multiple/webapps/50383.py`
+  if (tool === 'searchsploit') {
+    for (const line of lines) {
+      const m = line.match(/^(.+?)\s*\|\s*(\w+\/\w+\/\d+\.?\w*)$/)
+      if (!m) continue
+      const title = m[1].trim()
+      if (!title || /exploit\s*title|^-{5,}|searchsploit/i.test(title)) continue
+      const sev = /rce|remote code|execute|shell|root|privilege esc/i.test(title) ? 'high'
+        : /sql|injection|bypass|csrf|xss|traversal|lfi|rfi/i.test(title) ? 'medium' : 'low'
+      push(`searchsploit: ${title.slice(0, 120)}`, sev,
+        `ExploitDB match: ${title} (${m[2]}) — a public exploit exists for a component on this target.`,
+        { cweId: /sql/i.test(title) ? 'CWE-89' : /xss/i.test(title) ? 'CWE-79' : null })
+    }
+    if (findings.length) return { findings: findings.slice(0, 20), discoveredUrls }
   }
 
   // Keyword heuristics for non-tagged output — but only on lines that look like findings,
