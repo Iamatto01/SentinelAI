@@ -25,7 +25,7 @@ export function ThemeProvider({ children }) {
     return {
       theme: 'static_dark', // strict minimalism default
       blur: 0,              // no blur
-      opacity: 0.35,        // 35%
+      opacity: 35,          // 20%, 35%, 50%, 75%
       isStatic: true,       // static background
       isNight: true,        // default dark mode
     }
