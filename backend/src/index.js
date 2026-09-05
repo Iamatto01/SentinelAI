@@ -15,7 +15,8 @@ import { requireRole } from './auth.js'
 import * as kaliControl from './kali-control.js'
 import { UnifiedPipeline } from './pipeline.js'
 import { getOwaspToolMapList, blackboxModulesForCategories, whiteboxPassesForCategories } from './owasp-tools.js'
-import { hexstrike, payloadsRag, skillsRag } from './integrations/index.js'
+import { payloadsRag, skillsRag } from './integrations/index.js'
+import { nativeToolsStatus } from './integrations/native-tools.js'
 import { agentRegistry } from './ai/agent-registry.js'
 import { aiEngine } from './ai/ai-engine.js'
 import { generateReport } from './report.js'
@@ -216,7 +217,8 @@ app.get('/api/public/agents', (req, res) => {
 })
 
 app.get('/api/status', requireAuth, async (req, res) => {
-  const engine = await hexstrike.engineStatus()
+  const engine = await nativeToolsStatus()
+  const available = Object.values(engine).filter(Boolean).length
   const rag = payloadsRag.payloadsIndexStatus()
   let msfStatus = { available: false, error: 'not checked' }
   try { msfStatus = await msf.status() } catch (e) { msfStatus = { available: false, error: e.message } }
@@ -1481,10 +1483,22 @@ app.post('/api/kali/tools/install', requireAuth, requireRole('admin'), (req, res
   res.json(result)
 })
 
-// ── Engine (hexstrike) ───────────────────────────────────────────────────────
-app.get('/api/engine/status', requireAuth, requireStaff, async (req, res) => res.json(await hexstrike.engineStatus(true)))
-app.post('/api/engine/analyze', requireAuth, requireStaff, async (req, res) => res.json(await hexstrike.analyzeTarget(req.body.target)))
-app.post('/api/engine/attack-chain', requireAuth, requireStaff, async (req, res) => res.json(await hexstrike.attackChain(req.body.target, req.body.objective)))
+// ── Engine (native toolchain) ───────────────────────────────────────────────
+app.get('/api/engine/status', requireAuth, requireStaff, async (req, res) => {
+  const tools = await nativeToolsStatus()
+  const available = Object.values(tools).filter(Boolean).length
+  res.json({
+    ok: available > 0,
+    enabled: true,
+    available: available > 0,
+    engine: 'native',
+    totalTools: Object.keys(tools).length,
+    totalToolsAvailable: available,
+    tools,
+  })
+})
+app.post('/api/engine/analyze', requireAuth, requireStaff, async (req, res) => res.json({ success: false, error: 'not supported by native engine' }))
+app.post('/api/engine/attack-chain', requireAuth, requireStaff, async (req, res) => res.json({ success: false, error: 'not supported by native engine' }))
 
 // ── OWASP Tool Map ──────────────────────────────────────────────────────
 app.get('/api/owasp-tools', requireAuth, (req, res) => {
@@ -2344,7 +2358,7 @@ io.on('connection', (socket) => {
 const PORT = config.port
 server.listen(PORT, async () => {
   console.log(`\n[FYP2] Unified Pentest Platform backend listening on http://localhost:${PORT}`)
-  console.log(`[FYP2] Hexstrike engine: ${config.hexstrike.url} (${config.hexstrike.enabled ? 'enabled' : 'disabled'})`)
+  console.log(`[FYP2] Native scanner engine: direct subprocess execution (hexstrike removed)`)
   console.log(`[FYP2] Agents: ${agentRegistry.list().length} | RAG docs: ${payloadsRag.payloadsIndexStatus().docs}`)
 
   // Channel gateway (Telegram/Discord bots) — non-fatal if tokens missing.

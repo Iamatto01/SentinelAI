@@ -225,7 +225,7 @@ export default function Findings() {
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-extrabold text-white tracking-tight">Discovered Findings</h1>
-          <p className="text-xs text-slate-400">
+          <p className="text-xs text-zinc-500">
             Showing {filteredList.length} of {findings.length} total vulnerabilities
           </p>
         </div>

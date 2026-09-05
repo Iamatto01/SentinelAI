@@ -7,11 +7,8 @@ import {
 import PublicLayout from '../components/PublicLayout.jsx'
 
 const GLASS_CARD = {
-  background: 'rgba(255, 255, 255, 0.04)',
-  backdropFilter: 'blur(40px) saturate(180%)',
-  WebkitBackdropFilter: 'blur(40px) saturate(180%)',
-  border: '1px solid rgba(255, 255, 255, 0.08)',
-  boxShadow: '0 8px 32px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.06)',
+  background: '#161616',
+  border: '1px solid rgba(255, 255, 255, 0.06)',
 }
 
 const SERVICES = [
@@ -158,7 +155,7 @@ export default function Services() {
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             {[
               { n: '01', t: 'Scope & Connect', d: 'Submit a URL/IP target or link your GitHub repositories via secure webhook.' },
-              { n: '02', t: 'Autonomous Scan', d: 'Hexstrike chains 150+ Kali tools; AI personas verify every raw finding.' },
+              { n: '02', t: 'Autonomous Scan', d: 'Native engine chains 150+ Kali tools; AI personas verify every raw finding.' },
               { n: '03', t: 'Review & Approve', d: 'Inspect verified findings; approve exploit-chain steps through safety gates.' },
               { n: '04', t: 'Report & Remediate', d: 'Receive executive PDF reports, inline PR fixes, and guided advisory.' },
             ].map((step) => (

@@ -7,11 +7,8 @@ import {
 import PublicLayout from '../components/PublicLayout.jsx'
 
 const GLASS_CARD = {
-  background: 'rgba(255, 255, 255, 0.04)',
-  backdropFilter: 'blur(40px) saturate(180%)',
-  WebkitBackdropFilter: 'blur(40px) saturate(180%)',
-  border: '1px solid rgba(255, 255, 255, 0.08)',
-  boxShadow: '0 8px 32px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.06)',
+  background: '#161616',
+  border: '1px solid rgba(255, 255, 255, 0.06)',
 }
 
 const PHILOSOPHY = [
@@ -122,7 +119,7 @@ export default function About() {
                 <h3 className="text-lg sm:text-xl font-bold text-white tracking-tight">Muhammad Saifudin</h3>
                 <p className="text-xs font-semibold text-cyan-400">Lead Security Architect &amp; Creator</p>
                 <p className="text-xs text-slate-300 leading-relaxed max-w-2xl">
-                  Researched and engineered the full SentinelAI stack — from the Hexstrike Kali tool
+                  Researched and engineered the full SentinelAI stack — from the Native Kali tool
                   orchestration engine and multi-LLM consensus verification, to the PayloadsAllTheThings
                   RAG knowledge base and autonomous exploitation pipeline. Developed at the
                   Kulliyyah of Information and Communication Technology (KICT), International Islamic

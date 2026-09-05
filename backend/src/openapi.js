@@ -232,7 +232,7 @@ export const openapiSpec = {
       },
     },
     '/api/engine/status': {
-      get: { tags: ['Intelligence'], summary: 'HexStrike engine status', responses: { 200: { description: 'Engine status' } } },
+      get: { tags: ['Intelligence'], summary: 'Native scanner engine status', responses: { 200: { description: 'Engine status' } } },
     },
     '/api/engine/analyze': {
       post: {

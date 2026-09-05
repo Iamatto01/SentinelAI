@@ -167,7 +167,7 @@ export default function GitHubAutomation() {
   return (
     <div className="space-y-6 animate-in fade-in duration-300 pb-16">
       {/* Top Banner Header */}
-      <div className="card p-6 border-white/10 relative overflow-hidden bg-gradient-to-r from-slate-900/90 via-slate-900/70 to-cyan-950/40">
+      <div className="card p-6 border-white/[0.07] relative overflow-hidden bg-[#161616]">
         <div className="absolute top-0 right-0 p-8 opacity-10 pointer-events-none">
           <GitBranch size={160} className="text-cyan-400" />
         </div>

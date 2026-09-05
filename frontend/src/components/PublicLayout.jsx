@@ -132,7 +132,7 @@ export default function PublicLayout({ children }) {
             <div className="flex items-center justify-between px-3.5 py-2 rounded-xl bg-cyan-500/10 border border-cyan-500/20 text-xs text-cyan-300">
               <span className="flex items-center gap-2 font-mono text-[11px]">
                 <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                Hexstrike Kali Engine Active
+                Native Kali Engine Active
               </span>
               <span className="text-[10px] text-slate-400 font-mono">150+ Tools</span>
             </div>
@@ -255,7 +255,7 @@ export default function PublicLayout({ children }) {
           <div className="space-y-3">
             <h4 className="text-xs font-extrabold uppercase tracking-wider text-cyan-300">Built With</h4>
             <ul className="space-y-2 text-xs text-slate-400 font-mono">
-              <li className="flex items-center gap-2"><Terminal size={13} className="text-emerald-400" /> Hexstrike Kali Engine</li>
+              <li className="flex items-center gap-2"><Terminal size={13} className="text-emerald-400" /> Native Kali Engine</li>
               <li className="flex items-center gap-2"><Database size={13} className="text-amber-400" /> SQLite WAL (Local-First)</li>
               <li className="flex items-center gap-2"><Cpu size={13} className="text-cyan-400" /> DeepSeek / Groq Multi-LLM</li>
               <li className="flex items-center gap-2"><ShieldCheck size={13} className="text-indigo-400" /> React + Vite Frontend</li>

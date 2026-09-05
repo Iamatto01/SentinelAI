@@ -2,17 +2,32 @@
 @tailwind components;
 @tailwind utilities;
 
-html { 
+/* ── Design Tokens ─────────────────────────────────────────────── */
+:root {
+  color-scheme: dark;
+  --bg-base:     #0a0a0a;
+  --bg-surface:  #111111;
+  --bg-card:     #161616;
+  --bg-elevated: #1c1c1c;
+  --border:      rgba(255,255,255,0.07);
+  --border-md:   rgba(255,255,255,0.10);
+  --text-primary: #f4f4f5;
+  --text-muted:   #71717a;
+  --text-faint:   #3f3f46;
+  --accent:       #3b82f6;
+  --accent-hover: #2563eb;
+}
+
+html {
   scroll-behavior: smooth;
   scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.2) #060b26;
+  scrollbar-color: #2a2a2a var(--bg-base);
 }
-:root { color-scheme: dark; }
 
-::-webkit-scrollbar { width: 8px; height: 8px; }
-::-webkit-scrollbar-track { background: #060b26; }
-::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.18); border-radius: 4px; }
-::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.3); }
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--bg-base); }
+::-webkit-scrollbar-thumb { background: #2a2a2a; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #3a3a3a; }
 
 html, body {
   width: 100%;
@@ -23,74 +38,67 @@ html, body {
 }
 
 body {
-  @apply text-slate-100 font-sans antialiased bg-[#060b26];
-  background:
-    radial-gradient(circle at 15% 15%, rgba(0, 242, 254, 0.14) 0%, transparent 40%),
-    radial-gradient(circle at 85% 20%, rgba(0, 117, 255, 0.16) 0%, transparent 45%),
-    radial-gradient(circle at 50% 80%, rgba(121, 40, 202, 0.12) 0%, transparent 50%),
-    #060b26;
+  @apply text-zinc-100 font-sans antialiased;
+  background: var(--bg-base);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
 
-
 @layer components {
-  /* ── Vision UI Glass primitives ───────────────────────────────────── */
+  /* ── Minimalist Dark Surfaces ──────────────────────────────────── */
   .glass {
-    @apply rounded-2xl border border-white/[0.1];
-    background: rgba(6, 11, 38, 0.4);
-    backdrop-filter: blur(40px) saturate(180%);
-    -webkit-backdrop-filter: blur(40px) saturate(180%);
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+    @apply rounded-xl border;
+    border-color: var(--border);
+    background: var(--bg-card);
   }
   .glass-soft {
-    @apply rounded-xl border border-white/[0.08];
-    background: rgba(15, 21, 53, 0.35);
-    backdrop-filter: blur(32px) saturate(170%);
-    -webkit-backdrop-filter: blur(32px) saturate(170%);
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+    @apply rounded-xl border;
+    border-color: var(--border);
+    background: var(--bg-surface);
   }
   .glass-deep {
-    @apply rounded-xl border border-white/[0.08];
-    background: rgba(6, 11, 38, 0.5);
-    backdrop-filter: blur(40px) saturate(180%);
-    -webkit-backdrop-filter: blur(40px) saturate(180%);
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    @apply rounded-xl border;
+    border-color: var(--border);
+    background: #0d0d0d;
   }
 
-  /* Legacy alias → existing .card markup becomes glass automatically */
+  /* Card — flat dark surface with subtle border */
   .card {
-    @apply glass;
-    transition: border-color 0.3s ease, box-shadow 0.3s ease, transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    @apply rounded-xl border;
+    border-color: var(--border);
+    background: var(--bg-card);
+    transition: border-color 0.2s ease;
+  }
+  .card:hover {
+    border-color: var(--border-md);
   }
 
-  /* ── Vision UI Buttons ────────────────────────────────────────────── */
-  .btn { @apply inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-cyan-500/40 disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.98]; }
+  /* ── Buttons (keep all gradient/colour styles) ─────────────────── */
+  .btn { @apply inline-flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500/40 disabled:opacity-40 disabled:cursor-not-allowed active:scale-[0.98]; }
   .btn-primary {
-    @apply btn text-slate-950 font-bold;
-    background: linear-gradient(135deg, #00f2fe 0%, #0075ff 100%);
-    box-shadow: 0 4px 20px -2px rgba(0, 242, 254, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.35);
+    @apply btn text-white font-bold;
+    background: var(--accent);
   }
   .btn-primary:hover {
-    box-shadow: 0 6px 28px 0px rgba(0, 242, 254, 0.65), inset 0 1px 0 rgba(255, 255, 255, 0.4);
+    background: var(--accent-hover);
     transform: translateY(-1px);
   }
   .btn-ghost {
-    @apply btn text-slate-200 border border-white/10 hover:text-white hover:border-cyan-400/40;
-    background: rgba(255, 255, 255, 0.05);
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
+    @apply btn text-zinc-300 border hover:text-white;
+    border-color: var(--border-md);
+    background: transparent;
   }
-  .btn-ghost:hover { background: rgba(0, 242, 254, 0.12); box-shadow: 0 0 15px rgba(0, 242, 254, 0.2); }
+  .btn-ghost:hover {
+    background: var(--bg-elevated);
+    border-color: rgba(255,255,255,0.18);
+  }
   .btn-danger {
-    @apply btn text-red-400 border border-red-500/30 hover:border-red-500/60 hover:text-red-300;
-    background: rgba(244, 63, 94, 0.12);
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
+    @apply btn text-red-400 border border-red-500/30 hover:border-red-500/50 hover:text-red-300;
+    background: rgba(239, 68, 68, 0.08);
   }
-  .btn-danger:hover { background: rgba(244, 63, 94, 0.25); box-shadow: 0 0 18px rgba(244, 63, 94, 0.3); }
+  .btn-danger:hover { background: rgba(239, 68, 68, 0.15); }
 
-  /* ── Vision Forms & Inputs ────────────────────────────────────────── */
+  /* ── Forms & Inputs ────────────────────────────────────────────── */
   input::-ms-reveal,
   input::-ms-clear {
     display: none !important;
@@ -104,211 +112,145 @@ body {
     pointer-events: none !important;
   }
   .input {
-    @apply w-full rounded-xl px-3.5 py-2.5 text-sm text-slate-100 placeholder-slate-500 border border-white/10 focus:outline-none focus:border-cyan-400 focus:ring-2 focus:ring-cyan-500/20 transition-all duration-200;
-    background: rgba(15, 21, 53, 0.6);
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
+    @apply w-full rounded-lg px-3.5 py-2.5 text-sm text-zinc-100 placeholder-zinc-600 border focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/30 transition-all duration-200;
+    border-color: var(--border-md);
+    background: var(--bg-elevated);
   }
-  .input:hover { @apply border-white/20; }
-  .label { @apply block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1.5; }
-  select.input option { background: #0b1437; color: #f1f5f9; }
+  .input:hover { border-color: rgba(255,255,255,0.15); }
+  .label { @apply block text-xs font-semibold uppercase tracking-wider text-zinc-500 mb-1.5; }
+  select.input option { background: #1c1c1c; color: #f4f4f5; }
 
   /* ── Chips / badges ───────────────────────────────────────────────── */
   .chip {
-    @apply inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-wider border border-white/10;
-    background: rgba(255, 255, 255, 0.06);
-    backdrop-filter: blur(8px);
-    -webkit-backdrop-filter: blur(8px);
+    @apply inline-flex items-center rounded-md px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-wider border;
+    border-color: var(--border);
+    background: var(--bg-elevated);
   }
 
   /* ── Terminal ─────────────────────────────────────────────────────── */
   .terminal {
-    @apply font-mono text-[12.5px] leading-relaxed rounded-xl p-4 overflow-auto border border-cyan-500/20;
-    background: rgba(3, 7, 22, 0.85);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
+    @apply font-mono text-[12.5px] leading-relaxed rounded-lg p-4 overflow-auto border;
+    border-color: rgba(255,255,255,0.08);
+    background: #080808;
     box-shadow: inset 0 0 20px rgba(0,0,0,0.5);
   }
 
-  /* ── Table glass ──────────────────────────────────────────────────── */
-  .glass-table thead th { @apply text-[11px] uppercase tracking-widest text-slate-400 font-bold border-b border-white/10; background: rgba(15, 21, 53, 0.5); }
-  .glass-table tbody tr { @apply border-b border-white/[0.06] transition-colors; }
-  .glass-table tbody tr:hover { background: rgba(0, 242, 254, 0.05); }
+  /* ── Table ──────────────────────────────────────────────────────── */
+  .glass-table thead th {
+    @apply text-[11px] uppercase tracking-widest text-zinc-500 font-semibold border-b;
+    border-color: var(--border);
+    background: var(--bg-surface);
+  }
+  .glass-table tbody tr { @apply border-b transition-colors; border-color: var(--border); }
+  .glass-table tbody tr:hover { background: var(--bg-elevated); }
 
-  /* ── Icon Box Gradients (Vision UI signature glowing icons) ────────── */
+  /* ── Icon Boxes (keep gradient colours) ─────────────────────────── */
   .icon-box {
-    @apply flex items-center justify-center rounded-xl p-3 shadow-lg shrink-0 transition-transform duration-300;
+    @apply flex items-center justify-center rounded-lg p-2.5 shrink-0 transition-transform duration-200;
   }
   .icon-box-cyan {
-    background: linear-gradient(135deg, #00f2fe 0%, #0075ff 100%);
-    color: #060b26;
-    box-shadow: 0 4px 18px rgba(0, 242, 254, 0.4);
+    background: linear-gradient(135deg, #0ea5e9 0%, #2563eb 100%);
+    color: #ffffff;
   }
   .icon-box-purple {
-    background: linear-gradient(135deg, #a855f7 0%, #7928ca 100%);
+    background: linear-gradient(135deg, #a855f7 0%, #7c3aed 100%);
     color: #ffffff;
-    box-shadow: 0 4px 18px rgba(168, 85, 247, 0.4);
   }
   .icon-box-emerald {
     background: linear-gradient(135deg, #10b981 0%, #059669 100%);
     color: #ffffff;
-    box-shadow: 0 4px 18px rgba(16, 185, 129, 0.4);
   }
   .icon-box-amber {
     background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
     color: #ffffff;
-    box-shadow: 0 4px 18px rgba(245, 158, 11, 0.4);
   }
   .icon-box-rose {
     background: linear-gradient(135deg, #f43f5e 0%, #e11d48 100%);
     color: #ffffff;
-    box-shadow: 0 4px 18px rgba(244, 63, 94, 0.4);
   }
 }
 
-/* Softened grid for glass depth */
+/* ── Utility classes ───────────────────────────────────────────── */
 .grid-bg {
-  background-image: radial-gradient(circle at 1px 1px, rgba(255, 255, 255, 0.05) 1px, transparent 0);
+  background-image: radial-gradient(circle at 1px 1px, rgba(255,255,255,0.04) 1px, transparent 0);
   background-size: 28px 28px;
 }
 
-/* Glass glow accent for active states */
-.glass-glow {
-  box-shadow: 0 0 25px -4px rgba(0, 242, 254, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.2);
-}
+.glass-glow { box-shadow: 0 0 0 1px rgba(255,255,255,0.08); }
 
-/* Frosted modal overlay */
 .glass-overlay {
-  background: rgba(6, 11, 38, 0.75);
-  backdrop-filter: blur(12px) saturate(140%);
-  -webkit-backdrop-filter: blur(12px) saturate(140%);
+  background: rgba(0, 0, 0, 0.85);
 }
 
-/* Smooth card entrance */
+/* Card entrance animation */
 @keyframes glass-in {
-  from { opacity: 0; transform: translateY(8px); }
-  to { opacity: 1; transform: translateY(0); }
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
-.glass-in { animation: glass-in 0.35s cubic-bezier(0.22,1,0.36,1) both; }
+.glass-in { animation: glass-in 0.25s ease both; }
 
-/* ── Dribbble-Style Staggered Motion Animations ──────────────────────── */
+/* ── Motion animations ──────────────────────────────────────────── */
 @keyframes fade-slide-up {
-  0% { opacity: 0; transform: translateY(12px); }
+  0%   { opacity: 0; transform: translateY(10px); }
   100% { opacity: 1; transform: translateY(0); }
 }
-
 @keyframes fade-slide-right {
-  0% { opacity: 0; transform: translateX(-10px); }
+  0%   { opacity: 0; transform: translateX(-8px); }
   100% { opacity: 1; transform: translateX(0); }
 }
-
 @keyframes pulse-glow {
-  0%, 100% { box-shadow: 0 0 20px -4px rgba(0, 242, 254, 0.3); }
-  50% { box-shadow: 0 0 35px 2px rgba(0, 242, 254, 0.6); }
+  0%, 100% { opacity: 0.7; }
+  50%       { opacity: 1; }
 }
-
 @keyframes float-subtle {
   0%, 100% { transform: translateY(0px); }
-  50% { transform: translateY(-6px); }
+  50%       { transform: translateY(-5px); }
 }
 
-.motion-fade-up {
-  animation: fade-slide-up 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
-}
+.motion-fade-up   { animation: fade-slide-up 0.4s cubic-bezier(0.16, 1, 0.3, 1) both; }
+.motion-fade-right { animation: fade-slide-right 0.35s cubic-bezier(0.16, 1, 0.3, 1) both; }
+.motion-delay-1 { animation-delay: 60ms; }
+.motion-delay-2 { animation-delay: 120ms; }
+.motion-delay-3 { animation-delay: 180ms; }
+.motion-delay-4 { animation-delay: 240ms; }
+.motion-delay-5 { animation-delay: 300ms; }
+.motion-float   { animation: float-subtle 4s ease-in-out infinite; }
+.motion-pulse   { animation: pulse-glow 2.5s ease-in-out infinite; }
 
-.motion-fade-right {
-  animation: fade-slide-right 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
-}
-
-.motion-delay-1 { animation-delay: 80ms; }
-.motion-delay-2 { animation-delay: 160ms; }
-.motion-delay-3 { animation-delay: 240ms; }
-.motion-delay-4 { animation-delay: 320ms; }
-.motion-delay-5 { animation-delay: 400ms; }
-
-.motion-float {
-  animation: float-subtle 4s ease-in-out infinite;
-}
-
-.motion-pulse {
-  animation: pulse-glow 3s ease-in-out infinite;
-}
-
-/* ═══ Day Mode / Night Body Support ═══ */
+/* ── Day / Night body support (kept for toggle compatibility) ───── */
 body.night { color-scheme: dark; }
 
 body.day-mode {
   color-scheme: light;
   color: #0f172a;
-  background:
-    radial-gradient(circle at 15% 15%, rgba(0, 242, 254, 0.10) 0%, transparent 40%),
-    radial-gradient(circle at 85% 20%, rgba(0, 117, 255, 0.10) 0%, transparent 45%),
-    radial-gradient(circle at 50% 80%, rgba(121, 40, 202, 0.07) 0%, transparent 50%),
-    #eef2f7;
-  background-attachment: fixed;
+  background: #f1f5f9;
 }
-
-/* Glass surfaces → light glass */
-body.day-mode .glass {
-  background: linear-gradient(127.09deg, rgba(255, 255, 255, 0.92) 19.41%, rgba(241, 245, 249, 0.82) 76.65%);
-  border-color: rgba(15, 23, 42, 0.10);
-  box-shadow: 0 20px 40px -15px rgba(15, 23, 42, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.9);
-}
-body.day-mode .glass-soft {
-  background: linear-gradient(127.09deg, rgba(255, 255, 255, 0.88) 19.41%, rgba(248, 250, 252, 0.78) 76.65%);
+body.day-mode .glass,
+body.day-mode .glass-soft,
+body.day-mode .glass-deep,
+body.day-mode .card {
+  background: #ffffff;
   border-color: rgba(15, 23, 42, 0.08);
-  box-shadow: 0 10px 25px -8px rgba(15, 23, 42, 0.10), inset 0 1px 0 rgba(255, 255, 255, 0.9);
 }
-body.day-mode .glass-deep {
-  background: rgba(255, 255, 255, 0.95);
-  border-color: rgba(15, 23, 42, 0.10);
-}
-
-/* Text utilities → dark ink */
 body.day-mode .text-white,
 body.day-mode .text-slate-100,
-body.day-mode .text-slate-200 { color: #0f172a !important; }
+body.day-mode .text-zinc-100 { color: #0f172a !important; }
 body.day-mode .text-slate-300,
-body.day-mode .text-slate-400 { color: #475569 !important; }
-body.day-mode .text-slate-500 { color: #64748b !important; }
-
-/* Accent readability on light surfaces */
-body.day-mode .text-cyan-300 { color: #0e7490 !important; }
+body.day-mode .text-slate-400,
+body.day-mode .text-zinc-400 { color: #475569 !important; }
+body.day-mode .text-slate-500,
+body.day-mode .text-zinc-500 { color: #64748b !important; }
+body.day-mode .text-cyan-300,
 body.day-mode .text-cyan-400 { color: #0891b2 !important; }
-
-/* Keep code blocks / terminals dark with light text */
 body.day-mode pre,
 body.day-mode .terminal,
-body.day-mode .terminal * { color: #cbd5e1 !important; }
-body.day-mode pre.text-slate-300,
-body.day-mode pre.text-slate-400,
-body.day-mode pre.text-slate-500 { color: #94a3b8 !important; }
-
-/* Dark ink surfaces → light */
-body.day-mode .bg-slate-950 { background-color: #f8fafc !important; }
-body.day-mode .bg-slate-950\/80 { background-color: rgba(248, 250, 252, 0.92) !important; }
-body.day-mode .bg-black\/60,
-body.day-mode .bg-black\/50,
-body.day-mode .bg-black\/40,
-body.day-mode .bg-black\/30,
-body.day-mode .bg-black\/20 { background-color: rgba(15, 23, 42, 0.05) !important; }
-
-/* Borders → subtle dark */
-body.day-mode .border-white\/20,
-body.day-mode .border-white\/15,
-body.day-mode .border-white\/10 { border-color: rgba(15, 23, 42, 0.10) !important; }
-body.day-mode .border-white\/5 { border-color: rgba(15, 23, 42, 0.06) !important; }
-body.day-mode .border-white\/\[0\.08\] { border-color: rgba(15, 23, 42, 0.08) !important; }
-
-/* Hover washes → dark tint */
-body.day-mode .hover\:bg-white\/10:hover,
-body.day-mode .hover\:bg-white\/\[0\.06\]:hover,
-body.day-mode .hover\:bg-white\/5:hover { background-color: rgba(15, 23, 42, 0.05) !important; }
-
-/* Scrollbars → light */
+body.day-mode .terminal * { background: #1e293b !important; color: #cbd5e1 !important; }
 body.day-mode * { scrollbar-color: rgba(15, 23, 42, 0.18) transparent; }
 body.day-mode *::-webkit-scrollbar-thumb { background: rgba(15, 23, 42, 0.18); }
 body.day-mode *::-webkit-scrollbar-thumb:hover { background: rgba(15, 23, 42, 0.30); }
+
+
+
 
 /* ==========================================================================
    DEV COMMUNITY BUTTON ANIMATION SUITE (75 CSS Buttons)

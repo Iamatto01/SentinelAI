@@ -27,15 +27,30 @@ export default function Dashboard() {
   return (
     <div className="space-y-6 motion-fade-up content-fade">
       {/* Vision UI Header Banner */}
-      <div className="card p-6 border border-white/15 bg-gradient-to-r from-slate-950/80 via-slate-900/60 to-slate-950/80 backdrop-blur-2xl relative overflow-hidden flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-        <div className="absolute top-0 right-0 w-80 h-80 bg-cyan-500/10 rounded-full blur-3xl pointer-events-none" />
-        <div className="z-10">
-          <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
-            Security Overview & Threat Matrix
-          </h1>
-          <p className="text-xs sm:text-sm text-slate-400 mt-1">
-            Real-time assessment intelligence powered by Hexstrike Engine & {data?.agentsCount || 53} AI Agent Personas
-          </p>
+      <div className="card p-6 border border-white/15 relative overflow-hidden flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+        <div className="z-10 flex items-center gap-3.5">
+          <Link to="/app/consultants" title="Consult Lead Security Architect" className="relative shrink-0 group">
+            <div className="w-13 h-13 sm:w-14 sm:h-14 rounded-2xl overflow-hidden border-2 border-cyan-400/40 shadow-lg bg-slate-900 ring-2 ring-cyan-500/20 group-hover:border-cyan-300 transition-all">
+              <img
+                src="/saif.png"
+                alt="Muhammad Saifudin"
+                className="w-full h-full object-cover"
+                style={{ objectPosition: '85% 85%' }}
+                onError={(e) => { e.currentTarget.src = '/fyp2_presenter.png' }}
+              />
+            </div>
+            <span className="absolute -bottom-1 -right-1 px-1.5 py-0.5 rounded-full bg-cyan-500 text-slate-950 text-[8px] font-black uppercase tracking-wider shadow">
+              Lead
+            </span>
+          </Link>
+          <div>
+            <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
+              Security Overview &amp; Threat Matrix
+            </h1>
+            <p className="text-xs sm:text-sm text-slate-400 mt-1">
+              Real-time assessment intelligence powered by Native Kali Engine &amp; {data?.agentsCount || 53} AI Agent Personas
+            </p>
+          </div>
         </div>
 
         <div className="flex items-center gap-3 z-10 shrink-0">
@@ -60,7 +75,7 @@ export default function Dashboard() {
 
       {/* Quick Launch Action Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="card p-5 border-cyan-500/30 bg-gradient-to-b from-cyan-950/20 to-slate-950/60 hover:border-cyan-400/60 hover-lift transition-all flex flex-col justify-between">
+        <div className="card p-5 border-cyan-500/30 hover:border-cyan-400/60 hover-lift transition-all flex flex-col justify-between">
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <span className="p-2 rounded-xl bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
@@ -82,7 +97,7 @@ export default function Dashboard() {
           </div>
         </div>
 
-        <div className="card p-5 border-purple-500/30 bg-gradient-to-b from-purple-950/20 to-slate-950/60 hover:border-purple-400/60 hover-lift transition-all flex flex-col justify-between">
+        <div className="card p-5 border-purple-500/30 hover:border-purple-400/60 hover-lift transition-all flex flex-col justify-between">
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <span className="p-2 rounded-xl bg-purple-500/10 text-purple-400 border border-purple-500/20">
@@ -104,7 +119,7 @@ export default function Dashboard() {
           </div>
         </div>
 
-        <div className="card p-5 border-emerald-500/30 bg-gradient-to-b from-emerald-950/20 to-slate-950/60 hover:border-emerald-400/60 hover-lift transition-all flex flex-col justify-between">
+        <div className="card p-5 border-emerald-500/30 hover:border-emerald-400/60 hover-lift transition-all flex flex-col justify-between">
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <span className="p-2 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
@@ -242,7 +257,7 @@ export default function Dashboard() {
             <div className="space-y-2 text-xs font-medium text-slate-300 pt-2">
               <div className="flex items-center justify-between p-2 rounded-xl bg-white/[0.03]">
                 <span className="flex items-center gap-2">
-                  <CheckCircle2 size={14} className="text-emerald-400" /> Hexstrike API
+                  <CheckCircle2 size={14} className="text-emerald-400" /> Native Kali Engine
                 </span>
                 <span className="text-emerald-400 font-bold">Connected</span>
               </div>

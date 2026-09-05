@@ -104,7 +104,7 @@ export default function Billing() {
   return (
     <div className="space-y-8 animate-in fade-in duration-300 pb-16 content-fade">
       {/* Header Banner */}
-      <div className="card p-6 border-white/10 relative overflow-hidden bg-gradient-to-r from-slate-900/90 via-slate-900/70 to-indigo-950/40">
+      <div className="card p-6 border-white/[0.07] relative overflow-hidden bg-[#161616]">
         <div className="absolute top-0 right-0 p-8 opacity-10 pointer-events-none">
           <CreditCard size={160} className="text-cyan-400" />
         </div>

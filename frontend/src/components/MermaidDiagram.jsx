@@ -7,7 +7,7 @@ const DIAGRAMS = {
     id: 'pipeline',
     label: 'End-to-End Execution Pipeline',
     icon: Workflow,
-    desc: 'Target Ingestion → Express Gateway → Hexstrike Kali Engine → AI Consensus → Local WAL DB',
+    desc: 'Target Ingestion → Express Gateway → Native Kali Engine → AI Consensus → Local WAL DB',
     code: `graph TD
     %% 1. Ingestion Layer
     subgraph Ingestion["🌐 1. Target Ingestion & Triggers"]
@@ -23,8 +23,8 @@ const DIAGRAMS = {
         B3["⚡ Rate Limiting & Target Sanitization"]
     end
 
-    %% 3. Hexstrike Kali Engine
-    subgraph Kali["⚡ 3. Hexstrike Kali Engine (:8888)"]
+    %% 3. Native Kali Engine
+    subgraph Kali["⚡ 3. Native Kali Engine (Direct Execution)"]
         C1["🔍 Phase 1: Recon - Nmap, Subfinder, Katana"]
         C2["🎯 Phase 2: DAST Dynamic Web - Nuclei, Nikto, SQLMap, FFUF"]
         C3["💻 Phase 3: SAST Static Code - AST Parser (JS, Py, PHP, Java)"]

@@ -7,11 +7,8 @@ import {
 import PublicLayout from '../components/PublicLayout.jsx'
 
 const GLASS_CARD = {
-  background: 'rgba(255, 255, 255, 0.04)',
-  backdropFilter: 'blur(40px) saturate(180%)',
-  WebkitBackdropFilter: 'blur(40px) saturate(180%)',
-  border: '1px solid rgba(255, 255, 255, 0.08)',
-  boxShadow: '0 8px 32px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.06)',
+  background: '#161616',
+  border: '1px solid rgba(255, 255, 255, 0.06)',
 }
 
 const CHANNELS = [

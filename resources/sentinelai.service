@@ -23,7 +23,7 @@ RestartSec=15
 TimeoutStartSec=180
 
 # Cleanup on stop — kill all services
-ExecStop=/bin/bash -c 'fuser -k 5000/tcp 2>/dev/null; fuser -k 5173/tcp 2>/dev/null; fuser -k 8888/tcp 2>/dev/null; fuser -k 55553/tcp 2>/dev/null; pkill -f cloudflared 2>/dev/null; pkill -f hexstrike_server 2>/dev/null; pkill -f msfrpcd 2>/dev/null; true'
+ExecStop=/bin/bash -c 'fuser -k 5000/tcp 2>/dev/null; fuser -k 5173/tcp 2>/dev/null; fuser -k 55553/tcp 2>/dev/null; pkill -f cloudflared 2>/dev/null; pkill -f msfrpcd 2>/dev/null; true'
 ExecStopPost=/bin/sleep 2
 
 [Install]

@@ -134,8 +134,9 @@ ps aux | grep -E "node.*src/index.js|vite" | grep -v grep || true
     ssh.close()
     print("\n🎉 ========================================================")
     print(f"✅ SentinelAI successfully deployed & running on Kali!")
-    print(f"🌐 Web Dashboard: http://{KALI_HOST}:5173")
-    print(f"🔌 Backend API:   http://{KALI_HOST}:5000")
+    print(f"� Public Domain: https://sentinelai.studio")
+    print(f"🌐 Local Web:     http://{KALI_HOST}:5173")
+    print(f"🔌 Local API:     http://{KALI_HOST}:5000")
     print("========================================================\n")
 
 def main():

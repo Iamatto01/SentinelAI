@@ -260,14 +260,44 @@ export default function Settings() {
 
         <button
           type="button"
-          onClick={() => setActiveTab('alerts')}
+          onClick={() => setActiveTab('telegram')}
           className={`text-xs font-bold px-4 py-2.5 rounded-xl transition-all flex items-center gap-2 cursor-pointer ${
-            activeTab === 'alerts'
+            activeTab === 'telegram'
               ? 'bg-cyan-500 text-slate-950 font-extrabold shadow-[0_0_15px_rgba(0,242,254,0.35)]'
               : 'text-slate-400 hover:text-white bg-white/5 border border-white/10'
           }`}
         >
-          <Bot size={15} /> Bot Alerts & Feedback
+          <Send size={14} /> Telegram Bot
+          {teleStatus?.telegram?.paired && (
+            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+          )}
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab('discord')}
+          className={`text-xs font-bold px-4 py-2.5 rounded-xl transition-all flex items-center gap-2 cursor-pointer ${
+            activeTab === 'discord'
+              ? 'bg-indigo-500 text-white font-extrabold shadow-[0_0_15px_rgba(99,102,241,0.35)]'
+              : 'text-slate-400 hover:text-white bg-white/5 border border-white/10'
+          }`}
+        >
+          <Bot size={14} /> Discord Bot
+          {teleStatus?.discord?.paired && (
+            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+          )}
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab('feedback')}
+          className={`text-xs font-bold px-4 py-2.5 rounded-xl transition-all flex items-center gap-2 cursor-pointer ${
+            activeTab === 'feedback'
+              ? 'bg-cyan-500 text-slate-950 font-extrabold shadow-[0_0_15px_rgba(0,242,254,0.35)]'
+              : 'text-slate-400 hover:text-white bg-white/5 border border-white/10'
+          }`}
+        >
+          <MessageSquare size={14} /> Feedback
         </button>
       </div>
 
@@ -399,14 +429,16 @@ export default function Settings() {
                   <span className="text-slate-300 font-semibold flex items-center gap-1.5">
                     <Sliders size={13} className="text-cyan-400" /> Layer Opacity
                   </span>
-                  <span className="text-cyan-300 font-bold font-mono">{Math.round(opacity * 100)}%</span>
+                  <span className="text-cyan-300 font-bold font-mono">
+                    {opacity > 1 ? Math.round(opacity) : Math.round((opacity || 0.35) * 100)}%
+                  </span>
                 </div>
                 <input
                   type="range"
-                  min="0.05"
-                  max="0.9"
+                  min="0.10"
+                  max="0.95"
                   step="0.05"
-                  value={opacity}
+                  value={opacity > 1 ? opacity / 100 : (opacity || 0.35)}
                   onChange={(e) => setOpacity(parseFloat(e.target.value))}
                   className="w-full accent-cyan-400 cursor-pointer h-2 bg-slate-950 rounded-lg appearance-none"
                 />
@@ -522,11 +554,11 @@ export default function Settings() {
         </div>
       )}
 
-      {/* ── TAB: BOT INTEGRATIONS & ANONYMOUS FEEDBACK ─────────────────────────── */}
-      {activeTab === 'alerts' && (
-        <div className="space-y-8 max-w-4xl animate-in fade-in duration-300">
+      {/* ── TAB: TELEGRAM BOT INTEGRATION ──────────────────────────────────── */}
+      {(activeTab === 'telegram' || activeTab === 'alerts') && (
+        <div className="space-y-6 max-w-4xl animate-in fade-in duration-300">
           {/* TELEGRAM BOT INTEGRATION CARD */}
-          <div className="card p-6 space-y-6 border-cyan-500/30 bg-slate-900/60 shadow-2xl relative overflow-hidden">
+          <div className="card p-6 space-y-6 border-l-4 border-l-cyan-500 border-cyan-500/30 bg-[#161616] relative overflow-hidden">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-white/10 pb-4">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-xl bg-cyan-500/20 border border-cyan-400/30 flex items-center justify-center text-cyan-400">
@@ -637,9 +669,14 @@ export default function Settings() {
               </form>
             )}
           </div>
+        </div>
+      )}
 
+      {/* ── TAB: DISCORD BOT INTEGRATION ───────────────────────────────────── */}
+      {(activeTab === 'discord' || activeTab === 'alerts') && (
+        <div className="space-y-6 max-w-4xl animate-in fade-in duration-300">
           {/* DISCORD & OTHER BOTS INTEGRATION CARD */}
-          <div className="card p-6 space-y-6 border-indigo-500/30 bg-slate-900/60 shadow-2xl relative overflow-hidden">
+          <div className="card p-6 space-y-6 border-l-4 border-l-indigo-500 border-indigo-500/30 bg-[#161616] relative overflow-hidden">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-white/10 pb-4">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-xl bg-indigo-500/20 border border-indigo-400/30 flex items-center justify-center text-indigo-400">
@@ -735,9 +772,14 @@ export default function Settings() {
               </form>
             )}
           </div>
+        </div>
+      )}
 
+      {/* ── TAB: ANONYMOUS FEEDBACK & BUG REPORT ───────────────────────────── */}
+      {(activeTab === 'feedback' || activeTab === 'alerts') && (
+        <div className="space-y-6 max-w-4xl animate-in fade-in duration-300">
           {/* Anonymous Community Feedback & Bug Report Card */}
-          <form onSubmit={handleSendFeedback} className="card p-6 space-y-5 hover:border-cyan-400/40 transition-all duration-300 border-cyan-500/20 bg-slate-950/70">
+          <form onSubmit={handleSendFeedback} className="card p-6 space-y-5 hover:border-cyan-400/40 transition-all duration-300 border-cyan-500/20 bg-[#161616]">
             <div>
               <div className="flex items-center justify-between">
                 <h3 className="flex items-center gap-2 text-base font-bold text-white">

@@ -888,7 +888,7 @@ export default function ClientsManagement() {
                         >
                           <Globe size={18} className={runScanMode === 'blackbox' ? 'text-cyan-400' : 'text-slate-500'} />
                           <div className="text-xs font-bold text-white mt-1.5">Blackbox Pentest</div>
-                          <div className="text-[10px] text-slate-400">External URL / Target via Hexstrike engine</div>
+                          <div className="text-[10px] text-slate-400">External URL / Target via Native Kali engine</div>
                         </button>
 
                         <button

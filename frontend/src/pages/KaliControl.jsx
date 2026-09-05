@@ -22,6 +22,7 @@ import {
   Layers,
   Zap,
   Bot,
+  MessageSquare,
 } from 'lucide-react'
 import { api } from '../lib/api.js'
 
@@ -49,6 +50,9 @@ export default function KaliControl() {
     { role: 'assistant', text: 'Hi! Tell me what you want to do on this Kali box in plain English (e.g. "check latest storage usage") and I will draft the command for you to review and run.' },
   ])
   const [pendingCmd, setPendingCmd] = useState(null) // { command, explanation, risk }
+  const [autoLoop, setAutoLoop] = useState(true) // Auto-loop healing toggle
+  const [isLooping, setIsLooping] = useState(false) // Currently executing an iterative loop
+  const [lastError, setLastError] = useState(null) // { cmd, error }
   const aiChatRef = useRef(null)
 
   useEffect(() => {
@@ -114,7 +118,7 @@ export default function KaliControl() {
 
   async function handleExec(cmdToRun) {
     const cmd = (cmdToRun || command).trim()
-    if (!cmd) return
+    if (!cmd) return { ok: false, error: 'Empty command' }
     setCommand('')
     setTermBusy(true)
 
@@ -126,15 +130,91 @@ export default function KaliControl() {
         setHistory((prev) => [...prev, { type: 'out', text: res.stdout }])
       }
       if (res.stderr) {
-        setHistory((prev) => [...prev, { type: 'err', text: res.stderr }])
+        setHistory((prev) => [...prev, { type: 'err', text: res.stderr, cmd }])
       }
       if (!res.stdout && !res.stderr) {
         setHistory((prev) => [...prev, { type: 'sys', text: `(Command completed with exit code ${res.code})` }])
       }
+      const ok = res.code === 0 && (!res.stderr || res.stderr.toLowerCase().indexOf('error') === -1)
+      return { ok, code: res.code, stdout: res.stdout || '', stderr: res.stderr || '' }
     } catch (e) {
-      setHistory((prev) => [...prev, { type: 'err', text: `Error: ${e.message}` }])
+      setHistory((prev) => [...prev, { type: 'err', text: `Error: ${e.message}`, cmd }])
+      return { ok: false, error: e.message }
     } finally {
       setTermBusy(false)
+    }
+  }
+
+  // ── Auto-Loop Error Healing Handler ──
+  async function handleAutoLoopFix(failedCmd, errorOutput, iteration = 1, maxIterations = 5) {
+    if (iteration > maxIterations) {
+      setAiMessages((prev) => [
+        ...prev,
+        { role: 'assistant', text: `🛑 Self-healing reached maximum ${maxIterations} attempts. Please inspect the terminal manually.`, error: true }
+      ])
+      setIsLooping(false)
+      return
+    }
+
+    setIsLooping(true)
+    setAiBusy(true)
+    setAiMessages((prev) => [
+      ...prev,
+      {
+        role: 'assistant',
+        text: `🔄 [Auto-Loop Attempt ${iteration}/${maxIterations}] Analyzing error for: ${failedCmd}`
+      }
+    ])
+
+    try {
+      const convoHistory = aiMessages
+        .filter((m) => m.text)
+        .slice(-6)
+        .map((m) => ({ role: m.role, content: m.text }))
+
+      const promptMsg = `The command "${failedCmd}" failed on Kali Linux with error: "${(errorOutput || '').slice(0, 400)}". Provide the exact corrective command to resolve this error.`
+      const suggestion = await api.kaliSuggest(promptMsg, convoHistory)
+
+      if (!suggestion?.command) {
+        setAiMessages((prev) => [
+          ...prev,
+          { role: 'assistant', text: `⚠️ AI could not determine a fix command: ${suggestion?.explanation || 'No suggestion'}`, error: true }
+        ])
+        setIsLooping(false)
+        return
+      }
+
+      setAiMessages((prev) => [
+        ...prev,
+        {
+          role: 'assistant',
+          text: `▶ [Attempt ${iteration}/${maxIterations}] Running fix: \`${suggestion.command}\`\n(${suggestion.explanation || 'Applying fix'})`
+        }
+      ])
+
+      const res = await handleExec(suggestion.command)
+
+      if (res.ok) {
+        setAiMessages((prev) => [
+          ...prev,
+          {
+            role: 'assistant',
+            text: `✅ [Auto-Loop Resolved] Fix succeeded with 0 errors on attempt ${iteration}! Zero errors remaining.`
+          }
+        ])
+        setIsLooping(false)
+      } else {
+        const nextErr = res.stderr || res.error || (res.code ? `Exit code ${res.code}` : 'Execution error')
+        await handleAutoLoopFix(suggestion.command, nextErr, iteration + 1, maxIterations)
+      }
+    } catch (err) {
+      setAiMessages((prev) => [
+        ...prev,
+        { role: 'assistant', text: `⚠️ Auto-Loop exception: ${err.message}`, error: true }
+      ])
+      setIsLooping(false)
+    } finally {
+      setAiBusy(false)
     }
   }
 
@@ -168,9 +248,27 @@ export default function KaliControl() {
 
   async function handleRunSuggested() {
     if (!pendingCmd || termBusy) return
-    setAiMessages((prev) => [...prev, { role: 'assistant', text: `▶ Running: ${pendingCmd.command}` }])
+    const cmdToExecute = pendingCmd.command
+    setAiMessages((prev) => [...prev, { role: 'assistant', text: `▶ Running: ${cmdToExecute}` }])
     setPendingCmd(null)
-    await handleExec(pendingCmd.command)
+    const res = await handleExec(cmdToExecute)
+    if (!res.ok) {
+      const errStr = res.stderr || res.error || (res.code ? `Exit code ${res.code}` : 'Execution failed')
+      setLastError({ cmd: cmdToExecute, error: errStr })
+      setAiMessages((prev) => [
+        ...prev,
+        {
+          role: 'assistant',
+          text: `⚠️ Execution of "${cmdToExecute}" produced an error:\n${errStr}`,
+          error: true,
+          failedCmd: cmdToExecute,
+          failedErr: errStr
+        }
+      ])
+      if (autoLoop) {
+        handleAutoLoopFix(cmdToExecute, errStr, 1, 5)
+      }
+    }
   }
 
   function handleDiscardSuggested() {
@@ -217,7 +315,6 @@ export default function KaliControl() {
     { label: 'Check IP Addresses', cmd: 'ip -br addr show' },
     { label: 'PM2 Status', cmd: 'pm2 list 2>/dev/null || echo "PM2 not active"' },
     { label: 'Running Scan Processes', cmd: 'ps aux | grep -E "nmap|nuclei|sqlmap|ffuf|nikto|msf" | grep -v grep' },
-    { label: 'Hexstrike Logs (Last 20)', cmd: 'tail -n 20 /home/kali/hexstrike.log 2>/dev/null || echo "No hexstrike log"' },
     { label: 'SentinelAI Logs (Last 20)', cmd: 'tail -n 20 /home/kali/sentinelai.log 2>/dev/null || echo "No sentinelai log"' },
     { label: 'Metasploit RPC Status', cmd: 'ss -tlnp | grep 55553' },
     { label: 'Nmap & Nuclei Version', cmd: 'nmap -V && nuclei -version' },
@@ -236,8 +333,7 @@ export default function KaliControl() {
   return (
     <div className="space-y-6 motion-fade-up">
       {/* Header Banner */}
-      <div className="card p-6 border border-white/15 bg-gradient-to-r from-slate-950/90 via-slate-900/70 to-slate-950/90 backdrop-blur-2xl relative overflow-hidden flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-        <div className="absolute top-0 right-0 w-80 h-80 bg-red-500/10 rounded-full blur-3xl pointer-events-none" />
+      <div className="card p-6 border border-white/[0.07] bg-[#161616] flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div className="z-10">
           <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-red-500/15 border border-red-500/30 text-red-300 text-xs font-bold mb-2">
             <TerminalIcon size={14} className="text-red-400" /> Remote Host Controller
@@ -415,28 +511,6 @@ export default function KaliControl() {
               </div>
             </div>
 
-            {/* Hexstrike Engine */}
-            <div className="p-3 rounded-xl bg-slate-900/70 border border-white/10 space-y-2">
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="font-bold text-white">Hexstrike REST Engine</div>
-                  <div className="text-[11px] text-slate-400 font-mono">Port 8888 (150+ Tools)</div>
-                </div>
-                <span className={`chip ${sysInfo?.services?.hexstrike?.active ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40' : 'bg-rose-500/20 text-rose-300 border-rose-500/40'}`}>
-                  {sysInfo?.services?.hexstrike?.active ? 'Active' : 'Stopped'}
-                </span>
-              </div>
-              <div className="flex items-center gap-2 pt-1 border-t border-white/5">
-                <button
-                  onClick={() => handleServiceAction('hexstrike', 'restart')}
-                  disabled={serviceBusy === 'hexstrike-restart'}
-                  className="btn-ghost text-[11px] py-1 px-2.5 flex-1 justify-center"
-                >
-                  {serviceBusy === 'hexstrike-restart' ? <Loader2 size={12} className="animate-spin" /> : <RotateCcw size={12} />} Restart
-                </button>
-              </div>
-            </div>
-
             {/* Metasploit RPC */}
             <div className="p-3 rounded-xl bg-slate-900/70 border border-white/10 space-y-2">
               <div className="flex items-center justify-between">
@@ -524,7 +598,20 @@ export default function KaliControl() {
               <div key={idx} className="leading-relaxed break-words whitespace-pre-wrap">
                 {item.type === 'cmd' && <span className="text-cyan-300 font-bold">{item.text}</span>}
                 {item.type === 'out' && <span className="text-slate-200">{item.text}</span>}
-                {item.type === 'err' && <span className="text-rose-400 font-semibold">{item.text}</span>}
+                {item.type === 'err' && (
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-1.5 rounded-lg bg-rose-950/30 border border-rose-500/30 my-1">
+                    <span className="text-rose-400 font-semibold flex-1 break-all">{item.text}</span>
+                    <button
+                      type="button"
+                      onClick={() => handleAutoLoopFix(item.cmd || 'last command', item.text, 1, 5)}
+                      disabled={isLooping || termBusy}
+                      className="self-start sm:self-auto text-[10px] font-bold px-2.5 py-1 rounded bg-rose-500/25 hover:bg-rose-500/40 text-rose-200 border border-rose-500/40 flex items-center gap-1.5 shrink-0 transition-all cursor-pointer"
+                    >
+                      <RotateCcw size={11} className={isLooping ? 'animate-spin text-cyan-300' : 'text-cyan-400'} />
+                      <span>{isLooping ? 'Auto-Looping...' : 'Fix & Auto-Loop ⚡'}</span>
+                    </button>
+                  </div>
+                )}
                 {item.type === 'sys' && <span className="text-amber-400/90 italic">{item.text}</span>}
               </div>
             ))}
@@ -570,10 +657,25 @@ export default function KaliControl() {
       {/* AI Command Chatbox */}
       <div className="card p-5 border border-cyan-500/25 bg-slate-950/80 space-y-4">
         <div className="flex items-center justify-between border-b border-white/10 pb-3">
-          <h3 className="font-bold text-white text-sm flex items-center gap-2">
-            <Bot size={16} className="text-cyan-400" /> AI Command Assistant
-          </h3>
-          <span className="text-[10px] font-mono text-slate-400">Natural language → command → review → run</span>
+          <div className="flex items-center gap-2">
+            <h3 className="font-bold text-white text-sm flex items-center gap-2">
+              <Bot size={16} className="text-cyan-400" /> AI Command Assistant
+            </h3>
+            <span className="hidden sm:inline text-[10px] font-mono text-slate-400">Natural language → auto-fix loop</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setAutoLoop(!autoLoop)}
+            className={`text-[10px] font-bold px-2.5 py-1 rounded-full border transition-all flex items-center gap-1.5 cursor-pointer ${
+              autoLoop
+                ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40 shadow-[0_0_10px_rgba(16,185,129,0.3)]'
+                : 'bg-white/5 text-slate-400 border-white/10 hover:border-white/20'
+            }`}
+            title="When enabled, if an AI command fails, it automatically loops fixes until 0 errors"
+          >
+            <RotateCcw size={11} className={autoLoop ? 'animate-spin' : ''} />
+            <span>Auto-Loop on Error: {autoLoop ? 'ACTIVE' : 'OFF'}</span>
+          </button>
         </div>
 
         {/* Chat messages */}
@@ -589,7 +691,30 @@ export default function KaliControl() {
                       : 'bg-slate-900/80 border border-white/10 text-slate-200 rounded-bl-sm'
                 }`}
               >
-                {m.text}
+                <div className="whitespace-pre-wrap">{m.text}</div>
+                {m.failedCmd && (
+                  <div className="mt-2.5 pt-2 border-t border-rose-500/20 flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleAutoLoopFix(m.failedCmd, m.failedErr, 1, 5)}
+                      disabled={isLooping || termBusy || aiBusy}
+                      className="text-[10px] font-bold px-3 py-1 rounded-lg bg-rose-500 hover:bg-rose-600 text-white flex items-center gap-1.5 cursor-pointer shadow-md transition-all"
+                    >
+                      <RotateCcw size={11} className={isLooping ? 'animate-spin' : ''} />
+                      <span>{isLooping ? 'Auto-Looping...' : 'Auto-Loop Until Clean ⚡'}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAiInput(`Fix this error for "${m.failedCmd}": ${m.failedErr}`)
+                      }}
+                      className="text-[10px] font-semibold px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 border border-white/10 flex items-center gap-1 cursor-pointer transition-all"
+                    >
+                      <MessageSquare size={11} className="text-cyan-400" />
+                      <span>Chat to Fix</span>
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
           ))}

@@ -75,7 +75,6 @@ export const api = {
   reindexPayloads: () => apiFetch('/api/payloads/reindex', { method: 'POST' }),
   searchPayloads: (q) => apiFetch(`/api/payloads/search?q=${encodeURIComponent(q)}`),
   engineStatus: () => apiFetch('/api/engine/status'),
-  analyzeTarget: (target) => apiFetch('/api/engine/analyze', { method: 'POST', body: { target } }),
   audioBriefing: (scanId) => apiFetch(`/api/scans/${scanId}/audio-briefing`, { method: 'POST' }),
   browseFilesystem: (path) => apiFetch(`/api/filesystem/browse${path ? `?path=${encodeURIComponent(path)}` : ''}`),
   startWhiteboxFolder: (body) => apiFetch('/api/scans/whitebox-folder', { method: 'POST', body }),

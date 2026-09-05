@@ -23,11 +23,11 @@ export function ThemeProvider({ children }) {
       if (saved) return JSON.parse(saved)
     } catch {}
     return {
-      theme: 'random_ai', // random_ai by default
-      blur: 8,            // 0px, 4px, 8px, 16px
-      opacity: 35,        // 20%, 35%, 50%, 75%
-      isStatic: true,     // static background vs animated particles
-      isNight: true,      // default dark mode (Sun / Moon toggle)
+      theme: 'static_dark', // strict minimalism default
+      blur: 0,              // no blur
+      opacity: 0.35,        // 35%
+      isStatic: true,       // static background
+      isNight: true,        // default dark mode
     }
   })
 

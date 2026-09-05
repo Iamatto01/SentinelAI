@@ -156,7 +156,7 @@ class ChannelGateway {
           `🛡️ *SentinelAI Status (${pairedUser.username || 'Client'})*\n\n` +
           `• Jumlah Imbasan: *${total}*\n` +
           `• Sedang Berjalan: *${running} active*\n` +
-          `• Enjin Hexstrike: *124 Kali Tools (ONLINE)*\n` +
+          `• Enjin Imbasan: *Native Kali Toolchain (ONLINE)*\n` +
           `• AI Specialist Agents: *50 Personas Active*\n\n` +
           `🌐 Dashboard: https://sentinelai.studio`
         )
@@ -222,7 +222,7 @@ class ChannelGateway {
             `• Akaun: *${pairedUser.username || pairedUser.email}*\n` +
             `• Sasaran: \`${target}\`\n` +
             `• Scan ID: \`${scanId.slice(0, 12)}\`\n` +
-            `• Enjin: *Hexstrike Toolchain*\n\n` +
+            `• Enjin: *Native Kali Toolchain*\n\n` +
             `Pantau secara langsung di:\nhttps://sentinelai.studio/app/scans/${scanId}`
           )
         } catch (e) {

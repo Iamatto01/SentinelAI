@@ -90,6 +90,12 @@ export default function AIBackgroundCanvas() {
 
   const showImage = Boolean(activeWallpaper && theme !== 'static_dark' && theme !== 'canvas_neural')
 
+  const normOpacity = (() => {
+    if (typeof opacity !== 'number') return 0.35
+    if (opacity > 1) return Math.min(1, opacity / 100)
+    return Math.max(0.05, Math.min(1, opacity))
+  })()
+
   return (
     <div className="fixed inset-0 pointer-events-none z-0 overflow-hidden select-none will-change-transform">
       {/* Background Image Layer with Optimized Hardware-accelerated CSS */}
@@ -98,21 +104,22 @@ export default function AIBackgroundCanvas() {
           className="absolute inset-0 bg-cover bg-center bg-no-repeat transition-all duration-700 ease-out transform"
           style={{
             backgroundImage: `url(${activeWallpaper})`,
-            filter: `blur(${Math.min(blur, 20)}px) brightness(${isNight ? 0.85 : 1.4})`,
-            opacity: isNight ? opacity / 100 : Math.min(100, opacity + 15) / 100,
+            filter: `blur(${Math.min(blur || 0, 20)}px) brightness(${isNight ? 0.85 : 1.3})`,
+            opacity: normOpacity,
             transform: 'translateZ(0)',
           }}
         />
       )}
 
-      {/* Gradient Mask */}
+      {/* Gradient Mask (Minimalist Dark / Light) */}
       <div
         className="absolute inset-0 transition-opacity duration-500"
-        style={
-          isNight
-            ? { background: 'linear-gradient(to bottom, rgba(6,11,38,0.80), rgba(6,11,38,0.88) 50%, rgba(6,11,38,0.96))', transform: 'translateZ(0)' }
-            : { background: 'linear-gradient(to bottom, rgba(238,242,247,0.85), rgba(238,242,247,0.92) 50%, rgba(238,242,247,0.97))', transform: 'translateZ(0)' }
-        }
+        style={{
+          background: isNight
+            ? 'linear-gradient(to bottom, rgba(10,10,10,0.82), rgba(10,10,10,0.90) 50%, rgba(10,10,10,0.96))'
+            : 'linear-gradient(to bottom, rgba(238,242,247,0.85), rgba(238,242,247,0.92) 50%, rgba(238,242,247,0.97))',
+          transform: 'translateZ(0)'
+        }}
       />
 
       {/* Particle Canvas Layer */}

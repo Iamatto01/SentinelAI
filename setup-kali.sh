@@ -92,12 +92,10 @@ fi
 sudo chown -R kali:kali "${USER_HOME}/SentinelAI" "${USER_HOME}/msfrpcd.log" "${USER_HOME}/cloudflared.log" "${USER_HOME}/sentinelai.log" 2>/dev/null || true
 rm -rf "${USER_HOME}/SentinelAI/frontend/node_modules/.vite" 2>/dev/null || true
 
-# 3. Kill existing processes on ports 5000, 5173 & 8888
+# 3. Kill existing processes on ports 5000 & 5173
 echo "[3/7] Cleaning up old processes..."
 fuser -k 5000/tcp 2>/dev/null || true
 fuser -k 5173/tcp 2>/dev/null || true
-fuser -k 8888/tcp 2>/dev/null || true
-pkill -f "hexstrike_server.py" 2>/dev/null || true
 sleep 1
 
 # 4. Setup AI Agent Personas
@@ -131,24 +129,8 @@ EOF
 # Route DNS record
 cloudflared tunnel route dns --overwrite-dns sentinelai sentinelai.studio 2>/dev/null || true
 
-# 7. Setup Hexstrike Engine & Metasploit RPC daemon (msfrpcd)
-echo "[7/7] Configuring Hexstrike & Metasploit services..."
-
-if [ ! -f "${USER_HOME}/hexstrike-ai/hexstrike_server.py" ] && [ ! -f "${USER_HOME}/SentinelAI/resources/hexstrike-ai/hexstrike_server.py" ]; then
-  echo "  ⚙️ Cloning Hexstrike AI engine repository..."
-  git clone https://github.com/0x4m4/hexstrike-ai.git "${USER_HOME}/hexstrike-ai" 2>/dev/null || true
-  if [ -d "${USER_HOME}/hexstrike-ai" ]; then
-    pip3 install -r "${USER_HOME}/hexstrike-ai/requirements.txt" --break-system-packages 2>/dev/null || pip install -r "${USER_HOME}/hexstrike-ai/requirements.txt" 2>/dev/null || true
-  fi
-fi
-
-if [ -f "${USER_HOME}/hexstrike-ai/hexstrike_server.py" ]; then
-  nohup python3 "${USER_HOME}/hexstrike-ai/hexstrike_server.py" --port 8888 > "${USER_HOME}/hexstrike.log" 2>&1 &
-  echo "  ✓ Hexstrike engine started on port 8888"
-elif [ -f "${USER_HOME}/SentinelAI/resources/hexstrike-ai/hexstrike_server.py" ]; then
-  nohup python3 "${USER_HOME}/SentinelAI/resources/hexstrike-ai/hexstrike_server.py" --port 8888 > "${USER_HOME}/hexstrike.log" 2>&1 &
-  echo "  ✓ Hexstrike engine started on port 8888"
-fi
+# 7. Setup Metasploit RPC daemon (msfrpcd)
+echo "[7/7] Configuring Metasploit services..."
 
 # Start Metasploit RPC daemon (msfrpcd) for autonomous exploitation
 echo "  ⚔️ Starting Metasploit RPC daemon (msfrpcd)..."

@@ -464,7 +464,7 @@ export default function Scans() {
             </div>
           )}
 
-          <div className="flex rounded-xl bg-slate-900/80 p-1 border border-white/10">
+          <div className="flex rounded-xl bg-[#111111] p-1 border border-white/[0.07]">
             <button
               onClick={() => setViewMode('folder')}
               title="Folder Grouped View"

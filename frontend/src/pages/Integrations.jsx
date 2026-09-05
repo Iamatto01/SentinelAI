@@ -111,11 +111,11 @@ export default function Integrations() {
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
         
-        {/* Hexstrike engine */}
+        {/* Native scanner engine */}
         <div className="card p-5">
           <div className="flex items-center justify-between mb-4">
             <h3 className="flex items-center gap-2 font-semibold text-slate-100">
-              <Cpu size={18} className="text-accent" /> Hexstrike Engine
+              <Cpu size={18} className="text-accent" /> Native Kali Engine
             </h3>
             <StatusDot ok={engine.available || engine.ok} />
           </div>
@@ -124,7 +124,7 @@ export default function Integrations() {
             {engine.version && <div className="flex justify-between"><dt className="text-slate-500">Version</dt><dd className="text-slate-300">{engine.version}</dd></div>}
             <div className="flex justify-between"><dt className="text-slate-500">Tools available</dt><dd className="text-slate-300">{engine.totalToolsAvailable ?? engine.toolsAvailable ?? engine.total_tools_available ?? '—'}</dd></div>
           </dl>
-          {!(engine.available || engine.ok) && <p className="mt-3 text-xs text-sev-medium">Start the engine: <code className="text-accent">python hexstrike_server.py</code></p>}
+          {!(engine.available || engine.ok) && <p className="mt-3 text-xs text-sev-medium">Tools unavailable — check Kali toolchain installation</p>}
         </div>
 
         {/* Payloads RAG */}
@@ -183,7 +183,7 @@ export default function Integrations() {
           </div>
 
           <div className="text-xs space-y-2">
-            <div className="flex items-center justify-between p-2 rounded-lg bg-slate-900/60 border border-white/5">
+            <div className="flex items-center justify-between p-2 rounded-lg bg-[#1c1c1c] border border-white/[0.06]">
               <span className="text-slate-300 flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-cyan-400"></span> Telegram</span>
               {teleStatus?.telegram?.paired ? (
                 <div className="flex items-center gap-2">
@@ -195,7 +195,7 @@ export default function Integrations() {
               )}
             </div>
 
-            <div className="flex items-center justify-between p-2 rounded-lg bg-slate-900/60 border border-white/5">
+            <div className="flex items-center justify-between p-2 rounded-lg bg-[#1c1c1c] border border-white/[0.06]">
               <span className="text-slate-300 flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-indigo-400"></span> Discord</span>
               {teleStatus?.discord?.paired ? (
                 <div className="flex items-center gap-2">

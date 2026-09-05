@@ -2034,7 +2034,7 @@ function renderAppendix(doc, { scans, project, isWhitebox }) {
 
   const tools = [
     ['Platform', 'SentinelAI Autonomous Pentest Platform v2.0'],
-    ['Engine', 'HexStrike AI Swarm + Native Kali Security Toolchain'],
+    ['Engine', 'Native Kali Security Toolchain (Direct Execution)'],
     ['AI Engine', '53 Autonomous Specialist Agent Personas'],
     ['PDF Engine', 'PDFKit Visual Engine'],
     ['Report Generated', fmtDateTime(new Date())],

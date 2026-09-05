@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
-import { hexstrike, payloadsRag } from './integrations/index.js'
-import { runNativeTool } from './integrations/native-tools.js'
+import { payloadsRag } from './integrations/index.js'
+import { runNativeTool, previewNativeCommand, nativeToolsStatus, NATIVE_TOOLS } from './integrations/native-tools.js'
 import { aiEngine } from './ai/ai-engine.js'
 import { enrichWithOwasp } from './owasp.js'
 import * as db from './db.js'
@@ -9,7 +9,7 @@ import * as db from './db.js'
  * UnifiedPipeline — ONE orchestration flow for both blackbox and whitebox.
  *
  * SentinelAI had two disconnected paths; here every finding (whether from a
- * hexstrike tool or a static code audit) flows through the SAME stages:
+ * native tool or a static code audit) flows through the SAME stages:
  *   collect → OWASP enrich → RAG PoC cross-reference → AI verify → sanitize → persist
  *
  * Emits live events via the provided emitter (WebSocket broadcast).
@@ -165,13 +165,19 @@ export class UnifiedPipeline {
 
     // Factual modules: the finding IS the evidence (nmap saw an open port,
     // HTTP response lacked a header, DNS resolved a subdomain, etc.)
-    const factualModules = ['http-headers', 'path-enum', 'hexstrike:nmap', 'native:nmap',
-      'hexstrike:subfinder', 'native:subfinder', 'hexstrike:amass', 'native:amass',
-      'hexstrike:httpx', 'native:httpx', 'hexstrike:dnsbrute', 'native:dnsbrute',
-      'hexstrike:katana', 'native:katana']
+    const factualModules = ['http-headers', 'path-enum', 'native:nmap',
+      'native:subfinder', 'native:amass',
+      'native:httpx', 'native:dnsbrute',
+      'native:katana',
+      'native:whatweb', 'native:wafw00f',
+      'native:nikto', 'native:nuclei',
+      'native:arjun', 'native:ffuf',
+      'native:gobuster',
+      'offensive:service-probe', 'offensive:login-surface', 'response-body-scan',
+      'cookie-audit', 'cors-audit', 'form-harvest', 'api-discovery']
     const isFactual = factualModules.includes(f.module) ||
-      // Low/info findings from hexstrike/native tools are observational
-      ((f.module || '').startsWith('hexstrike:') || (f.module || '').startsWith('native:')) &&
+      // Low/info findings from native tools are observational
+      ((f.module || '').startsWith('native:') || (f.module || '').startsWith('chain:')) &&
       (f.severity === 'info' || f.severity === 'low')
     // Missing security headers, server banner, robots.txt, subdomain, open port — always factual
     const factualTitles = /missing.*security.*header|server.*header.*information|robots\.txt|subdomain|open port|httpx:|ffuf:|discovered/i
@@ -179,8 +185,10 @@ export class UnifiedPipeline {
 
     if (verify && !isAiGenerated && !isFactualFinding) {
       try {
+        this.log(scanId, 'info', `🤖 [AI] verifying finding: "${f.title}" (severity=${f.severity}, module=${f.module})\n🤖 [AI] input evidence: ${JSON.stringify(f.evidence || {}).slice(0, 800)}`)
         const v = await aiEngine.verifyFinding(f, targetType)
         verdict = v
+        this.log(scanId, 'info', `🤖 [AI] verdict from ${v.agent || 'unknown-agent'}: ${v.isTruePositive ? '✅ TRUE POSITIVE' : '❌ false positive'} (confidence=${v.confidence})\n🤖 [AI] reasoning: ${(v.verdict || '').slice(0, 1000)}`)
         if (!v.isTruePositive) {
           // Don't blindly discard — if AI confidence is low (< 60), keep the
           // finding with downgraded severity. The AI might be wrong.
@@ -194,7 +202,9 @@ export class UnifiedPipeline {
         }
         if (v.refined) f = v.refined
         if (v.evidenceTier) f.evidence = { ...(f.evidence || {}), aiEvidenceTier: v.evidenceTier }
-      } catch { /* keep original on error */ }
+      } catch (e) {
+        this.log(scanId, 'warn', `🤖 [AI] verification error for "${f.title}": ${e.message} — keeping original finding`)
+      }
     } else if (isAiGenerated) {
       // AI-generated findings are pre-verified — assign high confidence
       verdict = { agent: f.module, isTruePositive: true, confidence: 85, verdict: 'Verified by AI specialist agent during code audit.' }
@@ -242,7 +252,7 @@ export class UnifiedPipeline {
     try {
       db.run(
         `INSERT INTO findings (id, scan_id, title, severity, cvss, cwe_id, cve_id, owasp_category, description, layman_impact, remediation, module, status, evidence, poc, agent_verdict, fingerprint, target, created_at)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
         id, scanId, f.title || 'Untitled finding', f.severity || 'info',
         f.cvss ?? SEVERITY_SCORE[f.severity] ?? 0, f.cweId || f.cwe || null, f.cveId || null,
         f.owaspCategory || null, f.description || '', f.laymanImpact || null, f.remediation || '',
@@ -255,6 +265,8 @@ export class UnifiedPipeline {
       )
       const stored = db.get(`SELECT * FROM findings WHERE id = ?`, id)
       this.emit(scanId, 'scan:finding', { scanId, finding: stored })
+      // Verbose: log every finding with severity, title, and module for live monitoring
+      this.log(scanId, 'info', `📌 [${stored.severity}] ${stored.title} (${stored.module || 'unknown'})`)
 
       // ── AUTO-EXPLOIT: launch campaign for verified high/critical findings ──
       // Only auto-trigger on high-confidence verified findings to prevent noise
@@ -263,7 +275,8 @@ export class UnifiedPipeline {
       }
 
       return stored
-    } catch {
+    } catch (e) {
+      console.error(`[ingestFinding] INSERT failed for "${f.title}":`, e.message)
       return null
     }
   }
@@ -282,16 +295,11 @@ export class UnifiedPipeline {
       try { db.run(`UPDATE scans SET owasp_categories = ? WHERE id = ?`, JSON.stringify(owaspCategories), scanId) } catch { /* non-critical */ }
     }
 
-    const engine = await hexstrike.engineStatus()
-    if (!engine.available) {
-      this.log(scanId, 'warn', `Hexstrike engine offline (${engine.error || 'offline'}). Switching to Native Scanner Engine...`)
-      await this.runNativeBlackbox(scan, { verify })
-      return
-    }
-    this.log(scanId, 'info', `Hexstrike engine v${engine.version} online — ${engine.totalToolsAvailable}/${engine.totalTools} tools available`)
+    const engine = await nativeToolsStatus()
+    const available = Object.values(engine).filter(Boolean).length
+    this.log(scanId, 'info', `⚡ Native Scanner Engine — ${available}/${Object.keys(engine).length} tools available on this host`)
 
     // Always audit HTTP security headers + sensitive paths first (fast, high-signal).
-    // HexStrike tools do not cover these, so run the native checks regardless of engine.
     await this.auditHttpBaseline(scanId, scan.target, { verify, targetType: scan.target_type })
     this.progress(scanId, 8)
 
@@ -312,44 +320,37 @@ export class UnifiedPipeline {
     }
     this.progress(scanId, 12)
 
-    // If no explicit modules → use hexstrike intelligent smart-scan (AI tool selection)
+    // If no explicit modules → run the full default toolchain natively
     if (!modules.length) {
-      this.log(scanId, 'info', `Delegating to Hexstrike IntelligentDecisionEngine (objective=${objective}, maxTools=${maxTools})`)
-      const res = await hexstrike.smartScan(target, { objective, maxTools })
-      if (!res.success && res.error) {
-        this.log(scanId, 'warn', `Smart scan failed: ${res.error}. Falling back to Native Scanner Engine...`)
-        // Use REAL native tool names only — no http-headers/path-enum (those are
-        // internal checks already covered by auditHttpBaseline, not NATIVE_TOOLS).
-        await this.runNativeBlackbox(scan, {
-          verify,
-          modules: ['nmap', 'whatweb', 'nikto', 'ffuf', 'katana', 'nuclei', 'arjun', 'dalfox'],
-        })
-        return
-      }
-      await this.processSmartScanResults(scanId, res, { verify, targetType: scan.target_type })
-      this.progress(scanId, 70)
-    } else {
-      // Run chosen tools sequentially via their dedicated endpoints
+      this.log(scanId, 'info', `No modules selected — running full default toolchain (objective=${objective})`)
+      modules = ['nmap', 'whatweb', 'nikto', 'ffuf', 'katana', 'nuclei', 'arjun', 'dalfox']
+    }
+
+    // Run chosen tools in parallel batches (grouped so concurrent tools don't
+    // saturate the network/CPU against the same target)
+    {
+      const reconBatch = modules.filter(m => ['nmap', 'whatweb', 'wafw00f'].includes(m))
+      const crawlBatch = modules.filter(m => ['katana', 'ffuf', 'gobuster', 'nuclei'].includes(m))
+      const vulnBatch = modules.filter(m => ['nikto', 'arjun', 'dalfox', 'sqlmap', 'wpscan'].includes(m))
+      const otherBatch = modules.filter(m => !['nmap', 'whatweb', 'wafw00f', 'katana', 'ffuf', 'gobuster', 'nuclei', 'nikto', 'arjun', 'dalfox', 'sqlmap', 'wpscan'].includes(m))
+      const batches = [reconBatch, crawlBatch, vulnBatch, otherBatch].filter(b => b.length)
       let done = 0
-      for (const mod of modules) {
+      for (const batch of batches) {
         await this.waitIfPaused(scanId)
-        const mapping = hexstrike.MODULE_TOOL_MAP[mod]
-        if (!mapping) { this.log(scanId, 'warn', `Unknown module: ${mod}`); continue }
-        const params = mapping.params(target)
-        // Always aggressive: nmap runs NSE vuln scripts (heartbleed, ms17-010, shellshock, default-creds)
-        if (mod === 'nmap') {
-          params.scan_type = '-sCV --script vuln'
-          params.additional_args = '-T4 -Pn --script-timeout 3m'
+        const results = await Promise.allSettled(
+          batch.map(async (mod) => {
+            if (!NATIVE_TOOLS[mod]) { this.log(scanId, 'warn', `Unknown module: ${mod}`); return }
+            this.log(scanId, 'info', `▶ Running tool: ${mod} [native]\n$ ${previewNativeCommand(mod, this._currentTarget || target)}`)
+            const res = await runNativeTool(mod, this._currentTarget || target)
+            await this.processToolOutput(scanId, mod, res, { verify, targetType: scan.target_type })
+          })
+        )
+        for (let i = 0; i < results.length; i++) {
+          if (results[i].status === 'rejected') {
+            this.log(scanId, 'warn', `Tool ${batch[i]} error: ${results[i].reason?.message || results[i].reason}`)
+          }
         }
-        // Always aggressive: ffuf uses the bigger raft wordlist for deeper path discovery
-        if (mod === 'ffuf') {
-          params.wordlist = '/usr/share/seclists/Discovery/Web-Content/raft-medium-words.txt'
-        }
-        this.log(scanId, 'info', `▶ Running tool: ${mod} [offensive]`)
-        const res = await hexstrike.runTool(mapping.tool, params)
-        await this.processToolOutput(scanId, mod, res, { verify, targetType: scan.target_type })
-        done++
-        // Tool phase spans 12% → 70%; injection chaining + offensive stages take the rest.
+        done += batch.length
         this.progress(scanId, 12 + (done / modules.length) * 58)
       }
     }
@@ -399,6 +400,7 @@ export class UnifiedPipeline {
     for (const s of scripts) {
       await this.waitIfPaused(scanId)
       try {
+        this.log(scanId, 'info', `⚔️ $ nmap ${host} ${s.args.join(' ')}`)
         const r = await runNativeTool('nmap-script', `${host} ${s.args.join(' ')}`)
         const out = `${r.stdout || ''}\n${r.stderr || ''}`
         if (/VULNERABLE/i.test(out)) {
@@ -690,10 +692,9 @@ export class UnifiedPipeline {
       this.progress(scanId, chainStart + (idx / candidates.length) * (chainEnd - chainStart))
       // dalfox (XSS)
       try {
-        this.log(scanId, 'info', `  🎯 dalfox → ${url.slice(0, 90)}`)
-        const res = await hexstrike.runTool('dalfox', { url, silence: true, format: 'json', env: { PATH: `${process.env.PATH}:/usr/local/bin:/root/go/bin` } })
-        const hexOut = res?.success ? `${res.stdout || ''}\n${res.stderr || ''}`.trim() : ''
-        const out = hexOut || (await runNativeTool('dalfox', url)).stdout || ''
+        this.log(scanId, 'info', `  🎯 dalfox → ${url.slice(0, 90)}\n$ ${previewNativeCommand('dalfox', url)}`)
+        const res = await runNativeTool('dalfox', url)
+        const out = `${res.stdout || ''}\n${res.stderr || ''}`.trim()
         if (out) {
           const { findings } = extractFindingsFromOutput('dalfox', out, url)
           for (const f of findings) {
@@ -722,10 +723,9 @@ export class UnifiedPipeline {
       // sqlmap only makes sense when the URL actually carries query parameters
       if (/\?[^=]+=/.test(url)) {
         try {
-          this.log(scanId, 'info', `  🎯 sqlmap → ${url.slice(0, 90)}`)
-          const res = await hexstrike.runTool('sqlmap', { url, batch: true, level: 3, risk: 2, smart: true, forms: true })
-          const hexOut = res?.success ? `${res.stdout || ''}\n${res.stderr || ''}`.trim() : ''
-          const out = hexOut || (await runNativeTool('sqlmap', url)).stdout || ''
+          this.log(scanId, 'info', `  🎯 sqlmap → ${url.slice(0, 90)}\n$ ${previewNativeCommand('sqlmap', url)}`)
+          const res = await runNativeTool('sqlmap', url)
+          const out = `${res.stdout || ''}\n${res.stderr || ''}`.trim()
           if (out) {
             const { findings } = extractFindingsFromOutput('sqlmap', out, url)
             for (const f of findings) {
@@ -750,7 +750,7 @@ export class UnifiedPipeline {
   }
 
   /**
-   * Subdomain discovery: passive (subfinder/amass via hexstrike/native) then
+   * Subdomain discovery: passive (subfinder/amass) then
    * active DNS brute-force (gobuster dns). Wildcard DNS results are filtered by
    * comparing against a random non-existent subdomain.
    * Each live subdomain is then probed for Swagger/OpenAPI docs.
@@ -768,6 +768,7 @@ export class UnifiedPipeline {
 
     // Passive: subfinder
     try {
+      this.log(scanId, 'info', `🔎 $ subfinder -d ${rootDomain}`)
       const r = await runNativeTool('subfinder', rootDomain)
       for (const line of (r.stdout || '').split('\n')) {
         const h = line.trim().toLowerCase()
@@ -778,19 +779,26 @@ export class UnifiedPipeline {
     } catch { /* optional */ }
 
     // Active: gobuster dns brute-force (with wildcard filter)
-    try {
-      const probe = await runNativeTool('dnsbrute', `nonexistent-${randomUUID().slice(0, 8)}.${rootDomain}`)
-      const brute = await runNativeTool('dnsbrute', rootDomain)
-      for (const line of (brute.stdout || '').split('\n')) {
-        const m = line.match(/([a-z0-9.-]+\.[a-z]{2,})/i)
-        if (m) {
-          const foundHost = m[1].toLowerCase()
-          if (foundHost === rootDomain || foundHost.endsWith('.' + rootDomain)) {
-            subs.add(foundHost)
+    // Skip if rootDomain looks like a bare TLD (e.g., edu.my, co.uk) — gobuster fails on these
+    const domainParts = rootDomain.split('.')
+    if (domainParts.length >= 2 && rootDomain.match(/^[a-z0-9-]+\./) && !rootDomain.match(/^(com?|org|net|edu|gov|mil|ac|co|sch|go|or|ne|re)\./)) {
+      try {
+        this.log(scanId, 'info', `🔎 $ dnsrecon -d ${rootDomain} -D /usr/share/seclists/Discovery/DNS/subdomains-top1million-5000.txt -t brt --threads 30`)
+        const probe = await runNativeTool('dnsbrute', `nonexistent-${randomUUID().slice(0, 8)}.${rootDomain}`)
+        const brute = await runNativeTool('dnsbrute', rootDomain)
+        for (const line of (brute.stdout || '').split('\n')) {
+          const m = line.match(/([a-z0-9.-]+\.[a-z]{2,})/i)
+          if (m) {
+            const foundHost = m[1].toLowerCase()
+            if (foundHost === rootDomain || foundHost.endsWith('.' + rootDomain)) {
+              subs.add(foundHost)
+            }
           }
         }
-      }
-    } catch { /* optional */ }
+      } catch { /* optional */ }
+    } else {
+      this.log(scanId, 'info', '🔎 Skipping DNS brute-force — rootDomain appears to be a TLD')
+    }
 
     if (!subs.size) {
       this.log(scanId, 'info', '🔎 No additional subdomains discovered')
@@ -821,19 +829,18 @@ export class UnifiedPipeline {
 
     // ── SUBDOMAIN SCAN CASCADE: scan top subdomains for HTTP headers + sensitive paths ──
     // Strictly limited to subdomains of the target rootDomain
+    // Runs in parallel batches of 5 for performance (vs sequential which took 15-30 min)
+    // Reduced from 20 to 5 subdomains, and only checks 10 critical paths instead of 40
     const validSubs = [...subs].filter(s => s === rootDomain || s.endsWith('.' + rootDomain))
     if (validSubs.length > 0) {
-      const topSubs = validSubs.slice(0, 20) // top 20 subdomains
+      const topSubs = validSubs.slice(0, 5) // top 5 subdomains (was 20)
       this.log(scanId, 'info', `🔎 Cascading baseline scan to ${topSubs.length} subdomains under ${rootDomain}...`)
-      let scanned = 0
-      for (const sub of topSubs) {
-        await this.waitIfPaused(scanId)
-        try {
-          await this.auditHttpBaseline(scanId, sub, { verify, targetType: 'url' })
-          scanned++
-          this.progress(scanId, 8 + (scanned / topSubs.length) * 4)
-        } catch { /* skip dead subdomains */ }
-      }
+      // Run ALL subdomains in parallel (not in batches of 5 sequentially)
+      const results = await Promise.allSettled(
+        topSubs.map(sub => this.auditHttpBaseline(scanId, sub, { verify, targetType: 'url', fastMode: true }))
+      )
+      const scanned = results.filter(r => r.status === 'fulfilled').length
+      this.progress(scanId, 8 + 4)
       if (scanned > 0) {
         this.log(scanId, 'info', `🔎 Subdomain cascade complete: ${scanned}/${topSubs.length} subdomains audited`)
       }
@@ -905,76 +912,6 @@ export class UnifiedPipeline {
       } catch { /* try next */ }
     }
     return false // no hit
-  }
-
-  async processSmartScanResults(scanId, res, opts) {
-    const tools = res.tools_executed || []
-    this.log(scanId, 'info', `Smart scan executed ${tools.length} tools; ${res.total_vulnerabilities || 0} raw indicators`)
-    for (const t of tools) {
-      await this.processToolOutput(scanId, t.tool, { success: t.status === 'success', stdout: t.stdout, stderr: t.stderr }, opts)
-    }
-  }
-
-  async runNativeBlackbox(scan, { verify = true, modules = [] } = {}) {
-    const scanId = scan.id
-    const target = scan.target
-    this._currentTarget = target
-    this.log(scanId, 'info', `⚡ Running Native Scanner Engine on ${target}...`)
-
-    // Always run baseline headers + sensitive paths
-    await this.auditHttpBaseline(scanId, target, { verify, targetType: scan.target_type })
-    this.progress(scanId, 12)
-
-    // Subdomain discovery
-    if (/^https?:\/\//i.test(target) || !/\//.test(target)) {
-      await this._runSubdomainDiscovery(scanId, target, { verify })
-    }
-    this.progress(scanId, 25)
-
-    // Run native tools in parallel batches
-    // Default: full offensive stack — recon (nmap, whatweb), web crawl (katana, ffuf),
-    // vuln scan (nuclei, nikto), parameter discovery (arjun), XSS probe (dalfox).
-    // dalfox also runs again in chainInjectionTests with discovered URLs.
-    const tools = modules.length ? modules : ['nmap', 'whatweb', 'nikto', 'ffuf', 'katana', 'nuclei', 'arjun', 'dalfox']
-    let done = 0
-    for (const tool of [...new Set(tools)]) {
-      await this.waitIfPaused(scanId)
-      this.log(scanId, 'info', `▶ Native tool: ${tool}`)
-      try {
-        const res = await runNativeTool(tool, target)
-        await this.processToolOutput(scanId, tool, res, { verify, targetType: scan.target_type })
-      } catch (e) {
-        this.log(scanId, 'warn', `Native tool ${tool} error: ${e.message}`)
-      }
-      done++
-      this.progress(scanId, 25 + (done / tools.length) * 35)
-    }
-
-    // Injection chaining (dalfox/sqlmap on discovered URLs)
-    await this.chainInjectionTests(scanId, { verify, targetType: scan.target_type, offensive: true })
-    this.progress(scanId, 65)
-
-    // Service-level CVE probing (nmap NSE scripts on open ports)
-    await this._probeServiceVulns(scanId, target, { verify })
-    this.progress(scanId, 72)
-
-    // Login surface discovery (admin panels, default creds)
-    await this._discoverLoginSurfaces(scanId, target, { verify })
-    this.progress(scanId, 78)
-
-    // OffSec payload matching against discovered endpoints
-    await this._matchOffsecPayloads(scanId)
-    this.progress(scanId, 82)
-
-    // Response body scanning
-    await this._scanResponseBodies(scanId, target, { verify })
-    this.progress(scanId, 88)
-
-    // Cookie + CORS audit
-    await this._auditCookiesCors(scanId, target, { verify })
-    this.progress(scanId, 95)
-
-    this.finish(scanId, 'completed')
   }
 
   /**
@@ -1211,63 +1148,35 @@ export class UnifiedPipeline {
 
   /** Parse raw tool stdout into structured findings (heuristic + severity extraction). */
   async processToolOutput(scanId, tool, res, { verify, targetType } = {}) {
-    const hexFailed = !res || res.success === false
-    const hexOut = hexFailed ? '' : `${res.stdout || ''}\n${res.stderr || ''}`.trim()
-
-    // If HexStrike returned 404 or HTTP error, skip directly to native
-    const hexHttpError = res?.status && res.status >= 400
-
-    // If HexStrike succeeded with output, use it.
-    if (!hexFailed && !hexHttpError && hexOut) {
-      this.log(scanId, 'info', `[${tool}] ${hexOut.split('\n').length} lines of output`)
-      const { findings, discoveredUrls } = extractFindingsFromOutput(tool, hexOut, this._currentTarget || '')
-      this._collectUrls(scanId, discoveredUrls)
-      if (!findings.length) {
-        this.log(scanId, 'info', `[${tool}] no actionable findings${discoveredUrls.length ? ` (${discoveredUrls.length} URLs queued for chaining)` : ''}`)
-        return
-      }
-      for (const f of findings) {
-        await this.ingestFinding(scanId, { ...f, module: `hexstrike:${tool}` }, { verify, targetType })
-      }
-      return
-    }
-
-    // HexStrike failed, returned 404, or produced no output → try native execution.
-    if (hexHttpError) {
-      this.log(scanId, 'warn', `[hexstrike:${tool}] HTTP ${res.status} — skipping to native`)
-    } else {
-      this.log(scanId, 'warn', `[hexstrike:${tool}] ${hexFailed ? `failed: ${res?.error || 'no output'}` : 'no output'} — trying native`)
-    }    const native = await runNativeTool(tool, this._currentTarget || '')
-    if (!native.success) {
+    // Native-only execution: res is the runNativeTool() result (or a
+    // { nativeResult } wrapper from callers that already ran the tool).
+    const native = res?.nativeResult || res
+    if (!native || (!native.success && !native.stdout)) {
       // Surface the REAL error (exit code + stderr tail) not 'undefined'
-      const detail = native.error || `exit ${native.code ?? '?'}${native.stderr ? ` — ${native.stderr.split('\n').slice(-2).join(' | ')}` : ''}`
-      this.log(scanId, 'warn', `Tool ${tool} failed natively: ${detail}`)
+      const detail = native?.error || `exit ${native?.code ?? '?'}${native?.stderr ? ` — ${native.stderr.split('\n').slice(-2).join(' | ')}` : ''}`
+      this.log(scanId, 'warn', `Tool ${tool} failed: ${detail}`)
       return
     }
-    const nativeOut = `${native.stdout || ''}\n${native.stderr || ''}`.trim()
+    // Structured-output tools (JSON/JSONL on stdout) are parsed from stdout
+    // ONLY — stderr carries progress chatter that can leak into the generic
+    // keyword heuristics when the structured parser extracts nothing.
+    const STRUCTURED_TOOLS = new Set(['nuclei', 'dalfox', 'wpscan', 'katana', 'httpx'])
+    const nativeOut = (STRUCTURED_TOOLS.has(tool) ? (native.stdout || '') : `${native.stdout || ''}\n${native.stderr || ''}`).trim()
     if (!nativeOut) {
-      this.log(scanId, 'warn', `Tool ${tool} produced no output natively (exit ${native.code ?? 0}, cmd: ${native.bin || tool} ${native.args || ''})`)
+      this.log(scanId, 'warn', `Tool ${tool} produced no output (exit ${native.code ?? 0}, cmd: ${native.bin || tool} ${native.args || ''})`)
       return
     }
-    this.log(scanId, 'info', `[native:${tool}] ${nativeOut.split('\n').length} lines of output`)
+    this.log(scanId, 'info', `📤 [${tool}] raw output (${nativeOut.split('\n').length} lines):\n${nativeOut.slice(0, 2000)}${nativeOut.length > 2000 ? '\n… (truncated)' : ''}`)
     const { findings, discoveredUrls } = extractFindingsFromOutput(tool, nativeOut, this._currentTarget || '')
     this._collectUrls(scanId, discoveredUrls)
     if (!findings.length) {
-      this.log(scanId, 'info', `[native:${tool}] no actionable findings${discoveredUrls.length ? ` (${discoveredUrls.length} URLs queued for chaining)` : ''}`)
+      this.log(scanId, 'info', `🔍 [${tool}] parser extracted 0 findings${discoveredUrls.length ? ` (${discoveredUrls.length} URLs queued for chaining)` : ''}`)
       return
     }
+    this.log(scanId, 'info', `🔍 [${tool}] parser extracted ${findings.length} findings — passing to AI verification`)
     for (const f of findings) {
       await this.ingestFinding(scanId, { ...f, module: `native:${tool}` }, { verify, targetType })
     }
-  }
-
-  /** Store discovered parameterized URLs for the injection-chaining stage. */
-  _collectUrls(scanId, urls = []) {
-    if (!urls.length) return
-    if (!this._urlPool) this._urlPool = new Map()
-    const pool = this._urlPool.get(scanId) || new Set()
-    for (const u of urls) pool.add(u)
-    this._urlPool.set(scanId, pool)
   }
 
   /** Get + clear the URL pool for a scan (used before dalfox/sqlmap chaining). */
@@ -1577,7 +1486,7 @@ export class UnifiedPipeline {
       let done = 0
       for (const tool of tools) {
         await this.waitIfPaused(scanId)
-        this.log(scanId, 'info', `▶ Retrying: ${tool}`)
+        this.log(scanId, 'info', `▶ Retrying: ${tool}\n$ ${previewNativeCommand(tool, target)}`)
         try {
           const res = await runNativeTool(tool, target)
           // Update status in metadata
@@ -1991,6 +1900,25 @@ function extractFindingsFromOutput(tool, output, target = '') {
       }
     }
     if (findings.length) return { findings: findings.slice(0, 30), discoveredUrls }
+  }
+
+  // ── whatweb: technology fingerprinting (text mode) ──
+  // Format: https://host [200 OK] Title=[...], HTTPServer=[nginx], PHP=[7.4.33], WordPress=[6.0]
+  if (tool === 'whatweb') {
+    for (const line of lines) {
+      const m = line.match(/^(https?:\/\/\S+)\s*\[(\d{3})[^\]]*\]\s*(.*)$/i)
+      if (!m) continue
+      const [, url, , rest] = m
+      const server = rest.match(/HTTPServer=\[([^\]]*)\]/i)?.[1]
+      const techs = [...rest.matchAll(/\b([A-Za-z][A-Za-z0-9_-]{1,30})=\[([^\]]*)\]/g)]
+        .map((x) => (x[2] ? `${x[1]} ${x[2]}` : x[1]))
+        .filter((t) => !/^(IP|Country|Title|HTTPServer)\b/i.test(t))
+      const stack = [server, ...techs].filter(Boolean)
+      if (stack.length) {
+        push(`whatweb: Technology stack — ${stack.slice(0, 12).join(', ')}`, 'info', line, { url })
+      }
+    }
+    if (findings.length) return { findings: findings.slice(0, 10), discoveredUrls }
   }
 
   // ── subfinder / amass / dnsbrute: one subdomain per line ──

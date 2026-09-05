@@ -19,6 +19,7 @@ const EXPERTS = [
     rating: 5.0,
     reviewsCount: 48,
     avatarBg: 'from-cyan-500 to-blue-600',
+    avatarUrl: '/saif.png',
     specialties: ['Autonomous AI Penetration Testing', 'DAST & SAST Dual-Engine Remediation', 'Kali Toolchain & Exploit Orchestration'],
     bio: 'Lead creator of SentinelAI and cybersecurity researcher at IIUM KICT. Specializing in autonomous multi-agent vulnerability assessment, live exploitation validation, and full-stack security architecture.',
     available: true,
@@ -206,8 +207,7 @@ export default function Consultants() {
   return (
     <div className="space-y-8 motion-fade-up pb-16">
       {/* ── Top Hero Header ─────────────────────────────────────────── */}
-      <div className="card p-8 bg-gradient-to-r from-slate-900/90 via-slate-900/70 to-cyan-950/40 border-cyan-500/30 relative overflow-hidden shadow-2xl">
-        <div className="absolute -right-12 -bottom-12 w-80 h-80 bg-cyan-500/10 rounded-full blur-3xl pointer-events-none" />
+      <div className="card p-8 bg-[#161616] border-cyan-500/30 relative overflow-hidden">
         <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
           <div className="space-y-2 max-w-2xl">
             <div className="flex items-center gap-2">
@@ -329,8 +329,19 @@ export default function Consultants() {
             >
               <div className="space-y-3">
                 <div className="flex items-start justify-between gap-3">
-                  <div className={`w-14 h-14 rounded-2xl bg-gradient-to-tr ${exp.avatarBg} p-0.5 shadow-lg flex items-center justify-center text-white font-extrabold text-xl`}>
-                    MS
+                  <div className="relative shrink-0">
+                    <div className="w-16 h-16 rounded-2xl overflow-hidden border-2 border-cyan-400/40 shadow-lg shadow-cyan-950/40 bg-slate-900 ring-2 ring-cyan-500/20">
+                      <img
+                        src={exp.avatarUrl || '/saif.png'}
+                        alt={exp.name}
+                        className="w-full h-full object-cover"
+                        style={{ objectPosition: '85% 85%' }}
+                        onError={(e) => { e.currentTarget.src = '/fyp2_presenter.png' }}
+                      />
+                    </div>
+                    <span className="absolute -bottom-1 -right-1 px-1.5 py-0.5 rounded-full bg-cyan-500 text-slate-950 text-[8px] font-black uppercase tracking-wider shadow">
+                      Lead
+                    </span>
                   </div>
                   <div className="flex items-center gap-1 bg-amber-500/10 border border-amber-500/30 px-2.5 py-0.5 rounded-full text-xs font-bold text-amber-300">
                     <Star size={13} className="fill-amber-400 text-amber-400" />

@@ -36,13 +36,13 @@ const LAYERS = [
     ]
   },
   {
-    id: 'hexstrike',
+    id: 'native-engine',
     num: '03',
-    title: 'Hexstrike Kali Engine',
-    tech: '150+ Tools + Kali Linux + REST API',
+    title: 'Native Kali Engine',
+    tech: '150+ Tools + Kali Linux + Direct Execution',
     icon: Terminal,
     accent: 'rose',
-    desc: 'Chains 150+ real Kali Linux security tools via local REST API and executes AST-based static code analysis for whitebox audits.',
+    desc: 'Chains 150+ real Kali Linux security tools via direct subprocess execution and runs AST-based static code analysis for whitebox audits.',
     modules: [
       { name: 'DAST Tool Orchestrator', detail: 'Automates Nmap, Nuclei, Nikto, Subfinder, FFUF, SQLMap, and Hydra.' },
       { name: 'SAST Whitebox AST Parser', detail: 'Static analysis scanning JS, Python, PHP, and Java source code for flaws.' },

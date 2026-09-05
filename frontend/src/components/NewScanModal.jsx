@@ -322,9 +322,9 @@ export default function NewScanModal({ onClose, onStarted, initialProjectId = ''
   }
 
   const modalContent = (
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-5 bg-slate-950/85 backdrop-blur-md overflow-hidden" onClick={onClose}>
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-5 bg-black/85 overflow-hidden" onClick={onClose}>
       <div 
-        className="relative w-full max-w-4xl h-[92vh] max-h-[92vh] flex flex-col rounded-2xl sm:rounded-3xl border-2 border-cyan-500/50 bg-[#0a1026] shadow-[0_0_80px_rgba(0,242,254,0.35)] text-slate-100 animate-in fade-in zoom-in-95 duration-200 overflow-hidden"
+        className="relative w-full max-w-4xl h-[92vh] max-h-[92vh] flex flex-col rounded-2xl sm:rounded-3xl border border-white/[0.07] bg-[#111111] text-slate-100 animate-in fade-in zoom-in-95 duration-200 overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-white/10 px-5 sm:px-6 py-4 bg-slate-950 shrink-0 z-10">
@@ -354,7 +354,7 @@ export default function NewScanModal({ onClose, onStarted, initialProjectId = ''
                 </span>
               </div>
               <p className="mt-3 font-extrabold text-base text-white">Blackbox Assessment</p>
-              <p className="text-xs text-slate-400 mt-1 leading-relaxed">External live web, API & network target scanning via Hexstrike Kali engine</p>
+              <p className="text-xs text-slate-400 mt-1 leading-relaxed">External live web, API &amp; network target scanning via Native Kali engine</p>
             </button>
 
             <button type="button" onClick={() => setMode('whitebox')}

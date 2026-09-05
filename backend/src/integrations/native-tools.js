@@ -1,16 +1,16 @@
 import { spawn } from 'node:child_process'
 import fs from 'node:fs'
-import { config } from '../config.js'
 
 /**
  * Native tool runner — executes security tools directly via child_process.
- * Used when HexStrike output capture fails (subfinder, httpx, katana, dalfox,
- * wpscan) or as a fallback when HexStrike is unavailable.
+ * This is the PRIMARY execution engine for all blackbox scanning (the
+ * hexstrike HTTP middle-layer was removed: backend → subprocess directly,
+ * no network hop, live stdout capture, tuned flags per tool).
  *
  * Only used when backend runs on the same machine as the tools (Kali all-in-one).
  */
 
-const TIMEOUT_MS = config.hexstrike?.timeoutMs || 600000
+const TIMEOUT_MS = 600000
 
 /** Check if a binary exists in PATH. */
 async function which(bin) {
@@ -61,7 +61,7 @@ async function run(cmd, args, { timeout = TIMEOUT_MS } = {}) {
     }
     const timer = setTimeout(() => {
       killTree()
-      resolve({ success: false, stdout, stderr, error: `timeout after ${timeout}ms` })
+      resolve({ success: false, timedOut: true, stdout, stderr, error: `timeout after ${timeout}ms` })
     }, timeout)
 
     proc.stdout.on('data', (d) => { stdout += d.toString() })
@@ -91,6 +91,30 @@ const toHost = (t) => {
   try { return new URL(toUrl(t)).hostname } catch { return t.replace(/^https?:\/\//i, '').split('/')[0] }
 }
 
+/** Extract the registrable root domain, respecting second-level TLDs (edu.my, co.uk, etc.). */
+const SECOND_LEVEL_TLDS = new Set([
+  'edu.my', 'com.my', 'net.my', 'org.my', 'gov.my', 'mil.my', 'sch.my',
+  'co.uk', 'org.uk', 'me.uk', 'ltd.uk', 'plc.uk', 'net.uk', 'sch.uk', 'ac.uk', 'gov.uk',
+  'com.au', 'net.au', 'org.au', 'edu.au', 'gov.au',
+  'co.nz', 'net.nz', 'org.nz', 'govt.nz', 'ac.nz',
+  'co.id', 'web.id', 'ac.id', 'go.id', 'my.id', 'sch.id',
+  'co.jp', 'ne.jp', 'or.jp', 'go.jp', 'ac.jp',
+  'com.sg', 'edu.sg', 'gov.sg', 'net.sg', 'org.sg',
+  'com.hk', 'edu.hk', 'gov.hk', 'net.hk', 'org.hk',
+  'co.za', 'gov.za', 'ac.za', 'edu.za',
+  'com.br', 'gov.br', 'edu.br', 'org.br',
+  'co.in', 'net.in', 'org.in', 'gen.in', 'firm.in', 'ind.in',
+  'edu.cn', 'gov.cn', 'com.cn', 'net.cn', 'org.cn',
+])
+const toRootDomain = (t) => {
+  const host = toHost(t).toLowerCase().trim()
+  const parts = host.split('.').filter(Boolean)
+  if (parts.length <= 2) return parts.join('.')
+  const lastTwo = parts.slice(-2).join('.')
+  if (SECOND_LEVEL_TLDS.has(lastTwo)) return parts.slice(-3).join('.')
+  return parts.slice(-2).join('.')
+}
+
 /**
  * Native tool definitions: binary name, argument builder, and whether we need
  * to strip the scheme (host tools) or keep it (URL tools).
@@ -98,8 +122,16 @@ const toHost = (t) => {
 export const NATIVE_TOOLS = {
   subfinder: {
     bin: 'subfinder',
-    args: (t) => ['-d', toHost(t), '-silent'],
+    args: (t) => ['-d', toRootDomain(t), '-silent'],
     desc: 'Subdomain enumeration',
+  },
+  amass: {
+    // Passive-only enum (no DNS queries to target) — fast + safe, complements subfinder
+    bin: 'amass',
+    altBins: ['amass.net', 'amass_linux_amd64'],
+    args: (t) => ['enum', '-passive', '-d', toRootDomain(t), '-timeout', '4'],
+    timeout: 300000,
+    desc: 'OSINT subdomain mapping (passive)',
   },
   // Active DNS brute-force — finds subdomains passive sources miss (aziz., dev., staging.)
   // Primary: gobuster dns. Falls back to dnsrecon if gobuster's -d parser rejects
@@ -108,17 +140,12 @@ export const NATIVE_TOOLS = {
     bin: 'gobuster',
     fallbackDef: 'dnsrecon',  // runNativeTool will try this if gobuster fails
     args: (t) => {
-      // Extract the registrable domain (last 2 parts) — gobuster -d needs the apex
-      let bare = t.replace(/^https?:\/\//i, '').split('/')[0].replace(/^\*\./, '').trim().toLowerCase()
-      const parts = bare.split('.')
-      if (parts.length > 2) bare = parts.slice(-2).join('.')  // www.myces-fms.com → myces-fms.com
+      const bare = toRootDomain(t)
       return ['dns', '-d', bare, '-w', '/usr/share/seclists/Discovery/DNS/subdomains-top1million-5000.txt', '-q', '-t', '30', '--timeout', '10s']
     },
     // Simpler invocation for older gobuster builds that reject --timeout.
     altArgs: (t) => {
-      let bare = t.replace(/^https?:\/\//i, '').split('/')[0].replace(/^\*\./, '').trim().toLowerCase()
-      const parts = bare.split('.')
-      if (parts.length > 2) bare = parts.slice(-2).join('.')
+      const bare = toRootDomain(t)
       return ['dns', '-d', bare, '-w', '/usr/share/seclists/Discovery/DNS/subdomains-top1million-5000.txt', '-q']
     },
     desc: 'Subdomain brute-force',
@@ -128,9 +155,7 @@ export const NATIVE_TOOLS = {
   dnsrecon: {
     bin: 'dnsrecon',
     args: (t) => {
-      let bare = t.replace(/^https?:\/\//i, '').split('/')[0].replace(/^\*\./, '').trim().toLowerCase()
-      const parts = bare.split('.')
-      if (parts.length > 2) bare = parts.slice(-2).join('.')
+      const bare = toRootDomain(t)
       return ['-d', bare, '-D', '/usr/share/seclists/Discovery/DNS/subdomains-top1million-5000.txt', '-t', 'brt', '--threads', '30']
     },
     desc: 'DNS enumeration (dnsrecon)',
@@ -151,10 +176,14 @@ export const NATIVE_TOOLS = {
     desc: 'HTTP probing',
   },
   katana: {
-    bin: 'katana',
-    args: (t) => ['-u', toUrl(t), '-silent', '-json', '-d', '3', '-timeout', '30', '-rate-limit', '150'],
-    // Older katana builds reject -rate-limit; retry with minimal flags.
+    // katana v1.7 hangs with -u on some targets (Cloudflare-fronted sites);
+    // stdin mode works reliably. -ct caps crawl duration, -iqp skips
+    // duplicate query-param URLs (Moodle generates thousands).
+    bin: 'bash',
+    args: (t) => ['-c', `echo ${JSON.stringify(toUrl(t))} | katana -silent -d 2 -ct 90 -c 20 -iqp`],
+    // Older katana builds: classic -u invocation.
     altArgs: (t) => ['-u', toUrl(t), '-silent', '-d', '2'],
+    timeout: 150000,
     desc: 'Web crawling',
   },
   dalfox: {
@@ -185,11 +214,15 @@ export const NATIVE_TOOLS = {
     desc: 'SQL injection testing',
   },
   arjun: {
-    bin: 'arjun',
-    args: (t) => ['-u', toUrl(t), '--stable', '-c', '30', '-t', '3'],
-    // Arjun is notoriously slow on large apps. Cap at 2 minutes, use 30 threads.
+    // arjun buffers stdout when run via the easy-install wrapper — run as an
+    // unbuffered python module so output streams live. GET-only + tuned
+    // threads keeps a large app (Moodle) within the 5-minute budget.
+    bin: 'python3',
+    args: (t) => ['-u', '-m', 'arjun', '-u', toUrl(t), '-m', 'GET', '-t', '10', '-c', '20', '-T', '10', '--stable'],
+    // Fallback: classic wrapper invocation (older installs).
+    altArgs: (t) => ['-u', toUrl(t), '--stable', '-c', '30', '-t', '3'],
     parameterDiscovery: true,
-    timeout: 120000,
+    timeout: 300000,
     desc: 'HTTP parameter discovery',
   },
   nmap: {
@@ -207,11 +240,10 @@ export const NATIVE_TOOLS = {
   },
   nuclei: {
     bin: 'nuclei',
-    args: (t) => ['-u', toUrl(t), '-silent', '-json', '-timeout', '30', '-rate-limit', '150', '-no-mh'],
-    // Older nuclei versions reject -rate-limit / -no-mh; retry with minimal flags.
+    // nuclei v3 renamed -json to -j (jsonl) and dropped -no-mh.
+    args: (t) => ['-u', toUrl(t), '-silent', '-j', '-timeout', '30', '-rate-limit', '150'],
+    // Older nuclei v2 builds use -json and reject -j; retry with minimal flags.
     altArgs: (t) => ['-u', toUrl(t), '-silent', '-json'],
-    // Some nuclei builds (v2.x) need -target instead of -u; fallback via altBins.
-    altBins: ['nuclei'],
     desc: 'Template-based scanning',
   },
   ffuf: {
@@ -267,6 +299,19 @@ export async function runNativeCommand(command, { timeout = TIMEOUT_MS } = {}) {
   return { ...result, command }
 }
 
+/**
+ * Build the exact command string for a native tool invocation (for live-output
+ * display). Special-cases bash -c / python3 -m wrappers so the displayed
+ * command matches what actually runs in the shell.
+ */
+export function previewNativeCommand(moduleName, target) {
+  const def = NATIVE_TOOLS[moduleName]
+  if (!def) return `${moduleName} ${target}`
+  const args = def.args(target)
+  if (def.bin === 'bash' && args[0] === '-c') return `bash -c ${JSON.stringify(args[1])}`
+  return [def.bin, ...args].join(' ')
+}
+
 /** Run a native tool by module name. */
 export async function runNativeTool(moduleName, target) {
   const def = NATIVE_TOOLS[moduleName]
@@ -283,6 +328,15 @@ export async function runNativeTool(moduleName, target) {
   const args = def.args(target)
   const toolTimeout = def.timeout || TIMEOUT_MS
   let result = await run(bin, args, { timeout: toolTimeout })
+
+  // Retry once on transient network errors (connection reset / refused / DNS
+  // hiccup) — tools often succeed on the second attempt. Only retry when there
+  // was NO output at all: partial output means the tool already did real work.
+  const TRANSIENT = /connection (reset|refused|timed out)|econnreset|econnrefused|etimedout|network is unreachable|temporary failure|name or service not known|no route to host/i
+  if (!result.success && !result.stdout && TRANSIENT.test(result.error || '')) {
+    await new Promise((r) => setTimeout(r, 2000))
+    result = await run(bin, args, { timeout: toolTimeout })
+  }
 
   // If the primary arg-set failed (unsupported flags / broken env), retry with
   // the simpler altArgs (e.g. Python httpx without ProjectDiscovery flags).
@@ -319,4 +373,4 @@ export async function runNativeTool(moduleName, target) {
   return { ...result, tool: moduleName, bin, args: args.join(' ') }
 }
 
-export default { nativeToolsStatus, runNativeTool, runNativeCommand, NATIVE_TOOLS }
+export default { nativeToolsStatus, runNativeTool, runNativeCommand, previewNativeCommand, NATIVE_TOOLS }

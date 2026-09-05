@@ -1,36 +1,30 @@
 @import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;500;700;800&family=Syne:wght@600;700;800&display=swap');
 
 .at-home {
-  --at-bg-a: #060b26;
-  --at-bg-b: #0b1437;
-  --at-text: #f1f5f9;
-  --at-muted: #94a3b8;
-  --at-line: rgba(255, 255, 255, 0.08);
+  --at-bg-a: #0a0a0a;
+  --at-bg-b: #111111;
+  --at-text: #f4f4f5;
+  --at-muted: #71717a;
+  --at-line: rgba(255, 255, 255, 0.07);
   --at-cyan: #00f2fe;
   --at-amber: #f59e0b;
-  --at-card: rgba(255, 255, 255, 0.04);
-  --at-glass: rgba(255, 255, 255, 0.06);
-  --at-glass-border: rgba(255, 255, 255, 0.12);
-  --at-glass-highlight: rgba(255, 255, 255, 0.08);
+  --at-card: #161616;
+  --at-glass: #161616;
+  --at-glass-border: rgba(255, 255, 255, 0.07);
+  --at-glass-highlight: rgba(255, 255, 255, 0.04);
   min-height: 100vh;
   width: 100%;
   margin: 0;
   padding: 0;
   box-sizing: border-box;
   color: var(--at-text);
-  background:
-    radial-gradient(circle at 15% 15%, rgba(0, 242, 254, 0.16) 0%, transparent 40%),
-    radial-gradient(circle at 85% 20%, rgba(0, 117, 255, 0.18) 0%, transparent 45%),
-    radial-gradient(circle at 50% 80%, rgba(121, 40, 202, 0.14) 0%, transparent 50%),
-    #060b26;
+  background: #0a0a0a;
   font-family: 'Bricolage Grotesque', 'Segoe UI', sans-serif;
   position: relative;
   overflow-x: hidden;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
-
-
 
 .at-home__grid,
 .at-home__noise {
@@ -43,54 +37,20 @@
 
 .at-home__grid {
   background-image:
-    linear-gradient(to right, rgba(255, 255, 255, 0.04) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(255, 255, 255, 0.04) 1px, transparent 1px);
+    linear-gradient(to right, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
   background-size: 70px 70px;
   -webkit-mask-image: radial-gradient(circle at center, black 30%, transparent 80%);
   mask-image: radial-gradient(circle at center, black 30%, transparent 80%);
-  opacity: 0.6;
+  opacity: 0.4;
 }
 
 .at-home__noise {
-  background-image: radial-gradient(rgba(255, 255, 255, 0.06) 0.7px, transparent 0.7px);
-  background-size: 4px 4px;
-  opacity: 0.04;
+  display: none;
 }
 
 .at-home__blob {
-  position: fixed;
-  border-radius: 999px;
-  filter: blur(50px);
-  opacity: 0.3;
-  pointer-events: none;
-  z-index: 0;
-  transform: translateZ(0);
-}
-
-.at-home__blob--a {
-  width: 360px;
-  height: 360px;
-  left: -110px;
-  top: 18%;
-  background: linear-gradient(130deg, rgba(74, 209, 255, 0.35), rgba(74, 209, 255, 0.05));
-}
-
-.at-home__blob--b {
-  width: 300px;
-  height: 300px;
-  right: -70px;
-  top: 8%;
-  background: linear-gradient(130deg, rgba(248, 192, 99, 0.36), rgba(255, 126, 88, 0.08));
-  animation-delay: -4.5s;
-}
-
-.at-home__blob--c {
-  width: 440px;
-  height: 440px;
-  right: 30%;
-  bottom: -220px;
-  background: linear-gradient(130deg, rgba(61, 118, 255, 0.22), rgba(74, 209, 255, 0.04));
-  animation-delay: -8s;
+  display: none !important;
 }
 
 @keyframes atBlobDrift {

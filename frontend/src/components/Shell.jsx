@@ -11,8 +11,8 @@ import { api } from '../lib/api.js'
 import NewScanModal from './NewScanModal.jsx'
 import InspectorLogo from './InspectorLogo.jsx'
 import AIChatWidget from './AIChatWidget.jsx'
-import AIBackgroundCanvas from './AIBackgroundCanvas.jsx'
 import Tooltip from './Tooltip.jsx'
+import AIBackgroundCanvas from './AIBackgroundCanvas.jsx'
 import { useTheme } from '../lib/ThemeContext.jsx'
 
 export default function Shell() {
@@ -102,9 +102,9 @@ export default function Shell() {
 
   return (
     <div className="min-h-screen relative selection:bg-cyan-500 selection:text-slate-950">
-      {/* AI Dynamic Background Layer */}
+      {/* Dynamic Background Canvas (Wallpaper + Minimalist Overlay) */}
       <AIBackgroundCanvas />
-      
+
       {/* Expired / Inactive / Trial Exhausted Alert Banner (Only when paywall is active) */}
       {isSubscriptionExpired && (
         <div className="sticky top-0 z-50 bg-gradient-to-r from-amber-600 via-rose-600 to-red-600 text-white px-4 py-2 text-xs font-bold shadow-xl flex items-center justify-between">
@@ -124,7 +124,7 @@ export default function Shell() {
       )}
 
       {/* Mobile Top App Bar */}
-      <header className="lg:hidden sticky top-0 z-30 flex items-center justify-between px-4 py-3 bg-slate-950/80 backdrop-blur-2xl border-b border-white/10">
+      <header className="lg:hidden sticky top-0 z-30 flex items-center justify-between px-4 py-3 bg-[#111111] border-b border-white/[0.07]">
         <div className="flex items-center gap-3">
           <button
             onClick={() => setMobileOpen(true)}

@@ -68,12 +68,6 @@ export const config = {
     scanTimeout: Number(process.env.AI_SCAN_TIMEOUT || 300),
   },
 
-  hexstrike: {
-    url: (process.env.HEXSTRIKE_URL || 'http://127.0.0.1:8888').replace(/\/$/, ''),
-    enabled: (process.env.HEXSTRIKE_ENABLED || 'true') !== 'false',
-    timeoutMs: Number(process.env.HEXSTRIKE_TIMEOUT_MS || 600000),
-  },
-
   // Metasploit RPC configuration (for autonomous exploitation)
   msf: {
     url: (process.env.MSF_RPC_URL || 'http://127.0.0.1:55553/api/').replace(/\/$/, '') + '/',

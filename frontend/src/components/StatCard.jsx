@@ -51,7 +51,6 @@ export default function StatCard({ icon: Icon, label, value, sub, tone = 'cyan',
 
   return (
     <div className="card glass-in p-5 relative overflow-hidden group hover:border-cyan-400/40 hover-lift transition-all duration-300 h-full min-h-[118px] flex flex-col justify-between">
-      <div className="absolute top-0 right-0 w-24 h-24 bg-cyan-500/5 rounded-full blur-xl pointer-events-none group-hover:bg-cyan-500/10 transition-colors" />
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <p className="text-[11px] uppercase tracking-wider font-bold text-slate-400 truncate">{label}</p>

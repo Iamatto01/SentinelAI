@@ -133,7 +133,6 @@ export async function getSystemInfo() {
   // Check key services
   const services = {
     sentinelai: await checkService('sentinelai', 5000),
-    hexstrike: await checkService('hexstrike', 8888),
     msfrpcd: await checkService('msfrpcd', 55553),
     cloudflared: await checkService('cloudflared', null),
     avahi: await checkService('avahi-daemon', null),
@@ -302,7 +301,7 @@ Respond ONLY with JSON:
 
 /** Manage Kali Services */
 export async function manageService(service, action) {
-  const allowedServices = ['sentinelai', 'hexstrike', 'msfrpcd', 'cloudflared', 'avahi-daemon']
+  const allowedServices = ['sentinelai', 'msfrpcd', 'cloudflared', 'avahi-daemon']
   const allowedActions = ['start', 'stop', 'restart', 'status']
 
   if (!allowedServices.includes(service)) {
@@ -316,10 +315,8 @@ export async function manageService(service, action) {
   const sudo = config.kaliSudoPassword ? `echo ${config.kaliSudoPassword} | sudo -S` : 'sudo'
   let cmd = `${sudo} systemctl ${action} ${service}`
 
-  // Special handling for Hexstrike / Metasploit if not systemd units
-  if (service === 'hexstrike' && action === 'restart') {
-    cmd = `pkill -f hexstrike_server.py 2>/dev/null || true; sleep 1; nohup python3 /home/kali/hexstrike-ai/hexstrike_server.py --port 8888 > /home/kali/hexstrike.log 2>&1 &`
-  } else if (service === 'msfrpcd' && action === 'restart') {
+  // Special handling for Metasploit if not a systemd unit
+  if (service === 'msfrpcd' && action === 'restart') {
     cmd = `pkill -f msfrpcd 2>/dev/null || true; sleep 1; nohup msfrpcd -U msf -P msf -a 127.0.0.1 -p 55553 -S > /home/kali/msfrpcd.log 2>&1 &`
   }
 

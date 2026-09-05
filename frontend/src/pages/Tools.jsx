@@ -7,11 +7,8 @@ import {
 import PublicLayout from '../components/PublicLayout.jsx'
 
 const GLASS_CARD = {
-  background: 'rgba(255, 255, 255, 0.04)',
-  backdropFilter: 'blur(40px) saturate(180%)',
-  WebkitBackdropFilter: 'blur(40px) saturate(180%)',
-  border: '1px solid rgba(255, 255, 255, 0.08)',
-  boxShadow: '0 8px 32px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.06)',
+  background: '#161616',
+  border: '1px solid rgba(255, 255, 255, 0.06)',
 }
 
 // ── Kali Tool Catalog (grouped by pipeline stage & DAST / SAST) ─────────────
@@ -128,7 +125,7 @@ export default function Tools() {
             150+ Kali Tools &amp; <span className="at-home__gradient-text">{agentList.length} AI Personas</span>
           </h1>
           <p className="text-sm text-slate-400 max-w-2xl mx-auto leading-relaxed">
-            Every tool in the Hexstrike engine is real, installed, and health-checked — combining live dynamic blackbox testing (DAST) with whitebox static code parsing (SAST).
+            Every tool in the Native Kali engine is real, installed, and health-checked — combining live dynamic blackbox testing (DAST) with whitebox static code parsing (SAST).
           </p>
           <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
             <Link to="/services" className="btn-swipe btn-lg">
@@ -142,7 +139,7 @@ export default function Tools() {
           <div className="text-center space-y-2">
             <h2 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">Interactive Tool Catalog</h2>
             <p className="text-xs text-slate-400 max-w-xl mx-auto">
-              Filterable &amp; searchable directory of the core Hexstrike toolchain.
+              Filterable &amp; searchable directory of the core Native Kali toolchain.
             </p>
           </div>
 

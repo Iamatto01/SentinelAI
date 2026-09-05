@@ -33,3 +33,5 @@ Thumbs.db
 *.swp
 __pycache__/
 *.pyc
+scratch/
+output/db-browser.html

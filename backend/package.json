@@ -3,7 +3,7 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
-  "description": "Orchestration plane — delegates tool execution to Hexstrike, reasoning to AI agents, PoC to PayloadsAllTheThings RAG",
+  "description": "Orchestration plane — executes Kali tools natively via direct subprocess, reasoning via AI agents, PoC via PayloadsAllTheThings RAG",
   "scripts": {
     "dev": "node --env-file=../.env src/index.js",
     "start": "node --env-file=../.env src/index.js",
