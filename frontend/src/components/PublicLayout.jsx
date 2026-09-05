@@ -50,13 +50,13 @@ export default function PublicLayout({ children }) {
         <div
           className={`w-full px-4 sm:px-6 py-2.5 sm:py-3 flex items-center justify-between sm:rounded-2xl transition-all duration-300 ${
             scrolled
-              ? 'bg-slate-950/90 backdrop-blur-2xl border-b sm:border border-cyan-500/25 shadow-[0_12px_36px_rgba(0,0,0,0.7),0_0_20px_rgba(0,242,254,0.1)]'
-              : 'bg-slate-950/75 backdrop-blur-xl border-b sm:border border-white/[0.12] shadow-[0_8px_32px_rgba(0,0,0,0.4),inset_0_1px_0_rgba(255,255,255,0.08)]'
+              ? 'bg-[#0e1017]/90 backdrop-blur-2xl border-b sm:border border-white/[0.08] shadow-[0_12px_36px_rgba(0,0,0,0.7),0_0_20px_rgba(14,165,233,0.08)]'
+              : 'bg-[#0e1017]/75 backdrop-blur-xl border-b sm:border border-white/[0.08] shadow-[0_8px_32px_rgba(0,0,0,0.4)]'
           }`}
         >
           {/* Brand Logo */}
           <Link to="/" className="flex items-center gap-2.5 group shrink-0">
-            <div className="relative p-0.5 rounded-xl bg-gradient-to-br from-red-500/30 to-red-900/40 border border-red-500/30 group-hover:border-cyan-400/50 group-hover:shadow-[0_0_16px_rgba(0,242,254,0.3)] transition-all duration-300">
+            <div className="p-1 rounded-xl bg-[#161822] border border-white/10 group-hover:border-cyan-400/50 group-hover:shadow-[0_0_14px_rgba(56,189,248,0.25)] transition-all duration-300">
               <InspectorLogo size={24} className="sm:w-7 sm:h-7" />
             </div>
             <span className="font-extrabold text-sm sm:text-base text-white tracking-tight group-hover:text-cyan-300 transition-colors">
@@ -74,8 +74,8 @@ export default function PublicLayout({ children }) {
                   to={l.to}
                   className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all duration-200 ${
                     isActive
-                      ? 'bg-cyan-500/15 text-cyan-300 border border-cyan-400/30 shadow-[0_0_12px_rgba(0,242,254,0.15)] font-bold'
-                      : 'text-slate-300 hover:text-white hover:bg-white/[0.08] border border-transparent'
+                      ? 'bg-cyan-500/15 text-cyan-300 border border-cyan-400/30 shadow-[0_0_12px_rgba(0,242,254,0.12)] font-bold'
+                      : 'text-zinc-400 hover:text-white hover:bg-white/[0.06] border border-transparent'
                   }`}
                 >
                   {l.label}
@@ -89,18 +89,18 @@ export default function PublicLayout({ children }) {
             {/* Desktop / Tablet Sign In */}
             <Link
               to="/login"
-              className="hidden md:inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold text-slate-300 hover:text-white bg-white/[0.03] hover:bg-white/[0.08] border border-white/10 hover:border-white/20 transition-all"
+              className="hidden md:inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold text-zinc-300 hover:text-white bg-white/[0.03] hover:bg-white/[0.08] border border-white/10 hover:border-white/20 transition-all"
             >
-              <LogIn size={13} className="text-slate-400" />
+              <LogIn size={13} className="text-zinc-400" />
               <span>Sign In</span>
             </Link>
 
             {/* Primary Get Started CTA */}
             <Link
               to="/login?mode=register&plan=trial"
-              className="inline-flex items-center gap-1.5 px-3.5 sm:px-4 py-1.5 sm:py-2 rounded-xl text-xs font-bold text-slate-950 bg-gradient-to-r from-cyan-400 via-cyan-300 to-sky-400 hover:from-cyan-300 hover:to-blue-400 shadow-[0_0_18px_rgba(0,242,254,0.4)] hover:shadow-[0_0_26px_rgba(0,242,254,0.7)] hover:scale-[1.02] active:scale-[0.98] transition-all"
+              className="inline-flex items-center gap-1.5 px-3.5 sm:px-4 py-1.5 sm:py-2 rounded-xl text-xs font-bold text-white bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 shadow-md shadow-cyan-950/50 border border-cyan-400/30 hover:shadow-cyan-500/25 hover:scale-[1.02] active:scale-[0.98] transition-all"
             >
-              <Sparkles size={13} className="hidden sm:inline-block" />
+              <Sparkles size={13} className="hidden sm:inline-block text-cyan-200" />
               <span>Get Started Free</span>
               <ArrowRight size={13} />
             </Link>

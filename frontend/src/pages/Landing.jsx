@@ -137,63 +137,74 @@ export default function Landing() {
           </div>
 
           <div className="at-home__metrics at-stagger-2">
-            <article className="hover:border-cyan-400/50 transition-colors">
-              <h3 className="text-cyan-400">150+ Tools</h3>
-              <p>Native Kali Engine</p>
+            <article>
+              <h3 className="text-cyan-400 font-extrabold text-xl sm:text-2xl tracking-tight">150+ Tools</h3>
+              <p className="text-xs text-zinc-400">Native Kali Engine</p>
             </article>
-            <article className="hover:border-amber-400/50 transition-colors">
-              <h3 className="text-amber-400">{agentsCount} Personas</h3>
-              <p>Specialist AI Agents</p>
+            <article>
+              <h3 className="text-sky-300 font-extrabold text-xl sm:text-2xl tracking-tight">{agentsCount} Personas</h3>
+              <p className="text-xs text-zinc-400">Specialist AI Agents</p>
             </article>
-            <article className="hover:border-emerald-400/50 transition-colors">
-              <h3 className="text-emerald-400">0% Noise</h3>
-              <p>False-Positive Filter</p>
+            <article>
+              <h3 className="text-emerald-400 font-extrabold text-xl sm:text-2xl tracking-tight">0% Noise</h3>
+              <p className="text-xs text-zinc-400">False-Positive Filter</p>
             </article>
           </div>
         </div>
 
         {/* Right Column Hero Visual Card */}
         <div className="at-home__visual at-stagger-2">
-          <div className="at-home__visual-frame p-7 sm:p-8 rounded-3xl flex flex-col justify-between relative overflow-hidden bg-[#161616] border border-white/[0.07]">
+          <div className="at-home__visual-frame p-7 sm:p-8 rounded-3xl flex flex-col justify-between relative overflow-hidden bg-[#11131a] border border-white/[0.08] shadow-[0_20px_50px_rgba(0,0,0,0.6),inset_0_1px_0_rgba(255,255,255,0.06)]">
+            {/* Top subtle cyber accent line */}
+            <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-cyan-500/50 to-transparent" />
+
             <div className="flex items-center justify-between border-b border-white/10 pb-4">
               <div className="flex items-center gap-3">
-                <InspectorLogo size={38} />
+                <div className="p-1.5 rounded-xl bg-[#181a24] border border-white/10 shadow-inner">
+                  <InspectorLogo size={32} />
+                </div>
                 <div>
                   <h3 className="font-bold text-slate-100 text-base">SentinelAI Inspector Core</h3>
-                  <p className="text-xs text-red-400 font-mono flex items-center gap-1.5">
-                    <span className="w-2 h-2 rounded-full bg-red-400 animate-ping inline-block" />
+                  <p className="text-xs text-emerald-400 font-mono flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse inline-block shadow-[0_0_8px_rgba(52,211,153,0.8)]" />
                     Status: Active Scanning Engine
                   </p>
                 </div>
               </div>
-              <span className="chip bg-red-500/20 text-red-400 border border-red-500/40 text-xs px-2.5 py-1 font-semibold flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-red-400 animate-pulse" /> 24/7 Monitoring
+              <span className="chip bg-emerald-500/10 text-emerald-400 border border-emerald-500/25 text-xs px-2.5 py-1 font-semibold flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" /> 24/7 Monitoring
               </span>
             </div>
 
-            <div className="my-6 space-y-3.5 font-mono text-xs">
-              <div className="p-3.5 rounded-xl bg-black/40 border border-white/10 flex items-center justify-between hover:border-cyan-400/40 transition-colors">
-                <div className="flex items-center gap-2">
-                  <Radar size={14} className="text-cyan-400" />
-                  <span className="text-slate-300">DAST Dynamic Analysis</span>
+            <div className="my-6 space-y-3 font-mono text-xs">
+              <div className="p-3.5 rounded-xl bg-black/40 border border-white/[0.06] flex items-center justify-between hover:border-cyan-400/40 transition-colors">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-1 rounded-lg bg-cyan-500/10 text-cyan-400">
+                    <Radar size={14} />
+                  </div>
+                  <span className="text-slate-200 font-sans font-medium text-xs">DAST Dynamic Analysis</span>
                 </div>
-                <span className="text-cyan-400 font-semibold flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" /> Live Probing
+                <span className="text-cyan-400 font-semibold flex items-center gap-1.5 text-[11px]">
+                  <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" /> Live Probing
                 </span>
               </div>
-              <div className="p-3.5 rounded-xl bg-black/40 border border-white/10 flex items-center justify-between hover:border-indigo-400/40 transition-colors">
-                <div className="flex items-center gap-2">
-                  <Code2 size={14} className="text-indigo-400" />
-                  <span className="text-slate-300">SAST Static Code Parser</span>
+              <div className="p-3.5 rounded-xl bg-black/40 border border-white/[0.06] flex items-center justify-between hover:border-sky-400/40 transition-colors">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-1 rounded-lg bg-sky-500/10 text-sky-400">
+                    <Code2 size={14} />
+                  </div>
+                  <span className="text-slate-200 font-sans font-medium text-xs">SAST Static Code Parser</span>
                 </div>
-                <span className="text-indigo-300 font-semibold">OWASP Top 10</span>
+                <span className="text-sky-300 font-semibold text-[11px] bg-sky-500/10 px-2 py-0.5 rounded border border-sky-500/20">OWASP Top 10</span>
               </div>
-              <div className="p-3.5 rounded-xl bg-black/40 border border-white/10 flex items-center justify-between hover:border-emerald-400/40 transition-colors">
-                <div className="flex items-center gap-2">
-                  <Bot size={14} className="text-emerald-400" />
-                  <span className="text-slate-300">Multi-LLM Consensus AI</span>
+              <div className="p-3.5 rounded-xl bg-black/40 border border-white/[0.06] flex items-center justify-between hover:border-indigo-400/40 transition-colors">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-1 rounded-lg bg-indigo-500/10 text-indigo-400">
+                    <Bot size={14} />
+                  </div>
+                  <span className="text-slate-200 font-sans font-medium text-xs">Multi-LLM Consensus AI</span>
                 </div>
-                <span className="text-emerald-400 font-semibold">0% False Positives</span>
+                <span className="text-indigo-300 font-semibold text-[11px] bg-indigo-500/10 px-2 py-0.5 rounded border border-indigo-500/20">0% False Positives</span>
               </div>
             </div>
 
@@ -201,8 +212,8 @@ export default function Landing() {
               <span className="text-slate-400 flex items-center gap-1.5">
                 <Sparkles size={13} className="text-cyan-400" /> 3 Free Trial Scans
               </span>
-              <span className="text-[11px] font-mono text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded-full border border-emerald-500/20">
-                Ready for Targets
+              <span className="text-[11px] font-mono text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded-full border border-emerald-500/20 flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" /> Ready for Targets
               </span>
             </div>
           </div>
@@ -226,7 +237,7 @@ export default function Landing() {
 
         {/* ── FYP Creator & Lead Security Architect Showcase Banner ─────────────── */}
         <section className="scroll-mt-32 my-0">
-          <div className="p-6 sm:p-8 rounded-3xl shadow-xl relative overflow-hidden bg-[#161616] border border-cyan-500/25">
+          <div className="p-6 sm:p-8 rounded-3xl shadow-xl relative overflow-hidden bg-[#11131a] border border-cyan-500/30 hover:border-cyan-400/50 transition-colors">
             <div className="flex flex-col sm:flex-row items-center sm:items-start gap-6 sm:gap-8">
               {/* Creator Photo - Strictly constrained 120x120 square with centered face */}
               <div className="relative shrink-0 flex flex-col items-center">
@@ -329,21 +340,21 @@ export default function Landing() {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div className="p-6 rounded-2xl hover:-translate-y-1 transition-all duration-300 border border-white/[0.07] bg-[#161616] hover:border-cyan-400/40 shadow-lg">
+            <div className="p-6 rounded-2xl hover:-translate-y-1 transition-all duration-300 border border-white/[0.08] bg-[#11131a] hover:border-cyan-400/40 shadow-lg">
               <Bot className="text-cyan-400 mb-3" size={32} />
               <h3 className="text-lg font-bold text-white mb-2">{agentsCount} Specialist AI Agents</h3>
               <p className="text-sm text-slate-400">
                 Automated routing of findings to specialized AI personas (Web Hunter, Database Attacker, Code Auditor) to filter out noise and false positives.
               </p>
             </div>
-            <div className="p-6 rounded-2xl hover:-translate-y-1 transition-all duration-300 border border-white/[0.07] bg-[#161616] hover:border-amber-400/40 shadow-lg">
-              <Radar className="text-amber-400 mb-3" size={32} />
+            <div className="p-6 rounded-2xl hover:-translate-y-1 transition-all duration-300 border border-white/[0.08] bg-[#11131a] hover:border-sky-400/40 shadow-lg">
+              <Radar className="text-sky-400 mb-3" size={32} />
               <h3 className="text-lg font-bold text-white mb-2">150+ Kali Security Tools</h3>
               <p className="text-sm text-slate-400">
                 The native engine dynamically chains nmap, nuclei, sqlmap, ffuf, nikto, subfinder, and more based on target analysis.
               </p>
             </div>
-            <div className="p-6 rounded-2xl hover:-translate-y-1 transition-all duration-300 border border-white/[0.07] bg-[#161616] hover:border-emerald-400/40 shadow-lg">
+            <div className="p-6 rounded-2xl hover:-translate-y-1 transition-all duration-300 border border-white/[0.08] bg-[#11131a] hover:border-emerald-400/40 shadow-lg">
               <ShieldCheck className="text-emerald-400 mb-3" size={32} />
               <h3 className="text-lg font-bold text-white mb-2">Blackbox &amp; Whitebox Unified</h3>
               <p className="text-sm text-slate-400">

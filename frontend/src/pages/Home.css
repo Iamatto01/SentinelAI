@@ -1,24 +1,27 @@
 @import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;500;700;800&family=Syne:wght@600;700;800&display=swap');
 
 .at-home {
-  --at-bg-a: #0a0a0a;
-  --at-bg-b: #111111;
+  --at-bg-a: #08090d;
+  --at-bg-b: #0f1118;
   --at-text: #f4f4f5;
-  --at-muted: #71717a;
-  --at-line: rgba(255, 255, 255, 0.07);
-  --at-cyan: #00f2fe;
+  --at-muted: #94a3b8;
+  --at-line: rgba(255, 255, 255, 0.08);
+  --at-cyan: #38bdf8;
   --at-amber: #f59e0b;
-  --at-card: #161616;
-  --at-glass: #161616;
-  --at-glass-border: rgba(255, 255, 255, 0.07);
-  --at-glass-highlight: rgba(255, 255, 255, 0.04);
+  --at-card: #11131a;
+  --at-glass: #11131a;
+  --at-glass-border: rgba(255, 255, 255, 0.08);
+  --at-glass-highlight: rgba(255, 255, 255, 0.05);
   min-height: 100vh;
   width: 100%;
   margin: 0;
   padding: 0;
   box-sizing: border-box;
   color: var(--at-text);
-  background: #0a0a0a;
+  background-color: #08090d;
+  background-image: 
+    radial-gradient(ellipse 90% 55% at 50% -15%, rgba(14, 165, 233, 0.12), transparent 70%),
+    radial-gradient(ellipse 60% 40% at 85% 15%, rgba(99, 102, 241, 0.06), transparent 60%);
   font-family: 'Bricolage Grotesque', 'Segoe UI', sans-serif;
   position: relative;
   overflow-x: hidden;
@@ -77,12 +80,12 @@
 }
 
 .at-home__gradient-text {
-  background: linear-gradient(90deg, #38bdf8, #818cf8, #f43f5e, #fb923c, #38bdf8);
-  background-size: 300% 300%;
+  background: linear-gradient(135deg, #38bdf8 0%, #60a5fa 35%, #818cf8 70%, #38bdf8 100%);
+  background-size: 200% 200%;
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
-  animation: atGradientShift 8s ease infinite;
+  animation: atGradientShift 6s ease infinite;
 }
 
 @keyframes atVisualFloat {
@@ -253,16 +256,16 @@
   background: var(--at-glass);
   border-radius: 1.1rem;
   padding: 1.15rem 1rem;
-  backdrop-filter: blur(40px) saturate(180%);
-  -webkit-backdrop-filter: blur(40px) saturate(180%);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2), inset 0 1px 0 var(--at-glass-highlight);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.35), inset 0 1px 0 var(--at-glass-highlight);
   transition: border-color 0.3s ease, transform 0.3s ease, box-shadow 0.3s ease;
 }
 
 .at-home__metrics article:hover {
-  border-color: rgba(255, 255, 255, 0.2);
+  border-color: rgba(56, 189, 248, 0.4);
   transform: translateY(-2px);
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.3), inset 0 1px 0 var(--at-glass-highlight);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45), 0 0 20px rgba(14, 165, 233, 0.12), inset 0 1px 0 var(--at-glass-highlight);
 }
 
 .at-home__metrics h3 {
@@ -707,62 +710,34 @@
   transform: translateX(0) skewX(0);
 }
 
-/* ── 5. Neon Border Draw Button (corners trace outward on hover) ── */
+/* ── 5. Neon Border Draw Button (cyber ghost button) ── */
 .btn-neon-draw {
   position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 0.5rem;
-  padding: 0.72rem 1.5rem;
-  border-radius: 14px;
-  font-size: 0.8rem;
-  font-weight: 800;
-  letter-spacing: 0.05em;
+  padding: 0.75rem 1.6rem;
+  border-radius: 9999px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
   color: #e2e8f0;
-  background: rgba(255, 255, 255, 0.03);
-  border: none;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.12);
   cursor: pointer;
   text-decoration: none;
-  transition: color 0.3s ease, background 0.3s ease, box-shadow 0.3s ease;
-}
-
-.btn-neon-draw::before,
-.btn-neon-draw::after {
-  content: '';
-  position: absolute;
-  width: 0;
-  height: 0;
-  border: 1px solid transparent;
-  transition: width 0.25s ease 0.15s, height 0.25s ease 0.3s;
-}
-
-.btn-neon-draw::before {
-  top: 0;
-  left: 0;
-  border-top-color: #00f2fe;
-  border-left-color: #00f2fe;
-  border-top-left-radius: 14px;
-}
-
-.btn-neon-draw::after {
-  bottom: 0;
-  right: 0;
-  border-bottom-color: #00f2fe;
-  border-right-color: #00f2fe;
-  border-bottom-right-radius: 14px;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  transition: all 0.25s ease;
 }
 
 .btn-neon-draw:hover {
   color: #ffffff;
-  background: rgba(0, 242, 254, 0.08);
-  box-shadow: 0 0 20px rgba(0, 242, 254, 0.2);
-}
-
-.btn-neon-draw:hover::before,
-.btn-neon-draw:hover::after {
-  width: 100%;
-  height: 100%;
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(56, 189, 248, 0.5);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4), 0 0 16px rgba(14, 165, 233, 0.15);
 }
 
 /* ── 6. Shine Sweep Button (diagonal light flash across) ── */
@@ -779,13 +754,13 @@
   font-size: 0.82rem;
   font-weight: 800;
   letter-spacing: 0.04em;
-  color: #04081e;
-  background: linear-gradient(135deg, #22d3ee, #0075ff);
-  border: none;
-  box-shadow: 0 6px 22px rgba(0, 180, 255, 0.4);
+  color: #ffffff;
+  background: linear-gradient(135deg, #0ea5e9, #2563eb);
+  border: 1px solid rgba(56, 189, 248, 0.45);
+  box-shadow: 0 4px 20px rgba(14, 165, 233, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.25);
   cursor: pointer;
   text-decoration: none;
-  transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.3s ease;
+  transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.3s ease, border-color 0.2s ease;
 }
 
 .btn-shine::after {
@@ -796,14 +771,16 @@
   width: 50%;
   height: 100%;
   z-index: 1;
-  background: linear-gradient(105deg, transparent, rgba(255, 255, 255, 0.55), transparent);
+  background: linear-gradient(105deg, transparent, rgba(255, 255, 255, 0.45), transparent);
   transform: skewX(-20deg);
   transition: left 0.55s ease;
 }
 
 .btn-shine:hover {
-  transform: translateY(-2px) scale(1.02);
-  box-shadow: 0 10px 30px rgba(0, 180, 255, 0.6);
+  transform: translateY(-2px);
+  background: linear-gradient(135deg, #38bdf8, #1d4ed8);
+  border-color: rgba(56, 189, 248, 0.8);
+  box-shadow: 0 8px 28px rgba(14, 165, 233, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.4);
 }
 
 .btn-shine:hover::after {

@@ -7,8 +7,8 @@ import {
 import PublicLayout from '../components/PublicLayout.jsx'
 
 const GLASS_CARD = {
-  background: '#161616',
-  border: '1px solid rgba(255, 255, 255, 0.06)',
+  background: '#11131a',
+  border: '1px solid rgba(255, 255, 255, 0.08)',
 }
 
 const PHILOSOPHY = [
@@ -26,7 +26,7 @@ const PHILOSOPHY = [
   },
   {
     icon: FileText,
-    color: 'text-amber-400',
+    color: 'text-sky-400',
     title: 'Layman-Friendly Executive Delivery',
     desc: 'Automated PDF reports translate technical CVSS findings into plain-English business risk summaries — understandable by management and engineering teams alike.',
   },
@@ -67,7 +67,7 @@ export default function About() {
             </p>
           </div>
           <div className="p-7 rounded-3xl space-y-3" style={GLASS_CARD}>
-            <Eye className="text-amber-400 mb-1" size={30} />
+            <Eye className="text-sky-400 mb-1" size={30} />
             <h2 className="text-lg font-bold text-white">Our Vision</h2>
             <p className="text-xs text-slate-400 leading-relaxed">
               A world where security audits run continuously — not annually — where every commit is
