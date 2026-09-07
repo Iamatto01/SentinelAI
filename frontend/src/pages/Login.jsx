@@ -2,10 +2,11 @@ import React, { useState, useEffect, useRef } from 'react'
 import { useNavigate, useLocation, Link } from 'react-router-dom'
 import {
   ArrowLeft, Loader2, KeyRound, User, Eye, EyeOff, Sparkles,
-  Mail, Check, AlertCircle, Lock
+  Mail, Check, AlertCircle, Lock, Sun, Moon
 } from 'lucide-react'
 import InspectorLogo from '../components/InspectorLogo.jsx'
 import { useAuth } from '../lib/AuthContext.jsx'
+import { useTheme } from '../lib/ThemeContext.jsx'
 import { api, setToken } from '../lib/api.js'
 
 function EyeCursorTracker() {
@@ -53,6 +54,7 @@ function EyeCursorTracker() {
 }
 
 export default function Login() {
+  const { isNight, toggleNightMode } = useTheme()
   const { login, setUser } = useAuth()
   const nav = useNavigate()
   const loc = useLocation()
@@ -120,17 +122,48 @@ export default function Login() {
   }
 
   return (
-    <div className="min-h-screen grid place-items-center grid-bg p-4 sm:p-6 relative overflow-hidden selection:bg-cyan-500 selection:text-slate-950">
+    <div className={`min-h-screen grid place-items-center grid-bg p-4 sm:p-6 relative overflow-hidden selection:bg-cyan-500 selection:text-slate-950 transition-colors ${
+      isNight ? 'bg-[#0c0f17]' : 'bg-[#f8fafc]'
+    }`}>
       {/* Top-Left Back Button */}
       <Link
         to="/"
-        className="fixed top-5 left-5 z-50 inline-flex items-center gap-2 px-4 py-2 rounded-full glass border border-white/15 hover:border-cyan-400/50 text-xs font-semibold text-slate-300 hover:text-cyan-300 transition-all duration-300 shadow-2xl group"
+        className={`fixed top-5 left-5 z-50 inline-flex items-center gap-2 px-4 py-2 rounded-full border text-xs font-semibold transition-all duration-300 shadow-xl group ${
+          isNight
+            ? 'bg-slate-900/80 border-white/15 text-slate-300 hover:text-cyan-300 hover:border-cyan-400/50'
+            : 'bg-white/95 border-slate-300 text-slate-700 hover:text-cyan-600 hover:border-cyan-500'
+        }`}
       >
-        <ArrowLeft size={15} className="group-hover:-translate-x-1 transition-transform duration-200 text-cyan-400" />
+        <ArrowLeft size={15} className="group-hover:-translate-x-1 transition-transform duration-200 text-cyan-500" />
         <span>Back to Landing Page</span>
       </Link>
 
-      {/* Vision Ambient Glowing Meshes */}
+      {/* Top-Right Theme Switcher Button */}
+      <button
+        type="button"
+        onClick={toggleNightMode}
+        className={`fixed top-5 right-5 z-50 inline-flex items-center gap-2 px-3.5 py-2 rounded-full border text-xs font-bold transition-all duration-300 shadow-xl cursor-pointer active:scale-95 ${
+          isNight
+            ? 'bg-slate-900/80 border-white/15 text-slate-200 hover:text-white hover:border-cyan-400/50'
+            : 'bg-white/95 border-slate-300 text-slate-800 hover:text-cyan-600 hover:border-cyan-500'
+        }`}
+        title={isNight ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+        aria-label="Toggle Theme"
+      >
+        {isNight ? (
+          <>
+            <Sun size={15} className="text-amber-400 animate-spin-slow" />
+            <span>Light Mode</span>
+          </>
+        ) : (
+          <>
+            <Moon size={15} className="text-cyan-600" />
+            <span>Dark Mode</span>
+          </>
+        )}
+      </button>
+
+      {/* Ambient Glowing Meshes */}
       <div className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-cyan-500/15 rounded-full blur-[120px] pointer-events-none" />
       <div className="absolute bottom-1/3 left-1/2 -translate-x-1/2 translate-y-1/2 w-[500px] h-[500px] bg-purple-600/15 rounded-full blur-[120px] pointer-events-none" />
 
@@ -144,21 +177,25 @@ export default function Login() {
               <InspectorLogo size={52} />
             </div>
           </div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">SentinelAI</h1>
-          <p className="text-[10px] uppercase tracking-[0.25em] text-cyan-400 font-extrabold mt-1 flex items-center gap-1.5 justify-center">
-            <Sparkles size={12} className="text-cyan-300 animate-pulse" /> Autonomous Security Suite
+          <h1 className={`text-2xl sm:text-3xl font-extrabold tracking-tight ${isNight ? 'text-white' : 'text-slate-900'}`}>
+            SentinelAI
+          </h1>
+          <p className="text-[10px] uppercase tracking-[0.25em] text-cyan-500 font-extrabold mt-1 flex items-center gap-1.5 justify-center">
+            <Sparkles size={12} className="text-cyan-400 animate-pulse" /> Autonomous Security Suite
           </p>
         </div>
 
         {/* Tab Switcher */}
-        <div className="flex rounded-2xl bg-slate-900/80 p-1 border border-white/10 mb-4">
+        <div className={`flex rounded-2xl p-1 border mb-4 transition-colors ${
+          isNight ? 'bg-[#0f1422] border-white/10' : 'bg-slate-200/90 border-slate-300'
+        }`}>
           <button
             type="button"
             onClick={() => { setMode('login'); setErr('') }}
             className={`flex-1 py-2 text-xs font-bold rounded-xl transition-all cursor-pointer ${
               mode === 'login'
                 ? 'bg-cyan-500 text-slate-950 shadow-lg shadow-cyan-500/20'
-                : 'text-slate-400 hover:text-white'
+                : isNight ? 'text-slate-400 hover:text-white' : 'text-slate-600 hover:text-slate-950'
             }`}
           >
             Sign In
@@ -169,30 +206,40 @@ export default function Login() {
             className={`flex-1 py-2 text-xs font-bold rounded-xl transition-all cursor-pointer ${
               mode === 'register'
                 ? 'bg-cyan-500 text-slate-950 shadow-lg shadow-cyan-500/20'
-                : 'text-slate-400 hover:text-white'
+                : isNight ? 'text-slate-400 hover:text-white' : 'text-slate-600 hover:text-slate-950'
             }`}
           >
             Create Account (Free Trial)
           </button>
         </div>
 
-        {/* Vision UI Form Card */}
+        {/* Adaptive Form Card */}
         <form
           onSubmit={submit}
           autoComplete="off"
-          className="glass rounded-3xl border border-white/20 p-6 sm:p-7 shadow-2xl space-y-4 relative bg-slate-950/75"
+          className={`rounded-3xl border p-6 sm:p-7 shadow-2xl space-y-4 relative transition-colors ${
+            isNight
+              ? 'bg-[#111726]/95 border-white/15 text-slate-100 shadow-2xl'
+              : 'bg-white border-slate-200 text-slate-900 shadow-xl shadow-slate-200/50'
+          }`}
         >
           {/* Hidden Dummy Inputs to prevent Chrome/Edge from autofilling saved credentials */}
           <input type="text" name="fakeusernameremembered" style={{ display: 'none' }} tabIndex={-1} autoComplete="off" />
           <input type="password" name="fakepasswordremembered" style={{ display: 'none' }} tabIndex={-1} autoComplete="off" />
 
           <div className="space-y-1">
-            <label className="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
-              <User size={13} className="text-cyan-400" /> Username
+            <label className={`text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 ${
+              isNight ? 'text-slate-300' : 'text-slate-700'
+            }`}>
+              <User size={13} className="text-cyan-500" /> Username
             </label>
             <input
               name="sentinel_auth_user"
-              className="input py-2.5 text-sm text-slate-100 placeholder-slate-500 focus:border-cyan-400 transition-all"
+              className={`input py-2.5 text-sm transition-all focus:border-cyan-400 ${
+                isNight
+                  ? 'text-slate-100 bg-[#182133] border-white/15 placeholder-slate-500'
+                  : 'text-slate-900 bg-slate-50 border-slate-300 placeholder-slate-400 font-medium'
+              }`}
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               placeholder="Username"
@@ -203,13 +250,19 @@ export default function Login() {
 
           {mode === 'register' && (
             <div className="space-y-1">
-              <label className="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
-                <Mail size={13} className="text-cyan-400" /> Email Address
+              <label className={`text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 ${
+                isNight ? 'text-slate-300' : 'text-slate-700'
+              }`}>
+                <Mail size={13} className="text-cyan-500" /> Email Address
               </label>
               <input
                 name="sentinel_auth_email"
                 type="email"
-                className="input py-2.5 text-sm text-slate-100 placeholder-slate-500 focus:border-cyan-400 transition-all"
+                className={`input py-2.5 text-sm transition-all focus:border-cyan-400 ${
+                  isNight
+                    ? 'text-slate-100 bg-[#182133] border-white/15 placeholder-slate-500'
+                    : 'text-slate-900 bg-slate-50 border-slate-300 placeholder-slate-400 font-medium'
+                }`}
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="you@company.com"
@@ -220,14 +273,20 @@ export default function Login() {
           )}
 
           <div className="space-y-1">
-            <label className="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
-              <KeyRound size={13} className="text-cyan-400" /> Password
+            <label className={`text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 ${
+              isNight ? 'text-slate-300' : 'text-slate-700'
+            }`}>
+              <KeyRound size={13} className="text-cyan-500" /> Password
             </label>
             <div className="relative flex items-center">
               <input
                 name="sentinel_auth_pass"
                 type={showPassword ? 'text' : 'password'}
-                className="input py-2.5 pr-11 text-sm text-slate-100 placeholder-slate-500 focus:border-cyan-400 transition-all"
+                className={`input py-2.5 pr-11 text-sm transition-all focus:border-cyan-400 ${
+                  isNight
+                    ? 'text-slate-100 bg-[#182133] border-white/15 placeholder-slate-500'
+                    : 'text-slate-900 bg-slate-50 border-slate-300 placeholder-slate-400 font-medium'
+                }`}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••"
@@ -237,20 +296,22 @@ export default function Login() {
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3 p-1 rounded-lg hover:bg-white/10 text-slate-400 hover:text-cyan-300 transition-colors focus:outline-none"
+                className={`absolute right-3 p-1 rounded-lg transition-colors focus:outline-none ${
+                  isNight ? 'hover:bg-white/10 text-slate-400 hover:text-cyan-300' : 'hover:bg-slate-200 text-slate-500 hover:text-cyan-600'
+                }`}
                 title={showPassword ? 'Hide password' : 'Reveal password'}
               >
-                {showPassword ? <Eye size={16} className="text-cyan-400" /> : <EyeOff size={16} className="text-slate-400" />}
+                {showPassword ? <Eye size={16} className="text-cyan-500" /> : <EyeOff size={16} className="text-slate-400" />}
               </button>
             </div>
           </div>
 
           {/* Registration Plan Selection (Free Trial active, Paid tiers locked for Beta) */}
           {mode === 'register' && (
-            <div className="space-y-2.5 pt-2 border-t border-white/10">
+            <div className={`space-y-2.5 pt-2 border-t ${isNight ? 'border-white/10' : 'border-slate-200'}`}>
               <div className="flex items-center justify-between text-xs">
-                <span className="font-bold text-slate-200">Select Tier:</span>
-                <span className="text-[10px] text-cyan-300 font-mono flex items-center gap-1">
+                <span className={`font-bold ${isNight ? 'text-slate-200' : 'text-slate-800'}`}>Select Tier:</span>
+                <span className="text-[10px] text-cyan-500 font-mono flex items-center gap-1 font-bold">
                   <Sparkles size={11} /> Community Beta Preview
                 </span>
               </div>
@@ -260,56 +321,76 @@ export default function Login() {
                 <button
                   type="button"
                   onClick={() => setPlanId('trial')}
-                  className="p-3 rounded-2xl border-2 border-cyan-400 bg-gradient-to-br from-cyan-500/25 to-slate-900 shadow-[0_0_20px_rgba(0,242,254,0.3)] ring-1 ring-cyan-400 text-left transition-all cursor-pointer relative overflow-hidden"
+                  className={`p-3 rounded-2xl border-2 border-cyan-400 ring-1 ring-cyan-400 text-left transition-all cursor-pointer relative overflow-hidden ${
+                    isNight
+                      ? 'bg-gradient-to-br from-cyan-500/25 to-slate-900 shadow-[0_0_20px_rgba(0,242,254,0.3)]'
+                      : 'bg-cyan-50/80 border-cyan-500 shadow-md'
+                  }`}
                 >
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-black text-white tracking-tight">Free Trial</span>
+                    <span className={`text-xs font-black tracking-tight ${isNight ? 'text-white' : 'text-slate-900'}`}>
+                      Free Trial
+                    </span>
                     <span className="text-[9px] px-1.5 py-0.5 rounded bg-cyan-500 text-slate-950 font-black">
                       ACTIVE
                     </span>
                   </div>
-                  <div className="text-lg font-black text-cyan-300 mt-1">
-                    $0 <span className="text-[10px] text-slate-400 font-normal">forever</span>
+                  <div className={`text-lg font-black mt-1 ${isNight ? 'text-cyan-300' : 'text-cyan-700'}`}>
+                    $0 <span className={`text-[10px] font-normal ${isNight ? 'text-slate-400' : 'text-slate-500'}`}>forever</span>
                   </div>
-                  <div className="text-[10px] text-cyan-200 font-semibold mt-0.5">3 Free AI Scans</div>
+                  <div className={`text-[10px] font-semibold mt-0.5 ${isNight ? 'text-cyan-200' : 'text-cyan-600'}`}>
+                    3 Free AI Scans
+                  </div>
                 </button>
 
                 {/* 2. Pro Card - DISABLED / LOCKED */}
                 <div
-                  className="p-3 rounded-2xl border border-white/5 bg-slate-900/30 opacity-40 cursor-not-allowed select-none text-left relative overflow-hidden"
+                  className={`p-3 rounded-2xl border cursor-not-allowed select-none text-left relative overflow-hidden ${
+                    isNight
+                      ? 'border-white/5 bg-slate-900/30 opacity-40'
+                      : 'border-slate-200 bg-slate-100/70 opacity-60'
+                  }`}
                   title="Subscription billing temporarily disabled during community preview"
                 >
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-slate-400">Pro Plan</span>
-                    <span className="flex items-center gap-1 text-[8px] font-mono uppercase font-bold px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 border border-white/10">
+                    <span className={`text-xs font-bold ${isNight ? 'text-slate-400' : 'text-slate-600'}`}>Pro Plan</span>
+                    <span className={`flex items-center gap-1 text-[8px] font-mono uppercase font-bold px-1.5 py-0.5 rounded border ${
+                      isNight ? 'bg-slate-800 text-slate-400 border-white/10' : 'bg-slate-200 text-slate-600 border-slate-300'
+                    }`}>
                       <Lock size={10} /> Locked
                     </span>
                   </div>
-                  <div className="text-lg font-black text-slate-500 mt-1">
-                    $19<span className="text-[10px] text-slate-600 font-normal">/mo</span>
+                  <div className={`text-lg font-black mt-1 ${isNight ? 'text-slate-500' : 'text-slate-600'}`}>
+                    $19<span className={`text-[10px] font-normal ${isNight ? 'text-slate-600' : 'text-slate-500'}`}>/mo</span>
                   </div>
-                  <div className="text-[10px] text-slate-500 mt-0.5">50 Scans • 5 Repos</div>
+                  <div className={`text-[10px] mt-0.5 ${isNight ? 'text-slate-500' : 'text-slate-600'}`}>50 Scans • 5 Repos</div>
                 </div>
 
                 {/* 3. Enterprise Card - DISABLED / LOCKED */}
                 <div
-                  className="p-3 rounded-2xl border border-white/5 bg-slate-900/30 opacity-40 cursor-not-allowed select-none text-left relative overflow-hidden"
+                  className={`p-3 rounded-2xl border cursor-not-allowed select-none text-left relative overflow-hidden ${
+                    isNight
+                      ? 'border-white/5 bg-slate-900/30 opacity-40'
+                      : 'border-slate-200 bg-slate-100/70 opacity-60'
+                  }`}
                   title="Subscription billing temporarily disabled during community preview"
                 >
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-slate-400">Enterprise</span>
-                    <span className="flex items-center gap-1 text-[8px] font-mono uppercase font-bold px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 border border-white/10">
+                    <span className={`text-xs font-bold ${isNight ? 'text-slate-400' : 'text-slate-600'}`}>Enterprise</span>
+                    <span className={`flex items-center gap-1 text-[8px] font-mono uppercase font-bold px-1.5 py-0.5 rounded border ${
+                      isNight ? 'bg-slate-800 text-slate-400 border-white/10' : 'bg-slate-200 text-slate-600 border-slate-300'
+                    }`}>
                       <Lock size={10} /> Locked
                     </span>
                   </div>
-                  <div className="text-lg font-black text-slate-500 mt-1">
-                    $79<span className="text-[10px] text-slate-600 font-normal">/mo</span>
+                  <div className={`text-lg font-black mt-1 ${isNight ? 'text-slate-500' : 'text-slate-600'}`}>
+                    $79<span className={`text-[10px] font-normal ${isNight ? 'text-slate-600' : 'text-slate-500'}`}>/mo</span>
                   </div>
-                  <div className="text-[10px] text-slate-500 mt-0.5">Unlimited • 1-on-1</div>
+                  <div className={`text-[10px] mt-0.5 ${isNight ? 'text-slate-500' : 'text-slate-600'}`}>Unlimited • 1-on-1</div>
                 </div>
               </div>
 
-              <div className="text-center pt-1 text-[11px] text-cyan-300/90 font-medium">
+              <div className={`text-center pt-1 text-[11px] font-medium ${isNight ? 'text-cyan-300/90' : 'text-cyan-700'}`}>
                 ✨ Free Trial: 3 Full AI Security Scans • Instant Access • No Card Required
               </div>
             </div>

@@ -155,13 +155,24 @@ export default function Shell() {
         </div>
 
         <div className="flex items-center gap-2">
+          {/* Prominent Theme Toggle Button (Mobile) */}
           <button
             onClick={toggleNightMode}
-            className="p-1.5 rounded-xl bg-white/5 border border-white/10 text-slate-200 hover:text-white cursor-pointer"
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/15 text-xs font-bold text-slate-200 hover:text-white cursor-pointer transition-all active:scale-95"
             title={isNight ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
             aria-label="Toggle Theme"
           >
-            {isNight ? <Sun size={15} className="text-amber-400" /> : <Moon size={15} className="text-indigo-400" />}
+            {isNight ? (
+              <>
+                <Sun size={14} className="text-amber-400" />
+                <span className="text-[11px] font-extrabold hidden sm:inline">Light</span>
+              </>
+            ) : (
+              <>
+                <Moon size={14} className="text-cyan-400" />
+                <span className="text-[11px] font-extrabold hidden sm:inline">Dark</span>
+              </>
+            )}
           </button>
           <button
             onClick={handleScanButtonClick}
@@ -365,17 +376,23 @@ export default function Shell() {
               </Link>
             )}
 
-            {/* Dark / Light Mode Toggle */}
+            {/* Prominent Dark / Light Mode Pill Toggle */}
             <button
               onClick={toggleNightMode}
-              className="p-1.5 rounded-xl border border-white/10 hover:border-white/20 bg-white/5 text-slate-300 hover:text-white transition-all cursor-pointer flex items-center justify-center"
-              title={isNight ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+              className="flex items-center gap-2 px-3.5 py-1.5 rounded-xl border border-white/15 hover:border-cyan-400/50 bg-slate-900/80 hover:bg-slate-800 text-slate-200 hover:text-white transition-all cursor-pointer shadow-sm group active:scale-95"
+              title={isNight ? 'Click to switch to Light Mode' : 'Click to switch to Dark Mode'}
               aria-label="Toggle Theme"
             >
               {isNight ? (
-                <Sun size={15} className="text-amber-400 hover:rotate-90 transition-transform duration-300" />
+                <>
+                  <Sun size={15} className="text-amber-400 group-hover:rotate-90 transition-transform duration-300" />
+                  <span className="text-xs font-bold text-slate-200 group-hover:text-white">Light Mode</span>
+                </>
               ) : (
-                <Moon size={15} className="text-indigo-400 hover:-rotate-12 transition-transform duration-300" />
+                <>
+                  <Moon size={15} className="text-cyan-400 group-hover:-rotate-12 transition-transform duration-300" />
+                  <span className="text-xs font-bold text-slate-800 group-hover:text-slate-900">Dark Mode</span>
+                </>
               )}
             </button>
           </div>

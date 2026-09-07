@@ -1,9 +1,10 @@
 import React from 'react'
 import { Link } from 'react-router-dom'
-import { Radar, Bug, FolderKanban, Activity, ShieldAlert, Cpu, Sparkles, ArrowUpRight, Zap, CheckCircle2, GitBranch, CreditCard } from 'lucide-react'
+import { Radar, Bug, FolderKanban, Activity, ShieldAlert, Cpu, Sparkles, ArrowUpRight, Zap, CheckCircle2, GitBranch, CreditCard, Sun, Moon } from 'lucide-react'
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts'
 import { api } from '../lib/api.js'
 import { useQuery } from '../lib/cache.js'
+import { useTheme } from '../lib/ThemeContext.jsx'
 import StatCard from '../components/StatCard.jsx'
 import SeverityBadge from '../components/SeverityBadge.jsx'
 import { DashboardSkeleton } from '../components/SkeletonLoader.jsx'
@@ -11,6 +12,7 @@ import { DashboardSkeleton } from '../components/SkeletonLoader.jsx'
 const SEV_COLORS = { critical: '#f43f5e', high: '#f59e0b', medium: '#a855f7', low: '#00f2fe', info: '#10b981' }
 
 export default function Dashboard() {
+  const { isNight, toggleNightMode } = useTheme()
   const { data, loading, error } = useQuery('dashboard', () => api.dashboard(), [], 30_000)
 
   if (error) return <div className="card p-6 text-rose-400 border border-rose-500/30 bg-rose-500/10">{error.message}</div>
@@ -67,6 +69,26 @@ export default function Dashboard() {
               <Activity size={13} className="mr-1.5 text-slate-500" /> Engines Ready
             </span>
           )}
+          {/* Quick Theme Toggle Button right on Dashboard */}
+          <button
+            onClick={toggleNightMode}
+            className="flex items-center gap-2 px-3 py-2 rounded-xl border border-white/15 hover:border-cyan-400/50 bg-slate-900/80 hover:bg-slate-800 text-slate-200 hover:text-white transition-all cursor-pointer shadow-sm text-xs font-bold active:scale-95"
+            title={isNight ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+            aria-label="Toggle Theme"
+          >
+            {isNight ? (
+              <>
+                <Sun size={14} className="text-amber-400 animate-spin-slow" />
+                <span className="hidden sm:inline">Light Mode</span>
+              </>
+            ) : (
+              <>
+                <Moon size={14} className="text-cyan-400" />
+                <span className="hidden sm:inline">Dark Mode</span>
+              </>
+            )}
+          </button>
+
           <Link to="/app/findings" className="btn-primary text-xs py-2 px-4 shadow-glow flex items-center gap-1.5">
             <Bug size={14} /> Vulnerability Findings
           </Link>

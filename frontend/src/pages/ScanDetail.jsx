@@ -89,7 +89,7 @@ export default function ScanDetail() {
 
   const running = scan.status === 'running'
   const paused = scan.status === 'paused'
-  const logColor = { info: 'text-slate-400', success: 'text-emerald-400', warn: 'text-sev-medium', error: 'text-sev-critical' }
+  const logColor = { info: 'text-slate-100 font-medium', success: 'text-emerald-400 font-medium', warn: 'text-amber-300 font-medium', error: 'text-rose-400 font-medium' }
 
   async function playAudioBriefing() {
     if (audioState.audio) {
@@ -204,38 +204,38 @@ export default function ScanDetail() {
 
           {/* Summary stats */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
-            <div className="rounded-lg bg-ink-800/60 border border-ink-700/60 p-3 text-center">
+            <div className="rounded-xl bg-[#131929]/90 border border-white/10 p-3 text-center shadow-sm">
               <p className="text-2xl font-bold text-slate-100">{whiteboxMeta.totalFiles}</p>
-              <p className="text-[11px] text-slate-500 mt-0.5">Files Checked</p>
+              <p className="text-[11px] text-slate-400 mt-0.5 font-medium">Files Checked</p>
             </div>
-            <div className="rounded-lg bg-ink-800/60 border border-ink-700/60 p-3 text-center">
-              <p className="text-2xl font-bold text-accent">{whiteboxMeta.passes?.length || 0}</p>
-              <p className="text-[11px] text-slate-500 mt-0.5">Passes</p>
+            <div className="rounded-xl bg-[#131929]/90 border border-white/10 p-3 text-center shadow-sm">
+              <p className="text-2xl font-bold text-cyan-400">{whiteboxMeta.passes?.length || 0}</p>
+              <p className="text-[11px] text-slate-400 mt-0.5 font-medium">Passes</p>
             </div>
-            <div className="rounded-lg bg-ink-800/60 border border-ink-700/60 p-3 text-center">
+            <div className="rounded-xl bg-[#131929]/90 border border-white/10 p-3 text-center shadow-sm">
               <p className="text-2xl font-bold text-emerald-400">{whiteboxMeta.passes?.filter(p => p.status === 'completed').length || 0}</p>
-              <p className="text-[11px] text-slate-500 mt-0.5">Completed</p>
+              <p className="text-[11px] text-slate-400 mt-0.5 font-medium">Completed</p>
             </div>
-            <div className="rounded-lg bg-ink-800/60 border border-ink-700/60 p-3 text-center">
+            <div className="rounded-xl bg-[#131929]/90 border border-white/10 p-3 text-center shadow-sm">
               <p className="text-2xl font-bold text-sev-critical">{whiteboxMeta.passes?.filter(p => p.status === 'failed').length || 0}</p>
-              <p className="text-[11px] text-slate-500 mt-0.5">Failed</p>
+              <p className="text-[11px] text-slate-400 mt-0.5 font-medium">Failed</p>
             </div>
           </div>
 
           {/* Pass details */}
           <div className="space-y-2 mb-4">
-            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide">Scan Passes</p>
+            <p className="text-xs font-semibold text-slate-300 uppercase tracking-wide">Scan Passes</p>
             {whiteboxMeta.passes?.map((p, i) => (
-              <div key={i} className="flex items-center gap-3 rounded-lg bg-ink-800/40 border border-ink-700/40 px-4 py-2.5">
+              <div key={i} className="flex items-center gap-3 rounded-xl bg-[#182136] border border-white/10 px-4 py-2.5 shadow-sm">
                 {p.status === 'completed'
                   ? <CheckCircle2 size={16} className="text-emerald-400 shrink-0" />
                   : <XCircle size={16} className="text-sev-critical shrink-0" />}
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-slate-200">{p.tool}</p>
-                  <p className="text-[11px] text-slate-500">{p.type} • {p.findings} findings</p>
+                  <p className="text-sm font-semibold text-slate-100">{p.tool}</p>
+                  <p className="text-[11px] text-slate-400 font-medium">{p.type} • {p.findings} findings</p>
                   {p.error && <p className="text-[11px] text-sev-critical mt-0.5 truncate">{p.error}</p>}
                 </div>
-                <div className="flex items-center gap-1.5 text-xs text-slate-500 shrink-0">
+                <div className="flex items-center gap-1.5 text-xs text-slate-400 shrink-0 font-mono">
                   <Clock size={12} />
                   <span>{(p.durationMs / 1000).toFixed(1)}s</span>
                 </div>
@@ -283,11 +283,11 @@ export default function ScanDetail() {
             {running && <span className="chip bg-accent/15 text-accent border border-accent/40 ml-auto">streaming</span>}
           </h3>
           <div ref={termRef} className="terminal h-96">
-            {logs.length === 0 && <p className="text-slate-600">Waiting for output…</p>}
+            {logs.length === 0 && <p className="text-slate-400">Waiting for output…</p>}
             {logs.map((l, i) => (
               <div key={i} className="flex gap-2">
-                <span className="text-slate-600 shrink-0">{new Date(l.ts).toLocaleTimeString()}</span>
-                <span className={logColor[l.level] || 'text-slate-400'}>{l.message}</span>
+                <span className="text-cyan-400/70 font-mono shrink-0">{new Date(l.ts).toLocaleTimeString()}</span>
+                <span className={logColor[l.level] || 'text-slate-200'}>{l.message}</span>
               </div>
             ))}
           </div>
@@ -298,7 +298,7 @@ export default function ScanDetail() {
             <Bug size={16} className="text-sev-high" /> Findings ({findings.length})
           </h3>
           <div className="space-y-3 max-h-[28rem] overflow-auto pr-1">
-            {findings.length === 0 && <p className="text-sm text-slate-600 py-10 text-center">No findings yet.</p>}
+            {findings.length === 0 && <p className="text-sm text-slate-400 py-10 text-center">No findings yet.</p>}
             {(() => {
               // Group findings by OWASP category (normalized to A01-A10 or OTH)
               const OWASP_ORDER = ['A01', 'A02', 'A03', 'A04', 'A05', 'A06', 'A07', 'A08', 'A09', 'A10', 'OTH']
@@ -328,27 +328,27 @@ export default function ScanDetail() {
                 const [expandedKey, setExpandedKey] = [owaspExpandedKey, setOwaspExpandedKey]
                 const isExpanded = expandedKey === code
                 return (
-                  <div key={code} className="rounded-lg border border-ink-700/60 bg-ink-800/40 overflow-hidden">
+                  <div key={code} className="rounded-xl border border-white/10 bg-[#131929]/90 overflow-hidden shadow-sm">
                     <div
                       onClick={() => setOwaspExpandedKey(isExpanded ? null : code)}
-                      className="flex items-center gap-2 p-2.5 cursor-pointer hover:bg-ink-700/40 transition-colors"
+                      className="flex items-center gap-2 p-2.5 cursor-pointer hover:bg-white/[0.04] transition-colors"
                     >
-                      {isExpanded ? <ChevronDown size={14} className="text-slate-400" /> : <ChevronRight size={14} className="text-slate-400" />}
-                      <span className="text-xs font-bold text-accent/90">{code}</span>
-                      <span className="text-xs text-slate-300">{OWASP_NAMES[code]}</span>
-                      <span className="ml-auto text-[10px] px-1.5 py-0.5 rounded-full bg-slate-700/60 text-slate-300 font-semibold">
+                      {isExpanded ? <ChevronDown size={14} className="text-cyan-400" /> : <ChevronRight size={14} className="text-slate-400" />}
+                      <span className="text-xs font-bold text-cyan-400">{code}</span>
+                      <span className="text-xs font-semibold text-slate-100">{OWASP_NAMES[code]}</span>
+                      <span className="ml-auto text-[10px] px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 font-bold border border-cyan-500/30">
                         {items.length}
                       </span>
                     </div>
                     {isExpanded && (
                       <div className="space-y-2 p-2 pt-0">
                         {items.map((f, i) => (
-                          <div key={f.id || i} onClick={() => setSelected(f)} className="rounded-lg bg-ink-800/60 border border-ink-700/60 p-3.5 cursor-pointer hover:border-ink-500 transition-colors">
+                          <div key={f.id || i} onClick={() => setSelected(f)} className="rounded-lg bg-[#182136] border border-white/10 p-3.5 cursor-pointer hover:border-cyan-400/50 transition-colors shadow-sm">
                             <div className="flex items-start justify-between gap-3">
-                              <p className="text-sm font-medium text-slate-200 leading-snug">{f.title}</p>
+                              <p className="text-sm font-semibold text-slate-100 leading-snug">{f.title}</p>
                               <SeverityBadge severity={f.severity} />
                             </div>
-                            {f.agent_verdict && <p className="mt-1 text-[11px] text-slate-500 italic line-clamp-2">{f.agent_verdict}</p>}
+                            {f.agent_verdict && <p className="mt-1 text-[11px] text-slate-300 italic line-clamp-2">{f.agent_verdict}</p>}
                           </div>
                         ))}
                       </div>

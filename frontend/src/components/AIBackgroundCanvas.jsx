@@ -116,8 +116,8 @@ export default function AIBackgroundCanvas() {
         className="absolute inset-0 transition-opacity duration-500"
         style={{
           background: isNight
-            ? 'linear-gradient(to bottom, rgba(10,10,10,0.82), rgba(10,10,10,0.90) 50%, rgba(10,10,10,0.96))'
-            : 'linear-gradient(to bottom, rgba(238,242,247,0.85), rgba(238,242,247,0.92) 50%, rgba(238,242,247,0.97))',
+            ? 'linear-gradient(to bottom, rgba(12,15,23,0.80), rgba(12,15,23,0.90) 50%, rgba(12,15,23,0.96))'
+            : 'linear-gradient(to bottom, rgba(241,245,249,0.85), rgba(241,245,249,0.92) 50%, rgba(241,245,249,0.97))',
           transform: 'translateZ(0)'
         }}
       />

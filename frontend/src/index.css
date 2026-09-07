@@ -5,17 +5,18 @@
 /* ── Design Tokens ─────────────────────────────────────────────── */
 :root {
   color-scheme: dark;
-  --bg-base:     #0a0a0a;
-  --bg-surface:  #111111;
-  --bg-card:     #161616;
-  --bg-elevated: #1c1c1c;
-  --border:      rgba(255,255,255,0.07);
-  --border-md:   rgba(255,255,255,0.10);
-  --text-primary: #f4f4f5;
-  --text-muted:   #71717a;
-  --text-faint:   #3f3f46;
-  --accent:       #3b82f6;
-  --accent-hover: #2563eb;
+  --bg-base:        #0c0f17;
+  --bg-surface:     #131722;
+  --bg-card:        #181f30;
+  --bg-elevated:    #222a3d;
+  --border:         rgba(255,255,255,0.11);
+  --border-md:      rgba(255,255,255,0.18);
+  --text-primary:   #f8fafc;
+  --text-secondary: #cbd5e1;
+  --text-muted:     #94a3b8;
+  --text-faint:     #64748b;
+  --accent:         #0284c7;
+  --accent-hover:   #0369a1;
 }
 
 html {
@@ -129,10 +130,10 @@ body {
 
   /* ── Terminal ─────────────────────────────────────────────────────── */
   .terminal {
-    @apply font-mono text-[12.5px] leading-relaxed rounded-lg p-4 overflow-auto border;
-    border-color: rgba(255,255,255,0.08);
-    background: #080808;
-    box-shadow: inset 0 0 20px rgba(0,0,0,0.5);
+    @apply font-mono text-[12.5px] leading-relaxed rounded-lg p-4 overflow-auto border text-slate-100;
+    border-color: rgba(255,255,255,0.13);
+    background: #0b101c;
+    box-shadow: inset 0 0 20px rgba(0,0,0,0.6);
   }
 
   /* ── Table ──────────────────────────────────────────────────────── */
@@ -218,33 +219,188 @@ body {
 .motion-pulse   { animation: pulse-glow 2.5s ease-in-out infinite; }
 
 /* ── Day / Night body support (kept for toggle compatibility) ───── */
-body.night { color-scheme: dark; }
+/* ── Day / Night body support (Unified Contrast & Theme System) ── */
+body.night {
+  color-scheme: dark;
+  --bg-base:        #0c0f17;
+  --bg-surface:     #131722;
+  --bg-card:        #181f30;
+  --bg-elevated:    #222a3d;
+  --border:         rgba(255,255,255,0.11);
+  --border-md:      rgba(255,255,255,0.18);
+  --text-primary:   #f8fafc;
+  --text-secondary: #cbd5e1;
+  --text-muted:     #94a3b8;
+  --text-faint:     #64748b;
+  --accent:         #0284c7;
+  --accent-hover:   #0369a1;
+  background: var(--bg-base);
+  color: var(--text-primary);
+}
+
+/* Dark mode contrast boosters: ensure faint text is never black-on-black */
+body.night .text-slate-500,
+body.night .text-zinc-500 {
+  color: #94a3b8;
+}
+body.night .text-slate-600,
+body.night .text-zinc-600 {
+  color: #64748b;
+}
 
 body.day-mode {
   color-scheme: light;
+  --bg-base:        #f8fafc;
+  --bg-surface:     #ffffff;
+  --bg-card:        #ffffff;
+  --bg-elevated:    #f1f5f9;
+  --border:         #e2e8f0;
+  --border-md:      #cbd5e1;
+  --text-primary:   #0f172a;
+  --text-secondary: #334155;
+  --text-muted:     #64748b;
+  --text-faint:     #94a3b8;
+  --accent:         #0284c7;
+  --accent-hover:   #0369a1;
   color: #0f172a;
-  background: #f1f5f9;
+  background: #f8fafc;
 }
+
+/* Light Mode surfaces */
 body.day-mode .glass,
 body.day-mode .glass-soft,
 body.day-mode .glass-deep,
 body.day-mode .card {
-  background: #ffffff;
-  border-color: rgba(15, 23, 42, 0.08);
+  background: #ffffff !important;
+  border-color: #e2e8f0 !important;
+  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.05);
 }
+
+body.day-mode aside {
+  background: #ffffff !important;
+  border-color: #e2e8f0 !important;
+}
+
+body.day-mode header {
+  background: #ffffff !important;
+  border-color: #e2e8f0 !important;
+}
+
+body.day-mode .input {
+  background: #ffffff !important;
+  border-color: #cbd5e1 !important;
+  color: #0f172a !important;
+}
+
+body.day-mode .input::placeholder {
+  color: #94a3b8 !important;
+}
+
+body.day-mode select.input option {
+  background: #ffffff;
+  color: #0f172a;
+}
+
+body.day-mode .label {
+  color: #475569 !important;
+}
+
+body.day-mode .chip {
+  background: #f1f5f9;
+  border-color: #e2e8f0;
+  color: #334155;
+}
+
+/* Light mode table */
+body.day-mode .glass-table thead th {
+  background: #f8fafc !important;
+  border-color: #e2e8f0 !important;
+  color: #64748b !important;
+}
+body.day-mode .glass-table tbody tr {
+  border-color: #f1f5f9 !important;
+}
+body.day-mode .glass-table tbody tr:hover {
+  background: #f8fafc !important;
+}
+
+/* Adapt hardcoded dark container classes gracefully in Day Mode */
+body.day-mode [class*="bg-slate-950"]:not(.terminal):not([class*="btn-"]):not([class*="icon-box-"]):not([class*="chip"]):not([class*="badge"]),
+body.day-mode [class*="bg-slate-900"]:not(.terminal):not([class*="btn-"]):not([class*="icon-box-"]):not([class*="chip"]):not([class*="badge"]),
+body.day-mode [class*="bg-ink-800"]:not(.terminal):not([class*="btn-"]):not([class*="icon-box-"]):not([class*="chip"]):not([class*="badge"]),
+body.day-mode [class*="bg-ink-900"]:not(.terminal):not([class*="btn-"]):not([class*="icon-box-"]):not([class*="chip"]):not([class*="badge"]),
+body.day-mode [class*="bg-[#111111]"]:not(.terminal):not([class*="btn-"]):not([class*="icon-box-"]):not([class*="chip"]):not([class*="badge"]),
+body.day-mode [class*="bg-[#161616]"]:not(.terminal):not([class*="btn-"]):not([class*="icon-box-"]):not([class*="chip"]):not([class*="badge"]),
+body.day-mode [class*="bg-[#1c1c1c]"]:not(.terminal):not([class*="btn-"]):not([class*="icon-box-"]):not([class*="chip"]):not([class*="badge"]) {
+  background-color: #ffffff;
+  border-color: #e2e8f0;
+}
+
+/* Light mode general text contrast */
 body.day-mode .text-white,
 body.day-mode .text-slate-100,
-body.day-mode .text-zinc-100 { color: #0f172a !important; }
+body.day-mode .text-zinc-100 {
+  color: #0f172a !important;
+}
+body.day-mode .text-slate-200,
+body.day-mode .text-zinc-200,
 body.day-mode .text-slate-300,
+body.day-mode .text-zinc-300 {
+  color: #334155 !important;
+}
 body.day-mode .text-slate-400,
-body.day-mode .text-zinc-400 { color: #475569 !important; }
+body.day-mode .text-zinc-400 {
+  color: #475569 !important;
+}
 body.day-mode .text-slate-500,
-body.day-mode .text-zinc-500 { color: #64748b !important; }
+body.day-mode .text-zinc-500 {
+  color: #64748b !important;
+}
 body.day-mode .text-cyan-300,
-body.day-mode .text-cyan-400 { color: #0891b2 !important; }
-body.day-mode pre,
+body.day-mode .text-cyan-400 {
+  color: #0284c7 !important;
+}
+
+/* Day Mode: Protect primary buttons so text stays white */
+body.day-mode .btn-primary,
+body.day-mode .btn-primary * {
+  color: #ffffff !important;
+}
+
+/* Day Mode: High-contrast Dark Console Terminal */
+body.day-mode .terminal {
+  background: #0f172a !important;
+  border-color: #334155 !important;
+}
 body.day-mode .terminal,
-body.day-mode .terminal * { background: #1e293b !important; color: #cbd5e1 !important; }
+body.day-mode .terminal * {
+  color: #cbd5e1 !important;
+}
+body.day-mode .terminal .text-emerald-400 {
+  color: #34d399 !important;
+}
+body.day-mode .terminal .text-amber-400,
+body.day-mode .terminal .text-sev-medium {
+  color: #fbbf24 !important;
+}
+body.day-mode .terminal .text-rose-400,
+body.day-mode .terminal .text-sev-critical {
+  color: #f87171 !important;
+}
+body.day-mode .terminal .text-cyan-400,
+body.day-mode .terminal .text-cyan-300 {
+  color: #38bdf8 !important;
+}
+body.day-mode .terminal .text-slate-400,
+body.day-mode .terminal .text-slate-500,
+body.day-mode .terminal .text-slate-600 {
+  color: #94a3b8 !important;
+}
+
+/* Day mode grid & scrollbar */
+body.day-mode .grid-bg {
+  background-image: radial-gradient(rgba(15, 23, 42, 0.08) 1px, transparent 0) !important;
+}
 body.day-mode * { scrollbar-color: rgba(15, 23, 42, 0.18) transparent; }
 body.day-mode *::-webkit-scrollbar-thumb { background: rgba(15, 23, 42, 0.18); }
 body.day-mode *::-webkit-scrollbar-thumb:hover { background: rgba(15, 23, 42, 0.30); }
