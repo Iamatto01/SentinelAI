@@ -7,6 +7,7 @@ import {
 } from 'lucide-react'
 import { api, apiFetch } from '../lib/api.js'
 import { useAuth } from '../lib/AuthContext.jsx'
+import { useTheme } from '../lib/ThemeContext.jsx'
 import { getSocket } from '../lib/socket.js'
 import { ScanListSkeleton } from '../components/SkeletonLoader.jsx'
 import Tooltip from '../components/Tooltip.jsx'
@@ -39,6 +40,7 @@ const STATUS_STYLE = {
 
 export default function Scans() {
   const { user } = useAuth()
+  const { isNight } = useTheme()
   const isClient = user?.role === 'client'
   const [scans, setScans] = useState(null)
   const [projects, setProjects] = useState([])
@@ -314,29 +316,29 @@ export default function Scans() {
                   className="cursor-pointer transition-colors duration-200"
                 >
                   <td className="px-5 py-3.5 max-w-[220px] truncate">
-                    <Link to={`/app/scans/${s.id}`} className="text-white hover:text-cyan-300 font-bold transition-colors">
+                    <Link to={`/app/scans/${s.id}`} className={`font-bold transition-colors ${isNight ? 'text-white hover:text-cyan-300' : 'text-slate-900 hover:text-cyan-600'}`}>
                       {s.target}
                     </Link>
                   </td>
-                  <td className="px-5 py-3.5 text-slate-300 font-medium capitalize">{s.mode}</td>
+                  <td className={`px-5 py-3.5 font-medium capitalize ${isNight ? 'text-slate-300' : 'text-slate-700'}`}>{s.mode}</td>
                   <td className="px-5 py-3.5">
                     <span className={`chip text-[10px] border ${STATUS_STYLE[s.status] || STATUS_STYLE.stopped}`}>{s.status}</span>
                     {(s.status === 'running' || s.status === 'paused') && (
                       <div className="mt-1.5 flex items-center gap-2">
-                        <div className="h-1.5 w-24 rounded-full bg-slate-900 overflow-hidden border border-white/10">
+                        <div className={`h-1.5 w-24 rounded-full overflow-hidden border ${isNight ? 'bg-slate-900 border-white/10' : 'bg-slate-200 border-slate-300'}`}>
                           <div
                             className="h-full bg-gradient-to-r from-cyan-400 to-blue-500 transition-all duration-500 shadow-[0_0_8px_rgba(0,242,254,0.6)]"
                             style={{ width: `${Math.round(s.progress || 0)}%` }}
                           />
                         </div>
-                        <span className="text-[10px] font-bold text-cyan-300">{Math.round(s.progress || 0)}%</span>
+                        <span className={`text-[10px] font-bold ${isNight ? 'text-cyan-300' : 'text-cyan-600'}`}>{Math.round(s.progress || 0)}%</span>
                       </div>
                     )}
                   </td>
-                  <td className="px-5 py-3.5 text-slate-200 font-bold">{s.findings_count ?? '—'}</td>
-                  <td className="px-5 py-3.5 font-extrabold text-white">{(s.risk_score ?? 0).toFixed(1)}</td>
-                  <td className="px-5 py-3.5 text-slate-400 text-xs font-mono">{fmtTokens(s.token_usage)}</td>
-                  <td className="px-5 py-3.5 text-slate-400 text-xs">{new Date(s.created_at).toLocaleString()}</td>
+                  <td className={`px-5 py-3.5 font-bold ${isNight ? 'text-slate-200' : 'text-slate-800'}`}>{s.findings_count ?? '—'}</td>
+                  <td className={`px-5 py-3.5 font-extrabold ${isNight ? 'text-white' : 'text-slate-900'}`}>{(s.risk_score ?? 0).toFixed(1)}</td>
+                  <td className={`px-5 py-3.5 text-xs font-mono ${isNight ? 'text-slate-400' : 'text-slate-600'}`}>{fmtTokens(s.token_usage)}</td>
+                  <td className={`px-5 py-3.5 text-xs ${isNight ? 'text-slate-400' : 'text-slate-600'}`}>{new Date(s.created_at).toLocaleString()}</td>
 
                   {/* Action Menu */}
                   <td className="px-5 py-3.5 text-right relative">
@@ -345,7 +347,7 @@ export default function Scans() {
                         e.stopPropagation()
                         setActiveMenu(activeMenu === s.id ? null : s.id)
                       }}
-                      className="p-1.5 rounded-xl text-slate-400 hover:text-cyan-300 hover:bg-white/10 transition-colors"
+                      className={`p-1.5 rounded-xl transition-colors ${isNight ? 'text-slate-400 hover:text-cyan-300 hover:bg-white/10' : 'text-slate-600 hover:text-cyan-700 hover:bg-slate-100'}`}
                       title="Actions"
                     >
                       {actionBusy === s.id ? <Loader2 size={16} className="animate-spin text-cyan-400" /> : <MoreVertical size={16} />}
@@ -354,36 +356,36 @@ export default function Scans() {
                     {activeMenu === s.id && (
                       <div
                         ref={menuRef}
-                        className={`absolute right-5 ${isBottomRow ? 'bottom-10' : 'top-12'} z-50 w-48 rounded-xl glass-deep border border-white/20 shadow-2xl p-1.5 space-y-1 text-left backdrop-blur-2xl`}
+                        className={`absolute right-5 ${isBottomRow ? 'bottom-10' : 'top-12'} z-50 w-48 rounded-xl ${isNight ? 'bg-[#141b2b] border border-white/20' : 'bg-white border border-slate-200 shadow-2xl'} p-1.5 space-y-1 text-left backdrop-blur-2xl`}
                       >
                         {(s.status === 'interrupted' || s.status === 'paused') && (
                           <button
                             onClick={(e) => handleResume(s.id, e)}
-                            className="w-full flex items-center gap-2 px-3 py-2 text-xs text-amber-300 hover:bg-amber-500/10 rounded-lg transition-colors font-semibold"
+                            className="w-full flex items-center gap-2 px-3 py-2 text-xs text-amber-500 hover:bg-amber-500/10 rounded-lg transition-colors font-semibold"
                           >
-                            <Play size={14} className="text-amber-400" /> Resume Scan
+                            <Play size={14} className="text-amber-500" /> Resume Scan
                           </button>
                         )}
                         {!isClient && (
                           <button
                             onClick={(e) => handleReRun(s.id, e)}
-                            className="w-full flex items-center gap-2 px-3 py-2 text-xs text-slate-200 hover:bg-white/10 rounded-lg transition-colors font-semibold"
+                            className={`w-full flex items-center gap-2 px-3 py-2 text-xs rounded-lg transition-colors font-semibold ${isNight ? 'text-slate-200 hover:bg-white/10' : 'text-slate-700 hover:bg-slate-100'}`}
                           >
                             <Play size={14} className="text-cyan-400" /> Run Again
                           </button>
                         )}
                         <button
                           onClick={(e) => handleDownloadReport(s.id, e)}
-                          className="w-full flex items-center gap-2 px-3 py-2 text-xs text-slate-200 hover:bg-white/10 rounded-lg transition-colors font-semibold"
+                          className={`w-full flex items-center gap-2 px-3 py-2 text-xs rounded-lg transition-colors font-semibold ${isNight ? 'text-slate-200 hover:bg-white/10' : 'text-slate-700 hover:bg-slate-100'}`}
                         >
-                          <FileDown size={14} className="text-emerald-400" /> Download Report
+                          <FileDown size={14} className="text-emerald-500" /> Download Report
                         </button>
                         {!isClient && (
                           <button
                             onClick={(e) => handleDelete(s.id, e)}
-                            className="w-full flex items-center gap-2 px-3 py-2 text-xs text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors font-semibold"
+                            className="w-full flex items-center gap-2 px-3 py-2 text-xs text-rose-500 hover:bg-rose-500/10 rounded-lg transition-colors font-semibold"
                           >
-                            <Trash2 size={14} className="text-rose-400" /> Delete Scan
+                            <Trash2 size={14} className="text-rose-500" /> Delete Scan
                           </button>
                         )}
                       </div>
@@ -464,14 +466,14 @@ export default function Scans() {
             </div>
           )}
 
-          <div className="flex rounded-xl bg-[#111111] p-1 border border-white/[0.07]">
+          <div className={`flex rounded-xl p-1 border ${isNight ? 'bg-[#111111] border-white/[0.07]' : 'bg-slate-100 border-slate-200'}`}>
             <button
               onClick={() => setViewMode('folder')}
               title="Folder Grouped View"
               className={`p-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
                 viewMode === 'folder'
                   ? 'bg-cyan-500 text-slate-950 shadow-md shadow-cyan-500/20 font-bold'
-                  : 'text-slate-400 hover:text-white'
+                  : isNight ? 'text-slate-400 hover:text-white' : 'text-slate-600 hover:text-slate-900'
               }`}
             >
               <Layers size={14} />
@@ -483,7 +485,7 @@ export default function Scans() {
               className={`p-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
                 viewMode === 'table'
                   ? 'bg-cyan-500 text-slate-950 shadow-md shadow-cyan-500/20 font-bold'
-                  : 'text-slate-400 hover:text-white'
+                  : isNight ? 'text-slate-400 hover:text-white' : 'text-slate-600 hover:text-slate-900'
               }`}
             >
               <List size={14} />
@@ -497,7 +499,7 @@ export default function Scans() {
       {filteredScans.length === 0 && projects.length === 0 ? (
         <div className="card p-16 text-center">
           <Radar className="mx-auto text-cyan-400/50 mb-3" size={44} />
-          <p className="text-slate-300 font-medium">
+          <p className={`${isNight ? 'text-slate-300' : 'text-slate-700'} font-medium`}>
             {searchQuery.trim() ? 'No scans match your query.' : 'No active scans yet. Create a folder or launch a new assessment.'}
           </p>
           <div className="mt-4 flex items-center justify-center gap-3">
@@ -524,53 +526,69 @@ export default function Scans() {
                 {/* Collapsible Folder Header Bar */}
                 <div
                   onClick={() => toggleFolder(group.id)}
-                  className="px-5 py-4 bg-gradient-to-r from-slate-900/90 via-slate-900/70 to-slate-950/90 hover:bg-slate-800/80 cursor-pointer flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-white/10 select-none transition-colors"
+                  className={`px-5 py-4 cursor-pointer flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b select-none transition-colors ${
+                    isNight
+                      ? 'bg-gradient-to-r from-[#141b2b] via-[#161f32] to-[#121724] hover:bg-[#1a233a] border-white/10'
+                      : 'bg-gradient-to-r from-slate-50 via-white to-slate-50 hover:bg-slate-100 border-slate-200 shadow-sm'
+                  }`}
                 >
                   <div className="flex items-center gap-3 min-w-0">
                     <button
                       type="button"
-                      className="p-1 rounded-lg hover:bg-white/10 text-slate-400 hover:text-cyan-300 transition-colors shrink-0"
+                      className={`p-1 rounded-lg transition-colors shrink-0 ${
+                        isNight ? 'hover:bg-white/10 text-slate-400 hover:text-cyan-300' : 'hover:bg-slate-200 text-slate-500 hover:text-cyan-600'
+                      }`}
                       aria-label={isOpen ? "Collapse folder" : "Expand folder"}
                     >
                       {isOpen ? <ChevronDown size={18} className="text-cyan-400" /> : <ChevronRight size={18} />}
                     </button>
 
-                    <div className="p-2 rounded-xl bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 shrink-0">
+                    <div className={`p-2 rounded-xl border shrink-0 ${
+                      isNight ? 'bg-cyan-500/10 text-cyan-400 border-cyan-500/20' : 'bg-cyan-50 text-cyan-600 border-cyan-200'
+                    }`}>
                       <Folder size={18} />
                     </div>
 
                     <div className="min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <h2 className="text-sm sm:text-base font-bold text-white tracking-tight truncate">
+                        <h2 className={`text-sm sm:text-base font-bold tracking-tight truncate ${isNight ? 'text-white' : 'text-slate-900'}`}>
                           {group.name}
                         </h2>
                         {group.client && (
-                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/10 text-slate-300 border border-white/10">
+                          <span className={`text-[10px] px-2 py-0.5 rounded-full border ${
+                            isNight ? 'bg-white/10 text-slate-300 border-white/10' : 'bg-slate-100 text-slate-700 border-slate-300'
+                          }`}>
                             {group.client}
                           </span>
                         )}
                       </div>
                       {group.description && (
-                        <p className="text-xs text-slate-400 truncate mt-0.5">{group.description}</p>
+                        <p className={`text-xs truncate mt-0.5 ${isNight ? 'text-slate-400' : 'text-slate-600'}`}>{group.description}</p>
                       )}
                     </div>
                   </div>
 
                   {/* Right Badges & Folder Quick Action */}
                   <div className="flex items-center gap-2.5 shrink-0 self-end sm:self-auto" onClick={(e) => e.stopPropagation()}>
-                    <span className="chip text-[11px] px-2.5 py-1 bg-slate-950/60 border-white/10 text-slate-300 font-bold">
+                    <span className={`chip text-[11px] px-2.5 py-1 font-bold ${
+                      isNight ? 'bg-slate-950/60 border-white/10 text-slate-300' : 'bg-slate-100 border-slate-200 text-slate-700'
+                    }`}>
                       {group.scans.length} {group.scans.length === 1 ? 'Scan' : 'Scans'}
                     </span>
 
                     {totalFindings > 0 && (
-                      <span className="chip text-[11px] px-2.5 py-1 bg-rose-500/15 border-rose-500/30 text-rose-300 font-bold flex items-center gap-1">
+                      <span className="chip text-[11px] px-2.5 py-1 bg-rose-500/15 border-rose-500/30 text-rose-400 font-bold flex items-center gap-1">
                         <Bug size={12} className="text-rose-400" /> {totalFindings} Findings
                       </span>
                     )}
 
                     <button
                       onClick={(e) => handleOpenScanModalForFolder(group.id === '_standalone' ? '' : group.id, e)}
-                      className="btn-ghost text-[11px] py-1.5 px-3 border-cyan-500/30 text-cyan-300 hover:border-cyan-400 hover:bg-cyan-500/20"
+                      className={`text-[11px] py-1.5 px-3 rounded-lg border font-semibold flex items-center gap-1 transition-all ${
+                        isNight
+                          ? 'border-cyan-500/30 text-cyan-300 hover:border-cyan-400 hover:bg-cyan-500/20'
+                          : 'border-cyan-600/40 text-cyan-700 hover:border-cyan-600 hover:bg-cyan-50 shadow-sm'
+                      }`}
                       title="Launch new scan in this folder"
                     >
                       <Plus size={12} /> Launch Scan

@@ -84,7 +84,7 @@ Rules:
 - Subdomain enumeration, open port discovery, HTTP probe results, server headers, login surface discovery, robots.txt, directory/path discovery are TRUE positive at INFO severity — NEVER upgrade.
 - nikto findings (lines starting with "+") are TRUE positive — nikto only reports actual issues it found. Severity based on issue type.
 - nmap open ports are TRUE positive — nmap confirmed the port is open.
-- ffuf/gobuster discovered paths are TRUE positive — the path was confirmed to exist (HTTP response).
+- ffuf/gobuster discovered paths are TRUE positive — the path was confirmed to exist (HTTP response). BUT: paths returning HTTP 403/404 are access-controlled, NOT exposed — keep at INFO severity. Stock boilerplate files (.travis.yml, package.json, .gitignore, docker-compose.yml, README) are publicly shipped by design — keep at LOW/INFO severity even when HTTP 200; only rate higher if the evidence shows actual secrets (tokens, passwords, private keys) in the file content.
 - arjun discovered parameters are TRUE positive — the parameter was confirmed to exist.
 - wafw00f WAF detection is TRUE positive — the WAF was confirmed.
 - SQL injection: TRUE positive only when sqlmap says "is vulnerable" or "injectable". FALSE when sqlmap says "not injectable" or "do not appear to be injectable".

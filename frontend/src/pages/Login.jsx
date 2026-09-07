@@ -134,7 +134,7 @@ export default function Login() {
             : 'bg-white/95 border-slate-300 text-slate-700 hover:text-cyan-600 hover:border-cyan-500'
         }`}
       >
-        <ArrowLeft size={15} className="group-hover:-translate-x-1 transition-transform duration-200 text-cyan-500" />
+        <ArrowLeft size={15} className={`group-hover:-translate-x-1 transition-transform duration-200 ${isNight ? 'text-cyan-400' : 'text-cyan-500'}`} />
         <span>Back to Landing Page</span>
       </Link>
 
@@ -180,8 +180,8 @@ export default function Login() {
           <h1 className={`text-2xl sm:text-3xl font-extrabold tracking-tight ${isNight ? 'text-white' : 'text-slate-900'}`}>
             SentinelAI
           </h1>
-          <p className="text-[10px] uppercase tracking-[0.25em] text-cyan-500 font-extrabold mt-1 flex items-center gap-1.5 justify-center">
-            <Sparkles size={12} className="text-cyan-400 animate-pulse" /> Autonomous Security Suite
+          <p className={`text-[10px] uppercase tracking-[0.25em] font-extrabold mt-1 flex items-center gap-1.5 justify-center ${isNight ? 'text-cyan-400' : 'text-cyan-600'}`}>
+            <Sparkles size={12} className={`${isNight ? 'text-cyan-300' : 'text-cyan-500'} animate-pulse`} /> Autonomous Security Suite
           </p>
         </div>
 
@@ -231,7 +231,7 @@ export default function Login() {
             <label className={`text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 ${
               isNight ? 'text-slate-300' : 'text-slate-700'
             }`}>
-              <User size={13} className="text-cyan-500" /> Username
+              <User size={13} className={isNight ? 'text-cyan-400' : 'text-cyan-500'} /> Username
             </label>
             <input
               name="sentinel_auth_user"
@@ -253,7 +253,7 @@ export default function Login() {
               <label className={`text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 ${
                 isNight ? 'text-slate-300' : 'text-slate-700'
               }`}>
-                <Mail size={13} className="text-cyan-500" /> Email Address
+                <Mail size={13} className={isNight ? 'text-cyan-400' : 'text-cyan-500'} /> Email Address
               </label>
               <input
                 name="sentinel_auth_email"
@@ -276,7 +276,7 @@ export default function Login() {
             <label className={`text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 ${
               isNight ? 'text-slate-300' : 'text-slate-700'
             }`}>
-              <KeyRound size={13} className="text-cyan-500" /> Password
+              <KeyRound size={13} className={isNight ? 'text-cyan-400' : 'text-cyan-500'} /> Password
             </label>
             <div className="relative flex items-center">
               <input
@@ -301,7 +301,11 @@ export default function Login() {
                 }`}
                 title={showPassword ? 'Hide password' : 'Reveal password'}
               >
-                {showPassword ? <Eye size={16} className="text-cyan-500" /> : <EyeOff size={16} className="text-slate-400" />}
+                {showPassword ? (
+                  <Eye size={16} className={isNight ? 'text-cyan-400' : 'text-cyan-500'} />
+                ) : (
+                  <EyeOff size={16} className="text-slate-400" />
+                )}
               </button>
             </div>
           </div>
@@ -311,7 +315,7 @@ export default function Login() {
             <div className={`space-y-2.5 pt-2 border-t ${isNight ? 'border-white/10' : 'border-slate-200'}`}>
               <div className="flex items-center justify-between text-xs">
                 <span className={`font-bold ${isNight ? 'text-slate-200' : 'text-slate-800'}`}>Select Tier:</span>
-                <span className="text-[10px] text-cyan-500 font-mono flex items-center gap-1 font-bold">
+                <span className={`text-[10px] font-mono flex items-center gap-1 font-bold ${isNight ? 'text-cyan-400' : 'text-cyan-600'}`}>
                   <Sparkles size={11} /> Community Beta Preview
                 </span>
               </div>

@@ -5,6 +5,17 @@
 /* ── Design Tokens ─────────────────────────────────────────────── */
 :root {
   color-scheme: dark;
+  --bg-base:     #0a0a0a;
+  --bg-surface:  #111111;
+  --bg-card:     #161616;
+  --bg-elevated: #1c1c1c;
+  --border:      rgba(255,255,255,0.07);
+  --border-md:   rgba(255,255,255,0.10);
+  --text-primary: #f4f4f5;
+  --text-muted:   #71717a;
+  --text-faint:   #3f3f46;
+  --accent:       #3b82f6;
+  --accent-hover: #2563eb;
   --bg-base:        #0c0f17;
   --bg-surface:     #131722;
   --bg-card:        #181f30;
@@ -130,6 +141,10 @@ body {
 
   /* ── Terminal ─────────────────────────────────────────────────────── */
   .terminal {
+    @apply font-mono text-[12.5px] leading-relaxed rounded-lg p-4 overflow-auto border;
+    border-color: rgba(255,255,255,0.08);
+    background: #080808;
+    box-shadow: inset 0 0 20px rgba(0,0,0,0.5);
     @apply font-mono text-[12.5px] leading-relaxed rounded-lg p-4 overflow-auto border text-slate-100;
     border-color: rgba(255,255,255,0.13);
     background: #0b101c;
@@ -219,6 +234,7 @@ body {
 .motion-pulse   { animation: pulse-glow 2.5s ease-in-out infinite; }
 
 /* ── Day / Night body support (kept for toggle compatibility) ───── */
+body.night { color-scheme: dark; }
 /* ── Day / Night body support (Unified Contrast & Theme System) ── */
 body.night {
   color-scheme: dark;
@@ -263,6 +279,7 @@ body.day-mode {
   --accent:         #0284c7;
   --accent-hover:   #0369a1;
   color: #0f172a;
+  background: #f1f5f9;
   background: #f8fafc;
 }
 
@@ -298,6 +315,7 @@ body.day-mode .input::placeholder {
 
 body.day-mode select.input option {
   background: #ffffff;
+  border-color: rgba(15, 23, 42, 0.08);
   color: #0f172a;
 }
 
@@ -337,63 +355,80 @@ body.day-mode [class*="bg-[#1c1c1c]"]:not(.terminal):not([class*="btn-"]):not([c
 }
 
 /* Light mode general text contrast */
-body.day-mode .text-white,
-body.day-mode .text-slate-100,
-body.day-mode .text-zinc-100 {
+body.day-mode [class~="text-white"],
+body.day-mode [class~="text-slate-100"],
+body.day-mode [class~="text-zinc-100"] {
   color: #0f172a !important;
 }
-body.day-mode .text-slate-200,
-body.day-mode .text-zinc-200,
-body.day-mode .text-slate-300,
-body.day-mode .text-zinc-300 {
+body.day-mode [class~="text-slate-200"],
+body.day-mode [class~="text-zinc-200"],
+body.day-mode [class~="text-slate-300"],
+body.day-mode [class~="text-zinc-300"] {
   color: #334155 !important;
 }
-body.day-mode .text-slate-400,
-body.day-mode .text-zinc-400 {
+body.day-mode [class~="text-slate-400"],
+body.day-mode [class~="text-zinc-400"] {
   color: #475569 !important;
 }
-body.day-mode .text-slate-500,
-body.day-mode .text-zinc-500 {
+body.day-mode [class~="text-slate-500"],
+body.day-mode [class~="text-zinc-500"] {
   color: #64748b !important;
 }
-body.day-mode .text-cyan-300,
-body.day-mode .text-cyan-400 {
+body.day-mode [class~="text-cyan-300"] {
+  color: #0891b2 !important;
+}
+body.day-mode [class~="text-cyan-400"] {
   color: #0284c7 !important;
 }
 
-/* Day Mode: Protect primary buttons so text stays white */
+/* Day Mode: Protect primary buttons and ghost buttons */
 body.day-mode .btn-primary,
 body.day-mode .btn-primary * {
   color: #ffffff !important;
 }
+body.day-mode .btn-ghost {
+  color: #0f172a !important;
+  border-color: #cbd5e1 !important;
+  background-color: #ffffff !important;
+}
+body.day-mode .btn-ghost:hover {
+  background-color: #f8fafc !important;
+  border-color: #94a3b8 !important;
+  color: #0f172a !important;
+}
 
 /* Day Mode: High-contrast Dark Console Terminal */
 body.day-mode .terminal {
-  background: #0f172a !important;
+  background: #090d16 !important;
   border-color: #334155 !important;
+  color: #f1f5f9 !important;
 }
-body.day-mode .terminal,
-body.day-mode .terminal * {
-  color: #cbd5e1 !important;
+body.day-mode .terminal span {
+  background: transparent !important;
 }
-body.day-mode .terminal .text-emerald-400 {
+body.day-mode .terminal [class~="text-slate-100"],
+body.day-mode .terminal [class~="text-slate-200"] {
+  color: #f8fafc !important;
+}
+body.day-mode .terminal [class~="text-emerald-400"] {
   color: #34d399 !important;
 }
-body.day-mode .terminal .text-amber-400,
-body.day-mode .terminal .text-sev-medium {
+body.day-mode .terminal [class~="text-amber-300"],
+body.day-mode .terminal [class~="text-amber-400"],
+body.day-mode .terminal [class~="text-sev-medium"] {
   color: #fbbf24 !important;
 }
-body.day-mode .terminal .text-rose-400,
-body.day-mode .terminal .text-sev-critical {
+body.day-mode .terminal [class~="text-rose-400"],
+body.day-mode .terminal [class~="text-sev-critical"] {
   color: #f87171 !important;
 }
-body.day-mode .terminal .text-cyan-400,
-body.day-mode .terminal .text-cyan-300 {
+body.day-mode .terminal [class~="text-cyan-400"],
+body.day-mode .terminal [class~="text-cyan-300"] {
   color: #38bdf8 !important;
 }
-body.day-mode .terminal .text-slate-400,
-body.day-mode .terminal .text-slate-500,
-body.day-mode .terminal .text-slate-600 {
+body.day-mode .terminal [class~="text-slate-400"],
+body.day-mode .terminal [class~="text-slate-500"],
+body.day-mode .terminal [class~="text-slate-600"] {
   color: #94a3b8 !important;
 }
 

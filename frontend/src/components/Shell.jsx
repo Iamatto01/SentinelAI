@@ -376,6 +376,7 @@ export default function Shell() {
               </Link>
             )}
 
+            {/* Dark / Light Mode Toggle */}
             {/* Prominent Dark / Light Mode Pill Toggle */}
             <button
               onClick={toggleNightMode}
@@ -391,7 +392,7 @@ export default function Shell() {
               ) : (
                 <>
                   <Moon size={15} className="text-cyan-400 group-hover:-rotate-12 transition-transform duration-300" />
-                  <span className="text-xs font-bold text-slate-800 group-hover:text-slate-900">Dark Mode</span>
+                  <span className="text-xs font-bold text-slate-200 group-hover:text-white">Dark Mode</span>
                 </>
               )}
             </button>

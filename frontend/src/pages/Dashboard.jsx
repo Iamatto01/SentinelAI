@@ -65,8 +65,9 @@ export default function Dashboard() {
               {data.runningScans} Scans Running
             </span>
           ) : (
-            <span className="chip bg-slate-900/60 text-slate-400 border border-white/10 px-3.5 py-1.5 text-xs font-semibold">
-              <Activity size={13} className="mr-1.5 text-slate-500" /> Engines Ready
+            <span className="chip bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 px-3.5 py-1.5 text-xs font-bold flex items-center shadow-sm">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 mr-2 animate-pulse" />
+              Engines Ready
             </span>
           )}
           {/* Quick Theme Toggle Button right on Dashboard */}

@@ -48,6 +48,7 @@ export default function StatCard({ icon: Icon, label, value, sub, tone = 'cyan',
   const boxClass = iconBoxes[tone] || 'icon-box-cyan'
   const animated = useCountUp(value)
   const isLive = trend === 'Live' || (trend && trend.toLowerCase() === 'live')
+  const isIdleOrReady = trend && (trend.toLowerCase() === 'idle' || trend.toLowerCase() === 'ready' || trend.toLowerCase() === 'standby')
 
   return (
     <div className="card glass-in p-5 relative overflow-hidden group hover:border-cyan-400/40 hover-lift transition-all duration-300 h-full min-h-[118px] flex flex-col justify-between">
@@ -64,6 +65,11 @@ export default function StatCard({ icon: Icon, label, value, sub, tone = 'cyan',
                     <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
                   </span>
                   Live
+                </span>
+              ) : isIdleOrReady ? (
+                <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 flex items-center gap-1.5 shadow-sm">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                  {trend}
                 </span>
               ) : (
                 <span className={`text-[11px] font-bold px-1.5 py-0.5 rounded-md ${

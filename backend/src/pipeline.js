@@ -370,6 +370,14 @@ export class UnifiedPipeline {
     // ── OFFENSIVE STAGES (always active) ──
     await this._probeServiceVulns(scanId, target, { verify })
     this.progress(scanId, 78)
+    // ── VERSION LIFECYCLE (EOL) ANALYSIS ──
+    // Cross-references whatweb/nmap/header versions against EOL dates.
+    // Must run AFTER tool batches so findings carry version strings.
+    try {
+      await this._analyzeVersionLifecycle(scanId, { verify })
+    } catch (err) {
+      this.log(scanId, 'warn', `EOL analysis warning: ${err.message}`)
+    }
     await this._discoverLoginSurfaces(scanId, target, { verify })
     await this._matchOffsecPayloads(scanId)
     this.progress(scanId, 85)
@@ -389,16 +397,87 @@ export class UnifiedPipeline {
     // credential pairs (admin/admin, admin/password, ...) via HTTP POST.
     // Must run AFTER _auditCookiesCors so harvested login forms are available.
     await this._tryDefaultCreds(scanId, target, { verify })
+    // ── LOGIN RATE-LIMIT TEST ──
+    // Burst of failed logins → checks for 429/CAPTCHA/lockout/slowdown.
+    try {
+      await this._testLoginRateLimit(scanId, target, { verify })
+    } catch (err) {
+      this.log(scanId, 'warn', `Rate-limit test warning: ${err.message}`)
+    }
 
     this.finish(scanId, 'completed')
+  }
+
+  /**
+   * VERSION LIFECYCLE (EOL) ANALYSIS — cross-references detected software
+   * versions against known end-of-life dates. An EOL platform receives NO
+   * security patches — this is often the single biggest real risk on a
+   * target (e.g. Moodle 4.1 went EOL Dec 2025 but still powers live sites).
+   */
+  async _analyzeVersionLifecycle(scanId, { verify } = {}) {
+    // EOL registry: [product, versionRegex, eolDate, successor]
+    const EOL_REGISTRY = [
+      { product: 'Moodle', re: /\bmoodle[^\d]{0,20}(\d+)\.(\d+)/i, eol: { '4.5': '2027-06', '4.4': '2026-12', '4.3': '2025-12', '4.1': '2025-12', '4.0': '2024-12', '3.9': '2023-12', '3.8': '2022-11', '3.7': '2021-11' }, note: 'Moodle LTS releases get 3 years of support; non-LTS only 18 months.' },
+      { product: 'WordPress', re: /\bwordpress[^\d]{0,20}(\d+)\.(\d+)/i, eol: { '6.0': '2024-04', '5.9': '2023-12', '5.8': '2022-12', '5.7': '2022-03', '5.6': '2021-12' }, note: 'WordPress core versions stop receiving security updates once superseded.' },
+      { product: 'Apache HTTP Server', re: /\bapache(?:\/|\s)?(\d+)\.(\d+)/i, eol: { '2.4': null, '2.2': '2017-07', '2.0': '2013-07' }, note: 'Apache 2.2 and earlier are EOL — no security patches since 2017.' },
+      { product: 'nginx', re: /\bnginx(?:\/|\s)?(\d+)\.(\d+)/i, eol: { '1.25': '2024-05', '1.24': '2024-04', '1.23': '2023-10', '1.22': '2023-04', '1.20': '2022-04' }, note: 'nginx stable branches get 1 year of support.' },
+      { product: 'PHP', re: /\bphp[^\d]{0,10}(\d+)\.(\d+)/i, eol: { '8.3': '2027-12', '8.2': '2026-12', '8.1': '2025-12', '8.0': '2023-11', '7.4': '2022-11', '7.3': '2021-12', '7.2': '2020-11', '7.1': '2019-12', '7.0': '2019-01', '5.6': '2018-12' }, note: 'PHP branches get 2 years active + 2 years security support.' },
+      { product: 'OpenSSH', re: /\bopenssh[^\d]{0,10}(\d+)\.(\d+)/i, eol: { '8.9': '2024-07', '8.8': '2023-09', '8.7': '2023-04', '8.6': '2022-07', '8.4': '2021-09', '8.2': '2021-03', '7.9': '2020-09' }, note: 'OpenSSH releases get ~2 years of security support.' },
+      { product: 'jQuery', re: /\bjquery[^\d]{0,10}(\d+)\.(\d+)/i, eol: { '3.6': null, '3.5': '2021-11', '3.4': '2020-06', '3.3': '2019-08', '2.2': '2017-03', '1.12': '2017-03' }, note: 'jQuery 3.6+ is maintained; older branches have known XSS (CVE-2020-11022/11023).' },
+      { product: 'Drupal', re: /\bdrupal[^\d]{0,20}(\d+)\.(\d+)/i, eol: { '10.0': '2023-12', '9.0': '2021-06', '9.1': '2021-12', '9.2': '2022-06', '9.3': '2022-12', '9.4': '2023-06', '9.5': '2023-11', '8.0': '2021-06', '7.0': '2022-01' }, note: 'Drupal 7 EOL was extended to Jan 2025; Drupal 8 EOL Nov 2021.' },
+      { product: 'Tomcat', re: /\btomcat[^\d]{0,20}(\d+)\.(\d+)/i, eol: { '10.0': '2024-10', '9.0': null, '8.5': '2024-03', '7.0': '2021-03' }, note: 'Tomcat 7 and 8.5 are EOL — no security patches.' },
+      { product: 'Exim', re: /\bexim[^\d]{0,10}(\d+)\.(\d+)/i, eol: { '4.95': '2023-06', '4.94': '2022-06', '4.92': '2021-06' }, note: 'Exim has had multiple critical RCEs (CVE-2019-10149, CVE-2023-42115).' },
+    ]
+    // Gather version strings from stored findings (whatweb/nmap/server headers)
+    const rows = db.all(`SELECT title, description, evidence FROM findings WHERE scan_id = ?`, scanId)
+    const versionText = rows.map(r => `${r.title} ${r.description}`).join(' ').slice(0, 100000)
+    const now = new Date()
+    const seen = new Set()
+    for (const entry of EOL_REGISTRY) {
+      const m = versionText.match(entry.re)
+      if (!m) continue
+      const majorMinor = `${m[1]}.${m[2]}`
+      const eolDate = entry.eol[majorMinor]
+      if (eolDate === null) continue // actively supported
+      if (seen.has(entry.product)) continue
+      seen.add(entry.product)
+      const eol = new Date(`${eolDate}-01`)
+      if (eol < now) {
+        const monthsPast = Math.floor((now - eol) / (1000 * 60 * 60 * 24 * 30))
+        await this.ingestFinding(scanId, {
+          title: `${entry.product} ${majorMinor} is END-OF-LIFE (${eolDate}) — no security patches for ${monthsPast} months`,
+          severity: monthsPast > 24 ? 'high' : 'medium',
+          cweId: 'CWE-1104',
+          owaspCategory: 'A03:2025-Software Supply Chain Failures',
+          description: `${entry.product} ${majorMinor} was detected on the target and reached end-of-life on ${eolDate} — ${monthsPast} months ago. ${entry.note} EOL software receives NO security patches: every vulnerability disclosed since ${eolDate} remains unpatched and publicly exploitable. This is frequently the single highest-impact risk on a target, even when no specific CVE is matched.`,
+          remediation: `Upgrade ${entry.product} from ${majorMinor} to the latest supported release. If immediate upgrade is impossible, isolate the service (WAF rules, network segmentation) and schedule the upgrade as a priority.`,
+          module: 'version-lifecycle',
+          evidence: { product: entry.product, version: majorMinor, eolDate, monthsPast, detectedFrom: m[0] },
+        }, { verify })
+        this.log(scanId, 'info', `📅 EOL: ${entry.product} ${majorMinor} (EOL ${eolDate}, ${monthsPast} months past)`)
+      } else {
+        const monthsLeft = Math.ceil((eol - now) / (1000 * 60 * 60 * 24 * 30))
+        if (monthsLeft <= 6) {
+          await this.ingestFinding(scanId, {
+            title: `${entry.product} ${majorMinor} approaching end-of-life (${eolDate} — ${monthsLeft} months left)`,
+            severity: 'low',
+            cweId: 'CWE-1104',
+            owaspCategory: 'A03:2025-Software Supply Chain Failures',
+            description: `${entry.product} ${majorMinor} reaches end-of-life on ${eolDate} (${monthsLeft} months). Plan the upgrade now to avoid running unpatched software.`,
+            remediation: `Schedule an upgrade of ${entry.product} before ${eolDate}.`,
+            module: 'version-lifecycle',
+            evidence: { product: entry.product, version: majorMinor, eolDate, monthsLeft },
+          }, { verify })
+        }
+      }
+    }
   }
 
   /**
    * OFFENSIVE: service-level vulnerability probing on open ports.
    * Uses nmap NSE scripts for concrete CVEs (heartbleed, ms17-010, ftp-anon,
    * smb-vuln, ssl-poodle) against the target's open services.
-   */
-  async _probeServiceVulns(scanId, target, { verify } = {}) {
+   */  async _probeServiceVulns(scanId, target, { verify } = {}) {
     const host = (() => {
       try { return new URL(/^https?:\/\//i.test(target) ? target : `https://${target}`).hostname }
       catch { return target.replace(/^https?:\/\//i, '').split('/')[0] }
@@ -533,6 +612,92 @@ export class UnifiedPipeline {
   }
 
   /**
+   * OFFENSIVE: login rate-limit / brute-force protection testing.
+   * Sends a burst of rapid failed authentication attempts to a harvested
+   * login form and measures whether the target throttles (429), locks out,
+   * inserts a CAPTCHA, or slows down. Absence of ANY rate limiting means
+   * the login form is brute-forceable at full network speed.
+   */
+  async _testLoginRateLimit(scanId, target, { verify } = {}) {
+    const base = /^https?:\/\//i.test(target) ? target : `https://${target}`
+    const forms = this._loginForms?.get(scanId) || []
+    if (!forms.length) {
+      this.log(scanId, 'info', '🚦 No login forms harvested — skipping rate-limit test')
+      return
+    }
+    const form = forms[0] // one form is enough — rate limits are usually global
+    const { url, userField, passField, extra } = form
+    this.log(scanId, 'info', `🚦 Rate-limit test: 10 rapid failed logins @ ${url.slice(0, 80)}`)
+    const BURST = 10
+    const statuses = []
+    const times = []
+    const bodies = []
+    let captchaAppeared = false
+    let lockoutAppeared = false
+    for (let i = 0; i < BURST; i++) {
+      await this.waitIfPaused(scanId)
+      try {
+        const body = new URLSearchParams({ [userField]: `ratelimitprobe${i}`, [passField]: `WrongPass!${i}`, ...extra })
+        const t0 = Date.now()
+        const res = await fetch(url, {
+          method: 'POST',
+          body,
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) SentinelAI' },
+          redirect: 'follow',
+          signal: AbortSignal.timeout(10000),
+        })
+        times.push(Date.now() - t0)
+        statuses.push(res.status)
+        const text = (await res.text()).slice(0, 5000)
+        bodies.push(text)
+        if (/captcha|recaptcha|hcaptcha|turnstile|are you human|verify you are human/i.test(text)) captchaAppeared = true
+        if (/locked|too many (attempts|tries)|temporarily blocked|account blocked|try again later|wait \d+ (minute|second)/i.test(text)) lockoutAppeared = true
+      } catch { statuses.push(0); times.push(-1) }
+      // NO delay between attempts — the whole point is to test burst handling
+    }
+    const throttled = statuses.some(s => s === 429 || s === 503)
+    const statusChanged = new Set(statuses).size > 1
+    // Response-time drift: if later responses are dramatically slower, a
+    // tarpit/delay-based limiter is active
+    const firstHalf = times.slice(0, 5).filter(t => t > 0)
+    const secondHalf = times.slice(5).filter(t => t > 0)
+    const avg = a => a.length ? a.reduce((x, y) => x + y, 0) / a.length : 0
+    const slowdown = firstHalf.length && secondHalf.length ? avg(secondHalf) > avg(firstHalf) * 3 : false
+    const protected_ = throttled || captchaAppeared || lockoutAppeared || slowdown
+    if (protected_) {
+      const mechanism = [
+        throttled && 'HTTP 429/503 throttling',
+        captchaAppeared && 'CAPTCHA insertion',
+        lockoutAppeared && 'account lockout message',
+        slowdown && `response-time slowdown (${Math.round(avg(firstHalf))}ms → ${Math.round(avg(secondHalf))}ms)`,
+      ].filter(Boolean).join(', ')
+      await this.ingestFinding(scanId, {
+        title: `Login rate limiting ACTIVE on ${new URL(url).pathname} (${mechanism})`,
+        severity: 'info',
+        cweId: 'CWE-307',
+        owaspCategory: 'A07:2025-Authentication Failures',
+        description: `A burst of ${BURST} rapid failed login attempts was answered with ${mechanism}. Brute-force protection is functioning correctly — this is a positive control confirmation.`,
+        remediation: 'No action needed — rate limiting is active. Consider also alerting on repeated lockout events.',
+        module: 'offensive:rate-limit',
+        evidence: { url, statuses, mechanism },
+      }, { verify })
+      this.log(scanId, 'info', `🚦 Rate limiting CONFIRMED active (${mechanism})`)
+    } else {
+      await this.ingestFinding(scanId, {
+        title: `No rate limiting on login form ${new URL(url).pathname} — brute-force possible`,
+        severity: 'medium',
+        cweId: 'CWE-307',
+        owaspCategory: 'A07:2025-Authentication Failures',
+        description: `${BURST} rapid failed login attempts were submitted to ${url} with zero delay between requests. Every attempt received the same status (${statuses[0]}), no CAPTCHA appeared, no lockout message was shown, and response times stayed flat (avg ${Math.round(avg(times.filter(t => t > 0)))}ms). The login endpoint can be brute-forced at full network speed — combined with credential-stuffing wordlists this makes account compromise a matter of time.`,
+        remediation: 'Implement rate limiting (e.g. fail2ban, WAF rule, or application-level throttling) on the login endpoint: limit to ~5 attempts per minute per IP and per account, with exponential backoff and account lockout after repeated failures.',
+        module: 'offensive:rate-limit',
+        evidence: { url, statuses, times, statusChanged },
+      }, { verify })
+      this.log(scanId, 'warn', `🚦 NO rate limiting detected on ${url.slice(0, 80)} — brute-force possible`)
+    }
+  }
+
+  /**
    * OFFENSIVE: cross-reference all collected findings against the offsec
    * payload knowledge base (knowledge/payloads) so every finding gets an
    * attached exploitation payload reference in the report.
@@ -614,7 +779,18 @@ export class UnifiedPipeline {
         }
 
         // Stack traces / debug info
-        if (/stack trace|traceback|at \w+\.\w+:\d+:\d+|Fatal error:/i.test(body) || /<\?php|System\.Exception|rails\.root|django\.debug/i.test(body)) {
+        // STRICT: require actual stack-frame STRUCTURE, not just the phrase
+        // "stack trace" — Moodle/JS apps legitimately ship the translated
+        // error-label string "Stack trace" in their config (a false MEDIUM).
+        // A real trace has frames: "at func (file:line:col)", Python
+        // "Traceback (most recent call last)", or PHP "Fatal error: ... in /path on line N".
+        const stackEvidence =
+          body.match(/at\s+[\w$.]+\s*\([^)]*:\d+:\d+\)/) ||                    // JS/Java frames
+          body.match(/Traceback \(most recent call last\)/) ||                   // Python
+          body.match(/Fatal error:[^\n]*\bin\b[^\n]*\bon line \d+/i) ||          // PHP
+          body.match(/#[\d]+\s+[\w$\\/().]+\(\): called at/i) ||                 // PHP 7+ frames
+          body.match(/Exception(?:\s+\w+)?[^\n]{0,120}\n\s+at\s+[\w$.]+:\d+/)    // generic frame chain
+        if (stackEvidence) {
           await this.ingestFinding(scanId, {
             title: `Debug/error information exposed in response`,
             severity: 'medium',
@@ -623,7 +799,7 @@ export class UnifiedPipeline {
             description: `Stack trace or debug info found in response at ${url}. Discloses internal paths, framework versions, and code structure.`,
             remediation: 'Disable debug mode and custom error pages in production.',
             module: 'response-body-scan',
-            evidence: { url, snippet: body.match(/(?:stack trace|traceback|at \w+\.\w+:\d+:\d+|Fatal error:).{0,200}/i)?.[0]?.slice(0, 300) },
+            evidence: { url, snippet: String(stackEvidence[0]).slice(0, 300) },
           }, { verify })
         }
 
@@ -685,7 +861,11 @@ export class UnifiedPipeline {
         }
       }
 
-      // CORS / Access-Control-Allow-Origin
+      // CORS / Access-Control-Allow-Origin — FULL MATRIX
+      // Passive check first (headers on a normal request), then ACTIVE
+      // reflection probes with hostile origins. A reflected ACAO + ACAC:true
+      // = full session hijack chain; reflected ACAO without ACAC = data read
+      // from unauthenticated endpoints only.
       const acao = headers['access-control-allow-origin'] || ''
       const acac = headers['access-control-allow-credentials'] || ''
       if (acao === '*') {
@@ -711,6 +891,52 @@ export class UnifiedPipeline {
           evidence: { url: base, acao, acac },
         }, { verify })
       }
+      // ── ACTIVE CORS MATRIX: probe with hostile origins ──
+      try {
+        const EVIL_ORIGINS = [
+          'https://evil-attacker-domain.com',
+          `https://${new URL(base).hostname}.evil-attacker-domain.com`, // subdomain spoof
+          'null',
+        ]
+        for (const origin of EVIL_ORIGINS) {
+          await this.waitIfPaused(scanId)
+          const probe = await fetch(base, {
+            method: 'GET',
+            headers: { Origin: origin, 'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) SentinelAI' },
+            redirect: 'follow',
+            signal: AbortSignal.timeout(10000),
+          })
+          const pAcao = probe.headers.get('access-control-allow-origin') || ''
+          const pAcac = (probe.headers.get('access-control-allow-credentials') || '').toLowerCase()
+          const reflected = pAcao && pAcao !== '*' && pAcao.toLowerCase() === origin.toLowerCase()
+          if (reflected && pAcac === 'true') {
+            await this.ingestFinding(scanId, {
+              title: `CORS origin reflection WITH credentials — session hijack possible`,
+              severity: 'high',
+              cweId: 'CWE-942',
+              owaspCategory: 'A02:2025-Security Misconfiguration',
+              description: `The server REFLECTS arbitrary origins in Access-Control-Allow-Origin and sets Access-Control-Allow-Credentials: true. Proven with hostile origin "${origin}": the server responded ACAO: ${pAcao}, ACAC: true. Any malicious website can make authenticated cross-origin requests in a victim's browser and READ the responses — full session hijack of any authenticated endpoint.`,
+              remediation: 'Never reflect the Origin header. Maintain an explicit allowlist of trusted origins; reject all others without CORS headers.',
+              module: 'cors-audit',
+              evidence: { url: base, probedOrigin: origin, reflectedAcao: pAcao, acac: pAcac },
+            }, { verify })
+            this.log(scanId, 'warn', `🌐 CORS reflection + credentials @ ${base} (origin ${origin})`)
+            break // one proof is enough
+          } else if (reflected) {
+            await this.ingestFinding(scanId, {
+              title: `CORS origin reflection (no credentials) — ${new URL(base).hostname}`,
+              severity: 'low',
+              cweId: 'CWE-942',
+              owaspCategory: 'A02:2025-Security Misconfiguration',
+              description: `The server reflects arbitrary origins in Access-Control-Allow-Origin (probed with "${origin}" → ACAO: ${pAcao}) but does NOT set Access-Control-Allow-Credentials. Cross-origin reads are possible for unauthenticated endpoints only — session hijack is NOT possible, but public API data can be scraped cross-origin.`,
+              remediation: 'Use an explicit origin allowlist instead of reflection.',
+              module: 'cors-audit',
+              evidence: { url: base, probedOrigin: origin, reflectedAcao: pAcao, acac: pAcac },
+            }, { verify })
+            break
+          }
+        }
+      } catch { /* CORS probe non-fatal */ }
 
       // Harvest HTML forms for injection surface
       const formMatches = body.match(/<form[\s\S]*?<\/form>/gi)
@@ -1310,8 +1536,16 @@ export class UnifiedPipeline {
       pool = new Set()
       this._urlPool.set(scanId, pool)
     }
-    for (const u of urls) {
-      if (typeof u === 'string' && /^https?:\/\//i.test(u)) pool.add(u)
+    for (let u of urls) {
+      if (typeof u !== 'string' || !/^https?:\/\//i.test(u)) continue
+      // SANITIZE: feroxbuster appends content-type suffixes to URLs when
+      // parsing its table output (e.g. "/login/.git/<hash>-text/javascript").
+      // Strip "-text/javascript", "-application/json", etc. before pooling —
+      // these mangled URLs were being classified as auth surfaces and probed.
+      u = u.replace(/-[a-z]+\/(?:javascript|json|xml|html|css|plain|x-www-form-urlencoded|octet-stream)(?:;|$|\?)/gi, '')
+      // Drop URLs that still look mangled (hash-length junk segments)
+      if (/[0-9a-f]{16,}/i.test(u)) continue
+      pool.add(u)
     }
   }
 
@@ -1879,6 +2113,21 @@ export function computeRiskScore(counts) {
   return Math.min(10, Math.round((counts.critical * 3 + counts.high * 2 + counts.medium * 0.8 + counts.low * 0.2) * 10) / 10)
 }
 
+/**
+ * Single source of truth for the qualitative risk rating. Derived from the
+ * SAME weighted score as computeRiskScore() so the report cover and the
+ * appendix can NEVER disagree (bug: cover said "MEDIUM" while appendix
+ * said "Risk Score 10.0/10" — two independent scoring paths).
+ */
+export function riskRatingFromScore(score) {
+  const s = Number(score) || 0
+  if (s >= 9.0) return 'CRITICAL'
+  if (s >= 7.0) return 'HIGH'
+  if (s >= 4.0) return 'MEDIUM'
+  if (s > 0) return 'LOW'
+  return 'INFORMATIONAL'
+}
+
 function cleanText(txt) {
   if (!txt) return ''
   return String(txt)
@@ -2159,6 +2408,9 @@ function extractFindingsFromOutput(tool, output, target = '') {
   const seenHeaders = new Set()
   for (const line of lines) {
     if (!/^\+\s+\S+/.test(line)) continue
+    // SELF-ERROR FILTER: nikto's own operational errors (update check failed,
+    // connection issues, timeouts) are scanner chatter, NOT target findings.
+    if (/ERROR:\s*(Failed to check for updates|Could not|Unable to)|Could not connect|Connection timed? ?out|Received a redirect|Site cookie looks like a session/i.test(line)) continue
     // Skip duplicate header-missing nags
     const headerMatch = line.match(/Suggested security header missing:\s*([\w-]+)/i)
     if (headerMatch) {
@@ -2242,10 +2494,18 @@ function extractFindingsFromOutput(tool, output, target = '') {
     for (const p of ffufPaths) discoveredUrls.push(`${base}${p.path.startsWith('/') ? '' : '/'}${p.path}`)
     // Deliberately exclude 'sql|db' from the interesting-path regex — a path named
     // /sql or /db is NOT a SQL Injection finding and caused false positives.
-    const interesting = ffufPaths.filter(p => /admin|backup|config|\.git|\.env|api|dashboard|login|phpmyadmin|debug|internal/i.test(p.path))
+    // STATUS GATE: only accessible paths (2xx/3xx/401) become findings —
+    // 403/404 means the path exists but is blocked, which is NOT an exposure.
+    const ACCESSIBLE = /^(200|201|204|301|302|307|308|401)$/
+    const interesting = ffufPaths.filter(p => ACCESSIBLE.test(p.status) && /admin|backup|config|\.git|\.env|api|dashboard|login|phpmyadmin|debug|internal/i.test(p.path))
+    const blocked = ffufPaths.filter(p => !ACCESSIBLE.test(p.status) && /admin|backup|config|\.git|\.env|api|dashboard|login|phpmyadmin|debug|internal/i.test(p.path))
     const others = ffufPaths.filter(p => !/admin|backup|config|\.git|\.env|api|dashboard|login|phpmyadmin|debug|internal/i.test(p.path))
     for (const p of interesting.slice(0, 10)) {
-      push(`${tool}: Discovered ${p.path} (HTTP ${p.status})`, /admin|backup|\.git|\.env|config/i.test(p.path) ? 'medium' : 'low', `${tool} discovered ${p.path} with HTTP status ${p.status}`)
+      push(`${tool}: Discovered ${p.path} (HTTP ${p.status})`, /admin|backup|\.git|\.env|config/i.test(p.path) && p.status !== '401' ? 'medium' : 'low', `${tool} discovered ${p.path} with HTTP status ${p.status}`)
+    }
+    if (blocked.length) {
+      push(`${tool}: ${blocked.length} sensitive paths exist but are NOT accessible (HTTP 403/404)`, 'info',
+        `Paths matching sensitive patterns returned blocking status codes: ${blocked.slice(0, 5).map(p => `${p.path} (${p.status})`).join(', ')}${blocked.length > 5 ? '...' : ''}. Access-controlled — not an exposure.`)
     }
     if (others.length) {
       push(`${tool}: ${others.length} additional paths discovered`, 'info', `Paths: ${others.slice(0, 5).map(p => p.path).join(', ')}${others.length > 5 ? '...' : ''}`)
@@ -2282,13 +2542,29 @@ function extractFindingsFromOutput(tool, output, target = '') {
         return { findings, discoveredUrls }
       }
       for (const p of paths) discoveredUrls.push(p.url)
-      const interesting = paths.filter(p => /admin|backup|config|\.git|\.env|api|dashboard|login|phpmyadmin|debug|internal|upload|\.sql|\.bak|\.zip/i.test(p.url))
+      // STATUS GATE: only paths that actually served content (2xx/3xx) or
+      // expose an auth boundary (401) become findings. 403/404/5xx paths are
+      // NOT accessible — a WAF/edge block page returning 403 with a body was
+      // previously ingested as "exposed .git" (10 false MEDIUMs on one scan).
+      const ACCESSIBLE = /^(200|201|204|301|302|307|308|401)$/
+      // STOCK FILES: publicly-shipped boilerplate — a 200 on these is normal,
+      // not an exposure. Only rate above LOW if content actually contains secrets.
+      const STOCK_FILE = /\/(?:\.travis\.yml|\.gitlab-ci\.yml|azure-pipelines\.yml|\.circleci\/config\.yml|package\.json|package-lock\.json|composer\.json|\.gitignore|\.gitattributes|docker-compose\.ya?ml|Gemfile|requirements\.txt|pom\.xml|Makefile|LICENSE|README(?:\.\w+)?)$/i
+      const interesting = paths.filter(p => ACCESSIBLE.test(p.status) && /admin|backup|config|\.git|\.env|api|dashboard|login|phpmyadmin|debug|internal|upload|\.sql|\.bak|\.zip/i.test(p.url))
+      const blocked = paths.filter(p => !ACCESSIBLE.test(p.status) && /admin|backup|config|\.git|\.env|api|dashboard|login|phpmyadmin|debug|internal|upload|\.sql|\.bak|\.zip/i.test(p.url))
       for (const p of interesting.slice(0, 10)) {
+        const isStock = STOCK_FILE.test(p.url.replace(/^https?:\/\/[^/]+/i, ''))
         push(`feroxbuster: Discovered ${p.url.replace(/^https?:\/\/[^/]+/i, '')} (HTTP ${p.status})`,
-          /admin|backup|\.git|\.env|config|\.sql|\.bak/i.test(p.url) ? 'medium' : 'low',
-          `feroxbuster discovered ${p.url} with HTTP status ${p.status}`)
+          isStock ? 'low' : (/admin|backup|\.git|\.env|config|\.sql|\.bak/i.test(p.url) && p.status !== '401' ? 'medium' : 'low'),
+          isStock
+            ? `feroxbuster discovered ${p.url} with HTTP status ${p.status}. This is a commonly-public boilerplate file (CI config / package manifest) — rated LOW unless content contains secrets.`
+            : `feroxbuster discovered ${p.url} with HTTP status ${p.status}`)
       }
-      const others = paths.length - interesting.length
+      if (blocked.length) {
+        push(`feroxbuster: ${blocked.length} sensitive paths exist but are NOT accessible (HTTP 403/404)`, 'info',
+          `Paths matching sensitive patterns returned blocking status codes: ${blocked.slice(0, 5).map(p => `${p.url.replace(/^https?:\/\/[^/]+/i, '')} (${p.status})`).join(', ')}${blocked.length > 5 ? '...' : ''}. These are access-controlled (WAF or server deny rules) — not an exposure.`)
+      }
+      const others = paths.length - interesting.length - blocked.length
       if (others > 0) push(`feroxbuster: ${others} additional paths discovered`, 'info', `Total: ${paths.length} paths`)
     }
     if (findings.length || discoveredUrls.length) return { findings: findings.slice(0, 30), discoveredUrls }
@@ -2307,7 +2583,8 @@ function extractFindingsFromOutput(tool, output, target = '') {
       for (const p of paths) {
         const url = /^https?:/i.test(p.path) ? p.path : `${base}${p.path.startsWith('/') ? '' : '/'}${p.path}`
         discoveredUrls.push(url)
-        if (/admin|backup|config|\.git|\.env|\.sql|\.bak|\.zip|upload|debug/i.test(p.path)) {
+        // STATUS GATE: only accessible paths (2xx/3xx/401) become findings
+        if (/^(200|201|204|301|302|307|308|401)$/.test(p.status) && /admin|backup|config|\.git|\.env|\.sql|\.bak|\.zip|upload|debug/i.test(p.path)) {
           push(`dirsearch: Discovered ${p.path} (HTTP ${p.status})`, 'medium', `dirsearch discovered ${p.path} with HTTP status ${p.status}`)
         }
       }

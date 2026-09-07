@@ -66,8 +66,8 @@ export default function AIChatWidget() {
   return (
     <>
       {!open && (
-        <button onClick={() => setOpen(true)} title="AI assistant"
-          className="fixed bottom-6 right-6 z-50 h-13 w-13 rounded-full shadow-glow grid place-items-center hover:scale-105 transition-transform p-2 bg-slate-900 border border-red-500/40">
+        <button onClick={() => setOpen(true)} title="AI Cyber Assistant"
+          className="fixed bottom-6 right-6 z-50 h-13 w-13 rounded-2xl shadow-glow grid place-items-center hover:scale-110 active:scale-95 transition-all p-2 bg-[#0c101d] border border-cyan-400/40 shadow-[0_0_20px_rgba(0,242,254,0.35)]">
           <InspectorLogo size={28} />
         </button>
       )}

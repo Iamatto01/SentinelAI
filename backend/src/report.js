@@ -5,6 +5,7 @@ import { config } from './config.js'
 import * as db from './db.js'
 import { OWASP } from './owasp.js'
 import { aiEngine } from './ai/ai-engine.js'
+import { computeRiskScore, riskRatingFromScore } from './pipeline.js'
 
 /**
  * FYP2 Report Generator - Modern, High-Visual PDF Pentest Report.
@@ -1085,16 +1086,14 @@ function fmtDateTime(dt) {
 }
 
 function riskRating(findings) {
+  // UNIFIED: derive the qualitative rating from the SAME weighted score the
+  // pipeline persists (scans.risk_score) so cover and appendix always agree.
   const counts = {}
   for (const f of findings) {
     const s = (f.severity || 'info').toLowerCase()
     counts[s] = (counts[s] || 0) + 1
   }
-  if ((counts.critical || 0) > 0) return 'CRITICAL'
-  if ((counts.high || 0) >= 3) return 'HIGH'
-  if ((counts.high || 0) > 0 || (counts.medium || 0) >= 5) return 'MEDIUM'
-  if ((counts.medium || 0) > 0 || (counts.low || 0) > 0) return 'LOW'
-  return 'INFORMATIONAL'
+  return riskRatingFromScore(computeRiskScore(counts))
 }
 
 function duration(start, end) {
