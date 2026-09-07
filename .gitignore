@@ -16,6 +16,7 @@ output/*.db-wal
 output/*.db-shm
 output/*.pdf
 output/backups/
+output/reports/
 *.db
 *.log
 hexstrike.log
