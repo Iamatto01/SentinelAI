@@ -119,6 +119,12 @@ export const config = {
     webhookSecret: (process.env.STRIPE_WEBHOOK_SECRET || '').trim(),
     currency: (process.env.STRIPE_CURRENCY || 'MYR').toLowerCase(),
   },
+
+  duitnow: {
+    enabled: true,
+    merchantName: process.env.DUITNOW_MERCHANT_NAME || 'SENTINELAI CYBERTECH',
+    merchantAccount: process.env.DUITNOW_ACCOUNT || '162263884920',
+  },
 }
 
 // Ensure persistent storage and backup directories exist

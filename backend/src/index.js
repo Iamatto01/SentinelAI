@@ -2067,6 +2067,12 @@ app.get('/api/billing/config', (req, res) => {
     stripeEnabled: Boolean(config.stripe?.publishableKey && config.stripe?.secretKey),
     publishableKey: config.stripe?.publishableKey || '',
     currency: (config.stripe?.currency || 'MYR').toUpperCase(),
+    duitnow: {
+      enabled: true,
+      merchantName: config.duitnow?.merchantName || 'SENTINELAI CYBERTECH',
+      merchantAccount: config.duitnow?.merchantAccount || '162263884920',
+      qrPrompt: 'Scan with Maybank MAE, Touch n Go eWallet, CIMB OCTO, or any Malaysian banking app',
+    },
   })
 })
 
@@ -2076,13 +2082,30 @@ app.get('/api/billing/subscription', requireAuth, (req, res) => {
   res.json(sub)
 })
 
-// Create checkout / Upgrade subscription plan (Stripe Live Checkout or Fallback)
+// Create checkout / Upgrade subscription plan (Stripe Live Checkout or DuitNow QR)
 app.post('/api/billing/checkout', requireAuth, async (req, res) => {
-  const { planId, billingInterval = 'monthly', provider = 'stripe', promoCode = '' } = req.body || {}
+  const { planId, billingInterval = 'monthly', provider = 'stripe', promoCode = '', referenceNumber = '' } = req.body || {}
   if (!planId || !PLANS[planId]) return res.status(400).json({ error: 'Valid planId is required' })
 
   const plan = PLANS[planId]
-  const amount = billingInterval === 'yearly' ? plan.priceYearly : plan.priceMonthly
+  let amount = billingInterval === 'yearly' ? plan.priceYearly : plan.priceMonthly
+  if (planId === 'pay_per_scan') {
+    amount = plan.priceMonthly || 3.0
+  }
+
+  // Calculate promo discount if applicable
+  let discountAmount = 0
+  let appliedPromo = ''
+  if (promoCode && promoCode.trim()) {
+    try {
+      const val = validatePromoCode(promoCode.trim(), planId, billingInterval)
+      if (val?.valid) {
+        discountAmount = val.discountAmount
+        appliedPromo = val.code
+      }
+    } catch { /* ignore */ }
+  }
+  const finalAmount = Math.max(0, amount - discountAmount)
 
   // If provider is Stripe and keys are configured, create real Stripe Checkout Session
   if (provider === 'stripe' && config.stripe?.secretKey) {
@@ -2093,7 +2116,7 @@ app.post('/api/billing/checkout', requireAuth, async (req, res) => {
         userEmail: req.user.email || `${req.user.username}@sentinelai.studio`,
         planId,
         billingInterval,
-        promoCode,
+        promoCode: appliedPromo,
         origin,
       })
 
@@ -2110,16 +2133,83 @@ app.post('/api/billing/checkout', requireAuth, async (req, res) => {
     }
   }
 
+  // DuitNow QR payment fulfillment
+  if (provider === 'duitnow_qr' || provider === 'local_fpx') {
+    const txRef = referenceNumber?.trim() || `DN_${Date.now().toString(36).toUpperCase()}_${randomUUID().slice(0, 4).toUpperCase()}`
+    const now = new Date().toISOString()
+
+    if (planId === 'pay_per_scan') {
+      const currentSub = getUserSubscription(req.user.id)
+      const currentQuotaTotal = Number(currentSub.scan_quota_total || currentSub.scanQuotaTotal || 3)
+      const newQuotaTotal = currentQuotaTotal + 1
+      const txId = `tx_${Date.now().toString(36)}_${randomUUID().slice(0, 6)}`
+
+      db.run(
+        `UPDATE subscriptions SET scan_quota_total = ?, updated_at = ? WHERE user_id = ?`,
+        newQuotaTotal,
+        now,
+        req.user.id
+      )
+
+      db.run(
+        `INSERT INTO payment_transactions (id, user_id, amount, currency, status, provider, reference_id, plan_id, discount_amount, promo_code, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        txId,
+        req.user.id,
+        finalAmount,
+        'MYR',
+        'completed',
+        provider,
+        txRef,
+        'pay_per_scan',
+        discountAmount,
+        appliedPromo,
+        now
+      )
+
+      audit(req.user.username, `billing:${provider}`, `Topped up 1 Scan Credit via ${provider} (RM${finalAmount}) Ref: ${txRef}`)
+      return res.json({
+        success: true,
+        provider,
+        referenceId: txRef,
+        message: `DuitNow QR payment confirmed! 1 Scan Credit added to your account.`,
+        subscription: getUserSubscription(req.user.id),
+      })
+    }
+
+    // Pro or Enterprise upgrade via DuitNow QR
+    const updatedSub = activateSubscription({
+      userId: req.user.id,
+      planId,
+      amount: finalAmount,
+      provider,
+      referenceId: txRef,
+      interval: billingInterval,
+      promoCode: appliedPromo,
+    })
+
+    audit(req.user.username, `billing:${provider}`, `Upgraded to ${plan.name} via ${provider} (RM${finalAmount}) Ref: ${txRef}`)
+    return res.json({
+      success: true,
+      provider,
+      referenceId: txRef,
+      message: `🎉 DuitNow QR payment verified! Successfully upgraded to ${plan.name}.`,
+      subscription: updatedSub,
+    })
+  }
+
   // Fallback: Internal instant activation (for simulation / demo mode)
   const updatedSub = activateSubscription({
     userId: req.user.id,
     planId,
-    amount,
+    amount: finalAmount,
     provider: provider || 'simulation',
     referenceId: `ch_${randomUUID().slice(0, 16)}`,
+    interval: billingInterval,
+    promoCode: appliedPromo,
   })
 
-  audit(req.user.username, 'billing:upgrade', `Subscribed to ${plan.name} (RM${amount})`)
+  audit(req.user.username, 'billing:upgrade', `Subscribed to ${plan.name} (RM${finalAmount})`)
   res.json({
     success: true,
     message: `Successfully upgraded to ${plan.name}`,

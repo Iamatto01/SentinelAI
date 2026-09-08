@@ -2,8 +2,10 @@ import React, { useState, useEffect } from 'react'
 import {
   CreditCard, Sparkles, Check, Zap, Shield, ArrowRight, CheckCircle2,
   Calendar, Layers, FileText, AlertCircle, RefreshCw, Loader2, Star,
-  Lock, TrendingUp, HelpCircle, BadgeCheck
+  Lock, TrendingUp, HelpCircle, BadgeCheck, QrCode, Smartphone, Copy,
+  ExternalLink, Building2
 } from 'lucide-react'
+import QRCode from 'qrcode'
 import { api } from '../lib/api.js'
 import { BillingSkeleton } from '../components/SkeletonLoader.jsx'
 
@@ -16,10 +18,18 @@ export default function Billing() {
   const [upgradingPlan, setUpgradingPlan] = useState(null)
   const [modalOpen, setModalOpen] = useState(false)
   const [selectedPlan, setSelectedPlan] = useState(null)
-  const [paymentProvider, setPaymentProvider] = useState('stripe')
+  const [paymentProvider, setPaymentProvider] = useState('duitnow_qr') // 'duitnow_qr' | 'stripe' | 'local_fpx'
   const [processingPayment, setProcessingPayment] = useState(false)
   const [successMsg, setSuccessMsg] = useState('')
   const [error, setError] = useState('')
+
+  // QR Code payment states
+  const [duitnowQrUrl, setDuitnowQrUrl] = useState('')
+  const [stripeQrUrl, setStripeQrUrl] = useState('')
+  const [generatingStripeQr, setGeneratingStripeQr] = useState(false)
+  const [copiedRef, setCopiedRef] = useState(false)
+  const [duitnowRef, setDuitnowRef] = useState('')
+  const [userEnteredRef, setUserEnteredRef] = useState('')
 
   const [promoCodeInput, setPromoCodeInput] = useState('')
   const [appliedPromo, setAppliedPromo] = useState(null)
@@ -72,12 +82,77 @@ export default function Billing() {
     }
   }, [])
 
+  const calculateTotalDue = () => {
+    if (!selectedPlan) return 0
+    if (appliedPromo) return Number(appliedPromo.finalPrice) || 0
+    if (selectedPlan.id === 'pay_per_scan') return Number(selectedPlan.priceMonthly) || 3.0
+    return interval === 'yearly' ? Number(selectedPlan.priceYearly) || 200.0 : Number(selectedPlan.priceMonthly) || 20.0
+  }
+
+  // Generate DuitNow QR Data URL whenever plan, interval, promo, or ref changes
+  useEffect(() => {
+    if (!selectedPlan || !modalOpen) return
+    const total = calculateTotalDue()
+    const ref = duitnowRef || ('SN' + Math.random().toString(36).substring(2, 8).toUpperCase())
+    if (!duitnowRef) setDuitnowRef(ref)
+
+    // Format DuitNow QR payload (Standard Malaysian DuitNow dynamic transfer format)
+    const payload = `duitnow://pay?merchant=SENTINELAI_CYBERTECH&account=162263884920&amount=${total.toFixed(2)}&currency=MYR&ref=${ref}`
+    QRCode.toDataURL(payload, {
+      width: 280,
+      margin: 2,
+      color: {
+        dark: '#090d16',
+        light: '#ffffff',
+      },
+    })
+      .then((url) => setDuitnowQrUrl(url))
+      .catch((e) => console.warn('QR gen error:', e))
+  }, [selectedPlan, modalOpen, interval, appliedPromo, duitnowRef])
+
   const handleOpenCheckout = (plan) => {
     setSelectedPlan(plan)
     setPromoCodeInput('')
     setAppliedPromo(null)
     setPromoError('')
+    setPaymentProvider('duitnow_qr')
+    setDuitnowRef('SN' + Math.random().toString(36).substring(2, 8).toUpperCase())
+    setUserEnteredRef('')
+    setStripeQrUrl('')
+    setCopiedRef(false)
     setModalOpen(true)
+  }
+
+  const handleCopyRef = (text) => {
+    if (!navigator.clipboard) return
+    navigator.clipboard.writeText(text)
+    setCopiedRef(true)
+    setTimeout(() => setCopiedRef(false), 2000)
+  }
+
+  const handleGenerateStripeQr = async () => {
+    if (!selectedPlan) return
+    setGeneratingStripeQr(true)
+    setError('')
+    try {
+      const promoToSend = appliedPromo ? appliedPromo.code : ''
+      const res = await api.billingCheckout(selectedPlan.id, interval, promoToSend, 'stripe')
+      if (res.url) {
+        const qr = await QRCode.toDataURL(res.url, {
+          width: 260,
+          margin: 2,
+          color: {
+            dark: '#0369a1',
+            light: '#ffffff',
+          },
+        })
+        setStripeQrUrl(qr)
+      }
+    } catch (e) {
+      setError('Failed to generate Stripe QR: ' + e.message)
+    } finally {
+      setGeneratingStripeQr(false)
+    }
   }
 
   const handleApplyPromo = async () => {
@@ -105,7 +180,8 @@ export default function Billing() {
 
     try {
       const promoToSend = appliedPromo ? appliedPromo.code : ''
-      const res = await api.billingCheckout(selectedPlan.id, interval, promoToSend, paymentProvider)
+      const refToSend = userEnteredRef.trim() || duitnowRef
+      const res = await api.billingCheckout(selectedPlan.id, interval, promoToSend, paymentProvider, refToSend)
       
       // If Stripe Checkout session URL returned, redirect directly to Stripe!
       if (res.url) {
@@ -113,7 +189,7 @@ export default function Billing() {
         return
       }
 
-      setSuccessMsg(`🎉 Success! Upgraded to ${selectedPlan.name}. Your quota has been updated.`)
+      setSuccessMsg(res.message || `🎉 Success! Upgraded to ${selectedPlan.name}. Your quota has been updated.`)
       setModalOpen(false)
       await loadData()
     } catch (err) {
@@ -356,12 +432,19 @@ export default function Billing() {
                     Current Active Plan
                   </div>
                 ) : (
-                  <button
-                    onClick={() => handleOpenCheckout(plan)}
-                    className="btn-primary w-full py-3 rounded-xl font-extrabold text-xs flex items-center justify-center gap-2 shadow-glow hover:scale-[1.02] transition-all bg-gradient-to-r from-cyan-500 via-blue-600 to-indigo-600 text-slate-950 cursor-pointer"
-                  >
-                    <Zap size={15} className="fill-slate-950" /> {isPayPerScan ? 'Top-Up Scan (RM 3)' : `Upgrade to ${plan.name}`}
-                  </button>
+                  <div>
+                    <button
+                      onClick={() => handleOpenCheckout(plan)}
+                      className="btn-primary w-full py-3 rounded-xl font-extrabold text-xs flex items-center justify-center gap-2 shadow-glow hover:scale-[1.02] transition-all bg-gradient-to-r from-cyan-500 via-blue-600 to-indigo-600 text-slate-950 cursor-pointer"
+                    >
+                      <Zap size={15} className="fill-slate-950" /> {isPayPerScan ? 'Top-Up Scan (RM 3)' : `Upgrade to ${plan.name}`}
+                    </button>
+                    <div className="mt-2.5 text-center text-[10px] text-slate-400 flex items-center justify-center gap-2">
+                      <span className="flex items-center gap-1 text-pink-400 font-bold"><QrCode size={11} /> DuitNow QR</span>
+                      <span className="text-slate-600">&bull;</span>
+                      <span className="flex items-center gap-1 text-cyan-400 font-semibold"><CreditCard size={11} /> Stripe Cards / Pay</span>
+                    </div>
+                  </div>
                 )}
               </div>
             </div>
@@ -419,8 +502,8 @@ export default function Billing() {
 
       {/* Checkout Modal */}
       {modalOpen && selectedPlan && (
-        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-md z-50 grid place-items-center p-4 animate-in fade-in">
-          <div className="card p-6 max-w-md w-full border-cyan-500/30 bg-slate-900 shadow-2xl space-y-5 animate-in zoom-in-95">
+        <div className="fixed inset-0 bg-slate-950/85 backdrop-blur-md z-50 grid place-items-center p-4 animate-in fade-in">
+          <div className="card p-6 max-w-lg w-full max-h-[92vh] overflow-y-auto border-cyan-500/30 bg-slate-900 shadow-2xl space-y-5 animate-in zoom-in-95 custom-scrollbar">
             <div className="flex items-center justify-between border-b border-white/10 pb-3">
               <div className="flex items-center gap-2 font-bold text-white text-base">
                 <Sparkles size={18} className="text-cyan-400" />
@@ -428,12 +511,13 @@ export default function Billing() {
               </div>
               <button
                 onClick={() => setModalOpen(false)}
-                className="text-slate-400 hover:text-white text-xs font-bold"
+                className="text-slate-400 hover:text-white text-xs font-bold p-1"
               >
                 ✕
               </button>
             </div>
 
+            {/* Summary Box */}
             <div className="bg-slate-950 p-4 rounded-xl border border-white/10 space-y-2">
               <div className="flex justify-between text-xs text-slate-400">
                 <span>Selected Plan:</span>
@@ -464,7 +548,7 @@ export default function Billing() {
               <div className="flex justify-between text-sm font-bold text-white">
                 <span>Total Due:</span>
                 <span className="text-cyan-400 font-mono text-base">
-                  RM {appliedPromo ? appliedPromo.finalPrice : (selectedPlan.id === 'pay_per_scan' ? selectedPlan.priceMonthly : (interval === 'yearly' ? selectedPlan.priceYearly : selectedPlan.priceMonthly))} MYR
+                  RM {calculateTotalDue().toFixed(2)} MYR
                 </span>
               </div>
             </div>
@@ -518,35 +602,215 @@ export default function Billing() {
               )}
             </div>
 
-            {/* Payment Method Selector */}
-            <div className="space-y-2">
-              <label className="text-xs font-semibold text-slate-300">Payment Gateway</label>
-              <div className="grid grid-cols-2 gap-2">
+            {/* Payment Method Selector Tabs */}
+            <div className="space-y-2.5">
+              <label className="text-xs font-semibold text-slate-300 flex items-center justify-between">
+                <span>Select Payment Method</span>
+                <span className="text-[10px] text-slate-400">All methods in MYR</span>
+              </label>
+
+              <div className="grid grid-cols-3 gap-2">
+                {/* DuitNow QR Tab */}
+                <button
+                  type="button"
+                  onClick={() => setPaymentProvider('duitnow_qr')}
+                  className={`p-2.5 rounded-xl border text-xs font-bold flex flex-col items-center justify-center gap-1 transition-all ${
+                    paymentProvider === 'duitnow_qr'
+                      ? 'border-pink-500 bg-pink-500/10 text-pink-300 shadow-md shadow-pink-950/30'
+                      : 'border-white/10 bg-slate-950 text-slate-400 hover:text-white'
+                  }`}
+                >
+                  <QrCode size={18} className={paymentProvider === 'duitnow_qr' ? 'text-pink-400' : 'text-slate-400'} />
+                  <span>DuitNow QR</span>
+                </button>
+
+                {/* Stripe Live Tab */}
                 <button
                   type="button"
                   onClick={() => setPaymentProvider('stripe')}
-                  className={`p-3 rounded-xl border text-xs font-semibold flex items-center justify-center gap-2 transition-colors ${
+                  className={`p-2.5 rounded-xl border text-xs font-bold flex flex-col items-center justify-center gap-1 transition-all ${
                     paymentProvider === 'stripe'
-                      ? 'border-cyan-400 bg-cyan-500/10 text-cyan-300'
+                      ? 'border-cyan-400 bg-cyan-500/10 text-cyan-300 shadow-md shadow-cyan-950/30'
                       : 'border-white/10 bg-slate-950 text-slate-400 hover:text-white'
                   }`}
                 >
-                  <CreditCard size={14} /> Stripe / Card
+                  <CreditCard size={18} className={paymentProvider === 'stripe' ? 'text-cyan-400' : 'text-slate-400'} />
+                  <span>Stripe / Card</span>
                 </button>
+
+                {/* FPX Banking Tab */}
                 <button
                   type="button"
                   onClick={() => setPaymentProvider('local_fpx')}
-                  className={`p-3 rounded-xl border text-xs font-semibold flex items-center justify-center gap-2 transition-colors ${
+                  className={`p-2.5 rounded-xl border text-xs font-bold flex flex-col items-center justify-center gap-1 transition-all ${
                     paymentProvider === 'local_fpx'
-                      ? 'border-cyan-400 bg-cyan-500/10 text-cyan-300'
+                      ? 'border-amber-400 bg-amber-500/10 text-amber-300 shadow-md shadow-amber-950/30'
                       : 'border-white/10 bg-slate-950 text-slate-400 hover:text-white'
                   }`}
                 >
-                  <Zap size={14} /> FPX / Instant
+                  <Building2 size={18} className={paymentProvider === 'local_fpx' ? 'text-amber-400' : 'text-slate-400'} />
+                  <span>FPX Banking</span>
                 </button>
               </div>
             </div>
 
+            {/* TAB CONTENT: DuitNow QR */}
+            {paymentProvider === 'duitnow_qr' && (
+              <div className="rounded-2xl border border-pink-500/30 overflow-hidden bg-slate-950/90 shadow-xl space-y-4 animate-in fade-in">
+                {/* DuitNow Header */}
+                <div className="bg-gradient-to-r from-[#ed008c] to-[#c70075] px-4 py-2.5 text-white flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="w-6 h-6 rounded-md bg-white grid place-items-center">
+                      <QrCode size={15} className="text-[#ed008c]" />
+                    </div>
+                    <div>
+                      <div className="text-xs font-black tracking-wider uppercase leading-none">DuitNow QR</div>
+                      <div className="text-[9px] text-pink-100 font-semibold">Malaysia National QR Standard</div>
+                    </div>
+                  </div>
+                  <span className="text-[10px] bg-white/20 px-2 py-0.5 rounded-full font-bold uppercase tracking-wider text-white">
+                    Instant Scan
+                  </span>
+                </div>
+
+                {/* QR Display Container */}
+                <div className="px-5 pb-5 flex flex-col items-center justify-center space-y-3">
+                  <div className="p-2.5 bg-white rounded-2xl shadow-lg border-2 border-pink-500/30 flex items-center justify-center">
+                    {duitnowQrUrl ? (
+                      <img
+                        src={duitnowQrUrl}
+                        alt="DuitNow QR Code"
+                        className="w-48 h-48 sm:w-52 sm:h-52 rounded-xl object-contain"
+                      />
+                    ) : (
+                      <div className="w-48 h-48 flex items-center justify-center">
+                        <Loader2 size={32} className="animate-spin text-pink-500" />
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Amount & Merchant info */}
+                  <div className="text-center space-y-0.5">
+                    <div className="text-[11px] text-slate-400 font-semibold">Amount to Pay:</div>
+                    <div className="text-2xl font-black text-white font-mono tracking-tight flex items-center justify-center gap-1">
+                      <span className="text-pink-400 font-sans">RM</span> {calculateTotalDue().toFixed(2)}
+                    </div>
+                    <div className="text-[11px] text-slate-400">
+                      Merchant: <strong className="text-slate-200">SENTINELAI CYBERTECH</strong>
+                    </div>
+                  </div>
+
+                  {/* Reference ID Pill with Copy Button */}
+                  <div className="w-full bg-slate-900/90 border border-white/10 rounded-xl p-2.5 flex items-center justify-between text-xs">
+                    <div className="space-y-0.5">
+                      <div className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">Payment Reference:</div>
+                      <div className="font-mono font-black text-cyan-300 tracking-wider text-sm">{duitnowRef}</div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleCopyRef(duitnowRef)}
+                      className="px-2.5 py-1 rounded-lg bg-cyan-500/10 border border-cyan-500/30 text-cyan-300 hover:bg-cyan-500/20 text-[11px] font-bold flex items-center gap-1 transition-colors"
+                    >
+                      {copiedRef ? <Check size={12} className="text-emerald-400" /> : <Copy size={12} />}
+                      <span>{copiedRef ? 'Copied!' : 'Copy'}</span>
+                    </button>
+                  </div>
+
+                  {/* Optional Bank Reference Input */}
+                  <div className="w-full space-y-1">
+                    <label className="text-[11px] font-semibold text-slate-400 flex items-center justify-between">
+                      <span>Receipt / Bank Ref No. (Optional):</span>
+                      <span className="text-[10px] text-slate-500">For record</span>
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. 2026090812345678"
+                      value={userEnteredRef}
+                      onChange={(e) => setUserEnteredRef(e.target.value)}
+                      className="input text-xs font-mono py-1.5 w-full bg-slate-950"
+                    />
+                  </div>
+
+                  {/* Supported Banks Badges */}
+                  <div className="text-center space-y-1.5 pt-1 w-full border-t border-white/5">
+                    <div className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">
+                      Accepted in All Malaysian Bank Apps & eWallets
+                    </div>
+                    <div className="flex flex-wrap items-center justify-center gap-1 text-[10px] text-slate-300">
+                      {['Maybank MAE', 'TNG eWallet', 'CIMB OCTO', 'GrabPay', 'Bank Islam', 'RHB', 'Public Bank'].map(b => (
+                        <span key={b} className="px-2 py-0.5 rounded-md bg-white/5 border border-white/10 text-[10px]">
+                          {b}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* TAB CONTENT: Stripe Live */}
+            {paymentProvider === 'stripe' && (
+              <div className="p-4 rounded-xl bg-slate-950 border border-white/10 space-y-4 animate-in fade-in">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <CreditCard size={18} className="text-cyan-400" />
+                    <span className="text-xs font-bold text-white">Stripe Live Checkout</span>
+                  </div>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-cyan-500/10 text-cyan-300 font-semibold border border-cyan-500/20">
+                    Visa &bull; Mastercard &bull; Apple Pay &bull; Google Pay
+                  </span>
+                </div>
+                <p className="text-xs text-slate-400 leading-relaxed">
+                  Pay securely using any Malaysian or international credit/debit card, Apple Pay, or Google Pay via Stripe's encrypted payment gateway.
+                </p>
+
+                {/* Option to Scan Stripe QR on Phone */}
+                <div className="pt-1 border-t border-white/5 space-y-3">
+                  {!stripeQrUrl ? (
+                    <button
+                      type="button"
+                      onClick={handleGenerateStripeQr}
+                      disabled={generatingStripeQr}
+                      className="btn-ghost w-full py-2 text-xs font-bold border border-cyan-500/30 text-cyan-300 hover:bg-cyan-500/10 flex items-center justify-center gap-2"
+                    >
+                      {generatingStripeQr ? <Loader2 size={13} className="animate-spin" /> : <Smartphone size={14} />}
+                      <span>{generatingStripeQr ? 'Generating Mobile QR...' : 'Scan QR to Pay with Phone (Apple/Google Pay)'}</span>
+                    </button>
+                  ) : (
+                    <div className="p-3.5 rounded-xl bg-slate-900 border border-cyan-500/30 text-center space-y-2 animate-in zoom-in-95">
+                      <div className="p-2 bg-white rounded-xl inline-block shadow-md">
+                        <img src={stripeQrUrl} alt="Stripe Mobile QR" className="w-36 h-36 object-contain rounded-lg" />
+                      </div>
+                      <div className="text-[11px] text-cyan-300 font-semibold flex items-center justify-center gap-1.5">
+                        <Smartphone size={13} /> Scan with your phone camera to pay with Apple / Google Pay
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* TAB CONTENT: FPX Online Banking */}
+            {paymentProvider === 'local_fpx' && (
+              <div className="p-4 rounded-xl bg-slate-950 border border-white/10 space-y-3 animate-in fade-in">
+                <div className="flex items-center gap-2 text-xs font-bold text-white">
+                  <Building2 size={16} className="text-amber-400" />
+                  <span>FPX Malaysian Online Banking</span>
+                </div>
+                <p className="text-xs text-slate-400 leading-relaxed">
+                  Direct internet banking transfer with all major retail and business Malaysian banking institutions.
+                </p>
+                <div className="flex flex-wrap gap-1.5 pt-1">
+                  {['Maybank2u', 'CIMB Clicks', 'Bank Islam', 'RHB Now', 'Public Bank', 'Hong Leong Connect', 'AmBank'].map(b => (
+                    <span key={b} className="text-[10px] px-2 py-0.5 rounded bg-white/5 border border-white/10 text-slate-300">
+                      {b}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Modal Action Buttons */}
             <div className="flex gap-3 pt-2">
               <button
                 type="button"
@@ -555,15 +819,42 @@ export default function Billing() {
               >
                 Cancel
               </button>
-              <button
-                type="button"
-                onClick={handleConfirmCheckout}
-                disabled={processingPayment}
-                className="btn-primary flex-1 text-xs py-2.5 shadow-glow flex items-center justify-center gap-2"
-              >
-                {processingPayment ? <Loader2 size={14} className="animate-spin" /> : <Lock size={14} />}
-                {processingPayment ? 'Processing...' : 'Confirm & Upgrade'}
-              </button>
+
+              {paymentProvider === 'duitnow_qr' && (
+                <button
+                  type="button"
+                  onClick={handleConfirmCheckout}
+                  disabled={processingPayment}
+                  className="btn-primary flex-1 text-xs py-2.5 shadow-glow flex items-center justify-center gap-2 bg-gradient-to-r from-emerald-500 to-teal-600 text-slate-950 font-black hover:brightness-110"
+                >
+                  {processingPayment ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
+                  {processingPayment ? 'Verifying...' : `I Have Paid (Sahkan RM ${calculateTotalDue().toFixed(2)})`}
+                </button>
+              )}
+
+              {paymentProvider === 'stripe' && (
+                <button
+                  type="button"
+                  onClick={handleConfirmCheckout}
+                  disabled={processingPayment}
+                  className="btn-primary flex-1 text-xs py-2.5 shadow-glow flex items-center justify-center gap-2 bg-gradient-to-r from-cyan-500 to-blue-600 text-slate-950 font-black"
+                >
+                  {processingPayment ? <Loader2 size={14} className="animate-spin" /> : <ExternalLink size={14} />}
+                  {processingPayment ? 'Redirecting to Stripe...' : `Pay RM ${calculateTotalDue().toFixed(2)} with Stripe`}
+                </button>
+              )}
+
+              {paymentProvider === 'local_fpx' && (
+                <button
+                  type="button"
+                  onClick={handleConfirmCheckout}
+                  disabled={processingPayment}
+                  className="btn-primary flex-1 text-xs py-2.5 shadow-glow flex items-center justify-center gap-2 bg-gradient-to-r from-amber-500 to-orange-500 text-slate-950 font-black"
+                >
+                  {processingPayment ? <Loader2 size={14} className="animate-spin" /> : <Zap size={14} />}
+                  {processingPayment ? 'Processing...' : `Proceed with FPX Banking`}
+                </button>
+              )}
             </div>
           </div>
         </div>

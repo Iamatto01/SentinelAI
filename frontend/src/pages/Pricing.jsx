@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import {
   ArrowRight, CheckCircle2, XCircle, Sparkles, Calculator,
-  HelpCircle, ChevronDown
+  HelpCircle, ChevronDown, QrCode, CreditCard, Zap
 } from 'lucide-react'
 import PublicLayout from '../components/PublicLayout.jsx'
 
@@ -103,6 +103,19 @@ export default function Pricing() {
           <div className="inline-flex items-center gap-2 px-4 py-2 rounded-2xl bg-cyan-500/10 border border-cyan-500/30 text-cyan-300 text-xs font-semibold shadow-[0_0_20px_rgba(0,242,254,0.15)]">
             <Sparkles size={14} className="text-cyan-400" />
             <span><strong>3 Free Scans Included:</strong> Every new account starts with 3 free trial audits &bull; No credit card required.</span>
+          </div>
+
+          {/* Supported Malaysian Payment Gateways */}
+          <div className="flex flex-wrap items-center justify-center gap-2 pt-1 text-xs">
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-pink-500/10 border border-pink-500/30 text-pink-300 font-semibold">
+              <QrCode size={13} className="text-pink-400" /> DuitNow QR (All Banks & eWallets)
+            </span>
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-cyan-500/10 border border-cyan-500/30 text-cyan-300 font-semibold">
+              <CreditCard size={13} className="text-cyan-400" /> Stripe (Cards / Apple Pay / Google Pay)
+            </span>
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-300 font-semibold">
+              <Zap size={13} className="text-amber-400" /> FPX Online Banking
+            </span>
           </div>
 
           {/* Monthly / Yearly Switch */}
