@@ -64,7 +64,22 @@ def create_archive(output_tar):
     size_mb = os.path.getsize(output_tar) / (1024 * 1024)
     print(f"   ✓ Archived {file_count} files ({size_mb:.2f} MB) in {time.time() - start_time:.1f}s")
 
+def get_local_env_var(name):
+    env_path = os.path.join(PROJECT_ROOT, ".env")
+    if not os.path.exists(env_path):
+        return ""
+    with open(env_path, "r", encoding="utf-8", errors="ignore") as f:
+        for line in f:
+            line = line.strip()
+            if line.startswith(f"{name}="):
+                return line.split("=", 1)[1].strip()
+    return ""
+
 def deploy_to_kali(local_tar):
+    stripe_sec = get_local_env_var("STRIPE_SECRET_KEY")
+    stripe_pub = get_local_env_var("STRIPE_PUBLISHABLE_KEY")
+    stripe_cur = get_local_env_var("STRIPE_CURRENCY") or "MYR"
+
     print(f"🚀 [2/4] Connecting via SSH to {KALI_USER}@{KALI_HOST}:{KALI_PORT}...")
     ssh = paramiko.SSHClient()
     ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
@@ -101,6 +116,31 @@ cd {REMOTE_DIR}
 if [ ! -f .env ] && [ -f .env.example ]; then
     cp .env.example .env
 fi
+
+# Ensure Stripe keys and currency are populated in .env on Kali
+python3 -c "
+import os, re
+env_file = '/home/kali/SentinelAI/.env'
+keys = {{
+    'STRIPE_SECRET_KEY': '{stripe_sec}',
+    'STRIPE_PUBLISHABLE_KEY': '{stripe_pub}',
+    'STRIPE_CURRENCY': '{stripe_cur}'
+}}
+content = open(env_file).read() if os.path.exists(env_file) else ''
+for k, v in keys.items():
+    if not v:
+        continue
+    if k not in content:
+        content += f'\\n{{k}}={{v}}\\n'
+    else:
+        content = re.sub(rf'^{{k}}=.*$', f'{{k}}={{v}}', content, flags=re.MULTILINE)
+with open(env_file, 'w') as f:
+    f.write(content)
+"
+
+# Install backend dependencies (including stripe)
+echo "   📦 Installing backend dependencies..."
+npm install --prefix backend
 
 # Install frontend dependencies if needed
 echo "   📦 Installing frontend dependencies..."

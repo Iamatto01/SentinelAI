@@ -40,15 +40,15 @@ const FEATURE_MATRIX = [
 const FAQS = [
   {
     q: 'What payment methods do you accept?',
-    a: 'Subscriptions are billed in USD via standard card payment. Annual billing saves you roughly 17% compared to the monthly rate on both Pro and Enterprise tiers.',
+    a: 'Subscriptions and on-demand scan credits are billed in MYR (Ringgit Malaysia) via Stripe live checkout. We support all major Credit/Debit cards (Visa, Mastercard), Apple Pay, and Google Pay with instant automated activation.',
   },
   {
     q: 'Can I cancel at any time?',
-    a: 'Yes. Both plans are cancel-anytime — your plan stays active until the end of the current billing period, and no further charges are made. Your scan history remains exportable.',
+    a: 'Yes. Both monthly and yearly plans are cancel-anytime — your plan stays active until the end of the current billing period, and no further charges are made. Your scan history remains exportable.',
   },
   {
     q: 'What happens if I hit my scan quota?',
-    a: 'Pro plans include 50 AI code audits per month. When the quota is reached, scans pause until the next cycle or an instant upgrade to Enterprise (unlimited audits). You are notified before any quota is exhausted.',
+    a: 'Pro plans include 50 AI code audits per month. When the quota is reached, you can either top up single credits via Pay-Per-Scan (RM 3/scan) or upgrade to Enterprise (unlimited audits). You are notified before any quota is exhausted.',
   },
   {
     q: 'Is my source code and scan data safe?',
@@ -60,7 +60,7 @@ const FAQS = [
   },
   {
     q: 'How does SentinelAI compare to hiring a pentest firm?',
-    a: 'A single traditional blackbox engagement typically costs $15,000+ with multi-week turnaround. SentinelAI delivers continuous autonomous assessment from $19/month — see the ROI calculator below.',
+    a: 'A single traditional blackbox engagement typically costs RM 15,000+ with multi-week turnaround. SentinelAI delivers continuous autonomous assessment starting from RM 3 per scan or RM 20/month — see the ROI calculator below.',
   },
 ]
 
@@ -80,7 +80,7 @@ export default function Pricing() {
 
   const roi = useMemo(() => {
     const traditionalCost = auditsPerYear * costPerAudit
-    const sentinelCost = interval === 'yearly' ? 790 : 79 * 12
+    const sentinelCost = interval === 'yearly' ? 800 : 80 * 12
     const savings = Math.max(0, traditionalCost - sentinelCost)
     const pct = traditionalCost > 0 ? Math.round((savings / traditionalCost) * 100) : 0
     return { traditionalCost, sentinelCost, savings, pct }
@@ -125,18 +125,64 @@ export default function Pricing() {
         </section>
 
         {/* ── Plan Cards ───────────────────────────────────────────────────── */}
-        <section className="grid grid-cols-1 md:grid-cols-2 gap-10 max-w-4xl mx-auto">
+        <section className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-6xl mx-auto">
+          {/* Pay-Per-Scan Card */}
+          <div className="card p-7 border-white/10 bg-[#161616] hover:border-white/20 flex flex-col justify-between hover:scale-[1.01] transition-transform duration-300">
+            <div className="space-y-6">
+              <div>
+                <span className="text-[10px] font-extrabold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-cyan-500/10 text-cyan-300 border border-cyan-500/30">
+                  On-Demand
+                </span>
+                <h3 className="text-xl font-extrabold text-white mt-3">Pay-Per-Scan</h3>
+                <div className="mt-3 flex items-baseline gap-1">
+                  <span className="text-4xl font-black text-white">RM 3</span>
+                  <span className="text-xs text-slate-400 font-medium">/ scan</span>
+                </div>
+                <p className="text-xs text-slate-400 mt-2">
+                  Top-up single scan credits on-demand with zero commitments or recurring fees.
+                </p>
+              </div>
+              <div className="h-px bg-white/10" />
+              <ul className="space-y-3 text-xs text-slate-300">
+                {[
+                  ['1 Full Security Scan', ' credit added to quota'],
+                  ['Full 150+ Toolchain', ' (DAST & SAST)'],
+                  ['Multi-LLM Consensus', ' AI verification'],
+                  ['Live Stdout Terminal', ' & real-time telemetry'],
+                  ['Executive PDF Report', ' export anytime'],
+                ].map(([b, rest], i) => (
+                  <li key={i} className="flex items-center gap-2.5">
+                    <CheckCircle2 size={16} className="text-cyan-400 shrink-0" />
+                    <span>{b && <strong>{b}</strong>}{rest}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            <div className="pt-8">
+              <Link
+                to="/app/billing"
+                className="btn-ghost w-full justify-center py-3 text-xs font-bold border border-white/15 hover:border-cyan-400"
+              >
+                <span>Buy Scan Credit (RM 3)</span> <ArrowRight size={14} />
+              </Link>
+            </div>
+          </div>
+
           {/* Pro Card */}
-          <div className="card p-8 sm:p-9 border-cyan-500/50 bg-gradient-to-b from-slate-900/90 via-slate-900/80 to-cyan-950/30 shadow-2xl shadow-cyan-950/40 ring-1 ring-cyan-400/40 relative flex flex-col justify-between hover:scale-[1.02] transition-transform duration-300">
+          <div className="card p-7 border-cyan-500/50 bg-[#161616] shadow-2xl shadow-cyan-950/40 ring-1 ring-cyan-400/40 relative flex flex-col justify-between hover:scale-[1.02] transition-transform duration-300">
             <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-0.5 rounded-full bg-gradient-to-r from-cyan-500 to-blue-500 text-slate-950 font-extrabold text-[10px] tracking-wider uppercase shadow-lg shadow-cyan-500/30 flex items-center gap-1">
               <Sparkles size={10} className="fill-slate-950" /> Most Popular
             </div>
 
             <div className="space-y-6">
               <div>
-                <h3 className="text-xl font-extrabold text-white">SentinelAI Pro</h3>
+                <span className="text-[10px] font-extrabold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-blue-500/10 text-blue-300 border border-blue-500/30">
+                  Monthly / Annual
+                </span>
+                <h3 className="text-xl font-extrabold text-white mt-3">SentinelAI Pro</h3>
                 <div className="mt-3 flex items-baseline gap-1">
-                  <span className="text-4xl font-black text-white">${interval === 'yearly' ? '190' : '19'}</span>
+                  <span className="text-4xl font-black text-white">RM {interval === 'yearly' ? '200' : '20'}</span>
                   <span className="text-xs text-slate-400 font-medium">{interval === 'yearly' ? '/year' : '/month'}</span>
                 </div>
                 <p className="text-xs text-slate-400 mt-2">
@@ -148,9 +194,9 @@ export default function Pricing() {
                 {[
                   ['50 AI Code Audits', ' / month'],
                   ['5 Linked Repositories', ' (Public & Private)'],
-                  ['', 'Continuous Webhooks (Push & PR triggers)'],
-                  ['', 'Automated Email PDF Delivery on every commit'],
-                  ['', 'AI Auto-Fix & Remediation Diffs'],
+                  ['Continuous Webhooks', ' (Push & PR triggers)'],
+                  ['Automated Email PDF', ' delivery on every scan'],
+                  ['AI Auto-Fix', ' & Remediation Diffs'],
                 ].map(([b, rest], i) => (
                   <li key={i} className="flex items-center gap-2.5">
                     <CheckCircle2 size={16} className="text-cyan-400 shrink-0" />
@@ -163,24 +209,27 @@ export default function Pricing() {
             <div className="pt-8">
               <Link
                 to={`/login?mode=register&plan=pro&interval=${interval}`}
-                className="btn-shine w-full justify-center py-3.5 text-xs font-extrabold"
+                className="btn-shine w-full justify-center py-3 text-xs font-extrabold"
               >
-                <span>Subscribe to SentinelAI Pro</span> <ArrowRight size={14} />
+                <span>Subscribe to Pro (RM {interval === 'yearly' ? '200' : '20'})</span> <ArrowRight size={14} />
               </Link>
             </div>
           </div>
 
           {/* Enterprise Card */}
-          <div className="card p-8 sm:p-9 border-white/10 bg-slate-950/70 hover:border-white/20 flex flex-col justify-between hover:scale-[1.02] transition-transform duration-300">
+          <div className="card p-7 border-emerald-500/30 bg-[#161616] hover:border-emerald-400/50 flex flex-col justify-between hover:scale-[1.01] transition-transform duration-300">
             <div className="space-y-6">
               <div>
-                <h3 className="text-xl font-extrabold text-white">SentinelAI Enterprise</h3>
+                <span className="text-[10px] font-extrabold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-300 border border-emerald-500/30">
+                  Elite Tier
+                </span>
+                <h3 className="text-xl font-extrabold text-white mt-3">SentinelAI Enterprise</h3>
                 <div className="mt-3 flex items-baseline gap-1">
-                  <span className="text-4xl font-black text-white">${interval === 'yearly' ? '790' : '79'}</span>
+                  <span className="text-4xl font-black text-white">RM {interval === 'yearly' ? '800' : '80'}</span>
                   <span className="text-xs text-slate-400 font-medium">{interval === 'yearly' ? '/year' : '/month'}</span>
                 </div>
                 <p className="text-xs text-slate-400 mt-2">
-                  Full continuous DevSecOps pipeline for organizations requiring unlimited audits &amp; compliance.
+                  Full continuous DevSecOps pipeline for organizations requiring unlimited audits &amp; Metasploit RPC.
                 </p>
               </div>
               <div className="h-px bg-white/10" />
@@ -188,9 +237,9 @@ export default function Pricing() {
                 {[
                   ['Unlimited AI Code Audits', ''],
                   ['Unlimited GitHub Repositories', ''],
-                  ['', 'GitHub PR Bot Inline Code Review'],
-                  ['', 'Real-time Slack / Discord Webhook Alerts'],
-                  ['', 'Executive White-label PDF Reports & SLA'],
+                  ['Metasploit RPC Bridge', ' & Auto-Exploits'],
+                  ['Dedicated Kali Worker Node', ' execution'],
+                  ['Telegram / Discord', ' Bot Alert Relays'],
                 ].map(([b, rest], i) => (
                   <li key={i} className="flex items-center gap-2.5">
                     <CheckCircle2 size={16} className="text-emerald-400 shrink-0" />
@@ -203,7 +252,7 @@ export default function Pricing() {
             <div className="pt-8">
               <Link
                 to={`/login?mode=register&plan=enterprise&interval=${interval}`}
-                className="btn-neon-draw w-full justify-center py-3.5 text-xs font-extrabold"
+                className="btn-neon-draw w-full justify-center py-3 text-xs font-extrabold"
               >
                 <span>Subscribe to Enterprise</span> <ArrowRight size={14} />
               </Link>
@@ -281,7 +330,7 @@ export default function Pricing() {
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
                   <label htmlFor="roi-cost" className="text-xs font-bold text-slate-200">Cost per traditional engagement</label>
-                  <span className="text-sm font-black text-amber-400">${costPerAudit.toLocaleString()}</span>
+                  <span className="text-sm font-black text-amber-400">RM {costPerAudit.toLocaleString()}</span>
                 </div>
                 <input
                   id="roi-cost"
@@ -293,12 +342,12 @@ export default function Pricing() {
                   onChange={(e) => setCostPerAudit(Number(e.target.value))}
                   className="w-full accent-amber-400 cursor-pointer"
                 />
-                <div className="flex justify-between text-[10px] text-slate-500"><span>$5,000</span><span>$50,000</span></div>
+                <div className="flex justify-between text-[10px] text-slate-500"><span>RM 5,000</span><span>RM 50,000</span></div>
               </div>
 
               <p className="text-[11px] text-slate-500 leading-relaxed border-t border-white/10 pt-4">
                 Industry benchmark: a single external blackbox penetration test from a conventional
-                security firm averages $15,000&ndash;$30,000 with multi-week turnaround.
+                security firm averages RM 15,000&ndash;RM 30,000 with multi-week turnaround.
               </p>
             </div>
 
@@ -309,17 +358,17 @@ export default function Pricing() {
               <div className="space-y-3">
                 <div className="flex items-center justify-between p-3.5 rounded-xl bg-black/40 border border-white/10">
                   <span className="text-xs text-slate-400">Traditional firm ({auditsPerYear}&times;/yr)</span>
-                  <span className="text-base font-black text-rose-400">${roi.traditionalCost.toLocaleString()}</span>
+                  <span className="text-base font-black text-rose-400">RM {roi.traditionalCost.toLocaleString()}</span>
                 </div>
                 <div className="flex items-center justify-between p-3.5 rounded-xl bg-black/40 border border-white/10">
                   <span className="text-xs text-slate-400">SentinelAI Enterprise ({interval})</span>
-                  <span className="text-base font-black text-cyan-400">${roi.sentinelCost.toLocaleString()}</span>
+                  <span className="text-base font-black text-cyan-400">RM {roi.sentinelCost.toLocaleString()}</span>
                 </div>
               </div>
 
               <div className="p-5 rounded-2xl bg-emerald-500/10 border border-emerald-400/30 text-center space-y-1">
                 <div className="text-[11px] font-bold uppercase tracking-wider text-emerald-300">You Save</div>
-                <div className="text-3xl font-black text-emerald-400">${roi.savings.toLocaleString()}</div>
+                <div className="text-3xl font-black text-emerald-400">RM {roi.savings.toLocaleString()}</div>
                 <div className="text-xs text-slate-400">{roi.pct}% cheaper than traditional consulting</div>
               </div>
 

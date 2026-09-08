@@ -31,6 +31,7 @@ import { matchExploits, classifyRisk } from './exploits/registry.js'
 import { sendScanRequestNotification, sendAnonymousFeedbackNotification } from './email.js'
 import { GitHubClient, parseGitHubWebhook } from './integrations/github.js'
 import { PLANS, getUserSubscription, consumeScanQuota, activateSubscription, getPaymentHistory, COMMUNITY_FREE_ACCESS_MODE } from './billing.js'
+import { createStripeCheckoutSession, verifyAndFulfillSession, getStripe } from './stripe.js'
 import { channelGateway } from './channels/index.js'
 
 // CORS: only whitelisted origins (config.corsOrigins from CLIENT_ORIGIN).
@@ -2060,36 +2061,125 @@ app.get('/api/billing/plans', (req, res) => {
   res.json({ plans: Object.values(PLANS) })
 })
 
+// Get billing & payment gateway public config
+app.get('/api/billing/config', (req, res) => {
+  res.json({
+    stripeEnabled: Boolean(config.stripe?.publishableKey && config.stripe?.secretKey),
+    publishableKey: config.stripe?.publishableKey || '',
+    currency: (config.stripe?.currency || 'MYR').toUpperCase(),
+  })
+})
+
 // Get current user subscription & quota status
 app.get('/api/billing/subscription', requireAuth, (req, res) => {
   const sub = getUserSubscription(req.user.id)
   res.json(sub)
 })
 
-// Create checkout / Upgrade subscription plan
-app.post('/api/billing/checkout', requireAuth, (req, res) => {
-  const { planId, billingInterval = 'monthly', provider = 'stripe' } = req.body || {}
+// Create checkout / Upgrade subscription plan (Stripe Live Checkout or Fallback)
+app.post('/api/billing/checkout', requireAuth, async (req, res) => {
+  const { planId, billingInterval = 'monthly', provider = 'stripe', promoCode = '' } = req.body || {}
   if (!planId || !PLANS[planId]) return res.status(400).json({ error: 'Valid planId is required' })
 
   const plan = PLANS[planId]
   const amount = billingInterval === 'yearly' ? plan.priceYearly : plan.priceMonthly
 
-  // NOTE: In production, integrate with Stripe/PayPal checkout session here.
-  // Currently this activates subscriptions instantly for testing/simulation.
+  // If provider is Stripe and keys are configured, create real Stripe Checkout Session
+  if (provider === 'stripe' && config.stripe?.secretKey) {
+    try {
+      const origin = req.headers.origin || req.headers.referer ? new URL(req.headers.referer || req.headers.origin).origin : 'https://sentinelai.studio'
+      const session = await createStripeCheckoutSession({
+        userId: req.user.id,
+        userEmail: req.user.email || `${req.user.username}@sentinelai.studio`,
+        planId,
+        billingInterval,
+        promoCode,
+        origin,
+      })
+
+      audit(req.user.username, 'billing:stripe_checkout', `Initiated Stripe Checkout for ${plan.name} (${session.sessionId})`)
+      return res.json({
+        success: true,
+        provider: 'stripe',
+        url: session.url,
+        sessionId: session.sessionId,
+      })
+    } catch (err) {
+      console.error('[stripe] Checkout session creation failed:', err.message)
+      return res.status(500).json({ error: `Stripe checkout initialization failed: ${err.message}` })
+    }
+  }
+
+  // Fallback: Internal instant activation (for simulation / demo mode)
   const updatedSub = activateSubscription({
     userId: req.user.id,
     planId,
     amount,
-    provider,
+    provider: provider || 'simulation',
     referenceId: `ch_${randomUUID().slice(0, 16)}`,
   })
 
-  audit(req.user.username, 'billing:upgrade', `Subscribed to ${plan.name} ($${amount})`)
+  audit(req.user.username, 'billing:upgrade', `Subscribed to ${plan.name} (RM${amount})`)
   res.json({
     success: true,
     message: `Successfully upgraded to ${plan.name}`,
     subscription: updatedSub,
   })
+})
+
+// Verify Stripe Checkout Session and activate subscription
+app.post('/api/billing/verify-session', requireAuth, async (req, res) => {
+  const { sessionId } = req.body || {}
+  if (!sessionId) return res.status(400).json({ error: 'sessionId is required' })
+
+  try {
+    const result = await verifyAndFulfillSession(sessionId)
+    if (!result.success) {
+      return res.status(400).json({ error: result.message || 'Payment not completed' })
+    }
+
+    audit(req.user.username, 'billing:verified', `Stripe payment verified for session ${sessionId}`)
+    res.json({
+      success: true,
+      subscription: result.subscription,
+      planId: result.planId,
+    })
+  } catch (err) {
+    console.error('[stripe] Session verification failed:', err.message)
+    res.status(500).json({ error: `Verification failed: ${err.message}` })
+  }
+})
+
+// Stripe Webhook listener for asynchronous confirmation
+app.post('/api/billing/webhook', async (req, res) => {
+  const sig = req.headers['stripe-signature']
+  const stripe = getStripe()
+
+  if (!stripe) return res.status(400).send('Stripe not configured')
+
+  let event
+  if (config.stripe?.webhookSecret && sig && req.rawBody) {
+    try {
+      event = stripe.webhooks.constructEvent(req.rawBody, sig, config.stripe.webhookSecret)
+    } catch (err) {
+      console.warn('[stripe] Webhook signature verification failed:', err.message)
+      return res.status(400).send(`Webhook Error: ${err.message}`)
+    }
+  } else {
+    event = req.body
+  }
+
+  if (event?.type === 'checkout.session.completed') {
+    const session = event.data.object
+    try {
+      await verifyAndFulfillSession(session.id)
+      console.log(`[stripe] Checkout session fulfilled via webhook: ${session.id}`)
+    } catch (err) {
+      console.error(`[stripe] Webhook fulfillment error: ${err.message}`)
+    }
+  }
+
+  res.json({ received: true })
 })
 
 // Payment transaction history

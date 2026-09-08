@@ -344,6 +344,40 @@ function migrate(d) {
     created_at TEXT NOT NULL,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
   );
+
+  CREATE TABLE IF NOT EXISTS plans (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    description TEXT,
+    price_monthly REAL NOT NULL DEFAULT 0,
+    price_yearly REAL NOT NULL DEFAULT 0,
+    currency TEXT NOT NULL DEFAULT 'MYR',
+    scan_quota INTEGER NOT NULL DEFAULT 10,
+    max_repos INTEGER NOT NULL DEFAULT 1,
+    features TEXT NOT NULL DEFAULT '[]',
+    is_popular INTEGER NOT NULL DEFAULT 0,
+    is_open INTEGER NOT NULL DEFAULT 1,
+    is_custom INTEGER NOT NULL DEFAULT 0,
+    badge TEXT,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS payment_transactions (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    amount REAL NOT NULL,
+    currency TEXT NOT NULL DEFAULT 'MYR',
+    status TEXT NOT NULL DEFAULT 'completed',
+    provider TEXT NOT NULL DEFAULT 'stripe',
+    reference_id TEXT,
+    plan_id TEXT,
+    discount_amount REAL DEFAULT 0,
+    promo_code TEXT DEFAULT '',
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+  );
   `)
 
   // Migration: add layman_impact column for existing databases
@@ -363,6 +397,31 @@ function migrate(d) {
   try { d.exec(`ALTER TABLE scans ADD COLUMN client TEXT`) } catch { /* already exists */ }
   try { d.exec(`ALTER TABLE scans ADD COLUMN owasp_categories TEXT`) } catch { /* already exists */ }
   try { d.exec(`ALTER TABLE projects ADD COLUMN user_id TEXT`) } catch { /* already exists */ }
+
+  // Ensure default plans exist with MYR pricing
+  try {
+    const now = new Date().toISOString()
+    const defaultPlans = [
+      ['trial', 'Free Trial', 'Explore the full power of SentinelAI autonomous scanning with 3 trial credits.', 0, 0, 'MYR', 3, 1, JSON.stringify(["3 Free Autonomous Security Scans","150+ Kali Toolchain (DAST + SAST)","Multi-LLM Consensus AI Verification","Executive Summary & Remediation Diff"]), 0, 1, 0, 'Starter', 1, now, now],
+      ['pay_per_scan', 'Pay-Per-Scan Credit', 'Top-up single scan credits on-demand with zero monthly commitments.', 3, 30, 'MYR', 1, 1, JSON.stringify(["RM 3 per single full autonomous scan","Full 150+ Toolchain DAST / SAST execution","Live stdout terminal & real-time telemetry","Instant downloadable PDF Audit Report","No recurring monthly subscription"]), 0, 1, 0, 'On-Demand', 2, now, now],
+      ['pro', 'SentinelAI Pro', 'Designed for engineering teams, pentesting consultants, and continuous security audits.', 20, 200, 'MYR', 50, 5, JSON.stringify(["5 Linked GitHub Repositories","50 AI Autonomous Scans / month","Continuous Webhooks (Push & PR)","Automated Email PDF Delivery","AI Auto-Fix & Remediation Diffs","Priority Security Agent Analysis"]), 1, 1, 0, 'Most Popular', 3, now, now],
+      ['enterprise', 'SentinelAI Enterprise', 'Dedicated capacity, unlimited scans, bespoke AI personas, and Metasploit RPC for elite red teams.', 80, 800, 'MYR', 9999, 99, JSON.stringify(["Unlimited Repositories & Scans","Metasploit RPC Bridge & Automated Exploits","Dedicated Kali Linux Engine Worker Node","Custom AI Agent Persona Fine-Tuning","24/7 Automated Scheduled Monitoring","Direct Slack/Discord/Telegram Alert Relays"]), 0, 1, 0, 'Elite Security', 4, now, now]
+    ]
+    const stmt = d.prepare(`
+      INSERT INTO plans (id, name, description, price_monthly, price_yearly, currency, scan_quota, max_repos, features, is_popular, is_open, is_custom, badge, sort_order, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        price_monthly = excluded.price_monthly,
+        price_yearly = excluded.price_yearly,
+        currency = excluded.currency,
+        updated_at = excluded.updated_at
+    `)
+    for (const p of defaultPlans) {
+      stmt.run(...p)
+    }
+  } catch (e) {
+    console.warn('[db] plans seed/update note:', e.message)
+  }
 }
 
 // ── generic helpers ──────────────────────────────────────────────────────────

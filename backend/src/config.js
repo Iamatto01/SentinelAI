@@ -112,6 +112,13 @@ export const config = {
       enabled: Boolean((process.env.DISCORD_BOT_TOKEN || '').trim()),
     },
   },
+
+  stripe: {
+    secretKey: (process.env.STRIPE_SECRET_KEY || '').trim(),
+    publishableKey: (process.env.STRIPE_PUBLISHABLE_KEY || '').trim(),
+    webhookSecret: (process.env.STRIPE_WEBHOOK_SECRET || '').trim(),
+    currency: (process.env.STRIPE_CURRENCY || 'MYR').toLowerCase(),
+  },
 }
 
 // Ensure persistent storage and backup directories exist

@@ -47,6 +47,29 @@ export default function Billing() {
 
   useEffect(() => {
     loadData()
+
+    // Handle return from Stripe Checkout
+    const params = new URLSearchParams(window.location.search)
+    const sessionId = params.get('session_id')
+    const isSuccess = params.get('success')
+    const isCanceled = params.get('canceled')
+
+    if (sessionId && isSuccess) {
+      setProcessingPayment(true)
+      api.billingVerifySession(sessionId)
+        .then((res) => {
+          setSuccessMsg(`🎉 Payment completed successfully via Stripe! Your account is now active on ${res.subscription?.plan_name || 'your upgraded tier'}.`)
+          window.history.replaceState({}, document.title, window.location.pathname)
+          loadData()
+        })
+        .catch((err) => {
+          setError(err.message || 'Failed to verify Stripe payment session')
+        })
+        .finally(() => setProcessingPayment(false))
+    } else if (isCanceled) {
+      setError('Stripe checkout was canceled. No charges were made to your account.')
+      window.history.replaceState({}, document.title, window.location.pathname)
+    }
   }, [])
 
   const handleOpenCheckout = (plan) => {
@@ -82,7 +105,14 @@ export default function Billing() {
 
     try {
       const promoToSend = appliedPromo ? appliedPromo.code : ''
-      const res = await api.billingCheckout(selectedPlan.id, interval, promoToSend)
+      const res = await api.billingCheckout(selectedPlan.id, interval, promoToSend, paymentProvider)
+      
+      // If Stripe Checkout session URL returned, redirect directly to Stripe!
+      if (res.url) {
+        window.location.href = res.url
+        return
+      }
+
       setSuccessMsg(`🎉 Success! Upgraded to ${selectedPlan.name}. Your quota has been updated.`)
       setModalOpen(false)
       await loadData()
@@ -257,11 +287,12 @@ export default function Billing() {
       </div>
 
       {/* Pricing Cards Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-4xl mx-auto">
-        {plans.map((plan) => {
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-6xl mx-auto">
+        {plans.filter(p => p.id !== 'trial').map((plan) => {
           const isCurrent = subscription?.isSubscribed && subscription?.plan_id === plan.id
-          const price = interval === 'yearly' ? plan.priceYearly : plan.priceMonthly
-          const periodText = interval === 'yearly' ? '/year' : '/month'
+          const isPayPerScan = plan.id === 'pay_per_scan'
+          const price = isPayPerScan ? plan.priceMonthly : (interval === 'yearly' ? plan.priceYearly : plan.priceMonthly)
+          const periodText = isPayPerScan ? ' / scan' : (interval === 'yearly' ? ' / year' : ' / month')
 
           return (
             <div
@@ -279,7 +310,12 @@ export default function Billing() {
               )}
               {plan.id === 'enterprise' && (
                 <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-0.5 rounded-full bg-gradient-to-r from-amber-500 via-purple-500 to-pink-500 text-slate-950 font-extrabold text-[10px] tracking-wider uppercase shadow-lg shadow-amber-500/30 flex items-center gap-1">
-                  <Sparkles size={10} className="fill-slate-950 text-slate-950" /> VIP Security Advisory Included
+                  <Sparkles size={10} className="fill-slate-950 text-slate-950" /> VIP Red Team Advisory
+                </div>
+              )}
+              {isPayPerScan && (
+                <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-0.5 rounded-full bg-gradient-to-r from-emerald-500 to-teal-500 text-slate-950 font-extrabold text-[10px] tracking-wider uppercase shadow-lg shadow-emerald-500/30 flex items-center gap-1">
+                  <Zap size={10} className="fill-slate-950" /> Instant Top-Up
                 </div>
               )}
 
@@ -287,10 +323,11 @@ export default function Billing() {
                 <div>
                   <h3 className="text-xl font-extrabold text-white">{plan.name}</h3>
                   <div className="mt-3 flex items-baseline gap-1">
-                    <span className="text-4xl font-black text-white">${price}</span>
+                    <span className="text-4xl font-black text-white">RM {price}</span>
                     <span className="text-xs text-slate-400 font-medium">{periodText}</span>
                   </div>
                   <p className="text-xs text-slate-400 mt-2">
+                    {isPayPerScan && 'Top-up single autonomous scans on demand. No recurring monthly commitment.'}
                     {plan.id === 'pro' && 'Ideal for active developers and software teams needing continuous audit automation.'}
                     {plan.id === 'enterprise' && 'Full continuous DevSecOps pipeline for organizations requiring unlimited audits & compliance.'}
                   </p>
@@ -314,7 +351,7 @@ export default function Billing() {
 
               {/* Action Button */}
               <div className="pt-8">
-                {isCurrent ? (
+                {isCurrent && !isPayPerScan ? (
                   <div className="w-full py-3 rounded-xl bg-white/5 border border-white/10 text-center text-xs font-bold text-slate-400 cursor-default">
                     Current Active Plan
                   </div>
@@ -323,7 +360,7 @@ export default function Billing() {
                     onClick={() => handleOpenCheckout(plan)}
                     className="btn-primary w-full py-3 rounded-xl font-extrabold text-xs flex items-center justify-center gap-2 shadow-glow hover:scale-[1.02] transition-all bg-gradient-to-r from-cyan-500 via-blue-600 to-indigo-600 text-slate-950 cursor-pointer"
                   >
-                    <Zap size={15} className="fill-slate-950" /> Upgrade to {plan.name}
+                    <Zap size={15} className="fill-slate-950" /> {isPayPerScan ? 'Top-Up Scan (RM 3)' : `Upgrade to ${plan.name}`}
                   </button>
                 )}
               </div>
@@ -365,7 +402,7 @@ export default function Billing() {
                     <td className="py-3 px-2 font-mono text-slate-300">{tx.id}</td>
                     <td className="py-3 px-2 text-slate-400">{new Date(tx.created_at).toLocaleDateString()}</td>
                     <td className="py-3 px-2 font-semibold text-white uppercase">{tx.plan_id}</td>
-                    <td className="py-3 px-2 font-mono text-cyan-300">${Number(tx.amount).toFixed(2)} {tx.currency}</td>
+                    <td className="py-3 px-2 font-mono text-cyan-300">RM {Number(tx.amount).toFixed(2)}</td>
                     <td className="py-3 px-2 text-slate-400 capitalize">{tx.provider}</td>
                     <td className="py-3 px-2">
                       <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
@@ -387,7 +424,7 @@ export default function Billing() {
             <div className="flex items-center justify-between border-b border-white/10 pb-3">
               <div className="flex items-center gap-2 font-bold text-white text-base">
                 <Sparkles size={18} className="text-cyan-400" />
-                Upgrade to {selectedPlan.name}
+                {selectedPlan.id === 'pay_per_scan' ? 'Top-Up Scan Credit' : `Upgrade to ${selectedPlan.name}`}
               </div>
               <button
                 onClick={() => setModalOpen(false)}
@@ -402,20 +439,24 @@ export default function Billing() {
                 <span>Selected Plan:</span>
                 <span className="font-bold text-white">{selectedPlan.name}</span>
               </div>
-              <div className="flex justify-between text-xs text-slate-400">
-                <span>Billing Interval:</span>
-                <span className="font-semibold text-cyan-300 capitalize">{interval}</span>
-              </div>
+              {selectedPlan.id !== 'pay_per_scan' && (
+                <div className="flex justify-between text-xs text-slate-400">
+                  <span>Billing Interval:</span>
+                  <span className="font-semibold text-cyan-300 capitalize">{interval}</span>
+                </div>
+              )}
               <div className="flex justify-between text-xs text-slate-400">
                 <span>Scan Quota:</span>
-                <span className="font-bold text-white">{selectedPlan.scanQuota >= 9000 ? 'Unlimited' : `${selectedPlan.scanQuota} scans/mo`}</span>
+                <span className="font-bold text-white">
+                  {selectedPlan.id === 'pay_per_scan' ? '+1 Instant Scan Credit' : selectedPlan.scanQuota >= 9000 ? 'Unlimited' : `${selectedPlan.scanQuota} scans/mo`}
+                </span>
               </div>
               
               {/* Promo Code Discount Line */}
               {appliedPromo && (
                 <div className="flex justify-between text-xs text-emerald-400 font-semibold pt-1 border-t border-white/5">
                   <span>Promo ({appliedPromo.code}):</span>
-                  <span>-${appliedPromo.discountAmount} USD ({appliedPromo.formattedDiscount})</span>
+                  <span>-RM {appliedPromo.discountAmount} ({appliedPromo.formattedDiscount})</span>
                 </div>
               )}
 
@@ -423,7 +464,7 @@ export default function Billing() {
               <div className="flex justify-between text-sm font-bold text-white">
                 <span>Total Due:</span>
                 <span className="text-cyan-400 font-mono text-base">
-                  ${appliedPromo ? appliedPromo.finalPrice : (interval === 'yearly' ? selectedPlan.priceYearly : selectedPlan.priceMonthly)} USD
+                  RM {appliedPromo ? appliedPromo.finalPrice : (selectedPlan.id === 'pay_per_scan' ? selectedPlan.priceMonthly : (interval === 'yearly' ? selectedPlan.priceYearly : selectedPlan.priceMonthly))} MYR
                 </span>
               </div>
             </div>
