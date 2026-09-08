@@ -274,13 +274,12 @@ body.day-mode {
   --border-md:      #cbd5e1;
   --text-primary:   #0f172a;
   --text-secondary: #334155;
-  --text-muted:     #64748b;
-  --text-faint:     #94a3b8;
+  --text-muted:     #475569;
+  --text-faint:     #64748b;
   --accent:         #0284c7;
   --accent-hover:   #0369a1;
-  color: #0f172a;
-  background: #f1f5f9;
-  background: #f8fafc;
+  color: #0f172a !important;
+  background: #f8fafc !important;
 }
 
 /* Light Mode surfaces */
@@ -290,56 +289,8 @@ body.day-mode .glass-deep,
 body.day-mode .card {
   background: #ffffff !important;
   border-color: #e2e8f0 !important;
-  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.05);
-}
-
-body.day-mode aside {
-  background: #ffffff !important;
-  border-color: #e2e8f0 !important;
-}
-
-body.day-mode header {
-  background: #ffffff !important;
-  border-color: #e2e8f0 !important;
-}
-
-body.day-mode .input {
-  background: #ffffff !important;
-  border-color: #cbd5e1 !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05), 0 1px 2px rgba(0, 0, 0, 0.03) !important;
   color: #0f172a !important;
-}
-
-body.day-mode .input::placeholder {
-  color: #94a3b8 !important;
-}
-
-body.day-mode select.input option {
-  background: #ffffff;
-  border-color: rgba(15, 23, 42, 0.08);
-  color: #0f172a;
-}
-
-body.day-mode .label {
-  color: #475569 !important;
-}
-
-body.day-mode .chip {
-  background: #f1f5f9;
-  border-color: #e2e8f0;
-  color: #334155;
-}
-
-/* Light mode table */
-body.day-mode .glass-table thead th {
-  background: #f8fafc !important;
-  border-color: #e2e8f0 !important;
-  color: #64748b !important;
-}
-body.day-mode .glass-table tbody tr {
-  border-color: #f1f5f9 !important;
-}
-body.day-mode .glass-table tbody tr:hover {
-  background: #f8fafc !important;
 }
 
 /* Adapt hardcoded dark container classes gracefully in Day Mode */
@@ -350,72 +301,236 @@ body.day-mode [class*="bg-ink-900"]:not(.terminal):not([class*="btn-"]):not([cla
 body.day-mode [class*="bg-[#111111]"]:not(.terminal):not([class*="btn-"]):not([class*="icon-box-"]):not([class*="chip"]):not([class*="badge"]),
 body.day-mode [class*="bg-[#161616]"]:not(.terminal):not([class*="btn-"]):not([class*="icon-box-"]):not([class*="chip"]):not([class*="badge"]),
 body.day-mode [class*="bg-[#1c1c1c]"]:not(.terminal):not([class*="btn-"]):not([class*="icon-box-"]):not([class*="chip"]):not([class*="badge"]) {
-  background-color: #ffffff;
-  border-color: #e2e8f0;
+  background-color: #ffffff !important;
+  border-color: #e2e8f0 !important;
+  color: #0f172a !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05), 0 1px 2px rgba(0, 0, 0, 0.03) !important;
 }
 
-/* Light mode general text contrast */
-body.day-mode [class~="text-white"],
-body.day-mode [class~="text-slate-100"],
-body.day-mode [class~="text-zinc-100"] {
+/* In Day Mode, adapt dark transparent borders and backgrounds to visible light accents */
+body.day-mode [class*="border-white"]:not(.btn-primary):not([class*="badge"]),
+body.day-mode [class*="border-white\\["]:not(.btn-primary):not([class*="badge"]) {
+  border-color: #e2e8f0 !important;
+}
+body.day-mode [class*="border-slate-700"]:not(.terminal *),
+body.day-mode [class*="border-slate-800"]:not(.terminal *) {
+  border-color: #e2e8f0 !important;
+}
+
+body.day-mode [class*="bg-white/"]:not(.btn-primary):not([class*="badge"]),
+body.day-mode [class*="bg-white\\["]:not(.btn-primary):not([class*="badge"]) {
+  background-color: #f1f5f9 !important;
+}
+body.day-mode [class*="bg-black/"]:not(.terminal *),
+body.day-mode [class*="bg-black\\["]:not(.terminal *) {
+  background-color: #f1f5f9 !important;
+}
+
+/* Light Mode: Primary Headings & Bold Text */
+body.day-mode h1,
+body.day-mode h2,
+body.day-mode h3,
+body.day-mode h4,
+body.day-mode h5,
+body.day-mode h6,
+body.day-mode .text-white,
+body.day-mode .text-slate-100,
+body.day-mode .text-zinc-100,
+body.day-mode [class*="text-white"]:not([class*="btn-primary"]):not([class*="badge"]):not([class*="bg-"]):not(.terminal *),
+body.day-mode [class*="text-slate-100"]:not([class*="btn-primary"]):not([class*="badge"]):not(.terminal *),
+body.day-mode [class*="text-zinc-100"]:not([class*="btn-primary"]):not([class*="badge"]):not(.terminal *) {
   color: #0f172a !important;
 }
-body.day-mode [class~="text-slate-200"],
-body.day-mode [class~="text-zinc-200"],
-body.day-mode [class~="text-slate-300"],
-body.day-mode [class~="text-zinc-300"] {
+
+/* Light Mode: Secondary & Body Text */
+body.day-mode .text-slate-200,
+body.day-mode .text-zinc-200,
+body.day-mode .text-slate-300,
+body.day-mode .text-zinc-300,
+body.day-mode [class*="text-slate-200"]:not(.terminal *),
+body.day-mode [class*="text-zinc-200"]:not(.terminal *),
+body.day-mode [class*="text-slate-300"]:not(.terminal *),
+body.day-mode [class*="text-zinc-300"]:not(.terminal *) {
+  color: #1e293b !important;
+}
+
+/* Light Mode: Descriptions & Paragraphs */
+body.day-mode p:not([class*="text-"]):not(.terminal *),
+body.day-mode .text-slate-400,
+body.day-mode .text-zinc-400,
+body.day-mode [class*="text-slate-400"]:not(.terminal *),
+body.day-mode [class*="text-zinc-400"]:not(.terminal *) {
   color: #334155 !important;
 }
-body.day-mode [class~="text-slate-400"],
-body.day-mode [class~="text-zinc-400"] {
+
+/* Light Mode: Muted Helper Text, Subtitles, Form Labels */
+body.day-mode label,
+body.day-mode .label,
+body.day-mode .text-slate-500,
+body.day-mode .text-zinc-500,
+body.day-mode .text-slate-600,
+body.day-mode .text-zinc-600,
+body.day-mode [class*="text-slate-500"]:not(.terminal *),
+body.day-mode [class*="text-zinc-500"]:not(.terminal *),
+body.day-mode [class*="text-slate-600"]:not(.terminal *),
+body.day-mode [class*="text-zinc-600"]:not(.terminal *) {
   color: #475569 !important;
 }
-body.day-mode [class~="text-slate-500"],
-body.day-mode [class~="text-zinc-500"] {
-  color: #64748b !important;
-}
-body.day-mode [class~="text-cyan-300"] {
-  color: #0891b2 !important;
-}
-body.day-mode [class~="text-cyan-400"] {
+
+/* Light Mode: High-Contrast Accent & Cyan (Deep Royal Blue) */
+body.day-mode .text-accent,
+body.day-mode .text-cyan-300,
+body.day-mode .text-cyan-400,
+body.day-mode [class*="text-cyan-"]:not(.terminal *),
+body.day-mode [class*="text-accent"]:not(.terminal *) {
   color: #0284c7 !important;
 }
 
-/* ── System Tree Root Node High-Contrast Styling ── */
-.system-tree-root {
-  background-color: #0f172a !important;
-  background-image: linear-gradient(135deg, #0f172a 0%, #082f49 100%) !important;
-  border-color: rgba(34, 211, 238, 0.6) !important;
-  box-shadow: 0 16px 40px -10px rgba(0, 0, 0, 0.7), 0 0 24px rgba(6, 182, 212, 0.25) !important;
-}
-.system-tree-root .system-tree-title {
-  color: #ffffff !important;
-}
-.system-tree-root .system-tree-desc {
-  color: #94a3b8 !important;
+/* Light Mode: Status Colors */
+body.day-mode .text-emerald-400,
+body.day-mode .text-emerald-300,
+body.day-mode [class*="text-emerald-"]:not(.terminal *) {
+  color: #059669 !important;
 }
 
-body.day-mode .system-tree-root {
-  background-color: #ffffff !important;
-  background-image: none !important;
-  border-color: #06b6d4 !important;
-  box-shadow: 0 14px 36px rgba(6, 182, 212, 0.2), 0 2px 10px rgba(0, 0, 0, 0.04) !important;
+body.day-mode .text-amber-300,
+body.day-mode .text-amber-400,
+body.day-mode [class*="text-amber-"]:not(.terminal *) {
+  color: #b45309 !important;
 }
-body.day-mode .system-tree-root .system-tree-title {
+
+body.day-mode .text-rose-400,
+body.day-mode .text-red-400,
+body.day-mode [class*="text-rose-"]:not(.terminal *),
+body.day-mode [class*="text-red-"]:not(.terminal *) {
+  color: #dc2626 !important;
+}
+
+/* Light Mode Sidebar (Sharp & High Contrast) */
+body.day-mode aside {
+  background: #ffffff !important;
+  border-color: #e2e8f0 !important;
+  box-shadow: 2px 0 12px rgba(0, 0, 0, 0.04) !important;
+}
+body.day-mode aside nav a {
+  color: #475569 !important;
+}
+body.day-mode aside nav a svg {
+  color: #475569 !important;
+}
+body.day-mode aside nav a:hover {
+  background-color: #f1f5f9 !important;
   color: #0f172a !important;
 }
-body.day-mode .system-tree-root .system-tree-desc {
-  color: #334155 !important;
+body.day-mode aside nav a:hover svg {
+  color: #0f172a !important;
+}
+body.day-mode aside nav a.active {
+  background: #eff6ff !important;
+  color: #0284c7 !important;
+  border-color: #bfdbfe !important;
+}
+body.day-mode aside nav a.active svg {
+  color: #0284c7 !important;
+}
+body.day-mode aside p {
+  color: #0f172a !important;
+}
+
+/* Light Mode Header & Breadcrumbs */
+body.day-mode header {
+  background: #ffffff !important;
+  border-color: #e2e8f0 !important;
+}
+body.day-mode header .drop-shadow-\[0_0_8px_rgba\(0\,242\,254\,0\.4\)\] {
+  filter: none !important;
+}
+
+/* Light Mode Inputs, Selects, and Textareas */
+body.day-mode .input,
+body.day-mode input[type="text"],
+body.day-mode input[type="url"],
+body.day-mode input[type="email"],
+body.day-mode input[type="password"],
+body.day-mode input[type="number"],
+body.day-mode textarea,
+body.day-mode select {
+  background-color: #ffffff !important;
+  border-color: #cbd5e1 !important;
+  color: #0f172a !important;
+}
+body.day-mode .input::placeholder,
+body.day-mode input::placeholder,
+body.day-mode textarea::placeholder {
+  color: #64748b !important;
+}
+body.day-mode .input:focus,
+body.day-mode input:focus,
+body.day-mode textarea:focus {
+  border-color: #0284c7 !important;
+  box-shadow: 0 0 0 3px rgba(2, 132, 199, 0.15) !important;
+}
+body.day-mode select.input option {
+  background: #ffffff;
+  color: #0f172a;
+}
+
+/* Light Mode Chips & Badges */
+body.day-mode .chip {
+  background: #f1f5f9 !important;
+  border-color: #e2e8f0 !important;
+  color: #1e293b !important;
+}
+
+/* Light Mode Tables */
+body.day-mode .glass-table thead th,
+body.day-mode table th {
+  background: #f8fafc !important;
+  border-color: #e2e8f0 !important;
+  color: #475569 !important;
+  font-weight: 700 !important;
+}
+body.day-mode .glass-table tbody tr,
+body.day-mode table td {
+  border-color: #f1f5f9 !important;
+  color: #1e293b !important;
+}
+body.day-mode .glass-table tbody tr:hover,
+body.day-mode table tr:hover td {
+  background: #f8fafc !important;
+}
+
+/* Light Mode Code & Pre */
+body.day-mode pre:not(.terminal) {
+  background: #f8fafc !important;
+  border: 1px solid #e2e8f0 !important;
+  color: #0f172a !important;
+}
+body.day-mode code:not(.terminal *) {
+  color: #0284c7 !important;
+  background-color: #f1f5f9 !important;
+  padding: 0.15rem 0.35rem;
+  border-radius: 0.25rem;
 }
 
 /* Day Mode: Protect primary buttons and ghost buttons */
-body.day-mode .btn-primary,
-body.day-mode .btn-primary * {
+body.day-mode .btn-primary {
+  background: #0284c7 !important;
+  color: #ffffff !important;
+  border: none !important;
+  box-shadow: 0 2px 8px rgba(2, 132, 199, 0.25) !important;
+}
+body.day-mode .btn-primary:hover {
+  background: #0369a1 !important;
+}
+body.day-mode .btn-primary *,
+body.day-mode .btn-primary svg {
   color: #ffffff !important;
 }
+
 body.day-mode .btn-ghost {
   color: #0f172a !important;
-  border-color: #cbd5e1 !important;
+  border: 1px solid #cbd5e1 !important;
   background-color: #ffffff !important;
 }
 body.day-mode .btn-ghost:hover {
@@ -459,13 +574,40 @@ body.day-mode .terminal [class~="text-slate-600"] {
   color: #94a3b8 !important;
 }
 
-/* Day mode grid & scrollbar */
+/* Day Mode Grid & Scrollbar */
 body.day-mode .grid-bg {
   background-image: radial-gradient(rgba(15, 23, 42, 0.08) 1px, transparent 0) !important;
 }
 body.day-mode * { scrollbar-color: rgba(15, 23, 42, 0.18) transparent; }
 body.day-mode *::-webkit-scrollbar-thumb { background: rgba(15, 23, 42, 0.18); }
 body.day-mode *::-webkit-scrollbar-thumb:hover { background: rgba(15, 23, 42, 0.30); }
+
+/* ── System Tree Root Node High-Contrast Styling ── */
+.system-tree-root {
+  background-color: #0f172a !important;
+  background-image: linear-gradient(135deg, #0f172a 0%, #082f49 100%) !important;
+  border-color: rgba(34, 211, 238, 0.6) !important;
+  box-shadow: 0 16px 40px -10px rgba(0, 0, 0, 0.7), 0 0 24px rgba(6, 182, 212, 0.25) !important;
+}
+.system-tree-root .system-tree-title {
+  color: #ffffff !important;
+}
+.system-tree-root .system-tree-desc {
+  color: #94a3b8 !important;
+}
+
+body.day-mode .system-tree-root {
+  background-color: #ffffff !important;
+  background-image: none !important;
+  border-color: #06b6d4 !important;
+  box-shadow: 0 14px 36px rgba(6, 182, 212, 0.2), 0 2px 10px rgba(0, 0, 0, 0.04) !important;
+}
+body.day-mode .system-tree-root .system-tree-title {
+  color: #0f172a !important;
+}
+body.day-mode .system-tree-root .system-tree-desc {
+  color: #334155 !important;
+}
 
 
 

@@ -345,13 +345,13 @@ export default function Shell() {
       </aside>
 
       {/* Main Content Area: smooth rightward push on expand */}
-      <main className={`transition-all duration-300 ease-in-out ${isExpanded ? 'pl-0 lg:pl-64' : 'pl-0 lg:pl-20'}`}>
+      <main className={`relative z-10 transition-all duration-300 ease-in-out ${isExpanded ? 'pl-0 lg:pl-64' : 'pl-0 lg:pl-20'}`}>
         {/* Desktop Top Header Bar (Vision UI Style) */}
         <header className="hidden lg:flex items-center justify-between px-6 pt-5 pb-2">
           <div className="flex items-center gap-2 text-xs font-semibold px-3 py-1.5 rounded-xl bg-slate-900/80 border border-white/15 text-slate-200 shadow-md backdrop-blur-md">
             <span className="text-slate-300 font-medium">Portal</span>
             <span className="text-slate-500 font-bold">/</span>
-            <span className="text-cyan-300 font-extrabold tracking-wide drop-shadow-[0_0_8px_rgba(0,242,254,0.4)]">
+            <span className="text-cyan-300 font-extrabold tracking-wide">
               {currentNav.label}
             </span>
           </div>

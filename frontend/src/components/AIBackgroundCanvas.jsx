@@ -96,6 +96,13 @@ export default function AIBackgroundCanvas() {
     return Math.max(0.05, Math.min(1, opacity))
   })()
 
+  // In Day / Light Mode: provide crisp, solid light background without milky wallpaper blur or haze
+  if (!isNight) {
+    return (
+      <div className="fixed inset-0 pointer-events-none z-0 bg-[#f8fafc]" />
+    )
+  }
+
   return (
     <div className="fixed inset-0 pointer-events-none z-0 overflow-hidden select-none will-change-transform">
       {/* Background Image Layer with Optimized Hardware-accelerated CSS */}
