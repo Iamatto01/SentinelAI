@@ -3,6 +3,7 @@ import { payloadsRag } from './integrations/index.js'
 import { runNativeTool, previewNativeCommand, nativeToolsStatus, NATIVE_TOOLS } from './integrations/native-tools.js'
 import { aiEngine } from './ai/ai-engine.js'
 import { enrichWithOwasp } from './owasp.js'
+import { getScriptsForTrigger, runCustomScript } from './custom-scripts.js'
 import * as db from './db.js'
 
 /**
@@ -405,7 +406,52 @@ export class UnifiedPipeline {
       this.log(scanId, 'warn', `Rate-limit test warning: ${err.message}`)
     }
 
+    // ── CUSTOM SCRIPTS STAGE ──
+    // Admin-defined scripts (bash/python/node) that emit JSONL findings.
+    // Runs last so scripts can leverage any state gathered earlier.
+    try {
+      await this._runCustomScripts(scanId, target, { verify })
+    } catch (err) {
+      this.log(scanId, 'warn', `Custom scripts stage warning: ${err.message}`)
+    }
+
     this.finish(scanId, 'completed')
+  }
+
+  /**
+   * CUSTOM SCRIPTS STAGE
+   * Runs every enabled custom script whose trigger_point is 'post-scan'
+   * (or 'post-recon' — both run here, at the end of the pipeline, when the
+   * most context is available). Scripts emit JSONL findings on stdout.
+   */
+  async _runCustomScripts(scanId, target, { verify } = {}) {
+    let scripts
+    try {
+      scripts = getScriptsForTrigger('post-scan').concat(getScriptsForTrigger('post-recon'))
+    } catch { return } // table not migrated yet — skip silently
+    if (!scripts.length) return
+
+    this.log(scanId, 'info', `Custom scripts: running ${scripts.length} script(s)`)
+    for (const script of scripts) {
+      try {
+        this.log(scanId, 'info', `Custom script "${script.name}" starting`)
+        const { result, findings } = await runCustomScript(script, { target, scanId, depth: this.depth || 'standard' })
+        if (!result.success) {
+          this.log(scanId, 'warn', `Custom script "${script.name}" exited ${result.code}: ${String(result.stderr || '').slice(0, 200)}`)
+        }
+        for (const f of findings) {
+          await ingestFinding(scanId, {
+            ...f,
+            module: `custom-script:${script.name}`,
+            target,
+            poc: result.success ? `Script: ${script.name} (${script.language})` : undefined,
+          }, { verify, targetType: 'url' })
+        }
+        this.log(scanId, 'info', `Custom script "${script.name}" → ${findings.length} finding(s)`)
+      } catch (err) {
+        this.log(scanId, 'warn', `Custom script "${script.name}" failed: ${err.message}`)
+      }
+    }
   }
 
   /**

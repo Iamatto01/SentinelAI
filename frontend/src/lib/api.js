@@ -80,6 +80,13 @@ export const api = {
   startWhiteboxFolder: (body) => apiFetch('/api/scans/whitebox-folder', { method: 'POST', body }),
   owaspTools: () => apiFetch('/api/owasp-tools'),
 
+  // ── Custom Scripts Engine ──
+  customScripts: () => apiFetch('/api/scripts'),
+  createCustomScript: (body) => apiFetch('/api/scripts', { method: 'POST', body }),
+  updateCustomScript: (id, body) => apiFetch(`/api/scripts/${id}`, { method: 'PUT', body }),
+  deleteCustomScript: (id) => apiFetch(`/api/scripts/${id}`, { method: 'DELETE' }),
+  testCustomScript: (id, target) => apiFetch(`/api/scripts/${id}/test`, { method: 'POST', body: { target } }),
+
   // ── Exploit Engine ──
   msfStatus: () => apiFetch('/api/exploits/msf/status'),
   msfSessions: () => apiFetch('/api/exploits/msf/sessions'),

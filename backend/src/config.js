@@ -122,8 +122,10 @@ export const config = {
 
   duitnow: {
     enabled: true,
-    merchantName: process.env.DUITNOW_MERCHANT_NAME || 'SENTINELAI CYBERTECH',
-    merchantAccount: process.env.DUITNOW_ACCOUNT || '162263884920',
+    merchantName: process.env.DUITNOW_MERCHANT_NAME || 'MUHAMMAD SAIFUDIN BIN MO',
+    merchantAccount: process.env.DUITNOW_ACCOUNT || 'MDN1782300742811690',
+    qrPayload: '00020201021126520014A000000615000101068900530220MDN178230074281169025204731153034585802MY5925MUHAMMADSAIFUDINBINMOHDJA6006SEPANG63048577',
+    qrImage: '/duitnow-card.png',
   },
 }
 

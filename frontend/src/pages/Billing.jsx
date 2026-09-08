@@ -540,6 +540,7 @@ export default function Billing() {
                 {selectedPlan.id === 'pay_per_scan' ? 'Top-Up Scan Credit' : `Upgrade to ${selectedPlan.name}`}
               </div>
               <button
+                type="button"
                 onClick={() => setModalOpen(false)}
                 className="text-slate-400 hover:text-white text-xs font-bold p-1"
               >
@@ -705,18 +706,13 @@ export default function Billing() {
 
                 {/* QR Display Container */}
                 <div className="px-5 pb-5 flex flex-col items-center justify-center space-y-3">
-                  <div className="p-2.5 bg-white rounded-2xl shadow-lg border-2 border-pink-500/30 flex flex-col items-center justify-center relative">
-                    {(customDuitNowQr || duitnowQrUrl) ? (
-                      <img
-                        src={customDuitNowQr || duitnowQrUrl}
-                        alt="DuitNow QR Code"
-                        className="w-48 h-48 sm:w-52 sm:h-52 rounded-xl object-contain"
-                      />
-                    ) : (
-                      <div className="w-48 h-48 flex items-center justify-center">
-                        <Loader2 size={32} className="animate-spin text-pink-500" />
-                      </div>
-                    )}
+                  {/* Real Cropped DuitNow QR Card Display */}
+                  <div className="p-1 bg-white rounded-2xl shadow-xl border-2 border-pink-500/40 flex flex-col items-center justify-center relative max-w-[260px]">
+                    <img
+                      src={customDuitNowQr || '/duitnow-card.png'}
+                      alt="DuitNow / ShopeePay QR Code"
+                      className="w-full h-auto rounded-xl object-contain"
+                    />
                     {customDuitNowQr && (
                       <span className="mt-1 px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-700 text-[10px] font-bold">
                         Custom QR Aktif
@@ -728,7 +724,7 @@ export default function Billing() {
                   <div className="flex items-center gap-2">
                     <label className="cursor-pointer px-3 py-1.5 text-[11px] font-semibold rounded-lg bg-pink-500/10 border border-pink-500/30 text-pink-300 hover:bg-pink-500/20 flex items-center gap-1.5 transition-colors">
                       <Upload size={13} />
-                      <span>Upload ShopeePay / Bank QR Sendiri</span>
+                      <span>Upload QR Kod Lain</span>
                       <input
                         type="file"
                         accept="image/*"
@@ -742,7 +738,7 @@ export default function Billing() {
                         onClick={handleResetCustomQr}
                         className="text-[10px] text-slate-400 hover:text-rose-400 underline"
                       >
-                        Reset ke Default
+                        Reset ke Asal
                       </button>
                     )}
                   </div>
@@ -754,7 +750,7 @@ export default function Billing() {
                       <span className="text-pink-400 font-sans">RM</span> {calculateTotalDue().toFixed(2)}
                     </div>
                     <div className="text-[11px] text-slate-400">
-                      Merchant: <strong className="text-slate-200">SENTINELAI CYBERTECH</strong>
+                      Merchant: <strong className="text-slate-200">MUHAMMAD SAIFUDIN BIN MO</strong>
                     </div>
                   </div>
 
@@ -780,9 +776,9 @@ export default function Billing() {
                       <Info size={13} /> Cara Bayar Guna ShopeePay / MAE / TNG eWallet:
                     </div>
                     <ol className="text-[11px] text-slate-300 space-y-1 list-decimal list-inside leading-relaxed">
-                      <li>Buka aplikasi <strong>Shopee</strong> &rarr; pilih <strong>ShopeePay</strong>.</li>
+                      <li>Buka aplikasi <strong>Shopee</strong> &rarr; pilih <strong>ShopeePay</strong> (atau <strong>MAE</strong> / <strong>TNG eWallet</strong>).</li>
                       <li>Tekan butang <strong>Scan / Bayar</strong> dan halakan kamera ke QR kod di atas.</li>
-                      <li>Sahkan jumlah bayaran <strong>RM {calculateTotalDue().toFixed(2)}</strong> dan selesaikan bayaran.</li>
+                      <li>Sahkan nama penerima <strong>MUHAMMAD SAIFUDIN</strong> & masukkan jumlah <strong>RM {calculateTotalDue().toFixed(2)}</strong>.</li>
                       <li>Tekan butang <strong>"Saya Telah Selesai Bayar"</strong> di bawah untuk pengesahan serta-merta.</li>
                     </ol>
                   </div>
@@ -790,7 +786,7 @@ export default function Billing() {
                   {/* Optional Bank Reference Input */}
                   <div className="w-full space-y-1">
                     <label className="text-[11px] font-semibold text-slate-400 flex items-center justify-between">
-                      <span>Receipt / Bank Ref No. (Optional):</span>
+                      <span>Receipt / Transaction Ref No. (Optional):</span>
                       <span className="text-[10px] text-slate-500">For record</span>
                     </label>
                     <input
@@ -808,8 +804,8 @@ export default function Billing() {
                       Accepted in ShopeePay & All Malaysian Bank Apps
                     </div>
                     <div className="flex flex-wrap items-center justify-center gap-1 text-[10px] text-slate-300">
-                      {['ShopeePay', 'Maybank MAE', 'TNG eWallet', 'CIMB OCTO', 'GrabPay', 'Bank Islam', 'RHB', 'Public Bank'].map(b => (
-                        <span key={b} className={`px-2 py-0.5 rounded-md border text-[10px] ${b === 'ShopeePay' ? 'bg-orange-500/20 border-orange-500/40 text-orange-300 font-bold' : 'bg-white/5 border border-white/10'}`}>
+                      {['ShopeePay', 'Touch \'n Go', 'Maybank MAE', 'CIMB OCTO', 'GrabPay', 'Bank Islam', 'RHB', 'Public Bank'].map(b => (
+                        <span key={b} className={`px-2 py-0.5 rounded-md border text-[10px] ${b === 'ShopeePay' ? 'bg-orange-500/20 border-orange-500/40 text-orange-300 font-bold' : b === 'Touch \'n Go' ? 'bg-blue-500/20 border-blue-500/40 text-blue-300 font-bold' : 'bg-white/5 border border-white/10'}`}>
                           {b}
                         </span>
                       ))}

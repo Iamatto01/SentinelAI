@@ -422,6 +422,26 @@ function migrate(d) {
   } catch (e) {
     console.warn('[db] plans seed/update note:', e.message)
   }
+
+  // ============ CUSTOM SCRIPTS ENGINE ============
+  // Operator-defined scanning scripts that run as pipeline stages.
+  CREATE: try {
+    d.exec(`
+  CREATE TABLE IF NOT EXISTS custom_scripts (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    description TEXT,
+    language TEXT NOT NULL DEFAULT 'bash',        -- bash|python|node
+    command TEXT NOT NULL,                        -- script body; TARGET/SCAN_ID/DEPTH env vars injected
+    trigger_point TEXT NOT NULL DEFAULT 'post-recon', -- post-recon|post-scan|manual-only
+    enabled INTEGER DEFAULT 1,
+    severity_floor TEXT DEFAULT 'info',           -- suppress findings below this severity
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_custom_scripts_trigger ON custom_scripts(trigger_point, enabled);
+    `)
+  } catch (e) { if (!/already exists/i.test(String(e))) throw e }
 }
 
 // ── generic helpers ──────────────────────────────────────────────────────────

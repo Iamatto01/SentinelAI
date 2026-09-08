@@ -28,6 +28,7 @@ import Billing from './pages/Billing.jsx'
 import ClientsManagement from './pages/ClientsManagement.jsx'
 import KaliControl from './pages/KaliControl.jsx'
 import Consultants from './pages/Consultants.jsx'
+import CustomScripts from './pages/CustomScripts.jsx'
 
 class ErrorBoundary extends React.Component {
   constructor(props) {
@@ -132,6 +133,7 @@ export default function App() {
             <Route path="billing" element={<Billing />} />
             <Route path="consultants" element={<Consultants />} />
             <Route path="integrations" element={<Integrations />} />
+            <Route path="custom-scripts" element={<CustomScripts />} />
             <Route path="exploits" element={<Exploits />} />
             <Route path="exploits/:id" element={<ExploitCampaign />} />
             <Route path="settings" element={<Settings />} />

@@ -15,6 +15,7 @@ import { requireRole } from './auth.js'
 import * as kaliControl from './kali-control.js'
 import { UnifiedPipeline } from './pipeline.js'
 import { getOwaspToolMapList, blackboxModulesForCategories, whiteboxPassesForCategories } from './owasp-tools.js'
+import { getAllScripts, getScript, createScript, updateScript, deleteScript, runCustomScript } from './custom-scripts.js'
 import { payloadsRag, skillsRag } from './integrations/index.js'
 import { nativeToolsStatus } from './integrations/native-tools.js'
 import { agentRegistry } from './ai/agent-registry.js'
@@ -30,7 +31,7 @@ import * as msf from './exploits/msf-client.js'
 import { matchExploits, classifyRisk } from './exploits/registry.js'
 import { sendScanRequestNotification, sendAnonymousFeedbackNotification } from './email.js'
 import { GitHubClient, parseGitHubWebhook } from './integrations/github.js'
-import { PLANS, getUserSubscription, consumeScanQuota, activateSubscription, getPaymentHistory, COMMUNITY_FREE_ACCESS_MODE } from './billing.js'
+import { PLANS, getUserSubscription, consumeScanQuota, activateSubscription, getPaymentHistory, COMMUNITY_FREE_ACCESS_MODE, validatePromoCode } from './billing.js'
 import { createStripeCheckoutSession, verifyAndFulfillSession, getStripe } from './stripe.js'
 import { channelGateway } from './channels/index.js'
 
@@ -1506,6 +1507,56 @@ app.get('/api/owasp-tools', requireAuth, (req, res) => {
   res.json({ categories: getOwaspToolMapList() })
 })
 
+// ── Custom Scripts Engine ───────────────────────────────────────────────
+// Admin-defined scanning scripts that run as pipeline stages.
+app.get('/api/scripts', requireAuth, requireRole('admin'), (req, res) => {
+  res.json({ scripts: getAllScripts() })
+})
+
+app.post('/api/scripts', requireAuth, requireRole('admin'), (req, res) => {
+  try {
+    const s = createScript(req.body || {})
+    audit(req.user.username, 'script:create', `${s.id} "${s.name}" (${s.language}/${s.trigger_point})`)
+    res.json({ ok: true, script: s })
+  } catch (e) { res.status(400).json({ error: e.message }) }
+})
+
+app.put('/api/scripts/:id', requireAuth, requireRole('admin'), (req, res) => {
+  try {
+    const s = updateScript(req.params.id, req.body || {})
+    audit(req.user.username, 'script:update', `${s.id} "${s.name}"`)
+    res.json({ ok: true, script: s })
+  } catch (e) { res.status(400).json({ error: e.message }) }
+})
+
+app.delete('/api/scripts/:id', requireAuth, requireRole('admin'), (req, res) => {
+  const ok = deleteScript(req.params.id)
+  if (ok) audit(req.user.username, 'script:delete', req.params.id)
+  res.json({ ok })
+})
+
+// Test-run a script against a target without creating a scan.
+app.post('/api/scripts/:id/test', requireAuth, requireRole('admin'), async (req, res) => {
+  const script = getScript(req.params.id)
+  if (!script) return res.status(404).json({ error: 'script not found' })
+  const target = String(req.body?.target || '').trim()
+  if (!/^https?:\/\//i.test(target)) return res.status(400).json({ error: 'target must be an http(s) URL' })
+  try {
+    const { result, findings } = await runCustomScript(script, { target, scanId: `test_${Date.now()}` })
+    audit(req.user.username, 'script:test', `${script.id} → ${target} (${findings.length} findings)`)
+    res.json({
+      ok: true,
+      exitCode: result.code,
+      success: result.success,
+      durationMs: result.durationMs,
+      findings,
+      stdout: String(result.stdout || '').slice(0, 20000),
+      stderr: String(result.stderr || '').slice(0, 5000),
+    })
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
+
 // ── Reports ──────────────────────────────────────────────────────────────────
 app.post('/api/reports/generate', requireAuth, requireScanAccess, async (req, res) => {
   try {
@@ -2069,9 +2120,11 @@ app.get('/api/billing/config', (req, res) => {
     currency: (config.stripe?.currency || 'MYR').toUpperCase(),
     duitnow: {
       enabled: true,
-      merchantName: config.duitnow?.merchantName || 'SENTINELAI CYBERTECH',
-      merchantAccount: config.duitnow?.merchantAccount || '162263884920',
-      qrPrompt: 'Scan with Maybank MAE, Touch n Go eWallet, CIMB OCTO, or any Malaysian banking app',
+      merchantName: config.duitnow?.merchantName || 'MUHAMMAD SAIFUDIN BIN MO',
+      merchantAccount: config.duitnow?.merchantAccount || 'MDN1782300742811690',
+      qrPayload: config.duitnow?.qrPayload || '',
+      qrImage: config.duitnow?.qrImage || '/duitnow-card.png',
+      qrPrompt: 'Scan with ShopeePay, Touch n Go eWallet, Maybank MAE, CIMB OCTO, or any Malaysian banking app',
     },
   })
 })

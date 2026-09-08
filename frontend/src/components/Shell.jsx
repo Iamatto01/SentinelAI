@@ -5,7 +5,7 @@ import {
   Hexagon, Activity, Settings as SettingsIcon, Crosshair, Menu, X,
   ChevronLeft, ChevronRight, Search, Bell, Sparkles, GitBranch, CreditCard,
   Users, AlertTriangle, UserCheck, Briefcase, Award, ArrowRight, Lock, CheckCircle2, Zap, Terminal,
-  Sun, Moon
+  Sun, Moon, FileCode
 } from 'lucide-react'
 import { useAuth } from '../lib/AuthContext.jsx'
 import { api } from '../lib/api.js'
@@ -67,6 +67,7 @@ export default function Shell() {
     { to: '/app/monitoring', label: 'Monitoring', icon: Activity },
     { to: '/app/consultants', label: 'Consultations', icon: UserCheck },
     { to: '/app/integrations', label: 'Integrations', icon: Plug },
+    { to: '/app/custom-scripts', label: 'Custom Scripts', icon: FileCode },
     { to: '/app/billing', label: 'Billing & Plans', icon: CreditCard },
     { to: '/app/settings', label: 'Settings', icon: SettingsIcon },
   ]
