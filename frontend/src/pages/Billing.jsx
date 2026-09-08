@@ -3,7 +3,7 @@ import {
   CreditCard, Sparkles, Check, Zap, Shield, ArrowRight, CheckCircle2,
   Calendar, Layers, FileText, AlertCircle, RefreshCw, Loader2, Star,
   Lock, TrendingUp, HelpCircle, BadgeCheck, QrCode, Smartphone, Copy,
-  ExternalLink, Building2
+  ExternalLink, Building2, Upload, Info
 } from 'lucide-react'
 import QRCode from 'qrcode'
 import { api } from '../lib/api.js'
@@ -25,6 +25,9 @@ export default function Billing() {
 
   // QR Code payment states
   const [duitnowQrUrl, setDuitnowQrUrl] = useState('')
+  const [customDuitNowQr, setCustomDuitNowQr] = useState(() => {
+    try { return localStorage.getItem('sentinel_duitnow_qr_custom') || '' } catch { return '' }
+  })
   const [stripeQrUrl, setStripeQrUrl] = useState('')
   const [generatingStripeQr, setGeneratingStripeQr] = useState(false)
   const [copiedRef, setCopiedRef] = useState(false)
@@ -153,6 +156,33 @@ export default function Billing() {
     } finally {
       setGeneratingStripeQr(false)
     }
+  }
+
+  const handleUploadCustomQr = (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    if (!file.type.startsWith('image/')) {
+      setError('Please upload a valid image file (PNG/JPG).')
+      return
+    }
+    const reader = new FileReader()
+    reader.onload = () => {
+      const base64 = reader.result
+      setCustomDuitNowQr(base64)
+      try {
+        localStorage.setItem('sentinel_duitnow_qr_custom', base64)
+      } catch (err) {
+        console.warn('Failed to save custom QR to localStorage', err)
+      }
+    }
+    reader.readAsDataURL(file)
+  }
+
+  const handleResetCustomQr = () => {
+    setCustomDuitNowQr('')
+    try {
+      localStorage.removeItem('sentinel_duitnow_qr_custom')
+    } catch {}
   }
 
   const handleApplyPromo = async () => {
@@ -675,10 +705,10 @@ export default function Billing() {
 
                 {/* QR Display Container */}
                 <div className="px-5 pb-5 flex flex-col items-center justify-center space-y-3">
-                  <div className="p-2.5 bg-white rounded-2xl shadow-lg border-2 border-pink-500/30 flex items-center justify-center">
-                    {duitnowQrUrl ? (
+                  <div className="p-2.5 bg-white rounded-2xl shadow-lg border-2 border-pink-500/30 flex flex-col items-center justify-center relative">
+                    {(customDuitNowQr || duitnowQrUrl) ? (
                       <img
-                        src={duitnowQrUrl}
+                        src={customDuitNowQr || duitnowQrUrl}
                         alt="DuitNow QR Code"
                         className="w-48 h-48 sm:w-52 sm:h-52 rounded-xl object-contain"
                       />
@@ -686,6 +716,34 @@ export default function Billing() {
                       <div className="w-48 h-48 flex items-center justify-center">
                         <Loader2 size={32} className="animate-spin text-pink-500" />
                       </div>
+                    )}
+                    {customDuitNowQr && (
+                      <span className="mt-1 px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-700 text-[10px] font-bold">
+                        Custom QR Aktif
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Upload Custom QR / ShopeePay QR Button */}
+                  <div className="flex items-center gap-2">
+                    <label className="cursor-pointer px-3 py-1.5 text-[11px] font-semibold rounded-lg bg-pink-500/10 border border-pink-500/30 text-pink-300 hover:bg-pink-500/20 flex items-center gap-1.5 transition-colors">
+                      <Upload size={13} />
+                      <span>Upload ShopeePay / Bank QR Sendiri</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={handleUploadCustomQr}
+                        className="hidden"
+                      />
+                    </label>
+                    {customDuitNowQr && (
+                      <button
+                        type="button"
+                        onClick={handleResetCustomQr}
+                        className="text-[10px] text-slate-400 hover:text-rose-400 underline"
+                      >
+                        Reset ke Default
+                      </button>
                     )}
                   </div>
 
@@ -716,6 +774,19 @@ export default function Billing() {
                     </button>
                   </div>
 
+                  {/* ShopeePay & DuitNow Scanner Guide */}
+                  <div className="w-full bg-slate-900/80 border border-pink-500/20 rounded-xl p-3 text-left space-y-1.5">
+                    <div className="text-[11px] font-bold text-pink-300 flex items-center gap-1.5">
+                      <Info size={13} /> Cara Bayar Guna ShopeePay / MAE / TNG eWallet:
+                    </div>
+                    <ol className="text-[11px] text-slate-300 space-y-1 list-decimal list-inside leading-relaxed">
+                      <li>Buka aplikasi <strong>Shopee</strong> &rarr; pilih <strong>ShopeePay</strong>.</li>
+                      <li>Tekan butang <strong>Scan / Bayar</strong> dan halakan kamera ke QR kod di atas.</li>
+                      <li>Sahkan jumlah bayaran <strong>RM {calculateTotalDue().toFixed(2)}</strong> dan selesaikan bayaran.</li>
+                      <li>Tekan butang <strong>"Saya Telah Selesai Bayar"</strong> di bawah untuk pengesahan serta-merta.</li>
+                    </ol>
+                  </div>
+
                   {/* Optional Bank Reference Input */}
                   <div className="w-full space-y-1">
                     <label className="text-[11px] font-semibold text-slate-400 flex items-center justify-between">
@@ -734,11 +805,11 @@ export default function Billing() {
                   {/* Supported Banks Badges */}
                   <div className="text-center space-y-1.5 pt-1 w-full border-t border-white/5">
                     <div className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">
-                      Accepted in All Malaysian Bank Apps & eWallets
+                      Accepted in ShopeePay & All Malaysian Bank Apps
                     </div>
                     <div className="flex flex-wrap items-center justify-center gap-1 text-[10px] text-slate-300">
-                      {['Maybank MAE', 'TNG eWallet', 'CIMB OCTO', 'GrabPay', 'Bank Islam', 'RHB', 'Public Bank'].map(b => (
-                        <span key={b} className="px-2 py-0.5 rounded-md bg-white/5 border border-white/10 text-[10px]">
+                      {['ShopeePay', 'Maybank MAE', 'TNG eWallet', 'CIMB OCTO', 'GrabPay', 'Bank Islam', 'RHB', 'Public Bank'].map(b => (
+                        <span key={b} className={`px-2 py-0.5 rounded-md border text-[10px] ${b === 'ShopeePay' ? 'bg-orange-500/20 border-orange-500/40 text-orange-300 font-bold' : 'bg-white/5 border border-white/10'}`}>
                           {b}
                         </span>
                       ))}
@@ -764,6 +835,14 @@ export default function Billing() {
                   Pay securely using any Malaysian or international credit/debit card, Apple Pay, or Google Pay via Stripe's encrypted payment gateway.
                 </p>
 
+                {/* Important note regarding ShopeePay and Stripe QR */}
+                <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/25 text-[11px] text-amber-200/90 flex items-start gap-2">
+                  <Info size={14} className="text-amber-400 shrink-0 mt-0.5" />
+                  <div>
+                    <strong className="text-amber-300">Penting untuk ShopeePay / Bank App:</strong> QR Stripe ini adalah link laman web checkout (untuk Apple Pay, Google Pay & Kad). App ShopeePay scanner tidak dapat membaca link Stripe ini terus. Jika anda mahu membayar menggunakan <strong>ShopeePay</strong> atau <strong>MAE</strong>, sila klik tab <strong>DuitNow QR</strong> di sebelah kiri.
+                  </div>
+                </div>
+
                 {/* Option to Scan Stripe QR on Phone */}
                 <div className="pt-1 border-t border-white/5 space-y-3">
                   {!stripeQrUrl ? (
@@ -782,7 +861,7 @@ export default function Billing() {
                         <img src={stripeQrUrl} alt="Stripe Mobile QR" className="w-36 h-36 object-contain rounded-lg" />
                       </div>
                       <div className="text-[11px] text-cyan-300 font-semibold flex items-center justify-center gap-1.5">
-                        <Smartphone size={13} /> Scan with your phone camera to pay with Apple / Google Pay
+                        <Smartphone size={13} /> Scan dengan kamera biasa telefon anda untuk buka Apple Pay / Google Pay / Kad
                       </div>
                     </div>
                   )}
