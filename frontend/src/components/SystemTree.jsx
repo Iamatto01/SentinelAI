@@ -114,28 +114,28 @@ export default function SystemTree() {
 
       {/* ── Root Node ── */}
       <div className="flex flex-col items-center">
-        <div className="relative px-8 py-5 rounded-2xl bg-gradient-to-br from-slate-900 via-slate-900 to-cyan-950/40 border-2 border-cyan-400/50 shadow-2xl shadow-cyan-500/15 max-w-lg w-full text-center">
+        <div className="system-tree-root relative px-8 py-5 rounded-2xl border-2 shadow-2xl max-w-lg w-full text-center transition-all duration-300">
           <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-0.5 rounded-full bg-cyan-500 text-slate-950 text-[10px] font-black uppercase tracking-widest shadow-lg shadow-cyan-500/40">
             System Root
           </div>
           <div className="flex items-center justify-center gap-3 mt-2">
-            <div className="p-2 rounded-xl bg-cyan-500 text-slate-950 shadow-lg shadow-cyan-500/30">
+            <div className="p-2 rounded-xl bg-cyan-500 text-slate-950 shadow-lg shadow-cyan-500/30 shrink-0">
               <InspectorLogo size={28} />
             </div>
             <div className="text-left">
-              <h2 className="text-xl font-black text-white leading-tight">SentinelAI Core Engine</h2>
-              <p className="text-[11px] text-slate-400 font-medium mt-0.5">Unified Autonomous Penetration Testing & AI Reasoning Platform</p>
+              <h2 className="text-xl font-black leading-tight system-tree-title">SentinelAI Core Engine</h2>
+              <p className="text-[11px] font-medium mt-0.5 system-tree-desc">Unified Autonomous Penetration Testing & AI Reasoning Platform</p>
             </div>
           </div>
         </div>
 
         {/* Vertical connector from root */}
-        <div className="w-px h-10 bg-gradient-to-b from-cyan-400/80 to-cyan-500/20" />
+        <div className="w-px h-10 bg-cyan-500/60" />
 
         {/* Horizontal distribution bar */}
-        <div className="hidden lg:block w-[85%] max-w-5xl h-px bg-gradient-to-r from-transparent via-cyan-400/50 to-transparent relative">
-          <div className="absolute left-0 top-1/2 -translate-y-1/2 w-2 h-2 rounded-full bg-cyan-400/60" />
-          <div className="absolute right-0 top-1/2 -translate-y-1/2 w-2 h-2 rounded-full bg-cyan-400/60" />
+        <div className="hidden lg:block w-[85%] max-w-5xl h-px bg-gradient-to-r from-transparent via-cyan-400/60 to-transparent relative">
+          <div className="absolute left-0 top-1/2 -translate-y-1/2 w-2 h-2 rounded-full bg-cyan-400" />
+          <div className="absolute right-0 top-1/2 -translate-y-1/2 w-2 h-2 rounded-full bg-cyan-400" />
         </div>
       </div>
 

@@ -18,16 +18,7 @@ export default function Landing() {
   const [archMode, setArchMode] = useState('tree') // 'tree' | 'flow' | 'mermaid'
   const [hoveredStep, setHoveredStep] = useState(null)
   const [agentsCount, setAgentsCount] = useState(53)
-  const [showThemeIntro, setShowThemeIntro] = useState(() => {
-    return !sessionStorage.getItem('sentinel_theme_choice')
-  })
-
-  // Listen for replay event from navbar
-  useEffect(() => {
-    const handleReplay = () => setShowThemeIntro(true)
-    window.addEventListener('sentinel_replay_theme_intro', handleReplay)
-    return () => window.removeEventListener('sentinel_replay_theme_intro', handleReplay)
-  }, [])
+  const [showThemeIntro, setShowThemeIntro] = useState(false)
 
   useEffect(() => {
     fetch('/api/public/stats')

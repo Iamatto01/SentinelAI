@@ -48,27 +48,39 @@ export default function PublicLayout({ children, forceTheme, isSplitPreview = fa
       <div className="at-home__blob at-home__blob--b" />
       <div className="at-home__blob at-home__blob--c" />
 
-      {/* ── High-Tech Glassmorphic Header ─────────────────────────────────── */}
-      <header className="sticky top-0 sm:top-4 z-50 w-full sm:w-[calc(100%-2rem)] sm:max-w-6xl sm:mx-auto px-3 sm:px-0 transition-all duration-300">
+      {/* ── High-Tech Floating Glassmorphic Header (Follows User on Scroll) ── */}
+      <header className="fixed top-0 sm:top-3 inset-x-0 z-50 w-full sm:w-[calc(100%-2rem)] sm:max-w-6xl sm:mx-auto px-3 sm:px-0 transition-all duration-300">
         <div
           className={`w-full px-4 sm:px-6 py-2.5 sm:py-3 flex items-center justify-between sm:rounded-2xl transition-all duration-300 ${
-            scrolled
-              ? 'bg-[#0e1017]/90 backdrop-blur-2xl border-b sm:border border-white/[0.08] shadow-[0_12px_36px_rgba(0,0,0,0.7),0_0_20px_rgba(14,165,233,0.08)]'
-              : 'bg-[#0e1017]/75 backdrop-blur-xl border-b sm:border border-white/[0.08] shadow-[0_8px_32px_rgba(0,0,0,0.4)]'
+            isNight
+              ? scrolled
+                ? 'bg-[#0e1017]/90 backdrop-blur-2xl border-b sm:border border-white/[0.08] shadow-[0_12px_36px_rgba(0,0,0,0.7),0_0_20px_rgba(14,165,233,0.08)]'
+                : 'bg-[#0e1017]/75 backdrop-blur-xl border-b sm:border border-white/[0.08] shadow-[0_8px_32px_rgba(0,0,0,0.4)]'
+              : scrolled
+                ? 'bg-white/95 backdrop-blur-2xl border-b sm:border border-slate-200/80 shadow-[0_8px_30px_rgba(0,0,0,0.08)] text-slate-900'
+                : 'bg-white/85 backdrop-blur-xl border-b sm:border border-slate-200/60 shadow-[0_4px_20px_rgba(0,0,0,0.04)] text-slate-900'
           }`}
         >
           {/* Brand Logo */}
           <Link to="/" className="flex items-center gap-2.5 group shrink-0">
-            <div className="p-1 rounded-xl bg-[#161822] border border-white/10 group-hover:border-cyan-400/50 group-hover:shadow-[0_0_14px_rgba(56,189,248,0.25)] transition-all duration-300">
+            <div className={`p-1 rounded-xl border transition-all duration-300 ${
+              isNight
+                ? 'bg-[#161822] border-white/10 group-hover:border-cyan-400/50 group-hover:shadow-[0_0_14px_rgba(56,189,248,0.25)]'
+                : 'bg-slate-100 border-slate-200 group-hover:border-cyan-500/50'
+            }`}>
               <InspectorLogo size={24} className="sm:w-7 sm:h-7" />
             </div>
-            <span className="font-extrabold text-sm sm:text-base text-white tracking-tight group-hover:text-cyan-300 transition-colors">
+            <span className={`font-extrabold text-sm sm:text-base tracking-tight transition-colors ${
+              isNight ? 'text-white group-hover:text-cyan-300' : 'text-slate-900 group-hover:text-cyan-600'
+            }`}>
               Sentinel<span className="text-cyan-400">AI</span>
             </span>
           </Link>
 
           {/* Desktop Navigation Links */}
-          <nav className="hidden lg:flex items-center gap-1 bg-white/[0.03] p-1 rounded-xl border border-white/[0.06]">
+          <nav className={`hidden lg:flex items-center gap-1 p-1 rounded-xl border ${
+            isNight ? 'bg-white/[0.03] border-white/[0.06]' : 'bg-slate-100/90 border-slate-200/80'
+          }`}>
             {NAV_LINKS.map((l) => {
               const isActive = location.pathname === l.to
               return (
@@ -77,8 +89,12 @@ export default function PublicLayout({ children, forceTheme, isSplitPreview = fa
                   to={l.to}
                   className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all duration-200 ${
                     isActive
-                      ? 'bg-cyan-500/15 text-cyan-300 border border-cyan-400/30 shadow-[0_0_12px_rgba(0,242,254,0.12)] font-bold'
-                      : 'text-zinc-400 hover:text-white hover:bg-white/[0.06] border border-transparent'
+                      ? isNight
+                        ? 'bg-cyan-500/15 text-cyan-300 border border-cyan-400/30 shadow-[0_0_12px_rgba(0,242,254,0.12)] font-bold'
+                        : 'bg-white text-cyan-700 border border-cyan-300/80 shadow-sm font-bold'
+                      : isNight
+                        ? 'text-zinc-400 hover:text-white hover:bg-white/[0.06] border border-transparent'
+                        : 'text-slate-600 hover:text-slate-900 hover:bg-white/60 border border-transparent'
                   }`}
                 >
                   {l.label}
@@ -89,39 +105,34 @@ export default function PublicLayout({ children, forceTheme, isSplitPreview = fa
 
           {/* Action CTAs */}
           <div className="flex items-center gap-2 sm:gap-3">
-            {/* Interactive Theme Split protocol button */}
-            {!isSplitPreview && (
-              <button
-                type="button"
-                onClick={() => window.dispatchEvent(new CustomEvent('sentinel_replay_theme_intro'))}
-                className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-zinc-300 hover:text-white bg-white/[0.03] hover:bg-white/[0.08] border border-white/10 hover:border-white/20 transition-all cursor-pointer"
-                title="Open Interactive Theme Split Screen"
-              >
-                <Sparkles size={13} className="text-cyan-400" />
-                <span>Theme Split</span>
-              </button>
-            )}
-
             {/* Dark / Light Mode Toggle */}
             <button
               onClick={toggleNightMode}
-              className="p-2 rounded-xl text-zinc-300 hover:text-white bg-white/[0.03] hover:bg-white/[0.08] border border-white/10 hover:border-white/20 transition-all cursor-pointer flex items-center justify-center"
+              className={`p-2 rounded-xl border transition-all cursor-pointer flex items-center justify-center ${
+                isNight
+                  ? 'text-zinc-300 hover:text-white bg-white/[0.03] hover:bg-white/[0.08] border-white/10 hover:border-white/20'
+                  : 'text-slate-700 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 border-slate-200'
+              }`}
               title={isNight ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
               aria-label="Toggle Theme"
             >
               {isNight ? (
                 <Sun size={15} className="text-amber-400 hover:rotate-90 transition-transform duration-300" />
               ) : (
-                <Moon size={15} className="text-indigo-400 hover:-rotate-12 transition-transform duration-300" />
+                <Moon size={15} className="text-indigo-600 hover:-rotate-12 transition-transform duration-300" />
               )}
             </button>
 
             {/* Desktop / Tablet Sign In */}
             <Link
               to="/login"
-              className="hidden md:inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold text-zinc-300 hover:text-white bg-white/[0.03] hover:bg-white/[0.08] border border-white/10 hover:border-white/20 transition-all"
+              className={`hidden md:inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold border transition-all ${
+                isNight
+                  ? 'text-zinc-300 hover:text-white bg-white/[0.03] hover:bg-white/[0.08] border-white/10 hover:border-white/20'
+                  : 'text-slate-700 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 border-slate-200'
+              }`}
             >
-              <LogIn size={13} className="text-zinc-400" />
+              <LogIn size={13} className={isNight ? 'text-zinc-400' : 'text-slate-500'} />
               <span>Sign In</span>
             </Link>
 
@@ -138,7 +149,11 @@ export default function PublicLayout({ children, forceTheme, isSplitPreview = fa
             {/* Mobile Hamburger Toggle Button */}
             <button
               onClick={() => setMobileOpen(!mobileOpen)}
-              className="lg:hidden p-2 rounded-xl bg-white/5 border border-white/10 text-slate-200 hover:text-cyan-300 hover:border-cyan-400/40 hover:bg-white/10 active:scale-95 transition-all cursor-pointer"
+              className={`lg:hidden p-2 rounded-xl border active:scale-95 transition-all cursor-pointer ${
+                isNight
+                  ? 'bg-white/5 border-white/10 text-slate-200 hover:text-cyan-300 hover:border-cyan-400/40 hover:bg-white/10'
+                  : 'bg-slate-100 border-slate-200 text-slate-700 hover:text-slate-900 hover:border-slate-300'
+              }`}
               aria-label="Toggle navigation menu"
             >
               {mobileOpen ? <X size={17} /> : <Menu size={17} />}
@@ -146,6 +161,9 @@ export default function PublicLayout({ children, forceTheme, isSplitPreview = fa
           </div>
         </div>
       </header>
+
+      {/* Spacer to preserve content flow with fixed header */}
+      <div className="h-16 sm:h-20 w-full shrink-0 pointer-events-none" aria-hidden="true" />
 
       {/* ── Mobile Navigation Drawer Backdrop & Modal ────────────────────── */}
       {mobileOpen && (
