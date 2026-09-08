@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import {
   ArrowRight, CheckCircle2, XCircle, Sparkles, Calculator,
@@ -73,6 +73,20 @@ function Cell({ value }) {
 export default function Pricing() {
   const [interval, setInterval] = useState('monthly')
   const [openFaq, setOpenFaq] = useState(null)
+  const [plans, setPlans] = useState([])
+
+  useEffect(() => {
+    fetch('/api/billing/plans')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (d?.plans?.length) setPlans(d.plans)
+      })
+      .catch(() => {})
+  }, [])
+
+  const proPlan = plans.find((p) => p.id === 'pro') || { priceMonthly: 20, priceYearly: 200 }
+  const entPlan = plans.find((p) => p.id === 'enterprise') || { priceMonthly: 80, priceYearly: 800 }
+  const ppsPlan = plans.find((p) => p.id === 'pay_per_scan') || { priceMonthly: 3 }
 
   // ── ROI Calculator state ────────────────────────────────────────────────
   const [auditsPerYear, setAuditsPerYear] = useState(4)
@@ -80,11 +94,11 @@ export default function Pricing() {
 
   const roi = useMemo(() => {
     const traditionalCost = auditsPerYear * costPerAudit
-    const sentinelCost = interval === 'yearly' ? 800 : 80 * 12
-    const savings = Math.max(0, traditionalCost - sentinelCost)
+    const entCost = interval === 'yearly' ? (entPlan.priceYearly || 800) : (entPlan.priceMonthly || 80) * 12
+    const savings = Math.max(0, traditionalCost - entCost)
     const pct = traditionalCost > 0 ? Math.round((savings / traditionalCost) * 100) : 0
-    return { traditionalCost, sentinelCost, savings, pct }
-  }, [auditsPerYear, costPerAudit, interval])
+    return { traditionalCost, sentinelCost: entCost, savings, pct }
+  }, [auditsPerYear, costPerAudit, interval, entPlan])
 
   return (
     <PublicLayout>
@@ -146,9 +160,9 @@ export default function Pricing() {
                 <span className="text-[10px] font-extrabold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-cyan-500/10 text-cyan-300 border border-cyan-500/30">
                   On-Demand
                 </span>
-                <h3 className="text-xl font-extrabold text-white mt-3">Pay-Per-Scan</h3>
+                <h3 className="text-xl font-extrabold text-white mt-3">{ppsPlan.name || 'Pay-Per-Scan'}</h3>
                 <div className="mt-3 flex items-baseline gap-1">
-                  <span className="text-4xl font-black text-white">RM 3</span>
+                  <span className="text-4xl font-black text-white">RM {ppsPlan.priceMonthly || 3}</span>
                   <span className="text-xs text-slate-400 font-medium">/ scan</span>
                 </div>
                 <p className="text-xs text-slate-400 mt-2">
@@ -177,7 +191,7 @@ export default function Pricing() {
                 to="/app/billing"
                 className="btn-ghost w-full justify-center py-3 text-xs font-bold border border-white/15 hover:border-cyan-400"
               >
-                <span>Buy Scan Credit (RM 3)</span> <ArrowRight size={14} />
+                <span>Buy Scan Credit (RM {ppsPlan.priceMonthly || 3})</span> <ArrowRight size={14} />
               </Link>
             </div>
           </div>
@@ -193,9 +207,9 @@ export default function Pricing() {
                 <span className="text-[10px] font-extrabold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-blue-500/10 text-blue-300 border border-blue-500/30">
                   Monthly / Annual
                 </span>
-                <h3 className="text-xl font-extrabold text-white mt-3">SentinelAI Pro</h3>
+                <h3 className="text-xl font-extrabold text-white mt-3">{proPlan.name || 'SentinelAI Pro'}</h3>
                 <div className="mt-3 flex items-baseline gap-1">
-                  <span className="text-4xl font-black text-white">RM {interval === 'yearly' ? '200' : '20'}</span>
+                  <span className="text-4xl font-black text-white">RM {interval === 'yearly' ? (proPlan.priceYearly || 200) : (proPlan.priceMonthly || 20)}</span>
                   <span className="text-xs text-slate-400 font-medium">{interval === 'yearly' ? '/year' : '/month'}</span>
                 </div>
                 <p className="text-xs text-slate-400 mt-2">
@@ -224,7 +238,7 @@ export default function Pricing() {
                 to={`/login?mode=register&plan=pro&interval=${interval}`}
                 className="btn-shine w-full justify-center py-3 text-xs font-extrabold"
               >
-                <span>Subscribe to Pro (RM {interval === 'yearly' ? '200' : '20'})</span> <ArrowRight size={14} />
+                <span>Subscribe to Pro (RM {interval === 'yearly' ? (proPlan.priceYearly || 200) : (proPlan.priceMonthly || 20)})</span> <ArrowRight size={14} />
               </Link>
             </div>
           </div>
@@ -236,9 +250,9 @@ export default function Pricing() {
                 <span className="text-[10px] font-extrabold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-300 border border-emerald-500/30">
                   Elite Tier
                 </span>
-                <h3 className="text-xl font-extrabold text-white mt-3">SentinelAI Enterprise</h3>
+                <h3 className="text-xl font-extrabold text-white mt-3">{entPlan.name || 'SentinelAI Enterprise'}</h3>
                 <div className="mt-3 flex items-baseline gap-1">
-                  <span className="text-4xl font-black text-white">RM {interval === 'yearly' ? '800' : '80'}</span>
+                  <span className="text-4xl font-black text-white">RM {interval === 'yearly' ? (entPlan.priceYearly || 800) : (entPlan.priceMonthly || 80)}</span>
                   <span className="text-xs text-slate-400 font-medium">{interval === 'yearly' ? '/year' : '/month'}</span>
                 </div>
                 <p className="text-xs text-slate-400 mt-2">

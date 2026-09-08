@@ -62,8 +62,8 @@ export default function Login() {
   // Parse URL query params
   const searchParams = new URLSearchParams(loc.search)
   const initialMode = searchParams.get('mode') === 'register' ? 'register' : 'login'
-  const initialPlan = 'trial'
-  const initialInterval = 'monthly'
+  const initialPlan = searchParams.get('plan') || 'trial'
+  const initialInterval = searchParams.get('interval') || 'monthly'
 
   const [mode, setMode] = useState(initialMode) // 'login' | 'register'
   const [username, setUsername] = useState('')
@@ -71,9 +71,17 @@ export default function Login() {
   const [password, setPassword] = useState('')
   const [planId, setPlanId] = useState(initialPlan)
   const [interval, setInterval] = useState(initialInterval)
+  const [plans, setPlans] = useState([])
   const [showPassword, setShowPassword] = useState(false)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
+
+  useEffect(() => {
+    fetch('/api/billing/plans')
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (d?.plans?.length) setPlans(d.plans) })
+      .catch(() => {})
+  }, [])
 
   // Force empty inputs on initial load to prevent browser autofill hijack
   useEffect(() => {
@@ -104,7 +112,7 @@ export default function Login() {
         setToken(res.token)
         setUser(res.user)
         sessionStorage.setItem('sentinel_gate_trigger', 'true')
-        nav('/app/dashboard', { replace: true })
+        nav(planId && planId !== 'trial' ? '/app/billing' : '/app/dashboard', { replace: true })
       }
     } catch (e2) {
       const errMsg = e2.message || ''
@@ -310,95 +318,119 @@ export default function Login() {
             </div>
           </div>
 
-          {/* Registration Plan Selection (Free Trial active, Paid tiers locked for Beta) */}
-          {mode === 'register' && (
-            <div className={`space-y-2.5 pt-2 border-t ${isNight ? 'border-white/10' : 'border-slate-200'}`}>
-              <div className="flex items-center justify-between text-xs">
-                <span className={`font-bold ${isNight ? 'text-slate-200' : 'text-slate-800'}`}>Select Tier:</span>
-                <span className={`text-[10px] font-mono flex items-center gap-1 font-bold ${isNight ? 'text-cyan-400' : 'text-cyan-600'}`}>
-                  <Sparkles size={11} /> Community Beta Preview
-                </span>
-              </div>
+          {/* Registration Plan Selection (Synced dynamically with active database plans) */}
+          {mode === 'register' && (() => {
+            const proPlan = plans.find(p => p.id === 'pro') || { name: 'SentinelAI Pro', priceMonthly: 20 }
+            const entPlan = plans.find(p => p.id === 'enterprise') || { name: 'Enterprise', priceMonthly: 80 }
+            const trialPlan = plans.find(p => p.id === 'trial') || { name: 'Free Trial', scanQuota: 3 }
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                {/* 1. Free Trial Card - ACTIVE */}
-                <button
-                  type="button"
-                  onClick={() => setPlanId('trial')}
-                  className={`p-3 rounded-2xl border-2 border-cyan-400 ring-1 ring-cyan-400 text-left transition-all cursor-pointer relative overflow-hidden ${
-                    isNight
-                      ? 'bg-gradient-to-br from-cyan-500/25 to-slate-900 shadow-[0_0_20px_rgba(0,242,254,0.3)]'
-                      : 'bg-cyan-50/80 border-cyan-500 shadow-md'
-                  }`}
-                >
-                  <div className="flex items-center justify-between">
-                    <span className={`text-xs font-black tracking-tight ${isNight ? 'text-white' : 'text-slate-900'}`}>
-                      Free Trial
-                    </span>
-                    <span className="text-[9px] px-1.5 py-0.5 rounded bg-cyan-500 text-slate-950 font-black">
-                      ACTIVE
-                    </span>
-                  </div>
-                  <div className={`text-lg font-black mt-1 ${isNight ? 'text-cyan-300' : 'text-cyan-700'}`}>
-                    $0 <span className={`text-[10px] font-normal ${isNight ? 'text-slate-400' : 'text-slate-500'}`}>forever</span>
-                  </div>
-                  <div className={`text-[10px] font-semibold mt-0.5 ${isNight ? 'text-cyan-200' : 'text-cyan-600'}`}>
-                    3 Free AI Scans
-                  </div>
-                </button>
-
-                {/* 2. Pro Card - DISABLED / LOCKED */}
-                <div
-                  className={`p-3 rounded-2xl border cursor-not-allowed select-none text-left relative overflow-hidden ${
-                    isNight
-                      ? 'border-white/5 bg-slate-900/30 opacity-40'
-                      : 'border-slate-200 bg-slate-100/70 opacity-60'
-                  }`}
-                  title="Subscription billing temporarily disabled during community preview"
-                >
-                  <div className="flex items-center justify-between">
-                    <span className={`text-xs font-bold ${isNight ? 'text-slate-400' : 'text-slate-600'}`}>Pro Plan</span>
-                    <span className={`flex items-center gap-1 text-[8px] font-mono uppercase font-bold px-1.5 py-0.5 rounded border ${
-                      isNight ? 'bg-slate-800 text-slate-400 border-white/10' : 'bg-slate-200 text-slate-600 border-slate-300'
-                    }`}>
-                      <Lock size={10} /> Locked
-                    </span>
-                  </div>
-                  <div className={`text-lg font-black mt-1 ${isNight ? 'text-slate-500' : 'text-slate-600'}`}>
-                    $19<span className={`text-[10px] font-normal ${isNight ? 'text-slate-600' : 'text-slate-500'}`}>/mo</span>
-                  </div>
-                  <div className={`text-[10px] mt-0.5 ${isNight ? 'text-slate-500' : 'text-slate-600'}`}>50 Scans • 5 Repos</div>
+            return (
+              <div className={`space-y-2.5 pt-2 border-t ${isNight ? 'border-white/10' : 'border-slate-200'}`}>
+                <div className="flex items-center justify-between text-xs">
+                  <span className={`font-bold ${isNight ? 'text-slate-200' : 'text-slate-800'}`}>Select Tier:</span>
+                  <span className={`text-[10px] font-mono flex items-center gap-1 font-bold ${isNight ? 'text-cyan-400' : 'text-cyan-600'}`}>
+                    <Sparkles size={11} /> 3 Free Trial Scans Included
+                  </span>
                 </div>
 
-                {/* 3. Enterprise Card - DISABLED / LOCKED */}
-                <div
-                  className={`p-3 rounded-2xl border cursor-not-allowed select-none text-left relative overflow-hidden ${
-                    isNight
-                      ? 'border-white/5 bg-slate-900/30 opacity-40'
-                      : 'border-slate-200 bg-slate-100/70 opacity-60'
-                  }`}
-                  title="Subscription billing temporarily disabled during community preview"
-                >
-                  <div className="flex items-center justify-between">
-                    <span className={`text-xs font-bold ${isNight ? 'text-slate-400' : 'text-slate-600'}`}>Enterprise</span>
-                    <span className={`flex items-center gap-1 text-[8px] font-mono uppercase font-bold px-1.5 py-0.5 rounded border ${
-                      isNight ? 'bg-slate-800 text-slate-400 border-white/10' : 'bg-slate-200 text-slate-600 border-slate-300'
-                    }`}>
-                      <Lock size={10} /> Locked
-                    </span>
-                  </div>
-                  <div className={`text-lg font-black mt-1 ${isNight ? 'text-slate-500' : 'text-slate-600'}`}>
-                    $79<span className={`text-[10px] font-normal ${isNight ? 'text-slate-600' : 'text-slate-500'}`}>/mo</span>
-                  </div>
-                  <div className={`text-[10px] mt-0.5 ${isNight ? 'text-slate-500' : 'text-slate-600'}`}>Unlimited • 1-on-1</div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                  {/* 1. Free Trial Card */}
+                  <button
+                    type="button"
+                    onClick={() => setPlanId('trial')}
+                    className={`p-3 rounded-2xl border text-left transition-all cursor-pointer relative overflow-hidden ${
+                      planId === 'trial'
+                        ? 'border-cyan-400 ring-2 ring-cyan-400/50 bg-cyan-500/15 shadow-[0_0_20px_rgba(0,242,254,0.25)]'
+                        : isNight ? 'border-white/10 bg-slate-900/60 hover:border-white/20' : 'border-slate-200 bg-white hover:border-slate-300'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className={`text-xs font-black tracking-tight ${isNight ? 'text-white' : 'text-slate-900'}`}>
+                        Free Trial
+                      </span>
+                      {planId === 'trial' && (
+                        <span className="text-[9px] px-1.5 py-0.5 rounded bg-cyan-500 text-slate-950 font-black">
+                          ACTIVE
+                        </span>
+                      )}
+                    </div>
+                    <div className={`text-lg font-black mt-1 ${isNight ? 'text-cyan-300' : 'text-cyan-700'}`}>
+                      RM 0 <span className={`text-[10px] font-normal ${isNight ? 'text-slate-400' : 'text-slate-500'}`}>forever</span>
+                    </div>
+                    <div className={`text-[10px] font-semibold mt-0.5 ${isNight ? 'text-cyan-200' : 'text-cyan-600'}`}>
+                      {trialPlan.scanQuota || 3} Free AI Scans
+                    </div>
+                  </button>
+
+                  {/* 2. Pro Card */}
+                  <button
+                    type="button"
+                    onClick={() => setPlanId('pro')}
+                    className={`p-3 rounded-2xl border text-left transition-all cursor-pointer relative overflow-hidden ${
+                      planId === 'pro'
+                        ? 'border-cyan-400 ring-2 ring-cyan-400/50 bg-cyan-500/15 shadow-[0_0_20px_rgba(0,242,254,0.25)]'
+                        : isNight ? 'border-white/10 bg-slate-900/60 hover:border-white/20' : 'border-slate-200 bg-white hover:border-slate-300'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className={`text-xs font-black tracking-tight ${isNight ? 'text-white' : 'text-slate-900'}`}>
+                        Pro Plan
+                      </span>
+                      {planId === 'pro' ? (
+                        <span className="text-[9px] px-1.5 py-0.5 rounded bg-cyan-500 text-slate-950 font-black">
+                          SELECTED
+                        </span>
+                      ) : (
+                        <span className="text-[8px] font-bold px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-300">
+                          POPULAR
+                        </span>
+                      )}
+                    </div>
+                    <div className={`text-lg font-black mt-1 ${isNight ? 'text-cyan-300' : 'text-cyan-700'}`}>
+                      RM {proPlan.priceMonthly}<span className={`text-[10px] font-normal ${isNight ? 'text-slate-400' : 'text-slate-500'}`}>/mo</span>
+                    </div>
+                    <div className={`text-[10px] mt-0.5 ${isNight ? 'text-slate-400' : 'text-slate-500'}`}>50 Scans • 5 Repos</div>
+                  </button>
+
+                  {/* 3. Enterprise Card */}
+                  <button
+                    type="button"
+                    onClick={() => setPlanId('enterprise')}
+                    className={`p-3 rounded-2xl border text-left transition-all cursor-pointer relative overflow-hidden ${
+                      planId === 'enterprise'
+                        ? 'border-purple-400 ring-2 ring-purple-400/50 bg-purple-500/15 shadow-[0_0_20px_rgba(168,85,247,0.25)]'
+                        : isNight ? 'border-white/10 bg-slate-900/60 hover:border-white/20' : 'border-slate-200 bg-white hover:border-slate-300'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className={`text-xs font-black tracking-tight ${isNight ? 'text-white' : 'text-slate-900'}`}>
+                        Enterprise
+                      </span>
+                      {planId === 'enterprise' ? (
+                        <span className="text-[9px] px-1.5 py-0.5 rounded bg-purple-500 text-white font-black">
+                          SELECTED
+                        </span>
+                      ) : (
+                        <span className="text-[8px] font-bold px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-300">
+                          VIP
+                        </span>
+                      )}
+                    </div>
+                    <div className={`text-lg font-black mt-1 ${isNight ? 'text-purple-300' : 'text-purple-700'}`}>
+                      RM {entPlan.priceMonthly}<span className={`text-[10px] font-normal ${isNight ? 'text-slate-400' : 'text-slate-500'}`}>/mo</span>
+                    </div>
+                    <div className={`text-[10px] mt-0.5 ${isNight ? 'text-slate-400' : 'text-slate-500'}`}>Unlimited • 1-on-1</div>
+                  </button>
+                </div>
+
+                <div className={`text-center pt-1 text-[11px] font-medium ${isNight ? 'text-cyan-300/90' : 'text-cyan-700'}`}>
+                  {planId === 'trial'
+                    ? '✨ Free Trial: 3 Full AI Security Scans • Instant Access • No Card Required'
+                    : `✨ Selected: ${planId === 'pro' ? 'SentinelAI Pro (RM ' + proPlan.priceMonthly + '/mo)' : 'SentinelAI Enterprise (RM ' + entPlan.priceMonthly + '/mo)'} — activate via DuitNow QR or Card in dashboard`}
                 </div>
               </div>
-
-              <div className={`text-center pt-1 text-[11px] font-medium ${isNight ? 'text-cyan-300/90' : 'text-cyan-700'}`}>
-                ✨ Free Trial: 3 Full AI Security Scans • Instant Access • No Card Required
-              </div>
-            </div>
-          )}
+            )
+          })()}
 
           {err && (
             <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-2.5 text-xs text-rose-300 font-semibold flex items-center gap-2">

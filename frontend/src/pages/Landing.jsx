@@ -19,12 +19,27 @@ export default function Landing() {
   const [hoveredStep, setHoveredStep] = useState(null)
   const [agentsCount, setAgentsCount] = useState(53)
   const [showThemeIntro, setShowThemeIntro] = useState(false)
+  const [plans, setPlans] = useState([])
+
+  // Listen for replay event from navbar
+  useEffect(() => {
+    const handleReplay = () => setShowThemeIntro(true)
+    window.addEventListener('sentinel_replay_theme_intro', handleReplay)
+    return () => window.removeEventListener('sentinel_replay_theme_intro', handleReplay)
+  }, [])
 
   useEffect(() => {
     fetch('/api/public/stats')
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => {
         if (d?.agentsCount) setAgentsCount(d.agentsCount)
+      })
+      .catch(() => {})
+
+    fetch('/api/billing/plans')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (d?.plans?.length) setPlans(d.plans)
       })
       .catch(() => {})
   }, [])
@@ -544,113 +559,193 @@ export default function Landing() {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-10 max-w-4xl mx-auto pt-6">
-            {/* Pro Card */}
-            <div className="card p-8 sm:p-9 border-cyan-500/50 bg-gradient-to-b from-slate-900/90 via-slate-900/80 to-cyan-950/30 shadow-2xl shadow-cyan-950/40 ring-1 ring-cyan-400/40 relative flex flex-col justify-between hover:scale-[1.02] transition-transform duration-300">
-              <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-0.5 rounded-full bg-gradient-to-r from-cyan-500 to-blue-500 text-slate-950 font-extrabold text-[10px] tracking-wider uppercase shadow-lg shadow-cyan-500/30 flex items-center gap-1">
-                <Sparkles size={10} className="fill-slate-950" /> Most Popular
-              </div>
+          {(() => {
+            const proPlan = plans.find(p => p.id === 'pro') || {
+              id: 'pro',
+              name: 'SentinelAI Pro',
+              priceMonthly: 20,
+              priceYearly: 200,
+              description: 'Ideal for active developers and software teams needing continuous audit automation.'
+            }
+            const enterprisePlan = plans.find(p => p.id === 'enterprise') || {
+              id: 'enterprise',
+              name: 'SentinelAI Enterprise',
+              priceMonthly: 80,
+              priceYearly: 800,
+              description: 'Full continuous DevSecOps pipeline for organizations requiring unlimited audits & compliance.'
+            }
+            const ppsPlan = plans.find(p => p.id === 'pay_per_scan') || {
+              id: 'pay_per_scan',
+              name: 'Pay-Per-Scan Credit',
+              priceMonthly: 3,
+              description: 'Top-up single autonomous scans on demand. No recurring monthly commitment.'
+            }
 
-              <div className="space-y-6">
-                <div>
-                  <h3 className="text-xl font-extrabold text-white">SentinelAI Pro</h3>
-                  <div className="mt-3 flex items-baseline gap-1">
-                    <span className="text-4xl font-black text-white">${interval === 'yearly' ? '190' : '19'}</span>
-                    <span className="text-xs text-slate-400 font-medium">{interval === 'yearly' ? '/year' : '/month'}</span>
+            return (
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-6xl mx-auto pt-6">
+                {/* Pay-Per-Scan Card */}
+                <div className="card p-7 border-white/10 bg-slate-950/70 hover:border-white/20 flex flex-col justify-between hover:scale-[1.01] transition-transform duration-300">
+                  <div className="space-y-6">
+                    <div>
+                      <span className="text-[10px] font-extrabold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-cyan-500/10 text-cyan-300 border border-cyan-500/30">
+                        On-Demand Top-Up
+                      </span>
+                      <h3 className="text-xl font-extrabold text-white mt-3">{ppsPlan.name}</h3>
+                      <div className="mt-3 flex items-baseline gap-1">
+                        <span className="text-4xl font-black text-white">RM {ppsPlan.priceMonthly}</span>
+                        <span className="text-xs text-slate-400 font-medium">/ scan</span>
+                      </div>
+                      <p className="text-xs text-slate-400 mt-2">
+                        {ppsPlan.description || 'Top-up single autonomous scans on demand. No recurring monthly commitment.'}
+                      </p>
+                    </div>
+
+                    <div className="h-px bg-white/10" />
+
+                    <ul className="space-y-3 text-xs text-slate-300">
+                      <li className="flex items-center gap-2.5">
+                        <CheckCircle2 size={16} className="text-cyan-400 shrink-0" />
+                        <span><strong>1 Full Security Scan</strong> credit added</span>
+                      </li>
+                      <li className="flex items-center gap-2.5">
+                        <CheckCircle2 size={16} className="text-cyan-400 shrink-0" />
+                        <span><strong>Full 150+ Toolchain</strong> (DAST & SAST)</span>
+                      </li>
+                      <li className="flex items-center gap-2.5">
+                        <CheckCircle2 size={16} className="text-cyan-400 shrink-0" />
+                        <span>Live stdout terminal & real-time telemetry</span>
+                      </li>
+                      <li className="flex items-center gap-2.5">
+                        <CheckCircle2 size={16} className="text-cyan-400 shrink-0" />
+                        <span>Instant downloadable PDF Audit Report</span>
+                      </li>
+                      <li className="flex items-center gap-2.5">
+                        <CheckCircle2 size={16} className="text-cyan-400 shrink-0" />
+                        <span>No recurring monthly subscription</span>
+                      </li>
+                    </ul>
                   </div>
-                  <p className="text-xs text-slate-400 mt-2">
-                    Ideal for active developers and software teams needing continuous audit automation.
-                  </p>
+
+                  <div className="pt-8">
+                    <Link
+                      to="/login?mode=register&plan=pay_per_scan"
+                      className="btn-ghost w-full justify-center py-3 text-xs font-bold border border-white/15 hover:border-cyan-400"
+                    >
+                      <span>Buy Scan Credit (RM {ppsPlan.priceMonthly})</span>
+                    </Link>
+                  </div>
                 </div>
 
-                <div className="h-px bg-white/10" />
-
-                <ul className="space-y-3 text-xs text-slate-300">
-                  <li className="flex items-center gap-2.5">
-                    <CheckCircle2 size={16} className="text-cyan-400 shrink-0" />
-                    <span><strong>50 AI Code Audits</strong> / month</span>
-                  </li>
-                  <li className="flex items-center gap-2.5">
-                    <CheckCircle2 size={16} className="text-cyan-400 shrink-0" />
-                    <span><strong>5 Linked Repositories</strong> (Public & Private)</span>
-                  </li>
-                  <li className="flex items-center gap-2.5">
-                    <CheckCircle2 size={16} className="text-cyan-400 shrink-0" />
-                    <span>Continuous Webhooks (Push & PR triggers)</span>
-                  </li>
-                  <li className="flex items-center gap-2.5">
-                    <CheckCircle2 size={16} className="text-cyan-400 shrink-0" />
-                    <span>Automated Email PDF Delivery on every commit</span>
-                  </li>
-                  <li className="flex items-center gap-2.5">
-                    <CheckCircle2 size={16} className="text-cyan-400 shrink-0" />
-                    <span>AI Auto-Fix & Remediation Diffs</span>
-                  </li>
-                </ul>
-              </div>
-
-              <div className="pt-8">
-                {/* #11 Flush Button for Pro */}
-                <Link
-                  to={`/login?mode=register&plan=pro&interval=${interval}`}
-                  className="btn-flush w-full justify-center"
-                >
-                  <span>Subscribe to SentinelAI Pro</span>
-                </Link>
-              </div>
-            </div>
-
-            {/* Enterprise Card */}
-            <div className="card p-8 sm:p-9 border-white/10 bg-slate-950/70 hover:border-white/20 flex flex-col justify-between hover:scale-[1.02] transition-transform duration-300">
-              <div className="space-y-6">
-                <div>
-                  <h3 className="text-xl font-extrabold text-white">SentinelAI Enterprise</h3>
-                  <div className="mt-3 flex items-baseline gap-1">
-                    <span className="text-4xl font-black text-white">${interval === 'yearly' ? '790' : '79'}</span>
-                    <span className="text-xs text-slate-400 font-medium">{interval === 'yearly' ? '/year' : '/month'}</span>
+                {/* Pro Card */}
+                <div className="card p-7 border-cyan-500/50 bg-gradient-to-b from-slate-900/90 via-slate-900/80 to-cyan-950/30 shadow-2xl shadow-cyan-950/40 ring-1 ring-cyan-400/40 relative flex flex-col justify-between hover:scale-[1.02] transition-transform duration-300">
+                  <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-0.5 rounded-full bg-gradient-to-r from-cyan-500 to-blue-500 text-slate-950 font-extrabold text-[10px] tracking-wider uppercase shadow-lg shadow-cyan-500/30 flex items-center gap-1">
+                    <Sparkles size={10} className="fill-slate-950" /> Most Popular
                   </div>
-                  <p className="text-xs text-slate-400 mt-2">
-                    Full continuous DevSecOps pipeline for organizations requiring unlimited audits & compliance.
-                  </p>
+
+                  <div className="space-y-6">
+                    <div>
+                      <h3 className="text-xl font-extrabold text-white">{proPlan.name}</h3>
+                      <div className="mt-3 flex items-baseline gap-1">
+                        <span className="text-4xl font-black text-white">RM {interval === 'yearly' ? proPlan.priceYearly : proPlan.priceMonthly}</span>
+                        <span className="text-xs text-slate-400 font-medium">{interval === 'yearly' ? '/year' : '/month'}</span>
+                      </div>
+                      <p className="text-xs text-slate-400 mt-2">
+                        {proPlan.description || 'Ideal for active developers and software teams needing continuous audit automation.'}
+                      </p>
+                    </div>
+
+                    <div className="h-px bg-white/10" />
+
+                    <ul className="space-y-3 text-xs text-slate-300">
+                      <li className="flex items-center gap-2.5">
+                        <CheckCircle2 size={16} className="text-cyan-400 shrink-0" />
+                        <span><strong>50 AI Code Audits</strong> / month</span>
+                      </li>
+                      <li className="flex items-center gap-2.5">
+                        <CheckCircle2 size={16} className="text-cyan-400 shrink-0" />
+                        <span><strong>5 Linked Repositories</strong> (Public & Private)</span>
+                      </li>
+                      <li className="flex items-center gap-2.5">
+                        <CheckCircle2 size={16} className="text-cyan-400 shrink-0" />
+                        <span>Continuous Webhooks (Push & PR triggers)</span>
+                      </li>
+                      <li className="flex items-center gap-2.5">
+                        <CheckCircle2 size={16} className="text-cyan-400 shrink-0" />
+                        <span>Automated Email PDF Delivery on every commit</span>
+                      </li>
+                      <li className="flex items-center gap-2.5">
+                        <CheckCircle2 size={16} className="text-cyan-400 shrink-0" />
+                        <span>AI Auto-Fix & Remediation Diffs</span>
+                      </li>
+                    </ul>
+                  </div>
+
+                  <div className="pt-8">
+                    <Link
+                      to={`/login?mode=register&plan=pro&interval=${interval}`}
+                      className="btn-flush w-full justify-center"
+                    >
+                      <span>Subscribe to SentinelAI Pro</span>
+                    </Link>
+                  </div>
                 </div>
 
-                <div className="h-px bg-white/10" />
+                {/* Enterprise Card */}
+                <div className="card p-7 border-white/10 bg-slate-950/70 hover:border-white/20 flex flex-col justify-between hover:scale-[1.02] transition-transform duration-300 relative">
+                  <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-0.5 rounded-full bg-gradient-to-r from-amber-500 via-purple-500 to-pink-500 text-slate-950 font-extrabold text-[10px] tracking-wider uppercase shadow-lg shadow-amber-500/30 flex items-center gap-1">
+                    <Sparkles size={10} className="fill-slate-950 text-slate-950" /> VIP Red Team Advisory
+                  </div>
 
-                <ul className="space-y-3 text-xs text-slate-300">
-                  <li className="flex items-center gap-2.5">
-                    <CheckCircle2 size={16} className="text-emerald-400 shrink-0" />
-                    <span><strong>Unlimited AI Code Audits</strong></span>
-                  </li>
-                  <li className="flex items-center gap-2.5">
-                    <CheckCircle2 size={16} className="text-emerald-400 shrink-0" />
-                    <span><strong>Unlimited GitHub Repositories</strong></span>
-                  </li>
-                  <li className="flex items-center gap-2.5">
-                    <CheckCircle2 size={16} className="text-emerald-400 shrink-0" />
-                    <span>GitHub PR Bot Inline Code Review</span>
-                  </li>
-                  <li className="flex items-center gap-2.5">
-                    <CheckCircle2 size={16} className="text-emerald-400 shrink-0" />
-                    <span>Real-time Slack / Discord Webhook Alerts</span>
-                  </li>
-                  <li className="flex items-center gap-2.5">
-                    <CheckCircle2 size={16} className="text-emerald-400 shrink-0" />
-                    <span>Executive White-label PDF Reports & SLA</span>
-                  </li>
-                </ul>
-              </div>
+                  <div className="space-y-6">
+                    <div>
+                      <h3 className="text-xl font-extrabold text-white">{enterprisePlan.name}</h3>
+                      <div className="mt-3 flex items-baseline gap-1">
+                        <span className="text-4xl font-black text-white">RM {interval === 'yearly' ? enterprisePlan.priceYearly : enterprisePlan.priceMonthly}</span>
+                        <span className="text-xs text-slate-400 font-medium">{interval === 'yearly' ? '/year' : '/month'}</span>
+                      </div>
+                      <p className="text-xs text-slate-400 mt-2">
+                        {enterprisePlan.description || 'Full continuous DevSecOps pipeline for organizations requiring unlimited audits & compliance.'}
+                      </p>
+                    </div>
 
-              <div className="pt-8">
-                {/* #19 Fancy VIP Button for Enterprise */}
-                <Link
-                  to={`/login?mode=register&plan=enterprise&interval=${interval}`}
-                  className="btn-fancy-vip w-full justify-center"
-                >
-                  <span>Subscribe to Enterprise</span>
-                </Link>
+                    <div className="h-px bg-white/10" />
+
+                    <ul className="space-y-3 text-xs text-slate-300">
+                      <li className="flex items-center gap-2.5">
+                        <CheckCircle2 size={16} className="text-emerald-400 shrink-0" />
+                        <span><strong>Unlimited AI Code Audits</strong></span>
+                      </li>
+                      <li className="flex items-center gap-2.5">
+                        <CheckCircle2 size={16} className="text-emerald-400 shrink-0" />
+                        <span><strong>Unlimited GitHub Repositories</strong></span>
+                      </li>
+                      <li className="flex items-center gap-2.5">
+                        <CheckCircle2 size={16} className="text-emerald-400 shrink-0" />
+                        <span>1-on-1 Certified Consultant Advisory</span>
+                      </li>
+                      <li className="flex items-center gap-2.5">
+                        <CheckCircle2 size={16} className="text-emerald-400 shrink-0" />
+                        <span>Real-time Slack / Discord / Telegram Relays</span>
+                      </li>
+                      <li className="flex items-center gap-2.5">
+                        <CheckCircle2 size={16} className="text-emerald-400 shrink-0" />
+                        <span>Executive White-label PDF Reports & Dedicated SLA</span>
+                      </li>
+                    </ul>
+                  </div>
+
+                  <div className="pt-8">
+                    <Link
+                      to={`/login?mode=register&plan=enterprise&interval=${interval}`}
+                      className="btn-fancy-vip w-full justify-center"
+                    >
+                      <span>Subscribe to Enterprise</span>
+                    </Link>
+                  </div>
+                </div>
               </div>
-            </div>
-          </div>
+            )
+          })()}
         </section>
 
         {/* ── Bottom Call To Action ─────────────────────────────────────────── */}

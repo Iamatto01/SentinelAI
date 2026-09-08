@@ -26,7 +26,7 @@ export default function AdminSubscriptionManager() {
     description: '',
     priceMonthly: 0,
     priceYearly: 0,
-    currency: 'USD',
+    currency: 'MYR',
     scanQuota: 10,
     maxRepos: 1,
     features: ['DAST + SAST Scanning', 'Multi-LLM Consensus', 'PDF Executive Report'],
@@ -106,9 +106,9 @@ export default function AdminSubscriptionManager() {
       id: '',
       name: '',
       description: '',
-      priceMonthly: 29,
-      priceYearly: 290,
-      currency: 'USD',
+      priceMonthly: 20,
+      priceYearly: 200,
+      currency: 'MYR',
       scanQuota: 25,
       maxRepos: 3,
       features: ['25 Autonomous AI Scans', '5 Linked Repositories', 'Real-time Webhook Alerts', 'PDF Report Exports'],
@@ -130,7 +130,7 @@ export default function AdminSubscriptionManager() {
       description: plan.description || '',
       priceMonthly: plan.priceMonthly,
       priceYearly: plan.priceYearly,
-      currency: plan.currency || 'USD',
+      currency: plan.currency || 'MYR',
       scanQuota: plan.scanQuota,
       maxRepos: plan.maxRepos || 1,
       features: Array.isArray(plan.features) ? [...plan.features] : [],
@@ -574,11 +574,11 @@ export default function AdminSubscriptionManager() {
                       <div className="pt-2 pb-1">
                         <div className="flex items-baseline gap-1.5">
                           <span className="text-2xl font-extrabold font-mono text-white">
-                            ${plan.priceMonthly}
+                            {plan.currency || 'RM'} {plan.priceMonthly}
                           </span>
-                          <span className="text-xs text-slate-400">/mo</span>
+                          <span className="text-xs text-slate-400">{plan.id === 'pay_per_scan' ? '/scan' : '/mo'}</span>
                           <span className="text-xs font-mono text-slate-500 ml-2">
-                            (${plan.priceYearly}/yr)
+                            ({plan.currency || 'RM'} {plan.priceYearly}/yr)
                           </span>
                         </div>
                       </div>
@@ -1037,7 +1037,7 @@ export default function AdminSubscriptionManager() {
                 </div>
 
                 <div>
-                  <label className="text-[10px] text-slate-400 uppercase font-bold block mb-1">Monthly Price ($ USD)</label>
+                  <label className="text-[10px] text-slate-400 uppercase font-bold block mb-1">Monthly Price (RM MYR)</label>
                   <input
                     type="number"
                     min="0"
@@ -1050,7 +1050,7 @@ export default function AdminSubscriptionManager() {
                 </div>
 
                 <div>
-                  <label className="text-[10px] text-slate-400 uppercase font-bold block mb-1">Yearly Price ($ USD)</label>
+                  <label className="text-[10px] text-slate-400 uppercase font-bold block mb-1">Yearly Price (RM MYR)</label>
                   <input
                     type="number"
                     min="0"
@@ -1245,13 +1245,13 @@ export default function AdminSubscriptionManager() {
                     className="input text-xs"
                   >
                     <option value="percentage">% Percentage</option>
-                    <option value="fixed">$ Fixed Amount</option>
+                    <option value="fixed">RM Fixed Amount</option>
                   </select>
                 </div>
 
                 <div>
                   <label className="text-[10px] text-slate-400 uppercase font-bold block mb-1">
-                    Value ({promoForm.discountType === 'percentage' ? '%' : '$'})
+                    Value ({promoForm.discountType === 'percentage' ? '%' : 'RM'})
                   </label>
                   <input
                     type="number"

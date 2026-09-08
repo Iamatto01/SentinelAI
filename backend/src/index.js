@@ -31,7 +31,27 @@ import * as msf from './exploits/msf-client.js'
 import { matchExploits, classifyRisk } from './exploits/registry.js'
 import { sendScanRequestNotification, sendAnonymousFeedbackNotification } from './email.js'
 import { GitHubClient, parseGitHubWebhook } from './integrations/github.js'
-import { PLANS, getUserSubscription, consumeScanQuota, activateSubscription, getPaymentHistory, COMMUNITY_FREE_ACCESS_MODE, validatePromoCode } from './billing.js'
+import {
+  PLANS,
+  getAllPlans,
+  getPlan,
+  createPlan,
+  updatePlan,
+  togglePlanStatus,
+  deletePlan,
+  getAllPromoCodes,
+  getPromoCode,
+  createPromoCode,
+  updatePromoCode,
+  togglePromoCodeStatus,
+  deletePromoCode,
+  validatePromoCode,
+  getUserSubscription,
+  consumeScanQuota,
+  activateSubscription,
+  getPaymentHistory,
+  COMMUNITY_FREE_ACCESS_MODE
+} from './billing.js'
 import { createStripeCheckoutSession, verifyAndFulfillSession, getStripe } from './stripe.js'
 import { channelGateway } from './channels/index.js'
 
@@ -529,6 +549,147 @@ app.post('/api/admin/clients/:id/subscription', requireAuth, requireRole('admin'
   audit(req.user.username, 'admin:update-sub', `updated subscription for ${u.username} → plan=${planId}, quota=${quotaTotal}`)
   const updatedSub = db.get(`SELECT * FROM subscriptions WHERE user_id = ?`, u.id)
   res.json({ ok: true, subscription: updatedSub })
+})
+
+// ── Admin Subscription Plans Management ─────────────────────────────────────
+app.get('/api/admin/plans', requireAuth, requireRole('admin'), (req, res) => {
+  try {
+    const plans = getAllPlans({ onlyOpen: false })
+    res.json({ plans })
+  } catch (err) {
+    res.status(500).json({ error: err.message || 'Failed to fetch plans' })
+  }
+})
+
+app.post('/api/admin/plans', requireAuth, requireRole('admin'), (req, res) => {
+  try {
+    const newPlan = createPlan(req.body)
+    audit(req.user.username, 'admin:create-plan', `created plan ${newPlan.id} (${newPlan.name})`)
+    res.status(201).json({ plan: newPlan })
+  } catch (err) {
+    res.status(400).json({ error: err.message || 'Failed to create plan' })
+  }
+})
+
+app.put('/api/admin/plans/:id', requireAuth, requireRole('admin'), (req, res) => {
+  try {
+    const updated = updatePlan(req.params.id, req.body)
+    audit(req.user.username, 'admin:update-plan', `updated plan ${req.params.id}`)
+    res.json({ plan: updated })
+  } catch (err) {
+    res.status(400).json({ error: err.message || 'Failed to update plan' })
+  }
+})
+
+app.patch('/api/admin/plans/:id/toggle-status', requireAuth, requireRole('admin'), (req, res) => {
+  try {
+    const { isOpen } = req.body || {}
+    const updated = togglePlanStatus(req.params.id, Boolean(isOpen))
+    audit(req.user.username, 'admin:toggle-plan', `toggled plan ${req.params.id} -> isOpen=${isOpen}`)
+    res.json({ plan: updated })
+  } catch (err) {
+    res.status(400).json({ error: err.message || 'Failed to toggle plan status' })
+  }
+})
+
+app.delete('/api/admin/plans/:id', requireAuth, requireRole('admin'), (req, res) => {
+  try {
+    const result = deletePlan(req.params.id)
+    audit(req.user.username, 'admin:delete-plan', `deleted plan ${req.params.id}`)
+    res.json(result)
+  } catch (err) {
+    res.status(400).json({ error: err.message || 'Failed to delete plan' })
+  }
+})
+
+// ── Admin Promo Codes Management ────────────────────────────────────────────
+app.get('/api/admin/promo-codes', requireAuth, requireRole('admin'), (req, res) => {
+  try {
+    const codes = getAllPromoCodes()
+    res.json({ promoCodes: codes })
+  } catch (err) {
+    res.status(500).json({ error: err.message || 'Failed to fetch promo codes' })
+  }
+})
+
+app.post('/api/admin/promo-codes', requireAuth, requireRole('admin'), (req, res) => {
+  try {
+    const created = createPromoCode(req.body)
+    audit(req.user.username, 'admin:create-promo', `created promo code ${created.code}`)
+    res.status(201).json({ promoCode: created })
+  } catch (err) {
+    res.status(400).json({ error: err.message || 'Failed to create promo code' })
+  }
+})
+
+app.put('/api/admin/promo-codes/:id', requireAuth, requireRole('admin'), (req, res) => {
+  try {
+    const updated = updatePromoCode(req.params.id, req.body)
+    audit(req.user.username, 'admin:update-promo', `updated promo code ${req.params.id}`)
+    res.json({ promoCode: updated })
+  } catch (err) {
+    res.status(400).json({ error: err.message || 'Failed to update promo code' })
+  }
+})
+
+app.patch('/api/admin/promo-codes/:id/toggle-status', requireAuth, requireRole('admin'), (req, res) => {
+  try {
+    const { isActive } = req.body || {}
+    const updated = togglePromoCodeStatus(req.params.id, Boolean(isActive))
+    audit(req.user.username, 'admin:toggle-promo', `toggled promo code ${req.params.id} -> isActive=${isActive}`)
+    res.json({ promoCode: updated })
+  } catch (err) {
+    res.status(400).json({ error: err.message || 'Failed to toggle promo code' })
+  }
+})
+
+app.delete('/api/admin/promo-codes/:id', requireAuth, requireRole('admin'), (req, res) => {
+  try {
+    const result = deletePromoCode(req.params.id)
+    audit(req.user.username, 'admin:delete-promo', `deleted promo code ${req.params.id}`)
+    res.json(result)
+  } catch (err) {
+    res.status(400).json({ error: err.message || 'Failed to delete promo code' })
+  }
+})
+
+// ── Admin Custom Subscription Override ──────────────────────────────────────
+app.post('/api/admin/subscriptions/custom-override', requireAuth, requireRole('admin'), (req, res) => {
+  try {
+    const { userId, planId, planName, quotaTotal, status, customNotes, extendDays = 30 } = req.body || {}
+    if (!userId) return res.status(400).json({ error: 'userId is required' })
+
+    const user = db.get(`SELECT id, username FROM users WHERE id = ?`, userId)
+    if (!user) return res.status(404).json({ error: 'User not found' })
+
+    const expiresAt = new Date(Date.now() + (Number(extendDays) || 30) * 86400 * 1000).toISOString()
+    const now = new Date().toISOString()
+    const targetPlan = getPlan(planId) || PLANS[planId] || { name: planName || 'Custom Plan', quotaScans: 50 }
+
+    const existing = db.get(`SELECT id FROM subscriptions WHERE user_id = ?`, user.id)
+    if (existing) {
+      db.run(
+        `UPDATE subscriptions SET plan_id=?, plan_name=?, status=?, scan_quota_total=?, current_period_end=?, updated_at=? WHERE user_id=?`,
+        planId || 'custom', planName || targetPlan.name, status || 'active',
+        quotaTotal ?? targetPlan.scanQuota ?? targetPlan.quotaScans ?? 50,
+        expiresAt, now, user.id
+      )
+    } else {
+      db.run(
+        `INSERT INTO subscriptions (id, user_id, plan_id, plan_name, status, scan_quota_total, scan_quota_used, current_period_end, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, ?)`,
+        `sub_${randomUUID()}`, user.id, planId || 'custom', planName || targetPlan.name, status || 'active',
+        quotaTotal ?? targetPlan.scanQuota ?? targetPlan.quotaScans ?? 50,
+        expiresAt, now, now
+      )
+    }
+
+    audit(req.user.username, 'admin:custom-override', `custom override for ${user.username} -> plan=${planId}, quota=${quotaTotal}, notes=${customNotes || ''}`)
+    const updatedSub = db.get(`SELECT * FROM subscriptions WHERE user_id = ?`, user.id)
+    res.json({ ok: true, subscription: updatedSub })
+  } catch (err) {
+    res.status(500).json({ error: err.message || 'Failed to apply custom override' })
+  }
 })
 
 // ── Projects ─────────────────────────────────────────────────────────────────
@@ -2107,8 +2268,16 @@ app.post('/api/github/webhook', (req, res) => {
 
 // ── Billing & Subscriptions API ───────────────────────────────────────────────
 
-// Get all subscription plans
+// Get all subscription plans (dynamically fetched from database with fallback)
 app.get('/api/billing/plans', (req, res) => {
+  try {
+    const plans = getAllPlans({ onlyOpen: true })
+    if (plans && plans.length > 0) {
+      return res.json({ plans })
+    }
+  } catch (e) {
+    console.warn('[billing] error fetching open plans:', e.message)
+  }
   res.json({ plans: Object.values(PLANS) })
 })
 

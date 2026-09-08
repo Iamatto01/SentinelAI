@@ -3,13 +3,18 @@ import {
   CreditCard, Sparkles, Check, Zap, Shield, ArrowRight, CheckCircle2,
   Calendar, Layers, FileText, AlertCircle, RefreshCw, Loader2, Star,
   Lock, TrendingUp, HelpCircle, BadgeCheck, QrCode, Smartphone, Copy,
-  ExternalLink, Building2, Upload, Info
+  ExternalLink, Building2, Upload, Info, Sliders, Settings
 } from 'lucide-react'
 import QRCode from 'qrcode'
 import { api } from '../lib/api.js'
+import { useAuth } from '../lib/AuthContext.jsx'
 import { BillingSkeleton } from '../components/SkeletonLoader.jsx'
+import AdminSubscriptionManager from '../components/AdminSubscriptionManager.jsx'
 
 export default function Billing() {
+  const { user } = useAuth()
+  const isAdmin = user?.role === 'admin'
+  const [viewMode, setViewMode] = useState('plans') // 'plans' | 'admin'
   const [loading, setLoading] = useState(true)
   const [plans, setPlans] = useState([])
   const [subscription, setSubscription] = useState(null)
@@ -274,7 +279,50 @@ export default function Billing() {
         </div>
       </div>
 
-      {/* Messages */}
+      {/* Admin Tab Switcher */}
+      {isAdmin && (
+        <div className="flex flex-wrap items-center justify-between gap-4 p-2 bg-[#161616] border border-white/[0.08] rounded-2xl shadow-xl">
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setViewMode('plans')}
+              className={`px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
+                viewMode === 'plans'
+                  ? 'bg-cyan-500 text-slate-950 font-extrabold shadow-[0_0_15px_rgba(0,242,254,0.35)]'
+                  : 'text-slate-400 hover:text-white bg-white/5 border border-white/10'
+              }`}
+            >
+              <CreditCard size={14} /> My Subscription & Plans
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('admin')}
+              className={`px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
+                viewMode === 'admin'
+                  ? 'bg-gradient-to-r from-emerald-500 to-cyan-500 text-slate-950 font-black shadow-[0_0_15px_rgba(16,185,129,0.35)]'
+                  : 'text-emerald-400 hover:text-emerald-300 bg-emerald-500/10 border border-emerald-500/30'
+              }`}
+            >
+              <Sliders size={14} /> Manage Subscription Plans & Promos
+              <span className="text-[9px] uppercase px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-mono font-bold">
+                Admin
+              </span>
+            </button>
+          </div>
+          <div className="text-[11px] text-slate-400 px-2 flex items-center gap-1.5 font-medium">
+            <Sparkles size={13} className="text-amber-400" />
+            <span>Admin privileges active &mdash; customize tiers, pricing, or quotas anytime</span>
+          </div>
+        </div>
+      )}
+
+      {viewMode === 'admin' && isAdmin ? (
+        <div className="animate-in fade-in duration-300">
+          <AdminSubscriptionManager />
+        </div>
+      ) : (
+        <>
+          {/* Messages */}
       {error && (
         <div className="p-4 rounded-xl bg-red-500/10 border border-red-500/30 text-red-300 flex items-center gap-3 text-sm animate-in fade-in">
           <AlertCircle size={18} className="shrink-0 text-red-400" />
@@ -529,6 +577,8 @@ export default function Billing() {
           </div>
         )}
       </div>
+      </>
+      )}
 
       {/* Checkout Modal */}
       {modalOpen && selectedPlan && (
@@ -579,6 +629,7 @@ export default function Billing() {
               <div className="flex justify-between text-sm font-bold text-white">
                 <span>Total Due:</span>
                 <span className="text-cyan-400 font-mono text-base">
+                  RM {appliedPromo ? appliedPromo.finalPrice : (selectedPlan.id === 'pay_per_scan' ? selectedPlan.priceMonthly : (interval === 'yearly' ? selectedPlan.priceYearly : selectedPlan.priceMonthly))} MYR
                   RM {calculateTotalDue().toFixed(2)} MYR
                 </span>
               </div>
@@ -724,7 +775,7 @@ export default function Billing() {
                   <div className="flex items-center gap-2">
                     <label className="cursor-pointer px-3 py-1.5 text-[11px] font-semibold rounded-lg bg-pink-500/10 border border-pink-500/30 text-pink-300 hover:bg-pink-500/20 flex items-center gap-1.5 transition-colors">
                       <Upload size={13} />
-                      <span>Upload QR Kod Lain</span>
+                      <span>Upload ShopeePay / Bank QR Sendiri</span>
                       <input
                         type="file"
                         accept="image/*"
@@ -804,8 +855,8 @@ export default function Billing() {
                       Accepted in ShopeePay & All Malaysian Bank Apps
                     </div>
                     <div className="flex flex-wrap items-center justify-center gap-1 text-[10px] text-slate-300">
-                      {['ShopeePay', 'Touch \'n Go', 'Maybank MAE', 'CIMB OCTO', 'GrabPay', 'Bank Islam', 'RHB', 'Public Bank'].map(b => (
-                        <span key={b} className={`px-2 py-0.5 rounded-md border text-[10px] ${b === 'ShopeePay' ? 'bg-orange-500/20 border-orange-500/40 text-orange-300 font-bold' : b === 'Touch \'n Go' ? 'bg-blue-500/20 border-blue-500/40 text-blue-300 font-bold' : 'bg-white/5 border border-white/10'}`}>
+                      {['ShopeePay', "Touch 'n Go", 'Maybank MAE', 'CIMB OCTO', 'GrabPay', 'Bank Islam', 'RHB', 'Public Bank'].map(b => (
+                        <span key={b} className={`px-2 py-0.5 rounded-md border text-[10px] ${b === 'ShopeePay' ? 'bg-orange-500/20 border-orange-500/40 text-orange-300 font-bold' : b === "Touch 'n Go" ? 'bg-blue-500/20 border-blue-500/40 text-blue-300 font-bold' : 'bg-white/5 border border-white/10'}`}>
                           {b}
                         </span>
                       ))}
@@ -857,6 +908,7 @@ export default function Billing() {
                         <img src={stripeQrUrl} alt="Stripe Mobile QR" className="w-36 h-36 object-contain rounded-lg" />
                       </div>
                       <div className="text-[11px] text-cyan-300 font-semibold flex items-center justify-center gap-1.5">
+                        <Smartphone size={13} /> Scan with your phone camera to pay with Apple / Google Pay
                         <Smartphone size={13} /> Scan dengan kamera biasa telefon anda untuk buka Apple Pay / Google Pay / Kad
                       </div>
                     </div>
@@ -894,6 +946,17 @@ export default function Billing() {
               >
                 Cancel
               </button>
+              {paymentProvider !== 'duitnow_qr' && paymentProvider !== 'stripe' && paymentProvider !== 'local_fpx' && (
+                <button
+                  type="button"
+                  onClick={handleConfirmCheckout}
+                  disabled={processingPayment}
+                  className="btn-primary flex-1 text-xs py-2.5 shadow-glow flex items-center justify-center gap-2"
+                >
+                  {processingPayment ? <Loader2 size={14} className="animate-spin" /> : <Lock size={14} />}
+                  {processingPayment ? 'Processing...' : 'Confirm & Upgrade'}
+                </button>
+              )}
 
               {paymentProvider === 'duitnow_qr' && (
                 <button
