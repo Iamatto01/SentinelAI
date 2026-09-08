@@ -378,6 +378,67 @@ function migrate(d) {
     created_at TEXT NOT NULL,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
   );
+
+  CREATE TABLE IF NOT EXISTS promo_codes (
+    id TEXT PRIMARY KEY,
+    code TEXT NOT NULL UNIQUE,
+    discount_type TEXT NOT NULL DEFAULT 'percentage',
+    discount_value REAL NOT NULL DEFAULT 0,
+    applicable_plans TEXT DEFAULT 'all',
+    max_uses INTEGER DEFAULT 0,
+    used_count INTEGER DEFAULT 0,
+    min_purchase_amount REAL DEFAULT 0,
+    expires_at TEXT,
+    is_active INTEGER DEFAULT 1,
+    note TEXT DEFAULT '',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS telegram_pairings (
+    id TEXT PRIMARY KEY,
+    platform TEXT NOT NULL DEFAULT 'telegram',
+    chat_id TEXT NOT NULL,
+    sender_name TEXT,
+    pairing_code TEXT,
+    user_id TEXT,
+    username TEXT,
+    status TEXT NOT NULL DEFAULT 'pending',
+    created_at TEXT NOT NULL,
+    approved_at TEXT
+  );
+  CREATE INDEX IF NOT EXISTS idx_tele_platform_chat ON telegram_pairings(platform, chat_id);
+  CREATE INDEX IF NOT EXISTS idx_tele_user_id ON telegram_pairings(user_id);
+
+  CREATE TABLE IF NOT EXISTS github_integrations (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL UNIQUE,
+    github_username TEXT,
+    access_token TEXT,
+    avatar_url TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+  );
+
+  CREATE TABLE IF NOT EXISTS github_repos (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    full_name TEXT NOT NULL,
+    repo_url TEXT,
+    default_branch TEXT DEFAULT 'main',
+    is_private INTEGER DEFAULT 0,
+    auto_scan_push INTEGER DEFAULT 1,
+    auto_scan_pr INTEGER DEFAULT 1,
+    email_report INTEGER DEFAULT 1,
+    last_scan_id TEXT,
+    last_scan_at TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+  );
+  CREATE INDEX IF NOT EXISTS idx_gh_repos_user ON github_repos(user_id);
+  CREATE INDEX IF NOT EXISTS idx_gh_repos_name ON github_repos(full_name);
   `)
 
   // Migration: add layman_impact column for existing databases
@@ -421,6 +482,27 @@ function migrate(d) {
     }
   } catch (e) {
     console.warn('[db] plans seed/update note:', e.message)
+  }
+
+  // Seed default promo codes
+  try {
+    const promoCount = d.prepare('SELECT COUNT(*) as c FROM promo_codes').get()
+    if (!promoCount || promoCount.c === 0) {
+      const now = new Date().toISOString()
+      const defaultPromos = [
+        ['promo_launch20', 'LAUNCH20', 'percentage', 20, 'all', 100, 0, 0, null, 1, 'Launch celebration 20% discount', now, now],
+        ['promo_student50', 'STUDENT50', 'percentage', 50, 'all', 50, 0, 0, null, 1, '50% discount for educational & research use', now, now],
+      ]
+      const stmtPromo = d.prepare(`
+        INSERT OR IGNORE INTO promo_codes (id, code, discount_type, discount_value, applicable_plans, max_uses, used_count, min_purchase_amount, expires_at, is_active, note, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `)
+      for (const pr of defaultPromos) {
+        stmtPromo.run(...pr)
+      }
+    }
+  } catch (e) {
+    console.warn('[db] promo_codes seed error:', e.message)
   }
 
   // ============ CUSTOM SCRIPTS ENGINE ============
