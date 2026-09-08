@@ -438,7 +438,6 @@ function migrate(d) {
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
   );
   CREATE INDEX IF NOT EXISTS idx_gh_repos_user ON github_repos(user_id);
-  CREATE INDEX IF NOT EXISTS idx_gh_repos_name ON github_repos(full_name);
   `)
 
   // Migration: add layman_impact column for existing databases
@@ -458,6 +457,19 @@ function migrate(d) {
   try { d.exec(`ALTER TABLE scans ADD COLUMN client TEXT`) } catch { /* already exists */ }
   try { d.exec(`ALTER TABLE scans ADD COLUMN owasp_categories TEXT`) } catch { /* already exists */ }
   try { d.exec(`ALTER TABLE projects ADD COLUMN user_id TEXT`) } catch { /* already exists */ }
+
+  // Migration: ensure github_repos has all required columns
+  try { d.exec(`ALTER TABLE github_repos ADD COLUMN full_name TEXT`) } catch { /* already exists */ }
+  try { d.exec(`ALTER TABLE github_repos ADD COLUMN repo_url TEXT`) } catch { /* already exists */ }
+  try { d.exec(`ALTER TABLE github_repos ADD COLUMN is_private INTEGER DEFAULT 0`) } catch { /* already exists */ }
+  try { d.exec(`ALTER TABLE github_repos ADD COLUMN auto_scan_push INTEGER DEFAULT 1`) } catch { /* already exists */ }
+  try { d.exec(`ALTER TABLE github_repos ADD COLUMN auto_scan_pr INTEGER DEFAULT 1`) } catch { /* already exists */ }
+  try { d.exec(`ALTER TABLE github_repos ADD COLUMN email_report INTEGER DEFAULT 1`) } catch { /* already exists */ }
+  try { d.exec(`ALTER TABLE github_repos ADD COLUMN last_scan_id TEXT`) } catch { /* already exists */ }
+  try { d.exec(`ALTER TABLE github_repos ADD COLUMN last_scan_at TEXT`) } catch { /* already exists */ }
+  try { d.exec(`ALTER TABLE github_repos ADD COLUMN updated_at TEXT`) } catch { /* already exists */ }
+  try { d.exec(`UPDATE github_repos SET full_name = repo_full_name WHERE full_name IS NULL AND repo_full_name IS NOT NULL`) } catch {}
+  try { d.exec(`CREATE INDEX IF NOT EXISTS idx_gh_repos_name ON github_repos(full_name)`) } catch {}
 
   // Ensure default plans exist with MYR pricing
   try {
