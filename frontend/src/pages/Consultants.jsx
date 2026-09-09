@@ -4,7 +4,7 @@ import {
   UserCheck, Shield, Award, Calendar, Clock, Video, MessageSquare,
   Sparkles, CheckCircle2, AlertTriangle, ArrowRight, ExternalLink,
   Plus, Users, Star, Layers, RefreshCw, Loader2, ChevronRight,
-  FileText, Globe, Lock, Briefcase, Zap, HelpCircle, X
+  FileText, Globe, Lock, Briefcase, Zap, HelpCircle, X, Mail
 } from 'lucide-react'
 import { api } from '../lib/api.js'
 import { useAuth } from '../lib/AuthContext.jsx'
@@ -170,16 +170,20 @@ export default function Consultants() {
         notes: notes.trim()
       })
 
-      if (res && res.success) {
-        setMsg('Your consultation booking request has been submitted! Our specialist will confirm the schedule and send the meeting link.')
-        setShowModal(false)
-        setNotes('')
-        setSelectedScanId('')
+      // Tutup modal serta-merta lepas berjaya submit
+      setShowModal(false)
+      setNotes('')
+      setSelectedScanId('')
+      setMsg(res?.message || 'Permintaan tempahan konsultasi anda telah berjaya dihantar ke muhammadsaifudinmj@gmail.com! Pakar kami akan menyemak dan menghubungi anda.')
+
+      try {
         const updated = await api.consultations()
         setConsultations(updated?.consultations || [])
+      } catch {
+        // Non-blocking
       }
     } catch (err2) {
-      setErr(err2.message || 'Failed to submit consultation request')
+      setErr(err2.message || 'Gagal menghantar permintaan konsultasi. Sila cuba sebentar lagi.')
     } finally {
       setSubmitting(false)
     }
@@ -752,13 +756,17 @@ export default function Consultants() {
                 />
               </div>
 
+              {err && (
+                <div className="p-2.5 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-400 text-xs flex items-center gap-2">
+                  <AlertTriangle size={13} className="shrink-0" />
+                  <span>{err}</span>
+                </div>
+              )}
+
               <div className="flex items-center justify-between pt-3 border-t border-white/10">
-                <div className="text-[11px] text-slate-400">
-                  {isEnterprise ? (
-                    <span className="text-emerald-400 font-bold">✨ Included in Enterprise quota</span>
-                  ) : (
-                    <span className="text-slate-400">Confirmed within 24 hours</span>
-                  )}
+                <div className="text-[11px] text-cyan-400 font-semibold flex items-center gap-1.5">
+                  <Mail size={12} className="text-cyan-400" />
+                  <span>Dihantar ke: muhammadsaifudinmj@gmail.com</span>
                 </div>
                 <div className="flex gap-2">
                   <button

@@ -29,7 +29,7 @@ import { walkProjects } from './folder-walker.js'
 import { ExploitOrchestrator } from './exploits/orchestrator.js'
 import * as msf from './exploits/msf-client.js'
 import { matchExploits, classifyRisk } from './exploits/registry.js'
-import { sendScanRequestNotification, sendAnonymousFeedbackNotification } from './email.js'
+import { sendScanRequestNotification, sendAnonymousFeedbackNotification, sendConsultationBookingNotification } from './email.js'
 import { GitHubClient, parseGitHubWebhook } from './integrations/github.js'
 import {
   PLANS,
@@ -2614,8 +2614,34 @@ app.post('/api/consultations', requireAuth, (req, res) => {
 
     audit(req.user.username, 'consultation:request', `${serviceType} with ${consultantName}`)
     const created = db.get(`SELECT * FROM consultation_requests WHERE id = ?`, id)
-    res.status(201).json({ success: true, consultation: created })
+
+    // Trigger email notification to muhammadsaifudinmj@gmail.com
+    sendConsultationBookingNotification({
+      consultation: created,
+      user: req.user
+    }).catch(err => console.error('[email] Consultation notification delivery error:', err.message))
+
+    // Broadcast alert to Telegram channel gateway if configured
+    try {
+      const teleMsg = `📅 *New Consultation Booking Request!*\n\n` +
+        `👤 *Client:* ${req.user.username} (${req.user.email || 'N/A'})\n` +
+        `📦 *Package:* ${serviceType}\n` +
+        `👨‍💼 *Advisor:* ${consultantName}\n` +
+        `🗓️ *Schedule:* ${preferredDate || 'Flexible'} ${preferredTime || ''}\n` +
+        `💻 *Platform:* ${channel}\n` +
+        `📝 *Notes:* ${notes.trim() || 'None'}`
+      import('./channels/index.js').then(({ channelGateway }) => {
+        channelGateway.broadcastAlert(teleMsg).catch(() => {})
+      }).catch(() => {})
+    } catch {}
+
+    return res.status(201).json({
+      success: true,
+      consultation: created,
+      message: 'Permintaan tempahan konsultasi anda telah berjaya dihantar ke muhammadsaifudinmj@gmail.com!'
+    })
   } catch (err) {
+    console.error('Consultation creation error:', err)
     res.status(500).json({ error: err.message })
   }
 })

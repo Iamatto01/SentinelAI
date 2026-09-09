@@ -333,6 +333,8 @@ function migrate(d) {
   CREATE TABLE IF NOT EXISTS consultation_requests (
     id TEXT PRIMARY KEY,
     user_id TEXT NOT NULL,
+    username TEXT,
+    email TEXT,
     service_type TEXT NOT NULL,
     consultant_name TEXT NOT NULL DEFAULT 'Any Specialist',
     scan_id TEXT,
@@ -340,8 +342,12 @@ function migrate(d) {
     preferred_time TEXT,
     channel TEXT NOT NULL DEFAULT 'Google Meet',
     notes TEXT,
+    plan_tier TEXT DEFAULT 'starter',
+    meeting_link TEXT,
+    admin_notes TEXT,
     status TEXT NOT NULL DEFAULT 'pending',
     created_at TEXT NOT NULL,
+    updated_at TEXT,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
   );
 
@@ -468,8 +474,15 @@ function migrate(d) {
   try { d.exec(`ALTER TABLE github_repos ADD COLUMN last_scan_id TEXT`) } catch { /* already exists */ }
   try { d.exec(`ALTER TABLE github_repos ADD COLUMN last_scan_at TEXT`) } catch { /* already exists */ }
   try { d.exec(`ALTER TABLE github_repos ADD COLUMN updated_at TEXT`) } catch { /* already exists */ }
-  try { d.exec(`UPDATE github_repos SET full_name = repo_full_name WHERE full_name IS NULL AND repo_full_name IS NOT NULL`) } catch {}
   try { d.exec(`CREATE INDEX IF NOT EXISTS idx_gh_repos_name ON github_repos(full_name)`) } catch {}
+
+  // Migration: ensure consultation_requests has all required columns
+  try { d.exec(`ALTER TABLE consultation_requests ADD COLUMN username TEXT`) } catch { /* already exists */ }
+  try { d.exec(`ALTER TABLE consultation_requests ADD COLUMN email TEXT`) } catch { /* already exists */ }
+  try { d.exec(`ALTER TABLE consultation_requests ADD COLUMN plan_tier TEXT DEFAULT 'starter'`) } catch { /* already exists */ }
+  try { d.exec(`ALTER TABLE consultation_requests ADD COLUMN meeting_link TEXT`) } catch { /* already exists */ }
+  try { d.exec(`ALTER TABLE consultation_requests ADD COLUMN admin_notes TEXT`) } catch { /* already exists */ }
+  try { d.exec(`ALTER TABLE consultation_requests ADD COLUMN updated_at TEXT`) } catch { /* already exists */ }
 
   // Ensure default plans exist with MYR pricing
   try {

@@ -1,4 +1,5 @@
 import nodemailer from 'nodemailer'
+import fs from 'node:fs'
 
 const DEFAULT_NOTIFY_EMAIL = 'muhammadsaifudinmj@gmail.com'
 
@@ -352,4 +353,132 @@ export async function sendScanAuditReportEmail({ userEmail, scan, findings = [],
     return { success: false, recipient, error: err.message }
   }
 }
+
+/**
+ * Send Consultation Booking Request notification email to muhammadsaifudinmj@gmail.com
+ */
+export async function sendConsultationBookingNotification({ consultation, user }) {
+  const recipient = DEFAULT_NOTIFY_EMAIL
+
+  const smtpHost = process.env.SMTP_HOST || 'smtp.gmail.com'
+  const smtpPort = Number(process.env.SMTP_PORT || 587)
+  const smtpUser = process.env.SMTP_USER || ''
+  const smtpPass = process.env.SMTP_PASS || ''
+
+  let transporter
+  if (smtpUser && smtpPass) {
+    transporter = nodemailer.createTransport({
+      host: smtpHost,
+      port: smtpPort,
+      secure: smtpPort === 465,
+      auth: { user: smtpUser, pass: smtpPass },
+    })
+  } else if (process.platform === 'linux' && fs.existsSync('/usr/sbin/sendmail')) {
+    transporter = nodemailer.createTransport({
+      sendmail: true,
+      newline: 'unix',
+      path: '/usr/sbin/sendmail',
+    })
+  } else {
+    transporter = nodemailer.createTransport({ jsonTransport: true })
+  }
+
+  const clientName = user?.username || consultation?.username || 'Client User'
+  const clientEmail = user?.email || consultation?.email || 'N/A'
+  const serviceType = consultation?.service_type || consultation?.serviceType || 'Security Consultation'
+  const consultantName = consultation?.consultant_name || consultation?.consultantName || 'Muhammad Saifudin'
+  const preferredDate = consultation?.preferred_date || consultation?.preferredDate || 'Flexible / As soon as possible'
+  const preferredTime = consultation?.preferred_time || consultation?.preferredTime || 'Flexible'
+  const meetingPlatform = consultation?.channel || 'Google Meet'
+  const notes = consultation?.notes || 'No specific notes provided.'
+  const planTier = consultation?.plan_tier || 'Starter'
+  const bookingId = consultation?.id || 'cons_unknown'
+
+  const subject = `[SentinelAI Consultation] New 1-on-1 Advisory Request from ${clientName} (${serviceType})`
+
+  const htmlContent = `
+    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 650px; margin: 0 auto; background-color: #0c0f17; color: #f1f5f9; border: 1px solid rgba(255,255,255,0.12); border-radius: 14px; padding: 28px; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5);">
+      <div style="display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 18px; margin-bottom: 24px;">
+        <div>
+          <h2 style="color: #00f2fe; margin: 0 0 4px 0; font-size: 20px; font-weight: 800; letter-spacing: -0.02em;">🛡️ SentinelAI Consultation Request</h2>
+          <p style="margin: 0; color: #94a3b8; font-size: 13px;">A client has requested a 1-on-1 Expert Security Advisory session</p>
+        </div>
+        <span style="background: rgba(0, 242, 254, 0.15); color: #38bdf8; border: 1px solid rgba(0, 242, 254, 0.3); font-size: 11px; font-weight: 700; padding: 4px 10px; border-radius: 9999px;">
+          ${planTier.toUpperCase()}
+        </span>
+      </div>
+
+      <table style="width: 100%; border-collapse: collapse; background-color: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 10px; overflow: hidden; margin-bottom: 24px;">
+        <tbody>
+          <tr>
+            <td style="padding: 12px 18px; border-bottom: 1px solid rgba(255,255,255,0.08); color: #94a3b8; font-size: 13px; font-weight: 600; width: 170px;">Client</td>
+            <td style="padding: 12px 18px; border-bottom: 1px solid rgba(255,255,255,0.08); color: #ffffff; font-size: 14px; font-weight: 700;">
+              ${clientName} <span style="color: #38bdf8; font-weight: normal; font-size: 13px;">(${clientEmail})</span>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 12px 18px; border-bottom: 1px solid rgba(255,255,255,0.08); color: #94a3b8; font-size: 13px; font-weight: 600;">Service / Package</td>
+            <td style="padding: 12px 18px; border-bottom: 1px solid rgba(255,255,255,0.08); color: #38bdf8; font-size: 14px; font-weight: 700;">
+              ${serviceType}
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 12px 18px; border-bottom: 1px solid rgba(255,255,255,0.08); color: #94a3b8; font-size: 13px; font-weight: 600;">Requested Specialist</td>
+            <td style="padding: 12px 18px; border-bottom: 1px solid rgba(255,255,255,0.08); color: #f8fafc; font-size: 13px;">
+              ${consultantName}
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 12px 18px; border-bottom: 1px solid rgba(255,255,255,0.08); color: #94a3b8; font-size: 13px; font-weight: 600;">Preferred Schedule</td>
+            <td style="padding: 12px 18px; border-bottom: 1px solid rgba(255,255,255,0.08); color: #f8fafc; font-size: 13px; font-weight: 600;">
+              📅 ${preferredDate} at ⏰ ${preferredTime}
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 12px 18px; border-bottom: 1px solid rgba(255,255,255,0.08); color: #94a3b8; font-size: 13px; font-weight: 600;">Meeting Platform</td>
+            <td style="padding: 12px 18px; border-bottom: 1px solid rgba(255,255,255,0.08); color: #f8fafc; font-size: 13px;">
+              💻 ${meetingPlatform}
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 12px 18px; border-bottom: 1px solid rgba(255,255,255,0.08); color: #94a3b8; font-size: 13px; font-weight: 600;">Booking ID</td>
+            <td style="padding: 12px 18px; border-bottom: 1px solid rgba(255,255,255,0.08); color: #64748b; font-family: monospace; font-size: 12px;">
+              ${bookingId}
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 14px 18px; color: #94a3b8; font-size: 13px; font-weight: 600; vertical-align: top;">Scope & Objectives</td>
+            <td style="padding: 14px 18px; color: #f1f5f9; font-size: 13px; line-height: 1.6; white-space: pre-wrap; font-family: monospace; background: rgba(0,0,0,0.3); border-radius: 6px;">${notes}</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div style="background: rgba(56, 189, 248, 0.08); border: 1px solid rgba(56, 189, 248, 0.25); border-radius: 8px; padding: 14px 18px; margin-bottom: 22px; text-align: center;">
+        <a href="https://sentinelai.studio/app/consultants" style="display: inline-block; background: #00f2fe; color: #090d16; font-weight: 800; font-size: 13px; padding: 10px 24px; border-radius: 8px; text-decoration: none;">
+          Review & Provide Meeting Link in Portal &rarr;
+        </a>
+      </div>
+
+      <div style="border-top: 1px solid rgba(255,255,255,0.1); padding-top: 16px; font-size: 12px; color: #64748b; text-align: center;">
+        Directly delivered to <strong>muhammadsaifudinmj@gmail.com</strong> via SentinelAI Autonomous Advisory Gateway &bull; ${new Date().toUTCString()}
+      </div>
+    </div>
+  `
+
+  try {
+    const info = await transporter.sendMail({
+      from: `"SentinelAI Advisory" <${smtpUser || 'consultations@sentinelai.studio'}>`,
+      to: recipient,
+      subject,
+      html: htmlContent,
+    })
+
+    console.log(`[email] Consultation notification delivered to ${recipient}:`, info.messageId || JSON.stringify(info))
+    return { success: true, recipient, messageId: info.messageId }
+  } catch (err) {
+    console.error(`[email] Consultation delivery error:`, err.message)
+    return { success: false, recipient, error: err.message }
+  }
+}
+
 
