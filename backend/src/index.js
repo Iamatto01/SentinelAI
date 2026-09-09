@@ -334,7 +334,7 @@ app.post('/api/auth/register', loginLimiter, (req, res) => {
     const now = new Date().toISOString()
 
     db.run(
-      `INSERT INTO users (id, username, email, password_hash, role, created_at, last_login) VALUES (?, ?, ?, ?, 'analyst', ?, ?)`,
+      `INSERT INTO users (id, username, email, password_hash, role, created_at, last_login) VALUES (?, ?, ?, ?, 'client', ?, ?)`,
       userId, uName, uEmail, passHash, now, now
     )
 
@@ -354,7 +354,7 @@ app.post('/api/auth/register', loginLimiter, (req, res) => {
       id: userId,
       username: uName,
       email: uEmail,
-      role: 'analyst'
+      role: 'client'
     }
 
     audit(uName, 'register', `new account registered (requested plan: ${planId || 'trial'})`)
