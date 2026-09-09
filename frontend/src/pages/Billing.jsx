@@ -207,15 +207,42 @@ export default function Billing() {
     }
   }
 
+  // Automatically open checkout modal if requested via URL params (?plan=enterprise&interval=monthly)
+  useEffect(() => {
+    if (plans && plans.length > 0) {
+      const params = new URLSearchParams(window.location.search)
+      const planParam = params.get('plan')
+      const intervalParam = params.get('interval')
+      if (planParam) {
+        const match = plans.find(p => p.id === planParam)
+        if (match && match.id !== 'trial') {
+          if (intervalParam === 'yearly' || intervalParam === 'monthly') {
+            setInterval(intervalParam)
+          }
+          handleOpenCheckout(match)
+        }
+      }
+    }
+  }, [plans])
+
   const handleConfirmCheckout = async () => {
     if (!selectedPlan) return
+
+    // For DuitNow QR or FPX, strictly require valid user-entered reference number
+    if (paymentProvider === 'duitnow_qr' || paymentProvider === 'local_fpx') {
+      if (!userEnteredRef || userEnteredRef.trim().length < 5) {
+        setError('Sila masukkan nombor rujukan transaksi DuitNow / slip bayaran yang sah (minimum 5 aksara) selepas membuat pembayaran.')
+        return
+      }
+    }
+
     setProcessingPayment(true)
     setError('')
     setSuccessMsg('')
 
     try {
       const promoToSend = appliedPromo ? appliedPromo.code : ''
-      const refToSend = userEnteredRef.trim() || duitnowRef
+      const refToSend = userEnteredRef.trim()
       const res = await api.billingCheckout(selectedPlan.id, interval, promoToSend, paymentProvider, refToSend)
       
       // If Stripe Checkout session URL returned, redirect directly to Stripe!
@@ -830,22 +857,22 @@ export default function Billing() {
                       <li>Buka aplikasi <strong>Shopee</strong> &rarr; pilih <strong>ShopeePay</strong> (atau <strong>MAE</strong> / <strong>TNG eWallet</strong>).</li>
                       <li>Tekan butang <strong>Scan / Bayar</strong> dan halakan kamera ke QR kod di atas.</li>
                       <li>Sahkan nama penerima <strong>MUHAMMAD SAIFUDIN</strong> & masukkan jumlah <strong>RM {calculateTotalDue().toFixed(2)}</strong>.</li>
-                      <li>Tekan butang <strong>"Saya Telah Selesai Bayar"</strong> di bawah untuk pengesahan serta-merta.</li>
+                      <li>Salin nombor rujukan / transaction reference dari resit bank dan tampal di kotak bawah, kemudian tekan <strong>"Sahkan Bayaran"</strong>.</li>
                     </ol>
                   </div>
 
-                  {/* Optional Bank Reference Input */}
+                  {/* Mandatory Bank Reference Input */}
                   <div className="w-full space-y-1">
-                    <label className="text-[11px] font-semibold text-slate-400 flex items-center justify-between">
-                      <span>Receipt / Transaction Ref No. (Optional):</span>
-                      <span className="text-[10px] text-slate-500">For record</span>
+                    <label className="text-[11px] font-semibold text-slate-300 flex items-center justify-between">
+                      <span className="flex items-center gap-1"><Lock size={11} className="text-amber-400" /> Nombor Rujukan / Ref No. Resit Bank:</span>
+                      <span className="text-[10px] text-amber-400 font-bold bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/30">Wajib diisi</span>
                     </label>
                     <input
                       type="text"
-                      placeholder="e.g. 2026090812345678"
+                      placeholder="cth: 2026090812345678 (rujuk resit bayaran anda)"
                       value={userEnteredRef}
                       onChange={(e) => setUserEnteredRef(e.target.value)}
-                      className="input text-xs font-mono py-1.5 w-full bg-slate-950"
+                      className="input text-xs font-mono py-1.5 w-full bg-slate-950 border-amber-500/40 focus:border-amber-400"
                     />
                   </div>
 
@@ -946,17 +973,6 @@ export default function Billing() {
               >
                 Cancel
               </button>
-              {paymentProvider !== 'duitnow_qr' && paymentProvider !== 'stripe' && paymentProvider !== 'local_fpx' && (
-                <button
-                  type="button"
-                  onClick={handleConfirmCheckout}
-                  disabled={processingPayment}
-                  className="btn-primary flex-1 text-xs py-2.5 shadow-glow flex items-center justify-center gap-2"
-                >
-                  {processingPayment ? <Loader2 size={14} className="animate-spin" /> : <Lock size={14} />}
-                  {processingPayment ? 'Processing...' : 'Confirm & Upgrade'}
-                </button>
-              )}
 
               {paymentProvider === 'duitnow_qr' && (
                 <button

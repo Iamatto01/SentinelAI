@@ -111,8 +111,7 @@ export default function Login() {
         })
         setToken(res.token)
         setUser(res.user)
-        sessionStorage.setItem('sentinel_gate_trigger', 'true')
-        nav(planId && planId !== 'trial' ? '/app/billing' : '/app/dashboard', { replace: true })
+        nav(planId && planId !== 'trial' ? `/app/billing?plan=${encodeURIComponent(planId)}&interval=${encodeURIComponent(interval)}` : '/app/dashboard', { replace: true })
       }
     } catch (e2) {
       const errMsg = e2.message || ''

@@ -121,7 +121,6 @@ export const api = {
   billingConfig: () => apiFetch('/api/billing/config'),
   billingPlans: () => apiFetch('/api/billing/plans'),
   billingSubscription: () => apiFetch('/api/billing/subscription'),
-  billingCheckout: (planId, billingInterval = 'monthly', promoCode = '', provider = 'stripe') => apiFetch('/api/billing/checkout', { method: 'POST', body: { planId, billingInterval, promoCode, provider } }),
   billingCheckout: (planId, billingInterval = 'monthly', promoCode = '', provider = 'stripe', referenceNumber = '') => apiFetch('/api/billing/checkout', { method: 'POST', body: { planId, billingInterval, promoCode, provider, referenceNumber } }),
   billingVerifySession: (sessionId) => apiFetch('/api/billing/verify-session', { method: 'POST', body: { sessionId } }),
   billingValidatePromo: (code, planId, billingInterval = 'monthly') => apiFetch('/api/billing/validate-promo', { method: 'POST', body: { code, planId, billingInterval } }),

@@ -338,13 +338,13 @@ app.post('/api/auth/register', loginLimiter, (req, res) => {
       userId, uName, uEmail, passHash, now, now
     )
 
-    // Activate selected subscription
+    // Always start newly registered users on the Free Trial plan
     try {
       activateSubscription({
         userId,
-        planId,
-        interval: billingInterval || 'monthly',
-        provider: paymentProvider || 'stripe'
+        planId: 'trial',
+        interval: 'monthly',
+        provider: 'system'
       })
     } catch (subErr) {
       console.warn('Subscription activation warning during register:', subErr.message)
@@ -357,11 +357,12 @@ app.post('/api/auth/register', loginLimiter, (req, res) => {
       role: 'analyst'
     }
 
-    audit(uName, 'register', `new account registered with plan ${planId}`)
+    audit(uName, 'register', `new account registered (requested plan: ${planId || 'trial'})`)
 
     return res.json({
       token: signToken(newUser),
       user: newUser,
+      requestedPlanId: planId && planId !== 'trial' ? planId : undefined,
       message: 'Account created successfully'
     })
   } catch (err) {
@@ -2329,8 +2330,11 @@ app.post('/api/billing/checkout', requireAuth, async (req, res) => {
   }
   const finalAmount = Math.max(0, amount - discountAmount)
 
-  // If provider is Stripe and keys are configured, create real Stripe Checkout Session
-  if (provider === 'stripe' && config.stripe?.secretKey) {
+  // If provider is Stripe, create real Stripe Checkout Session
+  if (provider === 'stripe') {
+    if (!config.stripe?.secretKey) {
+      return res.status(400).json({ error: 'Stripe gateway is currently unavailable on this server. Please use DuitNow QR or contact support.' })
+    }
     try {
       const origin = req.headers.origin || req.headers.referer ? new URL(req.headers.referer || req.headers.origin).origin : 'https://sentinelai.studio'
       const session = await createStripeCheckoutSession({
@@ -2357,7 +2361,10 @@ app.post('/api/billing/checkout', requireAuth, async (req, res) => {
 
   // DuitNow QR payment fulfillment
   if (provider === 'duitnow_qr' || provider === 'local_fpx') {
-    const txRef = referenceNumber?.trim() || `DN_${Date.now().toString(36).toUpperCase()}_${randomUUID().slice(0, 4).toUpperCase()}`
+    const txRef = referenceNumber?.trim()
+    if (!txRef || txRef.length < 5) {
+      return res.status(400).json({ error: 'Sila masukkan nombor rujukan transaksi DuitNow / slip bayaran yang sah (minimum 5 aksara).' })
+    }
     const now = new Date().toISOString()
 
     if (planId === 'pay_per_scan') {
@@ -2420,23 +2427,8 @@ app.post('/api/billing/checkout', requireAuth, async (req, res) => {
     })
   }
 
-  // Fallback: Internal instant activation (for simulation / demo mode)
-  const updatedSub = activateSubscription({
-    userId: req.user.id,
-    planId,
-    amount: finalAmount,
-    provider: provider || 'simulation',
-    referenceId: `ch_${randomUUID().slice(0, 16)}`,
-    interval: billingInterval,
-    promoCode: appliedPromo,
-  })
-
-  audit(req.user.username, 'billing:upgrade', `Subscribed to ${plan.name} (RM${finalAmount})`)
-  res.json({
-    success: true,
-    message: `Successfully upgraded to ${plan.name}`,
-    subscription: updatedSub,
-  })
+  // Reject any unsupported or unverified provider — never bypass payment
+  return res.status(400).json({ error: 'Kaedah pembayaran tidak sah atau tidak disokong. Sila pilih Stripe atau DuitNow QR.' })
 })
 
 // Verify Stripe Checkout Session and activate subscription

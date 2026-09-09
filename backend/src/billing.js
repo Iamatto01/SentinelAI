@@ -601,13 +601,15 @@ export function activateSubscription({ userId, planId, amount, provider = 'strip
     )
   }
 
-  // Record transaction in database
-  const txId = `tx_${randomUUID().slice(0, 12)}`
-  db.run(
-    `INSERT INTO payment_transactions (id, user_id, amount, currency, status, provider, reference_id, plan_id, discount_amount, promo_code, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    txId, userId, finalPaidAmount, plan.currency, 'completed', provider, referenceId || `ref_${Date.now()}`, plan.id, discountAmount, appliedPromo, now
-  )
+  // Record transaction in database only if actual payment occurred for a paid plan
+  if (plan.id !== 'trial' && finalPaidAmount > 0 && provider !== 'system') {
+    const txId = `tx_${randomUUID().slice(0, 12)}`
+    db.run(
+      `INSERT INTO payment_transactions (id, user_id, amount, currency, status, provider, reference_id, plan_id, discount_amount, promo_code, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      txId, userId, finalPaidAmount, plan.currency, 'completed', provider, referenceId || `ref_${Date.now()}`, plan.id, discountAmount, appliedPromo, now
+    )
+  }
 
   return getUserSubscription(userId)
 }
