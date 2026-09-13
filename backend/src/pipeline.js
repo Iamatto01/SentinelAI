@@ -2103,6 +2103,13 @@ export class UnifiedPipeline {
     this._lastProgressEmit?.delete(scanId)
     this._urlPool?.delete(scanId)
 
+    // ── TELEGRAM & DISCORD REAL-TIME SCAN NOTIFICATION ──
+    if (status === 'completed') {
+      import('./channels/index.js').then(({ channelGateway }) => {
+        channelGateway.notifyScanCompleted(scan, counts, score).catch(() => {})
+      }).catch(() => {})
+    }
+
     // ── AUTOMATED PDF REPORT & EMAIL DISPATCH ──
     if (status === 'completed' && (scan.email_notify || scan.trigger_source?.startsWith('github'))) {
       setImmediate(async () => {

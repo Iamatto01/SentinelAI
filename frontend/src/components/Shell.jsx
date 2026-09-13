@@ -211,6 +211,7 @@ export default function Shell() {
               <div className="min-w-0 animate-in fade-in duration-200">
                 <p className="text-sm font-extrabold text-white tracking-tight truncate">SentinelAI</p>
                 <p className="text-[9px] uppercase tracking-widest text-cyan-400 font-bold truncate flex items-center gap-1">
+                  <Sparkles size={10} className="animate-spin" /> {isAdmin ? 'Admin Portal' : 'Client Portal'}
                   <Sparkles size={10} className="animate-spin" /> {isAdmin ? 'Admin Portal' : isClient ? 'Client Portal' : 'Analyst Portal'}
                 </p>
               </div>

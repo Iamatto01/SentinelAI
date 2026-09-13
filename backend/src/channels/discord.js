@@ -102,13 +102,22 @@ class DiscordBot {
         username: d.author?.username || ''
       }
 
-      this.gateway.handleCommand('discord', channelId, cleanText, (reply) => this.sendTo(channelId, reply), senderInfo).catch(() => { })
+      this.gateway.handleCommand('discord', channelId, cleanText, (reply, opts) => this.sendTo(channelId, reply, opts), senderInfo).catch(() => { })
     } else if (op === 7) {
       this.ws?.close()
     } else if (op === 9) {
       this.sessionId = null
       setTimeout(() => this.ws?.close(), 2000)
     }
+  }
+
+  sendTyping(channelId) {
+    const token = config.channels?.discord?.token
+    if (!token) return Promise.resolve()
+    return fetch(`${API_BASE}/channels/${channelId}/typing`, {
+      method: 'POST',
+      headers: { authorization: `Bot ${token}` },
+    }).catch(() => {})
   }
 
   startHeartbeat(interval) {
@@ -126,10 +135,30 @@ class DiscordBot {
     } catch { }
   }
 
-  async sendTo(channelId, text) {
+  async sendTo(channelId, textOrPayload, opts = {}) {
     const token = config.channels?.discord?.token
     if (!token) return
-    for (const chunk of String(text).match(/[\s\S]{1,1900}(\s|$)/g) || [String(text)]) {
+
+    const embeds = opts.embeds || (opts.embed ? [opts.embed] : null) || (textOrPayload && typeof textOrPayload === 'object' && textOrPayload.embeds ? textOrPayload.embeds : null)
+    const rawContent = typeof textOrPayload === 'string' ? textOrPayload : (textOrPayload?.content || '')
+
+    // 1. Rich Embed delivery (styled cybersecurity cards)
+    if (embeds && embeds.length > 0) {
+      const body = {
+        content: rawContent || undefined,
+        embeds,
+      }
+      if (opts.components) body.components = opts.components
+
+      return fetch(`${API_BASE}/channels/${channelId}/messages`, {
+        method: 'POST',
+        headers: { authorization: `Bot ${token}`, 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      }).catch(e => console.warn(`[Discord] send embed failed: ${e.message}`))
+    }
+
+    // 2. Standard message chunking for plain text
+    for (const chunk of String(rawContent).match(/[\s\S]{1,1900}(\s|$)/g) || [String(rawContent)]) {
       await fetch(`${API_BASE}/channels/${channelId}/messages`, {
         method: 'POST',
         headers: { authorization: `Bot ${token}`, 'content-type': 'application/json' },
@@ -138,9 +167,9 @@ class DiscordBot {
     }
   }
 
-  send(text) {
+  send(text, opts = {}) {
     const targets = this.gateway.listApproved().filter(a => a.platform === 'discord').map(a => a.id.split(':')[1])
-    return Promise.all(targets.map(id => this.sendTo(id, text)))
+    return Promise.all(targets.map(id => this.sendTo(id, text, opts)))
   }
 
   stop() {
