@@ -35,7 +35,17 @@ export default function Login() {
   useEffect(() => {
     fetch('/api/billing/plans')
       .then(r => r.ok ? r.json() : null)
-      .then(d => { if (d?.plans?.length) setPlans(d.plans) })
+      .then(d => {
+        if (d?.plans?.length) {
+          setPlans(d.plans)
+          // If current selection is not valid in active plans, select first or popular
+          setPlanId(prev => {
+            if (d.plans.some(p => p.id === prev)) return prev
+            const pop = d.plans.find(p => p.isPopular || p.is_popular)
+            return pop ? pop.id : d.plans[0].id
+          })
+        }
+      })
       .catch(() => {})
   }, [])
 
@@ -277,56 +287,70 @@ export default function Login() {
               </div>
             </div>
 
-            {/* Registration Tier Selection */}
+            {/* Registration Tier Selection (Dynamically synced with Admin Settings) */}
             {mode === 'register' && (() => {
-              const proPlan = plans.find(p => p.id === 'pro') || { name: 'Pro Plan', priceMonthly: 20 }
-              const entPlan = plans.find(p => p.id === 'enterprise') || { name: 'Enterprise', priceMonthly: 80 }
+              const displayPlans = plans.length > 0 ? plans : [
+                { id: 'trial', name: 'Free Trial', priceMonthly: 0, currency: 'MYR', scanQuota: 3 },
+                { id: 'pay_per_scan', name: 'Pay-Per-Scan', priceMonthly: 3, currency: 'MYR', scanQuota: 1 },
+                { id: 'pro', name: 'SentinelAI Pro', priceMonthly: 20, currency: 'MYR', scanQuota: 50, isPopular: true },
+                { id: 'enterprise', name: 'SentinelAI Enterprise', priceMonthly: 80, currency: 'MYR', scanQuota: 250 },
+              ]
+
+              const cleanName = (p) => {
+                const n = p.name || p.id
+                return n.replace(/^SentinelAI\s+/i, '')
+              }
 
               return (
                 <div className={`space-y-2 pt-2 border-t ${isNight ? 'border-white/10' : 'border-slate-200'}`}>
-                  <div className="text-xs">
+                  <div className="flex items-center justify-between text-xs">
                     <span className={`font-bold ${isNight ? 'text-slate-200' : 'text-slate-800'}`}>Select Plan:</span>
+                    <span className="text-[10px] text-purple-400 font-medium">Live from Admin Settings</span>
                   </div>
 
-                  <div className="grid grid-cols-3 gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setPlanId('trial')}
-                      className={`p-2 rounded-xl border text-center transition-all cursor-pointer ${
-                        planId === 'trial'
-                          ? 'border-purple-400 bg-purple-500/20 shadow-[0_0_15px_rgba(168,85,247,0.2)] text-white'
-                          : isNight ? 'border-white/10 bg-slate-900/40 text-slate-400 hover:border-white/20' : 'border-slate-200 bg-white text-slate-600'
-                      }`}
-                    >
-                      <div className="text-[11px] font-bold">Trial</div>
-                      <div className="text-xs font-black text-purple-300 mt-0.5">RM 0</div>
-                    </button>
+                  <div className={`grid gap-2 ${
+                    displayPlans.length === 2 ? 'grid-cols-2' :
+                    displayPlans.length === 3 ? 'grid-cols-3' :
+                    displayPlans.length === 4 ? 'grid-cols-2 sm:grid-cols-4' :
+                    'grid-cols-2 sm:grid-cols-3'
+                  }`}>
+                    {displayPlans.map((p) => {
+                      const isSelected = (planId || 'trial') === p.id
+                      const price = p.priceMonthly ?? p.price_monthly ?? 0
+                      const curr = p.currency || 'MYR'
+                      const isPopular = p.isPopular || p.is_popular
+                      const quota = p.scanQuota ?? p.scan_quota
 
-                    <button
-                      type="button"
-                      onClick={() => setPlanId('pro')}
-                      className={`p-2 rounded-xl border text-center transition-all cursor-pointer ${
-                        planId === 'pro'
-                          ? 'border-purple-400 bg-purple-500/20 shadow-[0_0_15px_rgba(168,85,247,0.2)] text-white'
-                          : isNight ? 'border-white/10 bg-slate-900/40 text-slate-400 hover:border-white/20' : 'border-slate-200 bg-white text-slate-600'
-                      }`}
-                    >
-                      <div className="text-[11px] font-bold">Pro</div>
-                      <div className="text-xs font-black text-purple-300 mt-0.5">RM {proPlan.priceMonthly}</div>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => setPlanId('enterprise')}
-                      className={`p-2 rounded-xl border text-center transition-all cursor-pointer ${
-                        planId === 'enterprise'
-                          ? 'border-purple-400 bg-purple-500/20 shadow-[0_0_15px_rgba(168,85,247,0.2)] text-white'
-                          : isNight ? 'border-white/10 bg-slate-900/40 text-slate-400 hover:border-white/20' : 'border-slate-200 bg-white text-slate-600'
-                      }`}
-                    >
-                      <div className="text-[11px] font-bold">Enterprise</div>
-                      <div className="text-xs font-black text-purple-300 mt-0.5">RM {entPlan.priceMonthly}</div>
-                    </button>
+                      return (
+                        <button
+                          key={p.id}
+                          type="button"
+                          onClick={() => setPlanId(p.id)}
+                          className={`relative p-2 rounded-xl border text-center transition-all cursor-pointer flex flex-col justify-between items-center min-h-[58px] ${
+                            isSelected
+                              ? 'border-purple-400 bg-purple-500/20 shadow-[0_0_15px_rgba(168,85,247,0.25)] text-white ring-1 ring-purple-400'
+                              : isNight
+                                ? 'border-white/10 bg-slate-900/40 text-slate-400 hover:border-white/20 hover:text-slate-200'
+                                : 'border-slate-200 bg-white text-slate-600 hover:border-purple-300'
+                          }`}
+                        >
+                          {isPopular && (
+                            <span className="absolute -top-1.5 right-1 px-1.5 py-0.2 rounded-full bg-purple-500 text-[8px] font-black tracking-wider uppercase text-white shadow-sm">
+                              Popular
+                            </span>
+                          )}
+                          <div className="text-[11px] font-bold truncate max-w-full">{cleanName(p)}</div>
+                          <div className="text-xs font-black text-purple-300 mt-0.5">
+                            {price === 0 ? 'Free' : `${curr === 'USD' ? '$' : 'RM '}${price}`}
+                          </div>
+                          {quota !== undefined && quota > 0 && (
+                            <div className="text-[9px] text-slate-400 font-mono mt-0.5">
+                              {quota} {quota === 1 ? 'scan' : 'scans'}
+                            </div>
+                          )}
+                        </button>
+                      )
+                    })}
                   </div>
                 </div>
               )

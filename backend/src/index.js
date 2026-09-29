@@ -1411,13 +1411,34 @@ app.put('/api/findings/:id/severity', requireAuth, requireStaff, (req, res) => {
 })
 
 // ── Findings & Database Backup API — staff only (full DB export)
-app.post('/api/backup/create', requireAuth, requireStaff, (req, res) => {
-  const result = db.backupDatabase()
-  audit(req.user.username, 'backup:create', result.backupFile || 'failed')
-  if (result.success) {
-    res.json({ ok: true, message: 'Database backup created successfully', file: result.backupFile })
-  } else {
-    res.status(500).json({ error: 'Failed to create backup' })
+app.post('/api/backup/create', requireAuth, requireStaff, async (req, res) => {
+  try {
+    const result = await db.backupDatabase()
+    audit(req.user.username, 'backup:create', result.backupFile || 'failed')
+    if (result.success) {
+      res.json({ ok: true, message: 'Database backup created successfully', file: result.backupFile })
+    } else {
+      res.status(500).json({ error: 'Failed to create backup' })
+    }
+  } catch (err) {
+    console.error('[backup:create] error:', err)
+    res.status(500).json({ error: err.message || 'Failed to create backup' })
+  }
+})
+
+app.get('/api/backup/raw', requireAuth, requireStaff, (req, res) => {
+  try {
+    const backupDir = path.join(config.outputDir, 'backups')
+    const latestPath = path.join(backupDir, 'fyp2_latest_backup.db')
+    if (fs.existsSync(latestPath)) {
+      return res.download(latestPath, `sentinelai_backup_${Date.now()}.db`)
+    }
+    if (fs.existsSync(config.dbPath)) {
+      return res.download(config.dbPath, `sentinelai_active_${Date.now()}.db`)
+    }
+    res.status(404).json({ error: 'No backup database file found' })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
   }
 })
 
@@ -1667,6 +1688,9 @@ app.get('/api/skills/search', requireAuth, (req, res) => {
 // itself binds to localhost.
 app.get('/api/kali/system-info', requireAuth, requireRole('admin'), async (req, res) => {
   try {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate')
+    res.setHeader('Pragma', 'no-cache')
+    res.setHeader('Expires', '0')
     res.json(await kaliControl.getSystemInfo())
   } catch (e) {
     console.error('[kali:system-info] failed:', e.message)
@@ -1752,6 +1776,12 @@ app.get('/api/owasp-tools', requireAuth, (req, res) => {
 // Admin-defined scanning scripts that run as pipeline stages.
 app.get('/api/scripts', requireAuth, requireRole('admin'), (req, res) => {
   res.json({ scripts: getAllScripts() })
+})
+
+app.post('/api/scripts/seed-defaults', requireAuth, requireRole('admin'), (req, res) => {
+  const result = typeof db.seedDefaultScripts === 'function' ? db.seedDefaultScripts() : { count: 0 }
+  audit(req.user.username, 'scripts:seed-defaults', `Restored ${result.count || 0} scripts`)
+  res.json({ ok: true, count: result.count, scripts: getAllScripts() })
 })
 
 app.post('/api/scripts', requireAuth, requireRole('admin'), (req, res) => {
@@ -1957,7 +1987,19 @@ app.post('/api/exploits/campaigns', requireAuth, requireStaff, async (req, res) 
 
   // Auto-resolve scanId from finding if not provided
   const resolvedScanId = scanId || finding.scan_id
-  const scan = db.get(`SELECT * FROM scans WHERE id = ?`, resolvedScanId)
+  let scan = resolvedScanId ? db.get(`SELECT * FROM scans WHERE id = ?`, resolvedScanId) : null
+  if (!scan) {
+    // If finding has no associated scan in DB (e.g. repo audits or imported findings), create placeholder
+    const fallbackScanId = resolvedScanId || `scan_${randomUUID()}`
+    const now = new Date().toISOString()
+    const target = finding.target || 'target'
+    db.run(
+      `INSERT OR IGNORE INTO scans (id, target, target_type, mode, status, template, modules, progress, created_at, started_at)
+       VALUES (?, ?, 'url', 'blackbox', 'completed', 'standard', '[]', 100, ?, ?)`,
+      fallbackScanId, target, now, now
+    )
+    scan = db.get(`SELECT * FROM scans WHERE id = ?`, fallbackScanId)
+  }
   if (!scan) return res.status(404).json({ error: 'scan not found' })
 
   // Check if a campaign already exists for this finding
@@ -2239,11 +2281,16 @@ app.post('/api/github/scan', requireAuth, async (req, res) => {
     const scan = db.get(`SELECT * FROM scans WHERE id = ?`, scanId)
     audit(req.user.username, 'github:scan', `Started whitebox audit on ${repoFullName} (${repoBundle.filesCount} files)`)
 
-    // Asynchronously run whitebox security pipeline
-    const syntheticFiles = [{ path: `repository/${repoFullName}`, content: repoBundle.consolidatedSource }]
+    // Asynchronously run whitebox security pipeline with all audited source files
+    const filesToAudit = (repoBundle.files && repoBundle.files.length > 0)
+      ? repoBundle.files
+      : (repoBundle.fileContents && repoBundle.fileContents.length > 0)
+        ? repoBundle.fileContents
+        : [{ path: `repository/${repoFullName}`, content: repoBundle.consolidatedSource }]
+
     setImmediate(async () => {
       try {
-        await pipeline.runWhitebox(scan, { files: syntheticFiles, language: '', focus: 'OWASP Top 10 Security & Secrets Audit', verify: true })
+        await pipeline.runWhitebox(scan, { files: filesToAudit, language: '', focus: 'OWASP Top 10 Security & Secrets Audit', verify: true })
       } catch (err) {
         pipeline.log(scanId, 'error', `GitHub scan error: ${err.message}`)
         pipeline.finish(scanId, 'failed')
@@ -2336,8 +2383,12 @@ app.post('/api/github/webhook', (req, res) => {
       )
 
       const scan = db.get(`SELECT * FROM scans WHERE id = ?`, scanId)
-      const syntheticFiles = [{ path: `repository/${event.repoFullName}`, content: repoBundle.consolidatedSource }]
-      await pipeline.runWhitebox(scan, { files: syntheticFiles, language: '', focus: 'OWASP Top 10 & Vulnerability Code Review', verify: true })
+      const filesToAudit = (repoBundle.files && repoBundle.files.length > 0)
+        ? repoBundle.files
+        : (repoBundle.fileContents && repoBundle.fileContents.length > 0)
+          ? repoBundle.fileContents
+          : [{ path: `repository/${event.repoFullName}`, content: repoBundle.consolidatedSource }]
+      await pipeline.runWhitebox(scan, { files: filesToAudit, language: '', focus: 'OWASP Top 10 & Vulnerability Code Review', verify: true })
     } catch (err) {
       console.error(`[webhook] Background automated scan failed:`, err.message)
     }

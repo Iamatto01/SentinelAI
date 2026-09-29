@@ -21,7 +21,7 @@ const IGNORED_EXTS = [
 
 // Max file size to fetch (150 KB per file) and max total files to process
 const MAX_FILE_SIZE = 150 * 1024
-const MAX_FILES = 40
+const MAX_FILES = 100
 
 export class GitHubClient {
   constructor(token) {
@@ -165,6 +165,8 @@ export class GitHubClient {
       commitSha,
       filesCount: fileContents.length,
       fileList: fileContents.map(f => f.path),
+      files: fileContents,
+      fileContents,
       consolidatedSource,
     }
   }
