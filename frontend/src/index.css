@@ -429,18 +429,50 @@ body.day-mode [class*="text-accent"]:not(.terminal *) {
   color: #0284c7 !important;
 }
 
-/* Light Mode: Purple / Violet Accent — was missing, causing invisible text */
+/* Light Mode: Purple / Violet Accent — high-contrast dark purple */
 body.day-mode .text-purple-400,
 body.day-mode .text-purple-300,
 body.day-mode .text-violet-400,
 body.day-mode .text-violet-300,
 body.day-mode [class*="text-purple-"]:not(.terminal *),
 body.day-mode [class*="text-violet-"]:not(.terminal *) {
-  color: #7c3aed !important;
+  color: #6d28d9 !important;
 }
+
+/* Light Mode: Indigo Accent — was MISSING entirely, causing invisible text */
+body.day-mode .text-indigo-400,
+body.day-mode .text-indigo-300,
+body.day-mode [class*="text-indigo-"]:not(.terminal *) {
+  color: #3730a3 !important;
+}
+
+/* Light Mode: Other missing accent colors */
+body.day-mode [class*="text-teal-"]:not(.terminal *) { color: #0f766e !important; }
+body.day-mode [class*="text-sky-"]:not(.terminal *) { color: #0369a1 !important; }
+body.day-mode [class*="text-fuchsia-"]:not(.terminal *) { color: #7e22ce !important; }
+body.day-mode [class*="text-pink-"]:not(.terminal *) { color: #be185d !important; }
+
+/* Light Mode: Dark bg-purple-9*, bg-indigo-9*, bg-violet-9* in day mode  */
+/* These opaque dark overlays make text invisible in light mode             */
+body.day-mode [class*="bg-purple-9"]:not(.terminal):not([class*="btn-"]):not([class*="badge"]):not([class*="border-"]):not(svg):not(span.w-),
+body.day-mode [class*="bg-violet-9"]:not(.terminal):not([class*="btn-"]):not([class*="badge"]):not(svg):not(span.w-),
+body.day-mode [class*="bg-indigo-9"]:not(.terminal):not([class*="btn-"]):not([class*="badge"]):not(svg):not(span.w-) {
+  background-color: #f5f3ff !important;
+  background-image: none !important;
+  border-color: #ddd6fe !important;
+}
+/* Same for semi-opaque dark color containers: bg-[#0c...], bg-[#11...] etc */
+body.day-mode [class*="bg-[#0"]:not(.terminal):not([class*="btn-"]):not([class*="badge"]),
+body.day-mode [class*="bg-[#1"]:not(.terminal):not([class*="btn-"]):not([class*="badge"]) {
+  background-color: #ffffff !important;
+  background-image: none !important;
+  border-color: #e2e8f0 !important;
+  color: #0f172a !important;
+}
+
 /* Override icon boxes that should stay colorful in day mode */
 body.day-mode [class*="icon-box-purple"] svg,
-body.day-mode [class*="icon-box-purple"] { color: #7c3aed !important; }
+body.day-mode [class*="icon-box-purple"] { color: #6d28d9 !important; }
 body.day-mode [class*="icon-box-emerald"] svg,
 body.day-mode [class*="icon-box-emerald"] { color: #059669 !important; }
 body.day-mode [class*="icon-box-rose"] svg,
