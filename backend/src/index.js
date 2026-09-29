@@ -49,8 +49,7 @@ import {
   getUserSubscription,
   consumeScanQuota,
   activateSubscription,
-  getPaymentHistory,
-  COMMUNITY_FREE_ACCESS_MODE
+  getPaymentHistory
 } from './billing.js'
 import { createStripeCheckoutSession, verifyAndFulfillSession, getStripe } from './stripe.js'
 import { channelGateway } from './channels/index.js'
@@ -68,7 +67,7 @@ const corsOptions = {
     // Exact-suffix match on the apex domain or any subdomain — anchored so
     // "evilsentinelai.studio" cannot pass as sentinelai.studio.
     const isSentinelHost = /^https?:\/\/([a-z0-9-]+\.)*sentinelai\.studio(:\d+)?$/i.test(origin)
-    if (!origin || config.corsOrigins.includes(origin) || config.corsOrigins.includes('*') || isSentinelHost || LOCAL_ORIGIN_RE.test(origin) || LAN_ORIGIN_RE.test(origin)) return cb(null, true)
+    if (!origin || config.corsOrigins.includes(origin) || isSentinelHost || LOCAL_ORIGIN_RE.test(origin) || LAN_ORIGIN_RE.test(origin)) return cb(null, true)
     return cb(new Error(`CORS blocked: ${origin}`))
   },
   credentials: true,
@@ -84,6 +83,8 @@ app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff')
   res.setHeader('X-Frame-Options', 'DENY')
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin')
+  res.setHeader('X-XSS-Protection', '1; mode=block')
+  res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https:; style-src 'self' 'unsafe-inline' https:; img-src 'self' data: https: blob:; font-src 'self' https: data:; connect-src 'self' https: wss: ws:; frame-ancestors 'none';")
   next()
 })
 app.use(authMiddleware)
@@ -115,9 +116,9 @@ const armedMonitors = monitors.bootstrap(pipeline)
 if (armedMonitors) console.log(`[bootstrap] ${armedMonitors} monitor(s) re-armed`)
 
 // Mark scans interrupted by server restart as failed (do NOT auto-resume).
-// Auto-resume corrupts state: pipeline holds in-memory per-scan state (_currentTarget,
-// collected URLs, progress) that is lost on restart. Re-running from scratch with the
-// same scanId duplicates findings and confuses the UI. Instead, mark as 'interrupted'
+// Auto-resume corrupts state: pipeline holds in-memory per-scan state (collected URLs,
+// progress, pause/stop control flags) that is lost on restart. Re-running from scratch with
+// the same scanId duplicates findings and confuses the UI. Instead, mark as 'interrupted'
 // with a clear log entry so the user can manually re-launch.
 try {
   const interruptedScans = db.all(`SELECT * FROM scans WHERE status IN ('running','paused','queued')`)
@@ -132,13 +133,13 @@ try {
   }
 } catch (e) { console.warn('[bootstrap] Interrupted scan recovery notice:', e.message) }
 
-// seed admin — only create admin@sentinelai.com if no admin user exists
+// seed admin — create kali@sentinelai.com if no admin user exists
 // NEVER reset passwords on restart: that would silently revert every password change.
 const adminUser = db.get(`SELECT * FROM users WHERE role = 'admin' LIMIT 1`)
 if (!adminUser) {
   db.run(`INSERT INTO users (id, username, email, password_hash, role, created_at) VALUES (?,?,?,?,?,?)`,
-    `usr_${randomUUID()}`, 'admin', 'admin@sentinelai.com', bcrypt.hashSync(config.defaultAdminPassword, 10), 'admin', new Date().toISOString())
-  console.log('[bootstrap] default admin user created (admin@sentinelai.com)')
+    `usr_${randomUUID()}`, 'kali', 'kali@sentinelai.com', bcrypt.hashSync(config.defaultAdminPassword, 10), 'admin', new Date().toISOString())
+  console.log('[bootstrap] default admin user created (kali@sentinelai.com)')
 } else {
   console.log(`[bootstrap] admin user already exists: ${adminUser.email}`)
 }
@@ -191,6 +192,19 @@ function visibleProjectIds(user) {
     })
     .map((p) => p.id)
   return ids.length ? ids : []
+}
+
+/** Guard a single existing project row: staff always pass; clients must own it. */
+function canAccessProject(user, project) {
+  if (!project) return false
+  if (user?.role !== 'client') return true
+  if (user.projectId && user.projectId === project.id) return true
+  if (project.user_id && project.user_id === user.id) return true
+  if (project.client_id && project.client_id === user.id) return true
+  const userEmail = (user.email || '').toLowerCase().trim()
+  const username = (user.username || '').toLowerCase().trim()
+  const c = (project.client || '').toLowerCase().trim()
+  return Boolean((userEmail && c === userEmail) || (username && c === username))
 }
 
 /** Guard a scan-scoped request: 404 unless the scan belongs to the client or their project. */
@@ -254,24 +268,55 @@ app.get('/api/status', requireAuth, async (req, res) => {
 })
 
 // ── Auth ─────────────────────────────────────────────────────────────────────
-// Brute-force protection: 100 attempts / 15 min per real client IP.
+// Enterprise Brute-force protection: 10 attempts / 15 min per real client IP.
 // Uses the library's DEFAULT keying (= req.ip, with IPv6 subnet bucketing).
-// Never trust raw X-Forwarded-For/CF headers here — attackers can rotate them
-// per request to bypass the limiter entirely.
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  limit: 100,
+  limit: 10,
   skipSuccessfulRequests: true,
   standardHeaders: true,
   legacyHeaders: false,
-  message: { error: 'Too many login attempts — try again later' },
+  message: { error: 'Too many authentication attempts — please wait 15 minutes before trying again.' },
 })
+
+// Strict RFC 5322 standard regex for email validation
+const EMAIL_REGEX = /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+$/
+
+// Enterprise password validation: min 4 chars
+function validatePasswordComplexity(pass) {
+  if (!pass || typeof pass !== 'string') return 'Password is required'
+  if (pass.length < 4) return 'Password must be at least 4 characters long'
+  return null
+}
+
+// The feedback endpoint is public and sends a real email on every call, so it
+// needs its own (much tighter) budget to prevent mailbox flooding.
+const feedbackLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many feedback submissions — please try again later' },
+})
+
+const FEEDBACK_CATEGORIES = new Set([
+  'General Feedback',
+  'Bug Report',
+  'Feature Request',
+  'Scan Tool Suggestion',
+  'UI & UX Improvement',
+])
+const FEEDBACK_MAX_LENGTH = 5000
 
 app.post('/api/auth/login', loginLimiter, (req, res) => {
   const { username, password } = req.body || {}
   const identifier = (username || '').trim()
   
-  // 1. Check primary admin/analyst users
+  if (!identifier || !password) {
+    return res.status(400).json({ error: 'Username or password is required' })
+  }
+
+  // 1. Check primary admin/analyst users strictly via bcrypt hash (no hardcoded bypasses)
   let user = getUser(identifier)
   if (user && bcrypt.compareSync(password || '', user.password_hash)) {
     db.run(`UPDATE users SET last_login = ? WHERE id = ?`, new Date().toISOString(), user.id)
@@ -292,7 +337,7 @@ app.post('/api/auth/login', loginLimiter, (req, res) => {
       : bcrypt.compareSync(inputPass, storedPass)
     if (ok) {
       if (isPlaintext) {
-        db.run(`UPDATE client_credentials SET password = ? WHERE id = ?`, bcrypt.hashSync(password, 10), clientCred.id)
+        db.run(`UPDATE client_credentials SET password = ? WHERE id = ?`, bcrypt.hashSync(password, 12), clientCred.id)
       }
       const clientUser = {
         id: clientCred.id,
@@ -314,27 +359,33 @@ app.post('/api/auth/register', loginLimiter, (req, res) => {
   try {
     const { username, email, password, planId = 'pro', billingInterval = 'monthly', paymentProvider = 'stripe' } = req.body || {}
     const uName = (username || '').trim()
-    const uEmail = (email || '').trim()
+    const uEmail = (email || '').trim().toLowerCase()
 
     if (!uName || !uEmail || !password) {
       return res.status(400).json({ error: 'Username, email and password are required' })
     }
-    if (password.length < 6) {
-      return res.status(400).json({ error: 'Password must be at least 6 characters' })
+    if (!/^[a-zA-Z0-9_\-\.]{3,32}$/.test(uName)) {
+      return res.status(400).json({ error: 'Username must be 3-32 alphanumeric characters, dashes, or underscores' })
+    }
+    if (!EMAIL_REGEX.test(uEmail)) {
+      return res.status(400).json({ error: 'Please enter a valid email address' })
+    }
+    const passwordError = validatePasswordComplexity(password)
+    if (passwordError) {
+      return res.status(400).json({ error: passwordError })
     }
 
     // Check if username or email exists
-    const existingUser = db.get(`SELECT id FROM users WHERE username = ? OR email = ?`, uName, uEmail)
+    const existingUser = db.get(`SELECT id FROM users WHERE LOWER(username) = ? OR LOWER(email) = ?`, uName.toLowerCase(), uEmail)
     if (existingUser) {
       return res.status(409).json({ error: 'Username or email is already registered' })
     }
 
     const userId = `usr_${randomUUID()}`
-    const passHash = bcrypt.hashSync(password, 10)
+    const passHash = bcrypt.hashSync(password, 12)
     const now = new Date().toISOString()
 
     db.run(
-      `INSERT INTO users (id, username, email, password_hash, role, created_at, last_login) VALUES (?, ?, ?, ?, 'analyst', ?, ?)`,
       `INSERT INTO users (id, username, email, password_hash, role, created_at, last_login) VALUES (?, ?, ?, ?, 'client', ?, ?)`,
       userId, uName, uEmail, passHash, now, now
     )
@@ -355,7 +406,6 @@ app.post('/api/auth/register', loginLimiter, (req, res) => {
       id: userId,
       username: uName,
       email: uEmail,
-      role: 'analyst'
       role: 'client'
     }
 
@@ -384,8 +434,8 @@ app.put('/api/users/me', requireAuth, (req, res) => {
   // Validate + uniqueness-check email; clients cannot change it freely
   // (their email is the key that links them to their project).
   if (email != null) {
-    if (typeof email !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()))
-      return res.status(400).json({ error: 'invalid email address' })
+    if (typeof email !== 'string' || !EMAIL_REGEX.test(email.trim()))
+      return res.status(400).json({ error: 'Please enter a valid email address' })
     const normalized = email.trim().toLowerCase()
     if (req.user?.role === 'client') {
       const current = db.get(`SELECT email FROM users WHERE id = ?`, req.user.sub)
@@ -395,7 +445,7 @@ app.put('/api/users/me', requireAuth, (req, res) => {
     const dupe = db.get(`SELECT id FROM users WHERE LOWER(email) = ? AND id != ?`, normalized, req.user.sub)
     if (dupe) return res.status(409).json({ error: 'email already in use by another account' })
   }
-  db.run(`UPDATE users SET email = ? WHERE id = ?`, email ?? null, req.user.sub)
+  db.run(`UPDATE users SET email = ? WHERE id = ?`, email ? email.trim().toLowerCase() : null, req.user.sub)
   audit(req.user.username, 'user:update', 'profile updated')
   const u = db.get(`SELECT * FROM users WHERE id = ?`, req.user.sub)
   res.json({ id: u.id, username: u.username, role: u.role, email: u.email, lastLogin: u.last_login })
@@ -403,13 +453,19 @@ app.put('/api/users/me', requireAuth, (req, res) => {
 
 app.post('/api/users/me/password', requireAuth, (req, res) => {
   const { currentPassword, newPassword } = req.body || {}
-  if (!newPassword || newPassword.length < 6) return res.status(400).json({ error: 'new password must be ≥ 6 chars' })
+  if (!currentPassword) {
+    return res.status(400).json({ error: 'Please enter your current password' })
+  }
+  if (!newPassword || typeof newPassword !== 'string' || newPassword.length < 4) {
+    return res.status(400).json({ error: 'New password must be at least 4 characters long' })
+  }
   const u = db.get(`SELECT * FROM users WHERE id = ?`, req.user.sub)
-  if (!u || !bcrypt.compareSync(currentPassword || '', u.password_hash))
-    return res.status(401).json({ error: 'current password incorrect' })
-  db.run(`UPDATE users SET password_hash = ? WHERE id = ?`, bcrypt.hashSync(newPassword, 10), u.id)
+  if (!u || !bcrypt.compareSync(currentPassword || '', u.password_hash)) {
+    return res.status(401).json({ error: 'Current password is incorrect' })
+  }
+  db.run(`UPDATE users SET password_hash = ? WHERE id = ?`, bcrypt.hashSync(newPassword, 12), u.id)
   audit(req.user.username, 'user:password', 'password changed')
-  res.json({ ok: true })
+  res.json({ ok: true, message: 'Password updated successfully!' })
 })
 
 // ── Admin Panel ──────────────────────────────────────────────────────────────
@@ -697,30 +753,11 @@ app.post('/api/admin/subscriptions/custom-override', requireAuth, requireRole('a
 
 // ── Projects ─────────────────────────────────────────────────────────────────
 app.get('/api/projects', requireAuth, (req, res) => {
-  const allProjs = db.all(`SELECT * FROM projects ORDER BY created_at DESC`)
-  if (req.user?.role === 'client') {
-    if (COMMUNITY_FREE_ACCESS_MODE) {
-      return res.json(allProjs)
-    }
-    const userEmail = (req.user.email || '').toLowerCase()
-    const username = (req.user.username || '').toLowerCase()
-    const userProjId = req.user.projectId
-    const filtered = allProjs.filter((p) => {
-      if (userProjId && p.id === userProjId) return true
-      if (p.user_id && p.user_id === req.user.id) return true
-      if (p.client_id && p.client_id === req.user.id) return true
-      const clientName = (p.client || '').toLowerCase()
-      const projName = (p.name || '').toLowerCase()
-      return (
-        (userEmail && (userEmail.includes(clientName) || clientName.includes(userEmail))) ||
-        (username && (username.includes(clientName) || clientName.includes(username))) ||
-        (userEmail && (userEmail.includes(projName) || projName.includes(userEmail))) ||
-        (username && (username.includes(projName) || projName.includes(username)))
-      )
-    })
-    return res.json(filtered)
-  }
-  return res.json(allProjs)
+  const allowed = visibleProjectIds(req.user)
+  if (allowed === null) return res.json(db.all(`SELECT * FROM projects ORDER BY created_at DESC`))
+  if (!allowed.length) return res.json([])
+  const placeholders = allowed.map(() => '?').join(',')
+  return res.json(db.all(`SELECT * FROM projects WHERE id IN (${placeholders}) ORDER BY created_at DESC`, ...allowed))
 })
 
 app.post('/api/projects', requireAuth, (req, res) => {
@@ -738,13 +775,8 @@ app.post('/api/projects', requireAuth, (req, res) => {
 app.put('/api/projects/:id', requireAuth, (req, res) => {
   const existing = db.get(`SELECT * FROM projects WHERE id = ?`, req.params.id)
   if (!existing) return res.status(404).json({ error: 'Project not found' })
-  if (req.user?.role === 'client') {
-    const userEmail = (req.user.email || '').toLowerCase()
-    const username = (req.user.username || '').toLowerCase()
-    const c = (existing.client || '').toLowerCase()
-    if (!c.includes(userEmail) && !c.includes(username) && req.user.projectId !== existing.id) {
-      return res.status(403).json({ error: 'Cannot modify this project' })
-    }
+  if (!canAccessProject(req.user, existing)) {
+    return res.status(403).json({ error: 'Cannot modify this project' })
   }
   const { name = existing.name, client = existing.client, description = existing.description, scope = existing.scope, cover = existing.cover, riskLevel = existing.risk_level } = req.body || {}
   const now = new Date().toISOString()
@@ -757,13 +789,8 @@ app.put('/api/projects/:id', requireAuth, (req, res) => {
 app.delete('/api/projects/:id', requireAuth, (req, res) => {
   const existing = db.get(`SELECT * FROM projects WHERE id = ?`, req.params.id)
   if (!existing) return res.status(404).json({ error: 'Project not found' })
-  if (req.user?.role === 'client') {
-    const userEmail = (req.user.email || '').toLowerCase()
-    const username = (req.user.username || '').toLowerCase()
-    const c = (existing.client || '').toLowerCase()
-    if (!c.includes(userEmail) && !c.includes(username) && req.user.projectId !== existing.id) {
-      return res.status(403).json({ error: 'Cannot delete this project' })
-    }
+  if (!canAccessProject(req.user, existing)) {
+    return res.status(403).json({ error: 'Cannot delete this project' })
   }
   db.transaction(() => {
     db.run(`DELETE FROM client_credentials WHERE project_id = ?`, req.params.id)
@@ -818,29 +845,9 @@ app.get('/api/scans', requireAuth, (req, res) => {
       const userEmail = (req.user.email || '').toLowerCase()
       const username = (req.user.username || '').toLowerCase()
       const userId = req.user.id
-      const userProjId = req.user.projectId
-
-      // In Community Beta / Preview, return all scans so clients can review sample reports
-      if (COMMUNITY_FREE_ACCESS_MODE) {
-        const allScans = db.all(`
-          SELECT s.*, (SELECT COUNT(*) FROM findings f WHERE f.scan_id = s.id) AS findings_count
-          FROM scans s ORDER BY s.created_at DESC LIMIT 200
-        `)
-        return res.json(allScans || [])
-      }
 
       const allProjs = db.all(`SELECT * FROM projects`)
-      const matchProjs = allProjs.filter((p) => {
-        if (userProjId && p.id === userProjId) return true
-        if (p.user_id && p.user_id === userId) return true
-        if (p.client_id && p.client_id === userId) return true
-        const c = (p.client || '').toLowerCase()
-        const n = (p.name || '').toLowerCase()
-        return (userEmail && (userEmail.includes(c) || c.includes(userEmail))) ||
-               (username && (username.includes(c) || c.includes(username))) ||
-               (userEmail && (userEmail.includes(n) || n.includes(userEmail))) ||
-               (username && (username.includes(n) || n.includes(username)))
-      })
+      const matchProjs = allProjs.filter((p) => canAccessProject(req.user, p))
       const projIds = matchProjs.map(p => p.id)
 
       let scans = []
@@ -922,22 +929,33 @@ app.post('/api/scans/request', requireAuth, async (req, res) => {
 })
 
 // Anonymous Community Feedback & Bug Reports
-app.post('/api/feedback', async (req, res) => {
+app.post('/api/feedback', feedbackLimiter, async (req, res) => {
   try {
     const { category, message, rating } = req.body || {}
-    if (!message || !message.trim()) {
+
+    const text = typeof message === 'string' ? message.trim() : ''
+    if (!text) {
       return res.status(400).json({ error: 'Feedback message is required' })
     }
+    if (text.length > FEEDBACK_MAX_LENGTH) {
+      return res.status(413).json({ error: `Feedback message must be ${FEEDBACK_MAX_LENGTH} characters or fewer` })
+    }
+
+    // Never let client-supplied text reach the mailer unvalidated: `category`
+    // lands in the SMTP subject line and `message` in the HTML body.
+    const safeCategory = FEEDBACK_CATEGORIES.has(category) ? category : 'General Feedback'
+    const parsedRating = Number.parseInt(rating, 10)
+    const safeRating = Number.isInteger(parsedRating) && parsedRating >= 1 && parsedRating <= 5 ? parsedRating : 5
 
     const senderContext = req.user ? `${req.user.role} user (${req.user.username || 'client'})` : 'Anonymous Visitor'
     const result = await sendAnonymousFeedbackNotification({
-      category: category || 'General Feedback',
-      message: message.trim(),
-      rating: rating || 5,
+      category: safeCategory,
+      message: text,
+      rating: safeRating,
       userContext: senderContext,
     })
 
-    audit(req.user?.username || 'anonymous', 'feedback:submit', `Category: ${category || 'General'}`)
+    audit(req.user?.username || 'anonymous', 'feedback:submit', `Category: ${safeCategory}`)
 
     return res.json({
       success: true,
@@ -1303,21 +1321,13 @@ app.get('/api/findings', requireAuth, (req, res) => {
   `
   const params = []
   // Client-portal users see findings from their own projects or direct scans
-  if (req.user?.role === 'client' && !COMMUNITY_FREE_ACCESS_MODE) {
+  if (req.user?.role === 'client') {
     const userEmail = (req.user.email || '').toLowerCase().trim()
     const username = (req.user.username || '').toLowerCase().trim()
     const userId = req.user.id
-    const userProjId = req.user.projectId
 
-    const allProjs = db.all(`SELECT id, client, name, user_id FROM projects`)
-    const matchProjs = allProjs.filter((p) => {
-      if (userProjId && p.id === userProjId) return true
-      if (p.user_id && p.user_id === userId) return true
-      const c = (p.client || '').toLowerCase().trim()
-      const n = (p.name || '').toLowerCase().trim()
-      return (userEmail && c === userEmail) || (username && c === username) ||
-             (userEmail && n === userEmail) || (username && n === username)
-    })
+    const allProjs = db.all(`SELECT id, client, name, user_id, client_id FROM projects`)
+    const matchProjs = allProjs.filter((p) => canAccessProject(req.user, p))
     const projIds = matchProjs.map(p => p.id)
 
     if (projIds.length > 0) {
@@ -2463,25 +2473,34 @@ app.post('/api/billing/webhook', async (req, res) => {
 
   if (!stripe) return res.status(400).send('Stripe not configured')
 
+  // Fail closed. Without signature verification anyone could POST a forged
+  // `checkout.session.completed` event and drive server-side fulfilment, so we
+  // only ever process events that Stripe itself signed.
+  if (!config.stripe?.webhookSecret) {
+    console.error('[stripe] Webhook rejected: STRIPE_WEBHOOK_SECRET is not configured')
+    return res.status(503).send('Webhook endpoint not configured')
+  }
+  if (!sig || !req.rawBody) {
+    return res.status(400).send('Webhook Error: missing stripe-signature header')
+  }
+
   let event
-  if (config.stripe?.webhookSecret && sig && req.rawBody) {
-    try {
-      event = stripe.webhooks.constructEvent(req.rawBody, sig, config.stripe.webhookSecret)
-    } catch (err) {
-      console.warn('[stripe] Webhook signature verification failed:', err.message)
-      return res.status(400).send(`Webhook Error: ${err.message}`)
-    }
-  } else {
-    event = req.body
+  try {
+    event = stripe.webhooks.constructEvent(req.rawBody, sig, config.stripe.webhookSecret)
+  } catch (err) {
+    console.warn('[stripe] Webhook signature verification failed:', err.message)
+    return res.status(400).send(`Webhook Error: ${err.message}`)
   }
 
   if (event?.type === 'checkout.session.completed') {
-    const session = event.data.object
-    try {
-      await verifyAndFulfillSession(session.id)
-      console.log(`[stripe] Checkout session fulfilled via webhook: ${session.id}`)
-    } catch (err) {
-      console.error(`[stripe] Webhook fulfillment error: ${err.message}`)
+    const session = event?.data?.object
+    if (session?.id) {
+      try {
+        await verifyAndFulfillSession(session.id)
+        console.log(`[stripe] Checkout session fulfilled via webhook: ${session.id}`)
+      } catch (err) {
+        console.error(`[stripe] Webhook fulfillment error: ${err.message}`)
+      }
     }
   }
 
@@ -2499,21 +2518,13 @@ app.get('/api/dashboard', requireAuth, (req, res) => {
   let scans = []
   let projsCount = 0
 
-  if (req.user?.role === 'client' && !COMMUNITY_FREE_ACCESS_MODE) {
+  if (req.user?.role === 'client') {
     const userEmail = (req.user.email || '').toLowerCase()
     const username = (req.user.username || '').toLowerCase()
     const userId = req.user.id
-    const userProjId = req.user.projectId
 
     const allProjs = db.all(`SELECT * FROM projects`)
-    const matchProjs = allProjs.filter((p) => {
-      if (userProjId && p.id === userProjId) return true
-      if (p.user_id && p.user_id === userId) return true
-      const c = (p.client || '').toLowerCase()
-      const n = (p.name || '').toLowerCase()
-      return (userEmail && c.includes(userEmail)) || (username && c.includes(username)) ||
-             (userEmail && n.includes(userEmail)) || (username && n.includes(username))
-    })
+    const matchProjs = allProjs.filter((p) => canAccessProject(req.user, p))
     projsCount = matchProjs.length
     const projIds = matchProjs.map(p => p.id)
 
@@ -2766,6 +2777,20 @@ app.get('/api/channels', requireAuth, requireStaff, (req, res) => {
   res.json({
     connected: channelGateway.channels.map(c => ({ platform: c.platform, identity: c.me?.username || null })),
     approved: channelGateway.listApproved(),
+  })
+})
+
+// ── Centralized Production-Safe Error Handler ──────────────────────────────
+app.use((err, req, res, next) => {
+  const status = err.status || err.statusCode || 500
+  const isProd = process.env.NODE_ENV === 'production'
+  // Redact any sensitive tokens or secrets before logging
+  const safeMessage = (err?.message || 'Internal server error')
+    .replace(/(bearer\s+)[a-zA-Z0-9_\-\.]+/gi, '$1[REDACTED]')
+    .replace(/(password["':\s]+)[^"'\s,}]+/gi, '$1[REDACTED]')
+  console.error(`[API Error ${status}]:`, safeMessage)
+  res.status(status).json({
+    error: isProd && status === 500 ? 'An internal error occurred. Please contact the security administrator.' : safeMessage,
   })
 })
 

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { useNavigate, useLocation } from 'react-router-dom'
+import { useNavigate, useLocation, Link } from 'react-router-dom'
 import {
   Loader2, KeyRound, User, Eye, EyeOff, Sparkles,
   Mail, Check, AlertCircle, Sun, Moon
@@ -87,6 +87,19 @@ export default function Login() {
     <div className={`min-h-screen flex flex-col justify-center items-center px-4 py-12 relative overflow-hidden selection:bg-purple-500 selection:text-white transition-colors ${
       isNight ? 'bg-[#090b14]' : 'bg-[#f8fafc]'
     }`}>
+
+      {/* Top-Left Back Button (No Arrow) */}
+      <Link
+        to="/"
+        className={`fixed top-5 left-5 z-50 inline-flex items-center px-3.5 py-2 rounded-full border text-xs font-bold transition-all duration-300 shadow-xl cursor-pointer active:scale-95 ${
+          isNight
+            ? 'bg-slate-900/80 border-white/15 text-slate-200 hover:text-white hover:border-purple-400/50'
+            : 'bg-white/95 border-slate-300 text-slate-800 hover:text-purple-600 hover:border-purple-500'
+        }`}
+        aria-label="Back to Landing Page"
+      >
+        Back to Landing Page
+      </Link>
 
       {/* Top-Right Theme Switcher Button */}
       <button

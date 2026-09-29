@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Purge all client accounts and configure master admin credentials:
  * Username/Email: admin@sentinelai.com
  * Password: kali
@@ -9,8 +9,8 @@ import bcrypt from 'bcryptjs'
 import fs from 'node:fs'
 import path from 'node:path'
 
-const DB_PATH = process.env.DB_PATH || (fs.existsSync('/mnt/external_hdd/SentinelAI_Data/fyp2.db')
-  ? '/mnt/external_hdd/SentinelAI_Data/fyp2.db'
+const DB_PATH = process.env.DB_PATH || (fs.existsSync('/home/kali/server/SentinelAI_Data/fyp2.db')
+  ? '/home/kali/server/SentinelAI_Data/fyp2.db'
   : path.resolve('output/fyp2.db'))
 
 console.log(`\n======================================================`)
@@ -28,7 +28,7 @@ db.pragma('journal_mode = WAL')
 db.pragma('foreign_keys = OFF') // Temporarily off during clean batch update
 
 const adminId = 'usr_admin_master'
-const adminEmail = 'admin@sentinelai.com'
+const adminEmail = 'kali@sentinelai.com'
 const adminPass = 'kali'
 const passHash = bcrypt.hashSync(adminPass, 10)
 const now = new Date().toISOString()
@@ -41,10 +41,10 @@ const purgeTx = db.transaction(() => {
   // 2. Insert master single admin account
   db.prepare(`
     INSERT INTO users (id, username, email, password_hash, role, created_at, last_login)
-    VALUES (?, 'admin', ?, ?, 'admin', ?, ?)
+    VALUES (?, 'kali', ?, ?, 'admin', ?, ?)
   `).run(adminId, adminEmail, passHash, now, now)
   console.log(`👑 Created Master Admin account:`)
-  console.log(`   - Username: admin`)
+  console.log(`   - Username: kali`)
   console.log(`   - Email:    ${adminEmail}`)
   console.log(`   - Password: ${adminPass}`)
   console.log(`   - Role:     admin`)
