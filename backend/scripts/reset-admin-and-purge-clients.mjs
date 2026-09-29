@@ -28,39 +28,44 @@ db.pragma('journal_mode = WAL')
 db.pragma('foreign_keys = OFF') // Temporarily off during clean batch update
 
 const adminId = 'usr_admin_master'
-const adminEmail = 'kali@sentinelai.com'
-const adminPass = 'kali'
-const passHash = bcrypt.hashSync(adminPass, 10)
+const adminEmail = 'admin@sentinelai.com'
+const pentestId = 'usr_pentester_saifudin'
+const pentestEmail = 'muhammadsaifudinmj@gmail.com'
+const pass = 'kali'
+const passHash = bcrypt.hashSync(pass, 10)
 const now = new Date().toISOString()
 
 const purgeTx = db.transaction(() => {
-  // 1. Delete all non-admin users
+  // 1. Delete all users
   const deletedUsers = db.prepare(`DELETE FROM users`).run()
   console.log(`🧹 Purged all previous user accounts (Total purged: ${deletedUsers.changes})`)
 
-  // 2. Insert master single admin account
-  db.prepare(`
+  // 2. Insert the 2 master accounts
+  const insertUser = db.prepare(`
     INSERT INTO users (id, username, email, password_hash, role, created_at, last_login)
-    VALUES (?, 'kali', ?, ?, 'admin', ?, ?)
-  `).run(adminId, adminEmail, passHash, now, now)
-  console.log(`👑 Created Master Admin account:`)
-  console.log(`   - Username: kali`)
-  console.log(`   - Email:    ${adminEmail}`)
-  console.log(`   - Password: ${adminPass}`)
-  console.log(`   - Role:     admin`)
+    VALUES (?, ?, ?, ?, 'admin', ?, ?)
+  `)
+  insertUser.run(adminId, adminEmail, adminEmail, passHash, now, now)
+  insertUser.run(pentestId, pentestEmail, pentestEmail, passHash, now, now)
+
+  console.log(`👑 Created Master Accounts:`)
+  console.log(`   1. Administrator:         ${adminEmail} / ${pass}`)
+  console.log(`   2. Penetration Tester:    ${pentestEmail} / ${pass}`)
 
   // 3. Clear client_credentials
   const delCreds = db.prepare(`DELETE FROM client_credentials`).run()
   console.log(`🧹 Purged client credentials (Total: ${delCreds.changes})`)
 
-  // 4. Reset subscriptions & assign Enterprise to master admin
+  // 4. Reset subscriptions & assign Enterprise to both accounts
   db.prepare(`DELETE FROM subscriptions`).run()
   db.prepare(`DELETE FROM payment_transactions`).run()
-  db.prepare(`
+  const insertSub = db.prepare(`
     INSERT INTO subscriptions (id, user_id, plan_id, plan_name, status, scan_quota_total, scan_quota_used, current_period_end, created_at, updated_at)
-    VALUES ('sub_admin_master', ?, 'enterprise', 'SentinelAI Enterprise', 'active', 9999, 0, NULL, ?, ?)
-  `).run(adminId, now, now)
-  console.log(`💳 Configured Enterprise unlimited subscription for master admin`)
+    VALUES (?, ?, 'enterprise', 'Enterprise Unlimited', 'active', 999999, 0, '2099-12-31T23:59:59.000Z', ?, ?)
+  `)
+  insertSub.run('sub_admin_master', adminId, now, now)
+  insertSub.run('sub_pentest_saifudin', pentestId, now, now)
+  console.log(`💳 Configured Enterprise unlimited subscriptions for both master accounts`)
 
   // 5. Re-link all historical scans and projects to master admin
   const scansUpdated = db.prepare(`UPDATE scans SET user_id = ?, client = 'admin'`).run(adminId)
