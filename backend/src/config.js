@@ -93,8 +93,8 @@ export const config = {
     dir: resolveDir(process.env.SKILLS_DIR, path.join(PROJECT_ROOT, 'knowledge', 'skills')),
   },
 
-  outputDir: resolveDir(process.env.OUTPUT_DIR, fs.existsSync('/home/kali/server/SentinelAI_Data') ? '/home/kali/server/SentinelAI_Data' : path.join(PROJECT_ROOT, 'output')),
-  dbPath: resolveDir(process.env.DB_PATH, fs.existsSync('/home/kali/server/SentinelAI_Data/fyp2.db') ? '/home/kali/server/SentinelAI_Data/fyp2.db' : path.join(PROJECT_ROOT, 'output', 'fyp2.db')),
+  outputDir: resolveDir(process.env.OUTPUT_DIR, fs.existsSync('/home/kali/server/database') ? '/home/kali/server/database' : (fs.existsSync('/home/kali/server/SentinelAI_Data') ? '/home/kali/server/SentinelAI_Data' : path.join(PROJECT_ROOT, 'output'))),
+  dbPath: resolveDir(process.env.DB_PATH, fs.existsSync('/home/kali/server/database/fyp2.db') ? '/home/kali/server/database/fyp2.db' : (fs.existsSync('/home/kali/server/SentinelAI_Data/fyp2.db') ? '/home/kali/server/SentinelAI_Data/fyp2.db' : path.join(PROJECT_ROOT, 'output', 'fyp2.db'))),
 
   scan: {
     moduleTimeoutMs: Number(process.env.MODULE_TIMEOUT_MS || 600000),
