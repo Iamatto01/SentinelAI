@@ -5,17 +5,6 @@
 /* ── Design Tokens ─────────────────────────────────────────────── */
 :root {
   color-scheme: dark;
-  --bg-base:     #0a0a0a;
-  --bg-surface:  #111111;
-  --bg-card:     #161616;
-  --bg-elevated: #1c1c1c;
-  --border:      rgba(255,255,255,0.07);
-  --border-md:   rgba(255,255,255,0.10);
-  --text-primary: #f4f4f5;
-  --text-muted:   #71717a;
-  --text-faint:   #3f3f46;
-  --accent:       #3b82f6;
-  --accent-hover: #2563eb;
   --bg-base:        #0c0f17;
   --bg-surface:     #131722;
   --bg-card:        #181f30;
@@ -26,9 +15,15 @@
   --text-secondary: #cbd5e1;
   --text-muted:     #94a3b8;
   --text-faint:     #64748b;
-  --accent:         #0284c7;
-  --accent-hover:   #0369a1;
+  --accent:         #a855f7;
+  --accent-hover:   #9333ea;
 }
+
+::selection {
+  background: #a855f7;
+  color: #ffffff;
+}
+
 
 html {
   scroll-behavior: smooth;
@@ -248,8 +243,8 @@ body.night {
   --text-secondary: #cbd5e1;
   --text-muted:     #94a3b8;
   --text-faint:     #64748b;
-  --accent:         #0284c7;
-  --accent-hover:   #0369a1;
+  --accent:         #a855f7;
+  --accent-hover:   #9333ea;
   background: var(--bg-base);
   color: var(--text-primary);
 }
@@ -276,8 +271,8 @@ body.day-mode {
   --text-secondary: #334155;
   --text-muted:     #475569;
   --text-faint:     #64748b;
-  --accent:         #0284c7;
-  --accent-hover:   #0369a1;
+  --accent:         #7c3aed;
+  --accent-hover:   #6d28d9;
   color: #0f172a !important;
   background: #f8fafc !important;
 }
@@ -306,6 +301,54 @@ body.day-mode [class*="bg-[#1c1c1c]"]:not(.terminal):not([class*="btn-"]):not([c
   color: #0f172a !important;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05), 0 1px 2px rgba(0, 0, 0, 0.03) !important;
 }
+
+/* ── Fix: Tailwind Gradient Dark Backgrounds in Day Mode ───────────────── */
+/* from-slate-*/via-slate-*/to-slate-* gradient classes are NOT caught by  */
+/* [class*="bg-slate-9"] because they're separate Tailwind CSS vars.       */
+body.day-mode [class*="from-slate-9"]:not(.terminal):not(.terminal *):not([class*="btn-"]):not([class*="badge"]):not([class*="icon-box-"]),
+body.day-mode [class*="from-slate-8"]:not(.terminal):not(.terminal *):not([class*="btn-"]):not([class*="badge"]):not([class*="icon-box-"]),
+body.day-mode [class*="via-slate-9"]:not(.terminal):not(.terminal *):not([class*="btn-"]):not([class*="badge"]),
+body.day-mode [class*="via-slate-8"]:not(.terminal):not(.terminal *):not([class*="btn-"]):not([class*="badge"]),
+body.day-mode [class*="to-slate-9"]:not(.terminal):not(.terminal *):not([class*="btn-"]):not([class*="badge"]),
+body.day-mode [class*="to-slate-8"]:not(.terminal):not(.terminal *):not([class*="btn-"]):not([class*="badge"]) {
+  background-image: none !important;
+  background-color: #ffffff !important;
+  border-color: #e2e8f0 !important;
+  color: #0f172a !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05), 0 1px 2px rgba(0, 0, 0, 0.03) !important;
+}
+
+/* Remove backdrop-blur in day mode — cards are opaque white, blur is irrelevant */
+body.day-mode [class*="backdrop-blur"]:not(.terminal):not(.terminal *) {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+/* Shell header pills (bg-slate-900/80) & dark header background in day mode */
+body.day-mode header > div[class*="bg-slate-"],
+body.day-mode header > div[class*="bg-slate-9"] {
+  background-color: #f8fafc !important;
+  border-color: #e2e8f0 !important;
+  color: #0f172a !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05) !important;
+}
+
+/* Fix: shell theme-toggle button and breadcrumb pills in day mode */
+body.day-mode header button[class*="bg-slate-"] {
+  background-color: #f1f5f9 !important;
+  border-color: #cbd5e1 !important;
+  color: #0f172a !important;
+}
+body.day-mode header button[class*="bg-slate-"]:hover {
+  background-color: #e2e8f0 !important;
+}
+body.day-mode header button[class*="bg-slate-"] svg,
+body.day-mode header button[class*="bg-slate-"] span {
+  color: #0f172a !important;
+}
+/* Keep amber sun icon and purple moon icon their actual colors */
+body.day-mode header button svg.text-amber-400 { color: #d97706 !important; }
+body.day-mode header button svg.text-purple-400 { color: #7c3aed !important; }
 
 /* In Day Mode, adapt dark transparent borders and backgrounds to visible light accents */
 body.day-mode [class*="border-white"]:not(.btn-primary):not([class*="badge"]),
@@ -385,6 +428,25 @@ body.day-mode [class*="text-cyan-"]:not(.terminal *),
 body.day-mode [class*="text-accent"]:not(.terminal *) {
   color: #0284c7 !important;
 }
+
+/* Light Mode: Purple / Violet Accent — was missing, causing invisible text */
+body.day-mode .text-purple-400,
+body.day-mode .text-purple-300,
+body.day-mode .text-violet-400,
+body.day-mode .text-violet-300,
+body.day-mode [class*="text-purple-"]:not(.terminal *),
+body.day-mode [class*="text-violet-"]:not(.terminal *) {
+  color: #7c3aed !important;
+}
+/* Override icon boxes that should stay colorful in day mode */
+body.day-mode [class*="icon-box-purple"] svg,
+body.day-mode [class*="icon-box-purple"] { color: #7c3aed !important; }
+body.day-mode [class*="icon-box-emerald"] svg,
+body.day-mode [class*="icon-box-emerald"] { color: #059669 !important; }
+body.day-mode [class*="icon-box-rose"] svg,
+body.day-mode [class*="icon-box-rose"] { color: #dc2626 !important; }
+body.day-mode [class*="icon-box-amber"] svg,
+body.day-mode [class*="icon-box-amber"] { color: #b45309 !important; }
 
 /* Light Mode: Status Colors */
 body.day-mode .text-emerald-400,
@@ -627,18 +689,18 @@ body.day-mode .system-tree-root .system-tree-desc {
   font-weight: 700;
   font-size: 0.82rem;
   letter-spacing: 0.04em;
-  color: #060b26;
-  background: linear-gradient(135deg, #00f2fe 0%, #00c6ff 100%);
+  color: #ffffff;
+  background: linear-gradient(135deg, #a855f7 0%, #7c3aed 100%);
   border: 1px solid rgba(255, 255, 255, 0.4);
-  box-shadow: 0 0 12px rgba(0, 242, 254, 0.35), 0 4px 12px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 0 12px rgba(168, 85, 247, 0.35), 0 4px 12px rgba(0, 0, 0, 0.3);
   transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
   text-decoration: none;
   cursor: pointer;
 }
 .btn-hover-glow:hover {
   transform: translateY(-2px) scale(1.03);
-  box-shadow: 0 0 25px rgba(0, 242, 254, 0.8), 0 8px 24px rgba(0, 0, 0, 0.4);
-  color: #020617;
+  box-shadow: 0 0 25px rgba(168, 85, 247, 0.8), 0 8px 24px rgba(0, 0, 0, 0.4);
+  color: #ffffff;
 }
 
 /* ── #6 Thin Buttons (Minimalist Glass Outline) ── */
@@ -663,9 +725,9 @@ body.day-mode .system-tree-root .system-tree-desc {
 }
 .btn-thin:hover {
   color: #ffffff;
-  background: rgba(0, 242, 254, 0.12);
-  border-color: rgba(0, 242, 254, 0.55);
-  box-shadow: 0 0 16px rgba(0, 242, 254, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  background: rgba(168, 85, 247, 0.15);
+  border-color: rgba(168, 85, 247, 0.55);
+  box-shadow: 0 0 16px rgba(168, 85, 247, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.1);
   transform: translateY(-1px);
 }
 
@@ -680,10 +742,10 @@ body.day-mode .system-tree-root .system-tree-desc {
   font-size: 0.82rem;
   font-weight: 800;
   letter-spacing: 0.04em;
-  color: #04081e;
-  background: linear-gradient(135deg, #00f2fe 0%, #38bdf8 50%, #00c6ff 100%);
+  color: #ffffff;
+  background: linear-gradient(135deg, #a855f7 0%, #8b5cf6 50%, #6d28d9 100%);
   border: 1px solid rgba(255, 255, 255, 0.45);
-  box-shadow: 0 0 18px rgba(0, 242, 254, 0.5), 0 4px 14px rgba(0, 0, 0, 0.35);
+  box-shadow: 0 0 18px rgba(168, 85, 247, 0.5), 0 4px 14px rgba(0, 0, 0, 0.35);
   transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
   animation: btnPulseGlowRing 2.4s infinite;
   text-decoration: none;
@@ -692,8 +754,8 @@ body.day-mode .system-tree-root .system-tree-desc {
 }
 .btn-rounded-pulse:hover {
   transform: translateY(-2px) scale(1.03);
-  box-shadow: 0 0 28px rgba(0, 242, 254, 0.85), 0 6px 20px rgba(0, 0, 0, 0.45);
-  color: #020617;
+  box-shadow: 0 0 28px rgba(168, 85, 247, 0.85), 0 6px 20px rgba(0, 0, 0, 0.45);
+  color: #ffffff;
 }
 .btn-rounded-pulse--sm {
   padding: 0.42rem 1.05rem;
@@ -701,13 +763,13 @@ body.day-mode .system-tree-root .system-tree-desc {
 }
 @keyframes btnPulseGlowRing {
   0% {
-    box-shadow: 0 0 0 0 rgba(0, 242, 254, 0.65), 0 0 18px rgba(0, 242, 254, 0.4);
+    box-shadow: 0 0 0 0 rgba(168, 85, 247, 0.65), 0 0 18px rgba(168, 85, 247, 0.4);
   }
   70% {
-    box-shadow: 0 0 0 10px rgba(0, 242, 254, 0), 0 0 26px rgba(0, 242, 254, 0.65);
+    box-shadow: 0 0 0 10px rgba(168, 85, 247, 0), 0 0 26px rgba(168, 85, 247, 0.65);
   }
   100% {
-    box-shadow: 0 0 0 0 rgba(0, 242, 254, 0), 0 0 18px rgba(0, 242, 254, 0.4);
+    box-shadow: 0 0 0 0 rgba(168, 85, 247, 0), 0 0 18px rgba(168, 85, 247, 0.4);
   }
 }
 
