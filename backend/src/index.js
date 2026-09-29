@@ -183,14 +183,22 @@ function visibleProjectIds(user) {
   // STRICT matching only: exact email/username equality against the project's
   // client field, or direct ownership. Substring matching was spoofable — a user
   // could set their email to any substring of another project's client string.
-  const allProjs = db.all(`SELECT id, client, name, user_id FROM projects`)
+  const allProjs = db.all(`SELECT id, client, name, user_id, client_id FROM projects`)
   const ids = allProjs
     .filter((p) => {
       if (p.user_id && p.user_id === user.id) return true
+      if (p.client_id && p.client_id === user.id) return true
       const c = (p.client || '').toLowerCase().trim()
       return (userEmail && c === userEmail) || (username && c === username)
     })
     .map((p) => p.id)
+
+  if (userEmail) {
+    const creds = db.all(`SELECT project_id FROM client_credentials WHERE LOWER(email) = ?`, userEmail)
+    for (const cr of creds) {
+      if (cr.project_id && !ids.includes(cr.project_id)) ids.push(cr.project_id)
+    }
+  }
   return ids.length ? ids : []
 }
 
@@ -545,8 +553,27 @@ app.get('/api/admin/clients/:id/details', requireAuth, requireRole('admin'), (re
   if (!u) return res.status(404).json({ error: 'User not found' })
 
   const sub = db.get(`SELECT * FROM subscriptions WHERE user_id = ?`, u.id)
-  const projects = db.all(`SELECT * FROM projects WHERE user_id = ? OR client_id = ? ORDER BY created_at DESC`, u.id, u.id)
-  const scans = db.all(`SELECT id, target, status, created_at, risk_score FROM scans WHERE user_id = ? ORDER BY created_at DESC LIMIT 20`, u.id)
+  const projects = db.all(`
+    SELECT p.*,
+           (SELECT COUNT(*) FROM scans sc WHERE sc.project_id = p.id) as scan_count,
+           (SELECT COUNT(*) FROM findings f WHERE f.scan_id IN (SELECT id FROM scans WHERE project_id = p.id)) as finding_count
+    FROM projects p
+    WHERE p.user_id = ? 
+       OR p.client_id = ? 
+       OR p.client = ? 
+       OR p.client = ? 
+       OR p.id IN (SELECT project_id FROM client_credentials WHERE LOWER(email) = LOWER(?))
+    ORDER BY p.created_at DESC
+  `, u.id, u.id, u.username, u.email, u.email)
+
+  const scans = db.all(`
+    SELECT s.id, s.target, s.status, s.created_at, s.risk_score, p.name as project_name
+    FROM scans s
+    LEFT JOIN projects p ON p.id = s.project_id
+    WHERE s.user_id = ? 
+       OR s.project_id IN (SELECT id FROM projects WHERE user_id = ? OR client_id = ? OR client = ? OR client = ?)
+    ORDER BY s.created_at DESC LIMIT 50
+  `, u.id, u.id, u.id, u.username, u.email)
   const github = db.get(`SELECT github_username, avatar_url, created_at FROM github_integrations WHERE user_id = ?`, u.id)
 
   res.json({

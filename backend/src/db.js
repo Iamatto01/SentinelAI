@@ -53,8 +53,6 @@ export function getDb() {
 }
 
 function migrate(d) {
-  try { d.exec("ALTER TABLE projects ADD COLUMN cover TEXT") } catch {}
-
   d.exec(`
   CREATE TABLE IF NOT EXISTS users (
     id TEXT PRIMARY KEY,
@@ -76,6 +74,7 @@ function migrate(d) {
     risk_level TEXT DEFAULT 'medium',
     status TEXT DEFAULT 'active',
     user_id TEXT,
+    client_id TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
   );
@@ -447,42 +446,44 @@ function migrate(d) {
   `)
 
   // Migration: add layman_impact column for existing databases
-  try { d.exec(`ALTER TABLE findings ADD COLUMN target TEXT`) } catch { /* already exists */ }
-  try { d.exec(`ALTER TABLE findings ADD COLUMN layman_impact TEXT`) } catch { /* already exists */ }
-  try { d.exec(`ALTER TABLE findings ADD COLUMN fingerprint TEXT`) } catch { /* already exists */ }
-  try { d.exec(`CREATE INDEX IF NOT EXISTS idx_findings_fingerprint ON findings(scan_id, fingerprint)`) } catch { /* already exists */ }
+  try { d.exec(`ALTER TABLE findings ADD COLUMN target TEXT`) } catch (e) { if (!/duplicate column name/i.test(String(e))) throw e }
+  try { d.exec(`ALTER TABLE findings ADD COLUMN layman_impact TEXT`) } catch (e) { if (!/duplicate column name/i.test(String(e))) throw e }
+  try { d.exec(`ALTER TABLE findings ADD COLUMN fingerprint TEXT`) } catch (e) { if (!/duplicate column name/i.test(String(e))) throw e }
+  try { d.exec(`CREATE INDEX IF NOT EXISTS idx_findings_fingerprint ON findings(scan_id, fingerprint)`) } catch (e) { if (!/duplicate column name/i.test(String(e))) throw e }
   // Migration: store structured whitebox & blackbox metadata and user/client columns
-  try { d.exec(`ALTER TABLE scans ADD COLUMN whitebox_meta TEXT`) } catch { /* already exists */ }
-  try { d.exec(`ALTER TABLE scans ADD COLUMN blackbox_meta TEXT`) } catch { /* already exists */ }
-  try { d.exec(`ALTER TABLE scans ADD COLUMN token_usage TEXT DEFAULT '{}'`) } catch { /* already exists */ }
-  try { d.exec(`ALTER TABLE scans ADD COLUMN trigger_source TEXT DEFAULT 'manual'`) } catch { /* already exists */ }
-  try { d.exec(`ALTER TABLE scans ADD COLUMN repo_name TEXT`) } catch { /* already exists */ }
-  try { d.exec(`ALTER TABLE scans ADD COLUMN commit_hash TEXT`) } catch { /* already exists */ }
-  try { d.exec(`ALTER TABLE scans ADD COLUMN email_notify TEXT`) } catch { /* already exists */ }
-  try { d.exec(`ALTER TABLE scans ADD COLUMN user_id TEXT`) } catch { /* already exists */ }
-  try { d.exec(`ALTER TABLE scans ADD COLUMN client TEXT`) } catch { /* already exists */ }
-  try { d.exec(`ALTER TABLE scans ADD COLUMN owasp_categories TEXT`) } catch { /* already exists */ }
-  try { d.exec(`ALTER TABLE projects ADD COLUMN user_id TEXT`) } catch { /* already exists */ }
+  try { d.exec(`ALTER TABLE scans ADD COLUMN whitebox_meta TEXT`) } catch (e) { if (!/duplicate column name/i.test(String(e))) throw e }
+  try { d.exec(`ALTER TABLE scans ADD COLUMN blackbox_meta TEXT`) } catch (e) { if (!/duplicate column name/i.test(String(e))) throw e }
+  try { d.exec(`ALTER TABLE scans ADD COLUMN token_usage TEXT DEFAULT '{}'`) } catch (e) { if (!/duplicate column name/i.test(String(e))) throw e }
+  try { d.exec(`ALTER TABLE scans ADD COLUMN trigger_source TEXT DEFAULT 'manual'`) } catch (e) { if (!/duplicate column name/i.test(String(e))) throw e }
+  try { d.exec(`ALTER TABLE scans ADD COLUMN repo_name TEXT`) } catch (e) { if (!/duplicate column name/i.test(String(e))) throw e }
+  try { d.exec(`ALTER TABLE scans ADD COLUMN commit_hash TEXT`) } catch (e) { if (!/duplicate column name/i.test(String(e))) throw e }
+  try { d.exec(`ALTER TABLE scans ADD COLUMN email_notify TEXT`) } catch (e) { if (!/duplicate column name/i.test(String(e))) throw e }
+  try { d.exec(`ALTER TABLE scans ADD COLUMN user_id TEXT`) } catch (e) { if (!/duplicate column name/i.test(String(e))) throw e }
+  try { d.exec(`ALTER TABLE scans ADD COLUMN client TEXT`) } catch (e) { if (!/duplicate column name/i.test(String(e))) throw e }
+  try { d.exec(`ALTER TABLE scans ADD COLUMN owasp_categories TEXT`) } catch (e) { if (!/duplicate column name/i.test(String(e))) throw e }
+  try { d.exec(`ALTER TABLE projects ADD COLUMN user_id TEXT`) } catch (e) { if (!/duplicate column name/i.test(String(e))) throw e }
+  try { d.exec(`ALTER TABLE projects ADD COLUMN client_id TEXT`) } catch (e) { if (!/duplicate column name/i.test(String(e))) throw e }
+  try { d.exec(`ALTER TABLE projects ADD COLUMN cover TEXT`) } catch (e) { if (!/duplicate column name/i.test(String(e))) throw e }
 
   // Migration: ensure github_repos has all required columns
-  try { d.exec(`ALTER TABLE github_repos ADD COLUMN full_name TEXT`) } catch { /* already exists */ }
-  try { d.exec(`ALTER TABLE github_repos ADD COLUMN repo_url TEXT`) } catch { /* already exists */ }
-  try { d.exec(`ALTER TABLE github_repos ADD COLUMN is_private INTEGER DEFAULT 0`) } catch { /* already exists */ }
-  try { d.exec(`ALTER TABLE github_repos ADD COLUMN auto_scan_push INTEGER DEFAULT 1`) } catch { /* already exists */ }
-  try { d.exec(`ALTER TABLE github_repos ADD COLUMN auto_scan_pr INTEGER DEFAULT 1`) } catch { /* already exists */ }
-  try { d.exec(`ALTER TABLE github_repos ADD COLUMN email_report INTEGER DEFAULT 1`) } catch { /* already exists */ }
-  try { d.exec(`ALTER TABLE github_repos ADD COLUMN last_scan_id TEXT`) } catch { /* already exists */ }
-  try { d.exec(`ALTER TABLE github_repos ADD COLUMN last_scan_at TEXT`) } catch { /* already exists */ }
-  try { d.exec(`ALTER TABLE github_repos ADD COLUMN updated_at TEXT`) } catch { /* already exists */ }
-  try { d.exec(`CREATE INDEX IF NOT EXISTS idx_gh_repos_name ON github_repos(full_name)`) } catch {}
+  try { d.exec(`ALTER TABLE github_repos ADD COLUMN full_name TEXT`) } catch (e) { if (!/duplicate column name/i.test(String(e))) throw e }
+  try { d.exec(`ALTER TABLE github_repos ADD COLUMN repo_url TEXT`) } catch (e) { if (!/duplicate column name/i.test(String(e))) throw e }
+  try { d.exec(`ALTER TABLE github_repos ADD COLUMN is_private INTEGER DEFAULT 0`) } catch (e) { if (!/duplicate column name/i.test(String(e))) throw e }
+  try { d.exec(`ALTER TABLE github_repos ADD COLUMN auto_scan_push INTEGER DEFAULT 1`) } catch (e) { if (!/duplicate column name/i.test(String(e))) throw e }
+  try { d.exec(`ALTER TABLE github_repos ADD COLUMN auto_scan_pr INTEGER DEFAULT 1`) } catch (e) { if (!/duplicate column name/i.test(String(e))) throw e }
+  try { d.exec(`ALTER TABLE github_repos ADD COLUMN email_report INTEGER DEFAULT 1`) } catch (e) { if (!/duplicate column name/i.test(String(e))) throw e }
+  try { d.exec(`ALTER TABLE github_repos ADD COLUMN last_scan_id TEXT`) } catch (e) { if (!/duplicate column name/i.test(String(e))) throw e }
+  try { d.exec(`ALTER TABLE github_repos ADD COLUMN last_scan_at TEXT`) } catch (e) { if (!/duplicate column name/i.test(String(e))) throw e }
+  try { d.exec(`ALTER TABLE github_repos ADD COLUMN updated_at TEXT`) } catch (e) { if (!/duplicate column name/i.test(String(e))) throw e }
+  try { d.exec(`CREATE INDEX IF NOT EXISTS idx_gh_repos_name ON github_repos(full_name)`) } catch (e) { if (!/already exists/i.test(String(e))) throw e }
 
   // Migration: ensure consultation_requests has all required columns
-  try { d.exec(`ALTER TABLE consultation_requests ADD COLUMN username TEXT`) } catch { /* already exists */ }
-  try { d.exec(`ALTER TABLE consultation_requests ADD COLUMN email TEXT`) } catch { /* already exists */ }
-  try { d.exec(`ALTER TABLE consultation_requests ADD COLUMN plan_tier TEXT DEFAULT 'starter'`) } catch { /* already exists */ }
-  try { d.exec(`ALTER TABLE consultation_requests ADD COLUMN meeting_link TEXT`) } catch { /* already exists */ }
-  try { d.exec(`ALTER TABLE consultation_requests ADD COLUMN admin_notes TEXT`) } catch { /* already exists */ }
-  try { d.exec(`ALTER TABLE consultation_requests ADD COLUMN updated_at TEXT`) } catch { /* already exists */ }
+  try { d.exec(`ALTER TABLE consultation_requests ADD COLUMN username TEXT`) } catch (e) { if (!/duplicate column name/i.test(String(e))) throw e }
+  try { d.exec(`ALTER TABLE consultation_requests ADD COLUMN email TEXT`) } catch (e) { if (!/duplicate column name/i.test(String(e))) throw e }
+  try { d.exec(`ALTER TABLE consultation_requests ADD COLUMN plan_tier TEXT DEFAULT 'starter'`) } catch (e) { if (!/duplicate column name/i.test(String(e))) throw e }
+  try { d.exec(`ALTER TABLE consultation_requests ADD COLUMN meeting_link TEXT`) } catch (e) { if (!/duplicate column name/i.test(String(e))) throw e }
+  try { d.exec(`ALTER TABLE consultation_requests ADD COLUMN admin_notes TEXT`) } catch (e) { if (!/duplicate column name/i.test(String(e))) throw e }
+  try { d.exec(`ALTER TABLE consultation_requests ADD COLUMN updated_at TEXT`) } catch (e) { if (!/duplicate column name/i.test(String(e))) throw e }
 
   // Ensure default plans exist with MYR pricing
   try {
