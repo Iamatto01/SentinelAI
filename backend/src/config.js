@@ -49,7 +49,7 @@ export const config = {
     openrouter: {
       key: (process.env.OPENROUTER_API_KEY || '').trim(),
       baseUrl: (process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1').trim(),
-      model: (process.env.OPENROUTER_MODEL || 'deepseek/deepseek-r1-distill-qwen-32b:free').trim(),
+      model: (process.env.OPENROUTER_MODEL || 'inclusionai/ling-3.0-flash-sante:free').trim(),
     },
     bandelbanget: {
       key: (process.env.BANDELBANGET_API_KEY || '').trim(),

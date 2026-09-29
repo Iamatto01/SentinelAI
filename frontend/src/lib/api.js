@@ -69,7 +69,12 @@ export const api = {
   agents: () => apiFetch('/api/agents'),
   aiProviders: () => apiFetch('/api/ai/providers'),
   saveAiSettings: (body) => apiFetch('/api/settings/ai', { method: 'POST', body }),
-  testAiProvider: (provider, key, model) => apiFetch('/api/ai/test', { method: 'POST', body: { provider, key, model } }),
+  testAiProvider: (providerOrOpts, key, model) => {
+    const body = typeof providerOrOpts === 'object' && providerOrOpts !== null
+      ? providerOrOpts
+      : { provider: providerOrOpts, key, model }
+    return apiFetch('/api/ai/test', { method: 'POST', body })
+  },
   agentChat: (message, agent, history) => apiFetch('/api/agents/chat', { method: 'POST', body: { message, agent, history } }),
   payloadsStatus: () => apiFetch('/api/payloads/status'),
   reindexPayloads: () => apiFetch('/api/payloads/reindex', { method: 'POST' }),

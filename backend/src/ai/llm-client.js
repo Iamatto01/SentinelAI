@@ -34,7 +34,7 @@ export class LLMClient {
         id: 'openrouter',
         name: 'OpenRouter AI',
         role: '3. Fallback 1',
-        model: this.openrouter?.model || 'inclusionai/ling-3.0-flash:free',
+        model: this.openrouter?.model || 'inclusionai/ling-3.0-flash-sante:free',
         baseUrl: this.openrouter?.baseUrl || 'https://openrouter.ai/api/v1',
         hasKey: Boolean(this.openrouter?.key),
         key: this.openrouter?.key,

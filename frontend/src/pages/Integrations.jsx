@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { Loader2, RefreshCw, Cpu, Database, Bot, Sparkles, CheckCircle2, XCircle, Search, X, Shield, ExternalLink, Send, ShieldCheck, Unlink } from 'lucide-react'
+import { Loader2, RefreshCw, Cpu, Database, Bot, Sparkles, CheckCircle2, XCircle, Search, X, Shield, ExternalLink, Send, ShieldCheck, Unlink, Play, AlertTriangle } from 'lucide-react'
 import { api } from '../lib/api.js'
 
 function StatusDot({ ok }) {
@@ -15,6 +15,8 @@ export default function Integrations() {
   const [err, setErr] = useState('')
   const [reindexing, setReindexing] = useState(false)
   const [checkingAi, setCheckingAi] = useState(false)
+  const [testingProvider, setTestingProvider] = useState(null)
+  const [testResults, setTestResults] = useState({})
   
   // Agent modal & search state
   const [showAgentsModal, setShowAgentsModal] = useState(false)
@@ -25,6 +27,30 @@ export default function Integrations() {
   const [teleLoading, setTeleLoading] = useState(false)
   const [teleMsg, setTeleMsg] = useState('')
   const [teleErr, setTeleErr] = useState('')
+
+  async function handleRunModelTest(provider) {
+    if (testingProvider) return
+    setTestingProvider(provider.id)
+    setTestResults(prev => ({ ...prev, [provider.id]: null }))
+    try {
+      const res = await api.testAiProvider({
+        provider: provider.id,
+        model: provider.model,
+        prompt: 'SentinelAI verification test: confirm system readiness.'
+      })
+      setTestResults(prev => ({
+        ...prev,
+        [provider.id]: res
+      }))
+    } catch (e) {
+      setTestResults(prev => ({
+        ...prev,
+        [provider.id]: { success: false, error: e.message }
+      }))
+    } finally {
+      setTestingProvider(null)
+    }
+  }
 
   const load = () => {
     api.telegramPairing().then(setTeleStatus).catch(() => {})
@@ -86,6 +112,10 @@ export default function Integrations() {
   if (!status) return <div className="flex justify-center py-20"><Loader2 className="animate-spin text-accent" size={28} /></div>
 
   const engine = status.engine || {}
+  const rawTools = engine.tools || (typeof engine === 'object' && !('available' in engine) ? engine : {})
+  const totalToolsCount = engine.totalTools ?? Object.keys(rawTools).length ?? 0
+  const toolsAvailableCount = engine.totalToolsAvailable ?? engine.toolsAvailable ?? Object.values(rawTools).filter(Boolean).length ?? 0
+  const isEngineOk = Boolean(engine.available || engine.ok || toolsAvailableCount > 0)
   const rag = status.rag || {}
   const msf = status.msf || {}
 
@@ -117,14 +147,24 @@ export default function Integrations() {
             <h3 className="flex items-center gap-2 font-semibold text-slate-100">
               <Cpu size={18} className="text-accent" /> Native Kali Engine
             </h3>
-            <StatusDot ok={engine.available || engine.ok} />
+            <StatusDot ok={isEngineOk} />
           </div>
           <dl className="space-y-2 text-sm">
-            <div className="flex justify-between"><dt className="text-slate-500">Status</dt><dd className={(engine.available || engine.ok) ? 'text-emerald-400 font-semibold' : 'text-sev-critical font-semibold'}>{(engine.available || engine.ok) ? 'ONLINE' : 'OFFLINE'}</dd></div>
+            <div className="flex justify-between">
+              <dt className="text-slate-500">Status</dt>
+              <dd className={isEngineOk ? 'text-emerald-400 font-semibold' : 'text-sev-critical font-semibold'}>
+                {isEngineOk ? 'ONLINE' : 'OFFLINE'}
+              </dd>
+            </div>
             {engine.version && <div className="flex justify-between"><dt className="text-slate-500">Version</dt><dd className="text-slate-300">{engine.version}</dd></div>}
-            <div className="flex justify-between"><dt className="text-slate-500">Tools available</dt><dd className="text-slate-300">{engine.totalToolsAvailable ?? engine.toolsAvailable ?? engine.total_tools_available ?? '—'}</dd></div>
+            <div className="flex justify-between">
+              <dt className="text-slate-500">Tools available</dt>
+              <dd className="text-slate-300 font-mono font-medium">
+                {toolsAvailableCount > 0 ? `${toolsAvailableCount} / ${totalToolsCount || toolsAvailableCount}` : '—'}
+              </dd>
+            </div>
           </dl>
-          {!(engine.available || engine.ok) && <p className="mt-3 text-xs text-sev-medium">Tools unavailable — check Kali toolchain installation</p>}
+          {!isEngineOk && <p className="mt-3 text-xs text-sev-medium">Tools unavailable — check Kali toolchain installation</p>}
         </div>
 
         {/* Payloads RAG */}
@@ -288,48 +328,97 @@ export default function Integrations() {
             </div>
           ) : (
             <div className="space-y-2.5">
-              {aiData.providers.map((p) => (
-                <div
-                  key={p.id}
-                  className={`rounded-lg border p-3 transition-all ${
-                    p.online
-                      ? 'border-emerald-500/30 bg-emerald-500/5'
-                      : 'border-slate-800 bg-ink-950/60'
-                  }`}
-                >
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs font-semibold text-slate-200">{p.name}</span>
-                        <span className="text-[10px] text-accent/80 bg-accent/10 px-1.5 py-0.2 rounded border border-accent/20">
-                          {p.role}
+              {aiData.providers.map((p) => {
+                const isTesting = testingProvider === p.id
+                const testResult = testResults[p.id]
+
+                return (
+                  <div
+                    key={p.id}
+                    className={`rounded-lg border p-3 transition-all ${
+                      p.online
+                        ? 'border-emerald-500/30 bg-emerald-500/5'
+                        : 'border-slate-800 bg-ink-950/60'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-semibold text-slate-200">{p.name}</span>
+                          <span className="text-[10px] text-accent/80 bg-accent/10 px-1.5 py-0.2 rounded border border-accent/20">
+                            {p.role}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-slate-400 font-mono mt-0.5 truncate">
+                          Model: <span className="text-slate-200">{p.model}</span>
+                        </p>
+                      </div>
+
+                      <div className="flex items-center gap-2 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => handleRunModelTest(p)}
+                          disabled={isTesting}
+                          title={`Run live prompt test on ${p.name}`}
+                          className="px-2.5 py-1 text-[11px] font-medium rounded-md bg-accent/15 text-accent hover:bg-accent/25 border border-accent/30 flex items-center gap-1.5 transition-colors disabled:opacity-50 cursor-pointer"
+                        >
+                          {isTesting ? (
+                            <>
+                              <Loader2 size={11} className="animate-spin" />
+                              <span>Testing…</span>
+                            </>
+                          ) : (
+                            <>
+                              <Play size={10} className="fill-current" />
+                              <span>Run</span>
+                            </>
+                          )}
+                        </button>
+
+                        <span
+                          className={`inline-flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-full ${
+                            p.online
+                              ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40'
+                              : 'bg-red-500/15 text-red-400 border border-red-500/30'
+                          }`}
+                        >
+                          <span className={`h-1.5 w-1.5 rounded-full ${p.online ? 'bg-emerald-400 animate-pulse' : 'bg-red-400'}`} />
+                          {p.status}
                         </span>
                       </div>
-                      <p className="text-[11px] text-slate-400 font-mono mt-0.5">
-                        Model: <span className="text-slate-200">{p.model}</span>
-                      </p>
                     </div>
 
-                    <div className="text-right shrink-0">
-                      <span
-                        className={`inline-flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-full ${
-                          p.online
-                            ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40'
-                            : 'bg-red-500/15 text-red-400 border border-red-500/30'
-                        }`}
-                      >
-                        <span className={`h-1.5 w-1.5 rounded-full ${p.online ? 'bg-emerald-400 animate-pulse' : 'bg-red-400'}`} />
-                        {p.status}
-                      </span>
+                    {/* Live Test Feedback Banner */}
+                    {testResult && (
+                      <div className={`mt-2.5 p-2 rounded-lg text-[11px] font-mono flex items-start gap-2 border ${
+                        testResult.success
+                          ? 'bg-emerald-950/40 border-emerald-500/30 text-emerald-300'
+                          : 'bg-red-950/40 border-red-500/30 text-red-300'
+                      }`}>
+                        {testResult.success ? (
+                          <CheckCircle2 size={14} className="text-emerald-400 shrink-0 mt-0.5" />
+                        ) : (
+                          <AlertTriangle size={14} className="text-red-400 shrink-0 mt-0.5" />
+                        )}
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center justify-between text-[10px] text-slate-400 mb-0.5">
+                            <span>Latency: {testResult.latencyMs}ms</span>
+                            <span>{testResult.success ? 'Verified Live' : 'Test Failed'}</span>
+                          </div>
+                          <p className="line-clamp-2 text-slate-200">
+                            {testResult.success ? `"${testResult.reply}"` : testResult.error}
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="mt-2 flex items-center justify-between text-[10px] text-slate-500 border-t border-slate-800/60 pt-1.5">
+                      <span className="truncate max-w-[240px]">{p.baseUrl}</span>
+                      <span>{p.reason}</span>
                     </div>
                   </div>
-
-                  <div className="mt-2 flex items-center justify-between text-[10px] text-slate-500 border-t border-slate-800/60 pt-1.5">
-                    <span className="truncate max-w-[240px]">{p.baseUrl}</span>
-                    <span>{p.reason}</span>
-                  </div>
-                </div>
-              ))}
+                )
+              })}
             </div>
           )}
         </div>

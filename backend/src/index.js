@@ -261,8 +261,18 @@ app.get('/api/public/agents', (req, res) => {
 })
 
 app.get('/api/status', requireAuth, async (req, res) => {
-  const engine = await nativeToolsStatus()
-  const available = Object.values(engine).filter(Boolean).length
+  const tools = await nativeToolsStatus()
+  const available = Object.values(tools).filter(Boolean).length
+  const total = Object.keys(tools).length
+  const engine = {
+    ok: available > 0,
+    available: available > 0,
+    engine: 'native',
+    toolsAvailable: available,
+    totalToolsAvailable: available,
+    totalTools: total,
+    tools,
+  }
   const rag = payloadsRag.payloadsIndexStatus()
   let msfStatus = { available: false, error: 'not checked' }
   try { msfStatus = await msf.status() } catch (e) { msfStatus = { available: false, error: e.message } }
@@ -1550,37 +1560,67 @@ app.post('/api/settings/ai', requireAuth, (req, res) => {
 
 app.post('/api/ai/test', requireAuth, async (req, res) => {
   if (req.user.role !== 'admin') return res.status(403).json({ error: 'Forbidden' })
-  const { provider, key, model } = req.body
-  if (!key) return res.status(400).json({ error: 'Key is required to test' })
+  const { provider, key, model, prompt } = req.body || {}
   
+  let apiKey = key
+  let targetModel = model
   let url = ''
-  let headers = { 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json' }
-  
-  if (provider === 'groq') url = 'https://api.groq.com/openai/v1/chat/completions'
-  else if (provider === 'openrouter') url = 'https://openrouter.ai/api/v1/chat/completions'
-  else if (provider === 'bandelbanget') url = 'https://bandelbanget.xyz/v1/chat/completions'
-  else return res.status(400).json({ error: 'Unknown provider' })
 
+  if (provider === 'groq') {
+    url = 'https://api.groq.com/openai/v1/chat/completions'
+    apiKey = apiKey || config.ai.groq.key
+    targetModel = targetModel || config.ai.groq.model
+  } else if (provider === 'openrouter') {
+    url = 'https://openrouter.ai/api/v1/chat/completions'
+    apiKey = apiKey || config.ai.openrouter.key
+    targetModel = targetModel || config.ai.openrouter.model
+  } else if (provider === 'bandelbanget') {
+    url = 'https://bandelbanget.xyz/v1/chat/completions'
+    apiKey = apiKey || config.ai.bandelbanget.key
+    targetModel = targetModel || config.ai.bandelbanget.model
+  } else {
+    return res.status(400).json({ error: 'Unknown provider' })
+  }
+
+  if (!apiKey) {
+    return res.status(400).json({ success: false, error: `No API key configured for ${provider}` })
+  }
+
+  const t0 = Date.now()
   try {
     const ctrl = new AbortController()
-    const timer = setTimeout(() => ctrl.abort(), 8000)
+    const timer = setTimeout(() => ctrl.abort(), 12000)
+    const testPrompt = prompt || 'Say OK if you can read this.'
+    const headers = { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' }
+    
     const reqLLM = await fetch(url, {
       method: 'POST',
       headers,
       body: JSON.stringify({
-        model: model,
-        messages: [{ role: 'user', content: 'Say hi! Keep it very short.' }]
+        model: targetModel,
+        messages: [{ role: 'user', content: testPrompt }],
+        max_tokens: 150
       }),
       signal: ctrl.signal
     })
     clearTimeout(timer)
-    
+
+    const latencyMs = Date.now() - t0
     const data = await reqLLM.json()
-    if (!reqLLM.ok) throw new Error(data.error?.message || `HTTP ${reqLLM.status}`)
-    const reply = data.choices?.[0]?.message?.content || JSON.stringify(data)
-    res.json({ success: true, reply })
+    if (!reqLLM.ok) {
+      const errMsg = data.error?.message || (typeof data.error === 'string' ? data.error : `HTTP ${reqLLM.status}`)
+      return res.json({ success: false, error: errMsg, latencyMs, model: targetModel, provider })
+    }
+
+    const rawChoice = data.choices?.[0]?.message
+    const reply = (rawChoice?.content && rawChoice.content.trim())
+      || (rawChoice?.reasoning && rawChoice.reasoning.trim())
+      || (typeof data === 'string' ? data : JSON.stringify(data))
+
+    res.json({ success: true, reply: (reply || 'OK').trim(), latencyMs, model: targetModel, provider })
   } catch (e) {
-    res.json({ success: false, error: e.message })
+    const latencyMs = Date.now() - t0
+    res.json({ success: false, error: e.name === 'AbortError' ? 'Timeout (12s)' : e.message, latencyMs, model: targetModel, provider })
   }
 })
 
