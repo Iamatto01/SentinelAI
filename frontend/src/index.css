@@ -303,8 +303,8 @@ body.day-mode [class*="bg-[#1c1c1c]"]:not(.terminal):not([class*="btn-"]):not([c
 }
 
 /* ── Fix: Tailwind Gradient Dark Backgrounds in Day Mode ───────────────── */
-/* from-slate-*/via-slate-*/to-slate-* gradient classes are NOT caught by  */
-/* [class*="bg-slate-9"] because they're separate Tailwind CSS vars.       */
+/* from-slate, via-slate, to-slate gradient classes are NOT caught by       */
+/* [class*="bg-slate-9"] because they are separate Tailwind CSS variables.   */
 body.day-mode [class*="from-slate-9"]:not(.terminal):not(.terminal *):not([class*="btn-"]):not([class*="badge"]):not([class*="icon-box-"]),
 body.day-mode [class*="from-slate-8"]:not(.terminal):not(.terminal *):not([class*="btn-"]):not([class*="badge"]):not([class*="icon-box-"]),
 body.day-mode [class*="via-slate-9"]:not(.terminal):not(.terminal *):not([class*="btn-"]):not([class*="badge"]),
