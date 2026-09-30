@@ -1,3 +1,4 @@
+import fs from 'node:fs'
 import os from 'node:os'
 import { spawn } from 'node:child_process'
 import { llm } from './ai/llm-client.js'
@@ -112,19 +113,33 @@ export async function getSystemInfo() {
     }
   }
 
+  // Helper to format disk units (e.g. 47G -> 47 GB, 500M -> 500 MB)
+  const formatDiskUnit = (val) => {
+    if (!val || typeof val !== 'string') return val || '0 GB'
+    if (/\s*(GB|MB|TB|KB)$/i.test(val)) return val
+    return val
+      .replace(/([0-9.]+)G$/i, '$1 GB')
+      .replace(/([0-9.]+)M$/i, '$1 MB')
+      .replace(/([0-9.]+)T$/i, '$1 TB')
+      .replace(/([0-9.]+)K$/i, '$1 KB')
+  }
+
   // Disk usage via df -h
   let disk = { total: 'N/A', used: 'N/A', free: 'N/A', percent: 'N/A' }
   try {
-    const dfRes = await runCmd('df -h / | tail -n 1', 3000)
+    const checkPath = (config.outputDir && fs.existsSync(config.outputDir)) ? config.outputDir : '/'
+    const dfRes = await runCmd(`df -h "${checkPath}" | tail -n 1`, 3000)
     if (dfRes.success && dfRes.stdout) {
       const parts = dfRes.stdout.split(/\s+/)
       if (parts.length >= 5) {
         disk = {
-          total: parts[1],
-          used: parts[2],
-          free: parts[3],
+          total: formatDiskUnit(parts[1]),
+          used: formatDiskUnit(parts[2]),
+          free: formatDiskUnit(parts[3]),
           percent: parts[4],
-          mount: parts[5] || '/',
+          mount: parts[5] || checkPath,
+          rawTotal: parts[1],
+          rawUsed: parts[2],
         }
       }
     }
@@ -315,9 +330,18 @@ export async function manageService(service, action) {
   const sudo = config.kaliSudoPassword ? `echo ${config.kaliSudoPassword} | sudo -S` : 'sudo'
   let cmd = `${sudo} systemctl ${action} ${service}`
 
-  // Special handling for Metasploit if not a systemd unit
-  if (service === 'msfrpcd' && action === 'restart') {
-    cmd = `pkill -f msfrpcd 2>/dev/null || true; sleep 1; nohup msfrpcd -U msf -P msf -a 127.0.0.1 -p 55553 -S > /home/kali/msfrpcd.log 2>&1 &`
+  // msfrpcd is owned by sentinelai.service (the only unit allowed to own port
+  // 55553). Addressing it through systemd keeps a single supervisor for the
+  // port. The retired form killed the unit's process with `pkill -f msfrpcd`
+  // and spawned an untracked `nohup` copy -- systemd then no longer knew what
+  // owned 55553, and the next `systemctl restart` collided with the orphan.
+  // See defect N-06 in AGENTS.md and resources/ARCHIVED-second-supervisor.md.
+  if (service === 'msfrpcd') {
+    if (action === 'status') {
+      cmd = `systemctl is-active sentinelai; ss -lntp 2>/dev/null | grep -F ':55553' || echo 'port 55553 not listening'`
+    } else {
+      cmd = `${sudo} systemctl ${action} sentinelai`
+    }
   }
 
   const result = await runCmd(cmd, 15000)

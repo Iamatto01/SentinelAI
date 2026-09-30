@@ -3,6 +3,22 @@ import fs from 'node:fs'
 
 const DEFAULT_NOTIFY_EMAIL = 'muhammadsaifudinmj@gmail.com'
 
+/**
+ * Escape user-supplied text before interpolating it into notification HTML.
+ * Feedback, scan targets and notes are all attacker-controlled and are rendered
+ * inside the notification emails; without escaping they allow HTML injection
+ * (spoofed links / hidden content) into the operator's inbox.
+ */
+function escapeHtml(value) {
+  if (value === null || value === undefined) return ''
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
 export async function sendScanRequestNotification({ clientUser, project, target, scanType, notes }) {
   const recipient = process.env.NOTIFICATION_EMAIL || DEFAULT_NOTIFY_EMAIL
 
@@ -34,7 +50,7 @@ export async function sendScanRequestNotification({ clientUser, project, target,
   const projectName = project?.name || 'Unassigned Project'
   const clientCompany = project?.client || 'Client Organization'
 
-  const subject = `[SentinelAI] New Scan Request from ${clientName} (${clientCompany})`
+  const subject = `[SentinelAI] New Scan Request from ${clientName} (${clientCompany})`.replace(/[\r\n]+/g, ' ')
 
   const htmlContent = `
     <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 600px; margin: 0 auto; background-color: #09090b; color: #f4f4f5; border: 1px solid rgba(255,255,255,0.15); border-radius: 12px; padding: 24px;">
@@ -51,30 +67,30 @@ export async function sendScanRequestNotification({ clientUser, project, target,
           <tr>
             <td style="padding: 12px 16px; border-bottom: 1px solid rgba(255,255,255,0.08); color: #71717a; font-size: 13px; font-weight: 600; width: 140px;">Client User</td>
             <td style="padding: 12px 16px; border-bottom: 1px solid rgba(255,255,255,0.08); color: #ffffff; font-size: 14px; font-weight: 600;">
-              ${clientName} <span style="color: #a1a1aa; font-size: 12px; font-weight: normal;">(${clientEmail})</span>
+              ${escapeHtml(clientName)} <span style="color: #a1a1aa; font-size: 12px; font-weight: normal;">(${escapeHtml(clientEmail)})</span>
             </td>
           </tr>
           <tr>
             <td style="padding: 12px 16px; border-bottom: 1px solid rgba(255,255,255,0.08); color: #71717a; font-size: 13px; font-weight: 600;">Project</td>
             <td style="padding: 12px 16px; border-bottom: 1px solid rgba(255,255,255,0.08); color: #ffffff; font-size: 14px;">
-              ${projectName} <span style="color: #00f2fe; font-size: 12px;">[${clientCompany}]</span>
+              ${escapeHtml(projectName)} <span style="color: #00f2fe; font-size: 12px;">[${escapeHtml(clientCompany)}]</span>
             </td>
           </tr>
           <tr>
             <td style="padding: 12px 16px; border-bottom: 1px solid rgba(255,255,255,0.08); color: #71717a; font-size: 13px; font-weight: 600;">Target Scope</td>
             <td style="padding: 12px 16px; border-bottom: 1px solid rgba(255,255,255,0.08); color: #00f2fe; font-family: monospace; font-size: 14px; font-weight: bold;">
-              ${target}
+              ${escapeHtml(target)}
             </td>
           </tr>
           <tr>
             <td style="padding: 12px 16px; border-bottom: 1px solid rgba(255,255,255,0.08); color: #71717a; font-size: 13px; font-weight: 600;">Scan Profile</td>
             <td style="padding: 12px 16px; border-bottom: 1px solid rgba(255,255,255,0.08); color: #ffffff; font-size: 14px;">
-              ${scanType || 'Full Security Assessment'}
+              ${escapeHtml(scanType || 'Full Security Assessment')}
             </td>
           </tr>
           <tr>
             <td style="padding: 12px 16px; color: #71717a; font-size: 13px; font-weight: 600;">Notes</td>
-            <td style="padding: 12px 16px; color: #d4d4d8; font-size: 14px; white-space: pre-wrap;">${notes || 'No additional notes.'}</td>
+            <td style="padding: 12px 16px; color: #d4d4d8; font-size: 14px; white-space: pre-wrap;">${escapeHtml(notes || 'No additional notes.')}</td>
           </tr>
         </tbody>
       </table>
@@ -128,8 +144,10 @@ export async function sendAnonymousFeedbackNotification({ category = 'General Fe
     transporter = nodemailer.createTransport({ jsonTransport: true })
   }
 
-  const ratingStars = rating ? '⭐'.repeat(Number(rating)) : 'Not provided'
-  const subject = `[SentinelAI Feedback] [${category}] Community Feedback (${ratingStars})`
+  const ratingNum = Number.isFinite(Number(rating)) ? Math.min(Math.max(Math.trunc(Number(rating)), 0), 5) : 0
+  const ratingStars = ratingNum ? '⭐'.repeat(ratingNum) : 'Not provided'
+  const safeCategory = String(category || 'General Feedback').replace(/[\r\n]+/g, ' ').slice(0, 80)
+  const subject = `[SentinelAI Feedback] [${safeCategory}] Community Feedback (${ratingStars})`
 
   const htmlContent = `
     <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 600px; margin: 0 auto; background-color: #09090b; color: #f4f4f5; border: 1px solid rgba(255,255,255,0.15); border-radius: 12px; padding: 24px;">
@@ -146,24 +164,24 @@ export async function sendAnonymousFeedbackNotification({ category = 'General Fe
           <tr>
             <td style="padding: 12px 16px; border-bottom: 1px solid rgba(255,255,255,0.08); color: #71717a; font-size: 13px; font-weight: 600; width: 130px;">Category</td>
             <td style="padding: 12px 16px; border-bottom: 1px solid rgba(255,255,255,0.08); color: #00f2fe; font-size: 14px; font-weight: bold;">
-              ${category}
+              ${escapeHtml(category)}
             </td>
           </tr>
           <tr>
             <td style="padding: 12px 16px; border-bottom: 1px solid rgba(255,255,255,0.08); color: #71717a; font-size: 13px; font-weight: 600;">Rating</td>
             <td style="padding: 12px 16px; border-bottom: 1px solid rgba(255,255,255,0.08); color: #fbbf24; font-size: 14px;">
-              ${ratingStars} (${rating || 0}/5)
+              ${ratingStars} (${ratingNum}/5)
             </td>
           </tr>
           <tr>
             <td style="padding: 12px 16px; border-bottom: 1px solid rgba(255,255,255,0.08); color: #71717a; font-size: 13px; font-weight: 600;">Sender Context</td>
             <td style="padding: 12px 16px; border-bottom: 1px solid rgba(255,255,255,0.08); color: #a1a1aa; font-size: 13px;">
-              ${userContext} (Anonymous)
+              ${escapeHtml(userContext)} (Anonymous)
             </td>
           </tr>
           <tr>
             <td style="padding: 12px 16px; color: #71717a; font-size: 13px; font-weight: 600; vertical-align: top;">Feedback Content</td>
-            <td style="padding: 12px 16px; color: #ffffff; font-size: 14px; line-height: 1.6; white-space: pre-wrap; font-family: monospace; background: rgba(0,0,0,0.3); border-radius: 6px;">${message || '(No message provided)'}</td>
+            <td style="padding: 12px 16px; color: #ffffff; font-size: 14px; line-height: 1.6; white-space: pre-wrap; font-family: monospace; background: rgba(0,0,0,0.3); border-radius: 6px;">${escapeHtml(String(message || '').slice(0, 5000)) || '(No message provided)'}</td>
           </tr>
         </tbody>
       </table>
@@ -238,7 +256,7 @@ export async function sendScanAuditReportEmail({ userEmail, scan, findings = [],
   }
 
   const targetDisplay = repoName || scan.target || 'Source Code'
-  const subject = `[SentinelAI Audit] ${targetDisplay} Security Report (${grade})`
+  const subject = `[SentinelAI Audit] ${targetDisplay} Security Report (${grade})`.replace(/[\r\n]+/g, ' ')
 
   // Top 3 findings
   const topFindings = findings.slice(0, 3)
@@ -246,13 +264,13 @@ export async function sendScanAuditReportEmail({ userEmail, scan, findings = [],
     ? topFindings.map(f => `
       <div style="background-color: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 14px; margin-bottom: 10px;">
         <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
-          <strong style="color: #ffffff; font-size: 14px;">${f.title}</strong>
+          <strong style="color: #ffffff; font-size: 14px;">${escapeHtml(f.title)}</strong>
           <span style="font-size: 11px; font-weight: bold; text-transform: uppercase; padding: 2px 8px; border-radius: 4px; background-color: ${f.severity === 'critical' ? '#dc2626' : f.severity === 'high' ? '#ea580c' : '#d97706'}; color: #ffffff;">
-            ${f.severity || 'info'}
+            ${escapeHtml(f.severity || 'info')}
           </span>
         </div>
-        <p style="color: #a1a1aa; font-size: 12px; margin: 4px 0 8px 0; line-height: 1.4;">${f.description ? f.description.slice(0, 160) + '...' : 'No description provided.'}</p>
-        ${f.remediation ? `<div style="font-size: 11px; color: #38bdf8; background-color: rgba(56, 189, 248, 0.08); padding: 6px 10px; border-radius: 6px;"><strong>Fix:</strong> ${f.remediation.slice(0, 140)}...</div>` : ''}
+        <p style="color: #a1a1aa; font-size: 12px; margin: 4px 0 8px 0; line-height: 1.4;">${f.description ? escapeHtml(f.description.slice(0, 160)) + '...' : 'No description provided.'}</p>
+        ${f.remediation ? `<div style="font-size: 11px; color: #38bdf8; background-color: rgba(56, 189, 248, 0.08); padding: 6px 10px; border-radius: 6px;"><strong>Fix:</strong> ${escapeHtml(f.remediation.slice(0, 140))}...</div>` : ''}
       </div>
     `).join('')
     : '<p style="color: #10B981; font-size: 13px;">No security vulnerabilities were identified in this repository.</p>'
@@ -272,8 +290,8 @@ export async function sendScanAuditReportEmail({ userEmail, scan, findings = [],
       <div style="background: linear-gradient(135deg, rgba(30, 41, 59, 0.7) 0%, rgba(15, 23, 42, 0.7) 100%); border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; padding: 18px; margin-bottom: 22px;">
         <div style="margin-bottom: 12px;">
           <span style="color: #64748B; font-size: 11px; text-transform: uppercase; font-weight: bold;">Repository / Target</span>
-          <div style="color: #38BDF8; font-family: monospace; font-size: 15px; font-weight: bold; margin-top: 2px;">${targetDisplay}</div>
-          ${commitHash ? `<div style="color: #64748B; font-size: 11px; font-family: monospace; margin-top: 2px;">Commit: ${commitHash.slice(0, 8)} (${triggerSource || 'push'})</div>` : ''}
+          <div style="color: #38BDF8; font-family: monospace; font-size: 15px; font-weight: bold; margin-top: 2px;">${escapeHtml(targetDisplay)}</div>
+          ${commitHash ? `<div style="color: #64748B; font-size: 11px; font-family: monospace; margin-top: 2px;">Commit: ${escapeHtml(String(commitHash).slice(0, 8))} (${escapeHtml(triggerSource || 'push')})</div>` : ''}
         </div>
 
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; border-top: 1px solid rgba(255,255,255,0.08); padding-top: 12px;">
@@ -394,7 +412,7 @@ export async function sendConsultationBookingNotification({ consultation, user }
   const planTier = consultation?.plan_tier || 'Starter'
   const bookingId = consultation?.id || 'cons_unknown'
 
-  const subject = `[SentinelAI Consultation] New 1-on-1 Advisory Request from ${clientName} (${serviceType})`
+  const subject = `[SentinelAI Consultation] New 1-on-1 Advisory Request from ${clientName} (${serviceType})`.replace(/[\r\n]+/g, ' ')
 
   const htmlContent = `
     <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 650px; margin: 0 auto; background-color: #0c0f17; color: #f1f5f9; border: 1px solid rgba(255,255,255,0.12); border-radius: 14px; padding: 28px; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5);">
@@ -413,42 +431,42 @@ export async function sendConsultationBookingNotification({ consultation, user }
           <tr>
             <td style="padding: 12px 18px; border-bottom: 1px solid rgba(255,255,255,0.08); color: #94a3b8; font-size: 13px; font-weight: 600; width: 170px;">Client</td>
             <td style="padding: 12px 18px; border-bottom: 1px solid rgba(255,255,255,0.08); color: #ffffff; font-size: 14px; font-weight: 700;">
-              ${clientName} <span style="color: #38bdf8; font-weight: normal; font-size: 13px;">(${clientEmail})</span>
+              ${escapeHtml(clientName)} <span style="color: #38bdf8; font-weight: normal; font-size: 13px;">(${escapeHtml(clientEmail)})</span>
             </td>
           </tr>
           <tr>
             <td style="padding: 12px 18px; border-bottom: 1px solid rgba(255,255,255,0.08); color: #94a3b8; font-size: 13px; font-weight: 600;">Service / Package</td>
             <td style="padding: 12px 18px; border-bottom: 1px solid rgba(255,255,255,0.08); color: #38bdf8; font-size: 14px; font-weight: 700;">
-              ${serviceType}
+              ${escapeHtml(serviceType)}
             </td>
           </tr>
           <tr>
             <td style="padding: 12px 18px; border-bottom: 1px solid rgba(255,255,255,0.08); color: #94a3b8; font-size: 13px; font-weight: 600;">Requested Specialist</td>
             <td style="padding: 12px 18px; border-bottom: 1px solid rgba(255,255,255,0.08); color: #f8fafc; font-size: 13px;">
-              ${consultantName}
+              ${escapeHtml(consultantName)}
             </td>
           </tr>
           <tr>
             <td style="padding: 12px 18px; border-bottom: 1px solid rgba(255,255,255,0.08); color: #94a3b8; font-size: 13px; font-weight: 600;">Preferred Schedule</td>
             <td style="padding: 12px 18px; border-bottom: 1px solid rgba(255,255,255,0.08); color: #f8fafc; font-size: 13px; font-weight: 600;">
-              📅 ${preferredDate} at ⏰ ${preferredTime}
+              📅 ${escapeHtml(preferredDate)} at ⏰ ${escapeHtml(preferredTime)}
             </td>
           </tr>
           <tr>
             <td style="padding: 12px 18px; border-bottom: 1px solid rgba(255,255,255,0.08); color: #94a3b8; font-size: 13px; font-weight: 600;">Meeting Platform</td>
             <td style="padding: 12px 18px; border-bottom: 1px solid rgba(255,255,255,0.08); color: #f8fafc; font-size: 13px;">
-              💻 ${meetingPlatform}
+              💻 ${escapeHtml(meetingPlatform)}
             </td>
           </tr>
           <tr>
             <td style="padding: 12px 18px; border-bottom: 1px solid rgba(255,255,255,0.08); color: #94a3b8; font-size: 13px; font-weight: 600;">Booking ID</td>
             <td style="padding: 12px 18px; border-bottom: 1px solid rgba(255,255,255,0.08); color: #64748b; font-family: monospace; font-size: 12px;">
-              ${bookingId}
+              ${escapeHtml(bookingId)}
             </td>
           </tr>
           <tr>
             <td style="padding: 14px 18px; color: #94a3b8; font-size: 13px; font-weight: 600; vertical-align: top;">Scope & Objectives</td>
-            <td style="padding: 14px 18px; color: #f1f5f9; font-size: 13px; line-height: 1.6; white-space: pre-wrap; font-family: monospace; background: rgba(0,0,0,0.3); border-radius: 6px;">${notes}</td>
+            <td style="padding: 14px 18px; color: #f1f5f9; font-size: 13px; line-height: 1.6; white-space: pre-wrap; font-family: monospace; background: rgba(0,0,0,0.3); border-radius: 6px;">${escapeHtml(notes)}</td>
           </tr>
         </tbody>
       </table>

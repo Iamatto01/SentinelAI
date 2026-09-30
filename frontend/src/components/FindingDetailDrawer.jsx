@@ -680,31 +680,78 @@ export default function FindingDetailDrawer({ finding, onClose, onStatusChange, 
 
           {tab === 'cve' && (
             <>
-              {!cveId ? <p className="text-sm text-slate-500">No CVE associated with this finding.</p> : (
+              {/* Known CVEs from scan enrichment (embedded in evidence) */}
+              {evidence.knownCves?.length > 0 && (
+                <div className="space-y-3 mb-4">
+                  <p className="text-[11px] uppercase tracking-wider text-slate-400 font-bold">
+                    Known CVEs for {evidence.product} {evidence.version} ({evidence.totalCves || evidence.knownCves.length} found on NVD)
+                  </p>
+                  <div className="space-y-2 max-h-64 overflow-y-auto">
+                    {evidence.knownCves.map((c) => (
+                      <div
+                        key={c.id}
+                        className="rounded-lg border border-white/10 bg-white/[0.02] p-3 hover:bg-white/[0.05] cursor-pointer transition-colors"
+                        onClick={() => {
+                          const id = c.id
+                          setCveBusy(true)
+                          api.cve(id).then(setCve).catch((e) => setCve({ error: e.message })).finally(() => setCveBusy(false))
+                        }}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-bold text-accent font-mono">{c.id}</span>
+                            {c.score != null && (
+                              <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${
+                                c.score >= 9 ? 'bg-red-500/20 text-red-400' :
+                                c.score >= 7 ? 'bg-orange-500/20 text-orange-400' :
+                                c.score >= 4 ? 'bg-yellow-500/20 text-yellow-400' :
+                                'bg-green-500/20 text-green-400'
+                              }`}>
+                                CVSS {c.score}
+                              </span>
+                            )}
+                          </div>
+                          <ExternalLink size={12} className="text-slate-600 shrink-0" />
+                        </div>
+                        {c.description && (
+                          <p className="text-[11px] text-slate-400 mt-1.5 leading-relaxed line-clamp-2">{c.description}</p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Primary CVE lookup */}
+              {!cveId && !evidence.knownCves?.length && <p className="text-sm text-slate-500">No CVE associated with this finding.</p>}
+              {cveId && (
                 <>
                   <button onClick={loadCve} disabled={cveBusy} className="btn-ghost">
                     {cveBusy ? <Loader2 size={15} className="animate-spin" /> : <ExternalLink size={15} />} Lookup {cveId} (NVD)
                   </button>
-                  {cve && (
-                    cve.error ? <p className="text-sm text-sev-critical">{cve.error}</p> : (
-                      <div className="space-y-3">
-                        <div className="flex items-center gap-3">
-                          <h3 className="text-base font-bold text-slate-100">{cve.id}</h3>
-                          {cve.cvss?.score != null && <SeverityBadge severity={(cve.severity || '').toLowerCase()} />}
-                          {cve.cvss?.score != null && <span className="text-sm text-slate-300">{cve.cvss.score}/10</span>}
-                          {cve.cached && <span className="text-[10px] text-slate-600">(cached)</span>}
-                        </div>
-                        <p className="text-sm text-slate-300 whitespace-pre-wrap">{cve.description}</p>
-                        {cve.cvss?.vector && <p className="text-xs font-mono text-slate-500">{cve.cvss.vector}</p>}
-                        {cve.weaknesses?.length > 0 && <div className="flex flex-wrap gap-1.5">{cve.weaknesses.map((w) => <span key={w} className="chip bg-ink-700 text-slate-300 border border-ink-600 text-[11px]">{w}</span>)}</div>}
-                        {cve.references?.length > 0 && (
-                          <div><p className="label">References</p>
-                            <ul className="space-y-1">{cve.references.map((r) => <li key={r}><a href={r} target="_blank" rel="noreferrer" className="text-xs text-accent hover:underline break-all">{r}</a></li>)}</ul></div>
-                        )}
-                      </div>
-                    )
-                  )}
                 </>
+              )}
+
+              {/* CVE detail view (loaded on click or primary lookup) */}
+              {cve && (
+                cve.error ? <p className="text-sm text-sev-critical">{cve.error}</p> : (
+                  <div className="space-y-3 mt-3 rounded-xl border border-accent/20 bg-accent/[0.03] p-4">
+                    <div className="flex items-center gap-3">
+                      <h3 className="text-base font-bold text-slate-100">{cve.id}</h3>
+                      {cve.cvss?.score != null && <SeverityBadge severity={(cve.severity || '').toLowerCase()} />}
+                      {cve.cvss?.score != null && <span className="text-sm text-slate-300">{cve.cvss.score}/10</span>}
+                      {cve.cached && <span className="text-[10px] text-slate-600">(cached)</span>}
+                      <button onClick={() => setCve(null)} className="ml-auto text-slate-500 hover:text-slate-300 text-xs">✕ Close</button>
+                    </div>
+                    <p className="text-sm text-slate-300 whitespace-pre-wrap">{cve.description}</p>
+                    {cve.cvss?.vector && <p className="text-xs font-mono text-slate-500">{cve.cvss.vector}</p>}
+                    {cve.weaknesses?.length > 0 && <div className="flex flex-wrap gap-1.5">{cve.weaknesses.map((w) => <span key={w} className="chip bg-ink-700 text-slate-300 border border-ink-600 text-[11px]">{w}</span>)}</div>}
+                    {cve.references?.length > 0 && (
+                      <div><p className="label">References</p>
+                        <ul className="space-y-1">{cve.references.map((r) => <li key={r}><a href={r} target="_blank" rel="noreferrer" className="text-xs text-accent hover:underline break-all">{r}</a></li>)}</ul></div>
+                    )}
+                  </div>
+                )
               )}
             </>
           )}

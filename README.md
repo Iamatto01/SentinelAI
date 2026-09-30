@@ -381,7 +381,7 @@ python deploy-kali.py
 The script automatically:
 1. Packages the repository into a lightweight `sentinel-deploy.tar.gz` (excluding heavy folders like `node_modules`).
 2. Connects to the Kali server over SSH/SFTP.
-3. Extracts cleanly into `/home/kali/SentinelAI`.
+3. Extracts cleanly into `/home/kali/server/SentinelAI`.
 4. Runs `npm run build` to generate optimized production frontend bundles.
 5. Safely restarts the backend daemon and services.
 

@@ -8,9 +8,11 @@ export async function apiFetch(path, { method = 'GET', body, headers = {} } = {}
   const token = getToken()
   const res = await fetch(path, {
     method,
+    cache: method === 'GET' ? 'no-store' : undefined,
     headers: {
       ...(body ? { 'Content-Type': 'application/json' } : {}),
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(method === 'GET' ? { 'Cache-Control': 'no-cache, no-store, must-revalidate', 'Pragma': 'no-cache' } : {}),
       ...headers,
     },
     body: body ? JSON.stringify(body) : undefined,
@@ -91,6 +93,7 @@ export const api = {
   updateCustomScript: (id, body) => apiFetch(`/api/scripts/${id}`, { method: 'PUT', body }),
   deleteCustomScript: (id) => apiFetch(`/api/scripts/${id}`, { method: 'DELETE' }),
   testCustomScript: (id, target) => apiFetch(`/api/scripts/${id}/test`, { method: 'POST', body: { target } }),
+  seedCustomScripts: () => apiFetch('/api/scripts/seed-defaults', { method: 'POST' }),
 
   // ── Exploit Engine ──
   msfStatus: () => apiFetch('/api/exploits/msf/status'),
@@ -109,6 +112,7 @@ export const api = {
   checkExploit: (findingId) => apiFetch('/api/exploits/check', { method: 'POST', body: { findingId } }),
   createBackup: () => apiFetch('/api/backup/create', { method: 'POST' }),
   exportBackupUrl: '/api/backup/export',
+  rawBackupUrl: '/api/backup/raw',
   auditLogs: (limit = 50) => apiFetch(`/api/audit?limit=${limit}`),
 
   // ── Auth & Registration ──

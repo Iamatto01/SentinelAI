@@ -2,8 +2,8 @@ import fs from 'node:fs'
 import path from 'node:path'
 import Database from 'better-sqlite3'
 
-const HDD_BASE = '/mnt/external_hdd/SentinelAI_Data'
-const TARGET_DB_PATH = process.env.DB_PATH || (fs.existsSync('/mnt/external_hdd') ? path.join(HDD_BASE, 'fyp2.db') : path.resolve('output', 'fyp2.db'))
+const HDD_BASE = '/home/kali/server/SentinelAI_Data'
+const TARGET_DB_PATH = process.env.DB_PATH || (fs.existsSync('/home/kali/server') ? path.join(HDD_BASE, 'fyp2.db') : path.resolve('output', 'fyp2.db'))
 const BACKUP_DIR = path.join(path.dirname(TARGET_DB_PATH), 'backups')
 const REPORTS_DIR = path.join(path.dirname(TARGET_DB_PATH), 'reports')
 
@@ -60,6 +60,7 @@ const allProjects = new Map()
 const allUsers = new Map()
 const allConfigs = new Map()
 const allMonitors = new Map()
+const allCustomScripts = new Map()
 const allAudit = []
 
 for (const dbFile of candidateFiles) {
@@ -119,6 +120,13 @@ for (const dbFile of candidateFiles) {
       }
     }
 
+    if (tables.includes('custom_scripts')) {
+      const scripts = db.prepare('SELECT * FROM custom_scripts').all()
+      for (const cs of scripts) {
+        if (!allCustomScripts.has(cs.id)) allCustomScripts.set(cs.id, cs)
+      }
+    }
+
     console.log(`   📂 ${dbFile}: ${sCount} scans, ${fCount} findings`)
     db.close()
   } catch (err) {
@@ -134,6 +142,7 @@ console.log(`   - Scans:     ${allScans.size}`)
 console.log(`   - Findings:  ${allFindings.size}`)
 console.log(`   - Configs:   ${allConfigs.size}`)
 console.log(`   - Monitors:  ${allMonitors.size}`)
+console.log(`   - Scripts:   ${allCustomScripts.size}`)
 console.log('-----------------------------------------------------\n')
 
 // Create / Initialize Target Master DB using schema
@@ -308,6 +317,39 @@ const tx = targetDb.transaction(() => {
       last_risk: m.last_risk ?? null,
       next_run: m.next_run || null,
       created_at: m.created_at || new Date().toISOString(),
+    })
+  }
+
+  // Custom Scripts
+  const insScript = targetDb.prepare(`
+    INSERT INTO custom_scripts (
+      id, name, description, language, command, trigger_point, enabled, severity_floor, created_at, updated_at
+    )
+    VALUES (
+      @id, @name, @description, @language, @command, @trigger_point, @enabled, @severity_floor, @created_at, @updated_at
+    )
+    ON CONFLICT(id) DO UPDATE SET
+      name = excluded.name,
+      description = excluded.description,
+      language = excluded.language,
+      command = excluded.command,
+      trigger_point = excluded.trigger_point,
+      enabled = excluded.enabled,
+      severity_floor = excluded.severity_floor,
+      updated_at = excluded.updated_at
+  `)
+  for (const cs of allCustomScripts.values()) {
+    insScript.run({
+      id: cs.id,
+      name: cs.name,
+      description: cs.description || '',
+      language: cs.language || 'bash',
+      command: cs.command,
+      trigger_point: cs.trigger_point || 'post-scan',
+      enabled: cs.enabled ?? 1,
+      severity_floor: cs.severity_floor || 'info',
+      created_at: cs.created_at || new Date().toISOString(),
+      updated_at: cs.updated_at || new Date().toISOString(),
     })
   }
 })

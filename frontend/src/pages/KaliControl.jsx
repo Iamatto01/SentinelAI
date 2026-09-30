@@ -23,8 +23,65 @@ import {
   Zap,
   Bot,
   MessageSquare,
+  FileCode,
+  Sparkles,
 } from 'lucide-react'
 import { api } from '../lib/api.js'
+import CustomScripts from './CustomScripts.jsx'
+
+const KALI_COMMAND_SUGGESTIONS = [
+  // Recon & Scanning
+  { cmd: 'nmap -sV -sC -T4', desc: 'Service detection & default NSE scripts', cat: 'Recon' },
+  { cmd: 'nmap -p- -T4', desc: 'Scan all 65,535 TCP ports', cat: 'Recon' },
+  { cmd: 'nmap --script vuln', desc: 'Run all NSE vulnerability scripts', cat: 'Recon' },
+  { cmd: 'nmap -F', desc: 'Fast scan (top 100 ports)', cat: 'Recon' },
+  { cmd: 'nuclei -u', desc: 'Template vulnerability scanner on target URL', cat: 'Scanner' },
+  { cmd: 'nuclei -severity critical,high', desc: 'Scan target for Critical and High CVE templates', cat: 'Scanner' },
+  { cmd: 'nikto -h', desc: 'Web server misconfiguration & dangerous file audit', cat: 'Scanner' },
+  { cmd: 'whatweb', desc: 'Next-gen web scanner to identify CMS, frameworks & headers', cat: 'Recon' },
+  { cmd: 'wafw00f', desc: 'Detect and fingerprint Web Application Firewall (WAF)', cat: 'Recon' },
+  { cmd: 'subfinder -d', desc: 'Fast passive subdomain discovery', cat: 'OSINT' },
+  { cmd: 'amass enum -d', desc: 'In-depth attack surface enumeration', cat: 'OSINT' },
+  { cmd: 'katana -u', desc: 'Next-generation web crawler & endpoint discovery', cat: 'Crawler' },
+
+  // Web & Exploitation
+  { cmd: 'sqlmap -u', desc: 'Automated SQL injection audit & takeover tool', cat: 'Web' },
+  { cmd: 'sqlmap --batch --dbs', desc: 'Automated SQLi scan and enumerate databases', cat: 'Web' },
+  { cmd: 'ffuf -u http://TARGET/FUZZ -w /usr/share/wordlists/dirb/common.txt', desc: 'High-speed web fuzzer for hidden paths', cat: 'Fuzzer' },
+  { cmd: 'gobuster dir -u', desc: 'Brute-force directories and file paths', cat: 'Fuzzer' },
+  { cmd: 'dalfox url', desc: 'Powerful parameter analysis & XSS scanner', cat: 'Web' },
+  { cmd: 'arjun -u', desc: 'HTTP parameter discovery for hidden parameters', cat: 'Web' },
+  { cmd: 'wpscan --url', desc: 'WordPress security audit for themes, plugins & users', cat: 'CMS' },
+  { cmd: 'hydra', desc: 'Fast parallelized network logon brute-forcer', cat: 'Auth' },
+  { cmd: 'msfconsole -q', desc: 'Metasploit Framework console (quiet mode)', cat: 'Exploit' },
+
+  // Core Daemons & Services
+  { cmd: 'systemctl status sentinelai', desc: 'Inspect SentinelAI backend daemon status', cat: 'Service' },
+  { cmd: 'systemctl restart sentinelai', desc: 'Restart SentinelAI background engine service', cat: 'Service' },
+  { cmd: 'systemctl status msfrpcd', desc: 'Inspect Metasploit RPC daemon status', cat: 'Service' },
+  { cmd: 'systemctl restart msfrpcd', desc: 'Restart Metasploit RPC daemon', cat: 'Service' },
+  { cmd: 'systemctl status avahi-daemon', desc: 'Inspect Avahi mDNS local discovery daemon', cat: 'Service' },
+  { cmd: 'systemctl restart avahi-daemon', desc: 'Restart Avahi mDNS service', cat: 'Service' },
+  { cmd: 'journalctl -u sentinelai -n 50 --no-pager', desc: 'Display latest 50 lines of SentinelAI service log', cat: 'Logs' },
+
+  // Network Telemetry
+  { cmd: 'ip a', desc: 'Display all network interfaces and assigned IP addresses', cat: 'Network' },
+  { cmd: 'ip route', desc: 'Display IP kernel routing table', cat: 'Network' },
+  { cmd: 'ss -tulpn', desc: 'List active listening TCP and UDP sockets with PIDs', cat: 'Network' },
+  { cmd: 'netstat -tuln', desc: 'Display listening network sockets', cat: 'Network' },
+  { cmd: 'ping -c 4 8.8.8.8', desc: 'Test outbound ICMP connectivity to Google DNS', cat: 'Network' },
+  { cmd: 'curl -I', desc: 'Fetch HTTP response headers only', cat: 'Network' },
+
+  // System Diagnostics
+  { cmd: 'uptime', desc: 'Show system uptime, active users, and load averages', cat: 'System' },
+  { cmd: 'free -h', desc: 'Display free and used memory in human-readable format', cat: 'System' },
+  { cmd: 'df -h', desc: 'Display disk filesystem space usage', cat: 'System' },
+  { cmd: 'uname -a', desc: 'Display operating system kernel, hostname & architecture', cat: 'System' },
+  { cmd: 'whoami', desc: 'Print effective current user name', cat: 'System' },
+  { cmd: 'cat /etc/os-release', desc: 'Display Kali Linux distribution release details', cat: 'System' },
+  { cmd: 'ps aux --sort=-%cpu | head -n 10', desc: 'List top 10 CPU-consuming processes', cat: 'System' },
+  { cmd: 'ps aux --sort=-%mem | head -n 10', desc: 'List top 10 RAM-consuming processes', cat: 'System' },
+]
 
 export default function KaliControl() {
   const [sysInfo, setSysInfo] = useState(null)
@@ -33,15 +90,30 @@ export default function KaliControl() {
   const [serviceBusy, setServiceBusy] = useState(null)
   const [toolsInstalling, setToolsInstalling] = useState(false)
   const [copiedIface, setCopiedIface] = useState(null)
+  const [activeMainTab, setActiveMainTab] = useState('terminal') // 'terminal' | 'scripts'
 
   // Terminal state
   const [command, setCommand] = useState('')
   const [termBusy, setTermBusy] = useState(false)
   const [history, setHistory] = useState([
     { type: 'sys', text: '=== Kali Linux Remote Control Console Initialized ===' },
-    { type: 'sys', text: 'Type a shell command below or click a preset button to execute directly on the Kali host.' },
+    { type: 'sys', text: 'Type a shell command below (with Tab-to-complete) or click a preset button.' },
   ])
   const termContainerRef = useRef(null)
+
+  // Autocomplete & Tab-completion state
+  const [commandHistory, setCommandHistory] = useState(() => {
+    try {
+      const saved = sessionStorage.getItem('kali_cmd_history')
+      return saved ? JSON.parse(saved) : ['uptime', 'ip a', 'free -h', 'nmap -V']
+    } catch { return [] }
+  })
+  const [historyIndex, setHistoryIndex] = useState(-1)
+  const [suggestions, setSuggestions] = useState([])
+  const [ghostCompletion, setGhostCompletion] = useState('')
+  const [selectedSuggestionIndex, setSelectedSuggestionIndex] = useState(0)
+  const [showSuggestions, setShowSuggestions] = useState(false)
+  const cmdInputRef = useRef(null)
 
   // AI chatbox state
   const [aiInput, setAiInput] = useState('')
@@ -54,6 +126,120 @@ export default function KaliControl() {
   const [isLooping, setIsLooping] = useState(false) // Currently executing an iterative loop
   const [lastError, setLastError] = useState(null) // { cmd, error }
   const aiChatRef = useRef(null)
+
+  // Autocomplete matching effect
+  useEffect(() => {
+    const inputTrim = command.trim().toLowerCase()
+    if (!inputTrim) {
+      setSuggestions([])
+      setGhostCompletion('')
+      return
+    }
+
+    const installedTools = (toolsData?.tools || [])
+      .filter((t) => t.installed)
+      .map((t) => ({ cmd: `${t.id} --help`, desc: `${t.id} pentest utility (installed)`, cat: 'Tool' }))
+
+    const pool = [...KALI_COMMAND_SUGGESTIONS, ...installedTools]
+
+    const startsWithMatches = pool.filter((item) =>
+      item.cmd.toLowerCase().startsWith(inputTrim)
+    )
+    const includesMatches = pool.filter(
+      (item) =>
+        !item.cmd.toLowerCase().startsWith(inputTrim) &&
+        (item.cmd.toLowerCase().includes(inputTrim) || item.desc.toLowerCase().includes(inputTrim))
+    )
+
+    const matches = [...startsWithMatches, ...includesMatches].slice(0, 5)
+    setSuggestions(matches)
+    setSelectedSuggestionIndex(0)
+
+    if (startsWithMatches.length > 0) {
+      const bestCmd = startsWithMatches[0].cmd
+      setGhostCompletion(bestCmd.slice(command.length))
+    } else {
+      setGhostCompletion('')
+    }
+  }, [command, toolsData])
+
+  function recordCommand(cmd) {
+    setCommandHistory((prev) => {
+      const updated = [cmd, ...prev.filter((c) => c !== cmd)].slice(0, 50)
+      try { sessionStorage.setItem('kali_cmd_history', JSON.stringify(updated)) } catch {}
+      return updated
+    })
+    setHistoryIndex(-1)
+  }
+
+  function handleKeyDown(e) {
+    // Tab key: Autocomplete!
+    if (e.key === 'Tab') {
+      e.preventDefault()
+      if (suggestions.length > 0) {
+        const chosen = suggestions[selectedSuggestionIndex]?.cmd || suggestions[0].cmd
+        setCommand(chosen)
+        setGhostCompletion('')
+        setShowSuggestions(false)
+      } else if (ghostCompletion) {
+        setCommand(command + ghostCompletion)
+        setGhostCompletion('')
+        setShowSuggestions(false)
+      }
+      return
+    }
+
+    // ArrowRight: accept ghost completion if cursor is at the end
+    if (e.key === 'ArrowRight' && ghostCompletion) {
+      const input = e.currentTarget
+      if (input.selectionStart === command.length) {
+        e.preventDefault()
+        setCommand(command + ghostCompletion)
+        setGhostCompletion('')
+        setShowSuggestions(false)
+        return
+      }
+    }
+
+    // ArrowDown: navigate suggestions or history
+    if (e.key === 'ArrowDown') {
+      if (showSuggestions && suggestions.length > 0) {
+        e.preventDefault()
+        setSelectedSuggestionIndex((prev) => (prev + 1) % suggestions.length)
+      } else if (commandHistory.length > 0) {
+        e.preventDefault()
+        if (historyIndex > 0) {
+          const nextIdx = historyIndex - 1
+          setHistoryIndex(nextIdx)
+          setCommand(commandHistory[nextIdx] || '')
+        } else if (historyIndex === 0) {
+          setHistoryIndex(-1)
+          setCommand('')
+        }
+      }
+      return
+    }
+
+    // ArrowUp: navigate suggestions or history
+    if (e.key === 'ArrowUp') {
+      if (showSuggestions && suggestions.length > 0) {
+        e.preventDefault()
+        setSelectedSuggestionIndex((prev) => (prev - 1 + suggestions.length) % suggestions.length)
+      } else if (commandHistory.length > 0) {
+        e.preventDefault()
+        const nextIdx = Math.min(historyIndex + 1, commandHistory.length - 1)
+        setHistoryIndex(nextIdx)
+        setCommand(commandHistory[nextIdx] || '')
+      }
+      return
+    }
+
+    // Escape: dismiss suggestion palette
+    if (e.key === 'Escape') {
+      setShowSuggestions(false)
+      return
+    }
+  }
 
   useEffect(() => {
     loadData()
@@ -119,7 +305,10 @@ export default function KaliControl() {
   async function handleExec(cmdToRun) {
     const cmd = (cmdToRun || command).trim()
     if (!cmd) return { ok: false, error: 'Empty command' }
+    recordCommand(cmd)
     setCommand('')
+    setGhostCompletion('')
+    setShowSuggestions(false)
     setTermBusy(true)
 
     setHistory((prev) => [...prev, { type: 'cmd', text: `$ ${cmd}` }])
@@ -300,6 +489,16 @@ export default function KaliControl() {
     setTimeout(() => setCopiedIface(null), 2000)
   }
 
+  function formatDiskSize(val) {
+    if (!val || val === 'N/A') return '0 GB'
+    if (/\s*(GB|MB|TB|KB)$/i.test(val)) return val
+    return String(val)
+      .replace(/([0-9.]+)G$/i, '$1 GB')
+      .replace(/([0-9.]+)M$/i, '$1 MB')
+      .replace(/([0-9.]+)T$/i, '$1 TB')
+      .replace(/([0-9.]+)K$/i, '$1 KB')
+  }
+
   function formatUptime(sec) {
     if (!sec) return 'N/A'
     const days = Math.floor(sec / 86400)
@@ -310,6 +509,7 @@ export default function KaliControl() {
 
   const presets = [
     { label: 'Storage & Disks', cmd: 'df -h && echo "" && lsblk -o NAME,SIZE,TYPE,MOUNTPOINT,FSTYPE,LABEL' },
+    { label: 'Expand Disk (growpart & resize2fs)', cmd: 'sudo growpart /dev/sda 1 && sudo resize2fs /dev/sda1 && df -h' },
     { label: 'Top Processes (htop)', cmd: 'htop' },
     { label: 'Memory & Swap', cmd: 'free -h' },
     { label: 'Check IP Addresses', cmd: 'ip -br addr show' },
@@ -332,7 +532,7 @@ export default function KaliControl() {
 
   return (
     <div className="space-y-6 motion-fade-up">
-      {/* Header Banner */}
+      {/* Header Banner & Mode Tabs */}
       <div className="card p-6 border border-white/[0.07] bg-[#161616] flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div className="z-10">
           <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-red-500/15 border border-red-500/30 text-red-300 text-xs font-bold mb-2">
@@ -345,11 +545,35 @@ export default function KaliControl() {
             </span>
           </h1>
           <p className="text-xs sm:text-sm text-slate-400 mt-1">
-            Real-time telemetry, service controller, security tools manager, and interactive Linux command terminal.
+            Real-time telemetry, service controller, custom pipeline scripts, and interactive shell with Tab-to-complete.
           </p>
         </div>
 
-        <div className="flex items-center gap-3 z-10 shrink-0">
+        <div className="flex items-center gap-3 z-10 shrink-0 flex-wrap">
+          {/* Mode Switcher: Terminal vs Custom Scripts */}
+          <div className="flex items-center p-1 rounded-xl bg-slate-900 border border-white/10">
+            <button
+              onClick={() => setActiveMainTab('terminal')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                activeMainTab === 'terminal'
+                  ? 'bg-cyan-500 text-slate-950 shadow-md font-extrabold'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <TerminalIcon size={13} /> Terminal &amp; Host
+            </button>
+            <button
+              onClick={() => setActiveMainTab('scripts')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                activeMainTab === 'scripts'
+                  ? 'bg-purple-500 text-white shadow-md font-extrabold'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <FileCode size={13} /> Custom Scripts
+            </button>
+          </div>
+
           <button
             onClick={loadData}
             className="btn-ghost text-xs py-2 px-3 flex items-center gap-1.5 hover:text-cyan-300"
@@ -359,7 +583,11 @@ export default function KaliControl() {
         </div>
       </div>
 
-      {/* System Telemetry Stats Grid */}
+      {activeMainTab === 'scripts' ? (
+        <CustomScripts />
+      ) : (
+        <>
+          {/* System Telemetry Stats Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* Host & Kernel */}
         <div className="card p-5 border border-white/10 space-y-2">
@@ -412,7 +640,7 @@ export default function KaliControl() {
             <HardDrive size={18} className="text-emerald-400" />
           </div>
           <div className="font-extrabold text-lg text-white font-mono flex items-center justify-between">
-            <span>{sysInfo?.disk?.used || '0G'} / {sysInfo?.disk?.total || '0G'}</span>
+            <span>{formatDiskSize(sysInfo?.disk?.used)} / {formatDiskSize(sysInfo?.disk?.total)}</span>
             <span className="text-xs font-bold text-emerald-400">{sysInfo?.disk?.percent || '0%'}</span>
           </div>
           <div className="text-[11px] text-slate-400 font-mono flex items-center gap-1">
@@ -622,31 +850,101 @@ export default function KaliControl() {
             )}
           </div>
 
-          {/* Command Input Bar */}
+          {/* Command Input Bar with Autocomplete & Ghost Text */}
           <form
             onSubmit={(e) => {
               e.preventDefault()
               handleExec()
             }}
-            className="flex items-center gap-2 pt-2"
+            className="flex items-center gap-2 pt-2 relative"
           >
+            {/* Floating Suggestions Palette */}
+            {showSuggestions && suggestions.length > 0 && (
+              <div className="absolute bottom-full left-0 right-14 mb-2 p-2 rounded-2xl bg-slate-950/95 border border-cyan-500/40 shadow-2xl backdrop-blur-xl z-40 max-h-60 overflow-y-auto space-y-1 animate-in fade-in slide-in-from-bottom-2 duration-150">
+                <div className="flex items-center justify-between px-2 py-1 text-[10px] text-slate-400 font-mono border-b border-white/10 pb-1.5 mb-1">
+                  <span className="flex items-center gap-1.5 text-cyan-300 font-bold">
+                    <Sparkles size={12} className="text-cyan-400" /> Command Autocomplete ({suggestions.length})
+                  </span>
+                  <span className="flex items-center gap-1 text-[10px]">
+                    Press <kbd className="px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-300 font-bold border border-cyan-500/30">Tab ⇥</kbd> to complete • <kbd className="px-1 py-0.5 rounded bg-white/10 text-slate-300">↑/↓</kbd> navigate
+                  </span>
+                </div>
+                {suggestions.map((item, idx) => (
+                  <button
+                    key={item.cmd}
+                    type="button"
+                    onMouseDown={(e) => {
+                      e.preventDefault()
+                      setCommand(item.cmd)
+                      setGhostCompletion('')
+                      setShowSuggestions(false)
+                      if (cmdInputRef.current) cmdInputRef.current.focus()
+                    }}
+                    className={`w-full text-left p-2 rounded-xl transition-all flex items-center justify-between gap-3 text-xs font-mono cursor-pointer ${
+                      idx === selectedSuggestionIndex
+                        ? 'bg-cyan-500/20 text-white border border-cyan-400/40 shadow-[0_0_12px_rgba(0,242,254,0.2)]'
+                        : 'text-slate-300 hover:bg-white/5 border border-transparent'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="text-[10px] uppercase font-bold px-1.5 py-0.5 rounded bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 shrink-0">
+                        {item.cat}
+                      </span>
+                      <span className="font-bold text-white truncate">{item.cmd}</span>
+                    </div>
+                    <span className="text-[11px] text-slate-400 truncate max-w-[45%] text-right font-sans">
+                      {item.desc}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+
             <div className="relative flex-1">
-              <span className="absolute left-3.5 top-1/2 -translate-y-1/2 font-mono text-cyan-400 text-sm font-bold">
+              <span className="absolute left-3.5 top-1/2 -translate-y-1/2 font-mono text-cyan-400 text-sm font-bold pointer-events-none z-20">
                 $
               </span>
+
+              {/* Inline Ghost Text Preview (Fish/Zsh Style) */}
+              {ghostCompletion && (
+                <div
+                  className="absolute inset-0 pl-8 pr-4 py-2.5 font-mono text-xs text-slate-500 pointer-events-none flex items-center overflow-hidden whitespace-pre select-none z-10"
+                  aria-hidden="true"
+                >
+                  <span className="opacity-0">{command}</span>
+                  <span className="text-slate-500/70 italic">{ghostCompletion}</span>
+                  <span className="ml-2 px-1.5 py-0.5 rounded text-[9px] bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 font-sans font-extrabold flex items-center gap-1">
+                    Tab ⇥
+                  </span>
+                </div>
+              )}
+
               <input
+                ref={cmdInputRef}
                 type="text"
                 value={command}
-                onChange={(e) => setCommand(e.target.value)}
-                placeholder="Enter Kali shell command (e.g. nmap --version, ip a, whoami)..."
+                onChange={(e) => {
+                  setCommand(e.target.value)
+                  setShowSuggestions(true)
+                }}
+                onFocus={() => {
+                  if (command.trim()) setShowSuggestions(true)
+                }}
+                onBlur={() => {
+                  setTimeout(() => setShowSuggestions(false), 200)
+                }}
+                onKeyDown={handleKeyDown}
+                placeholder="Enter Kali shell command (press Tab to complete, e.g. nmap, nuclei, ip a)..."
                 disabled={termBusy}
-                className="input pl-8 font-mono text-xs"
+                className="input pl-8 font-mono text-xs relative bg-transparent z-10 w-full"
+                autoComplete="off"
+                spellCheck="false"
               />
             </div>
             <button
               type="submit"
               disabled={termBusy || !command.trim()}
-              className="btn-primary text-xs py-2.5 px-4 shadow-glow flex items-center gap-1.5"
+              className="btn-primary text-xs py-2.5 px-4 shadow-glow flex items-center gap-1.5 shrink-0"
             >
               {termBusy ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />} Run
             </button>
@@ -839,6 +1137,8 @@ export default function KaliControl() {
           ))}
         </div>
       </div>
+        </>
+      )}
     </div>
   )
 }

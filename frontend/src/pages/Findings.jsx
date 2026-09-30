@@ -64,7 +64,7 @@ const SEVS = ['all', 'critical', 'high', 'medium', 'low', 'info']
 const STATUSES = ['all', 'open', 'confirmed', 'in-progress', 'fixed', 'accepted', 'false-positive']
 
 export default function Findings() {
-  const { drawerFinding, setDrawerFinding } = useAi()
+  const { drawerFinding, setDrawerFinding, setActiveTabOverride } = useAi()
   const [findings, setFindings] = useState(null)
   const [projects, setProjects] = useState([])
   const [scans, setScans] = useState([])
@@ -90,13 +90,27 @@ export default function Findings() {
     }
   }, [drawerFinding])
 
-  async function handleCreateBackup() {
+  async function handleCreateBackup(format = 'json') {
     setBackingUp(true)
     setBackupMsg('')
     try {
       await api.createBackup()
-      setBackupMsg('Database backed up! Downloading JSON backup…')
-      window.open(api.exportBackupUrl, '_blank')
+      setBackupMsg(`Database backup created! Downloading ${format.toUpperCase()}...`)
+      
+      const token = localStorage.getItem('fyp2_token') || ''
+      const downloadPath = format === 'db' ? api.rawBackupUrl : api.exportBackupUrl
+      const res = await fetch(downloadPath, {
+        headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      })
+      if (!res.ok) throw new Error(`Download failed (${res.status})`)
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = format === 'db' ? `sentinelai_backup_${Date.now()}.db` : `sentinelai_findings_backup_${Date.now()}.json`
+      document.body.appendChild(a)
+      a.click()
+      setTimeout(() => { URL.revokeObjectURL(url); document.body.removeChild(a) }, 1000)
     } catch (e) {
       setBackupMsg(`Backup failed: ${e.message}`)
     } finally {
@@ -156,22 +170,36 @@ export default function Findings() {
     setExploitMessage('')
     try {
       const result = await api.launchExploitCampaign(findingId)
+      const f = findings.find(x => x.id === findingId)
       if (result.campaignId) {
         setExploitMessage(`Campaign launched: ${result.campaignId}`)
-        const f = findings.find(x => x.id === findingId)
-        if (f) setSelected(f)
+        if (f) {
+          setSelected(f)
+          setActiveTabOverride?.('exploit')
+        }
       } else if (result.alreadyExists) {
-        setExploitMessage('Campaign already exists')
-        const f = findings.find(x => x.id === findingId)
-        if (f) setSelected(f)
+        setExploitMessage('Campaign already exists — opened exploit console')
+        if (f) {
+          setSelected(f)
+          setActiveTabOverride?.('exploit')
+        }
       } else {
-        setExploitMessage(`No match: ${result.status || 'unknown'}`)
+        setExploitMessage(`Exploit check: ${result.status || 'no direct automated payload'}`)
+        if (f) {
+          setSelected(f)
+          setActiveTabOverride?.('exploit')
+        }
       }
     } catch (e) {
-      setExploitMessage(`Error: ${e.message}`)
+      setExploitMessage(`Exploit check: ${e.message}`)
+      const f = findings.find(x => x.id === findingId)
+      if (f) {
+        setSelected(f)
+        setActiveTabOverride?.('exploit')
+      }
     } finally {
       setExploitingId(null)
-      setTimeout(() => setExploitMessage(''), 5000)
+      setTimeout(() => setExploitMessage(''), 8000)
     }
   }
 
@@ -236,11 +264,17 @@ export default function Findings() {
               {backupMsg}
             </span>
           )}
+          {exploitMessage && (
+            <span className="text-xs text-purple-300 bg-purple-500/15 border border-purple-400/30 px-3 py-1.5 rounded-xl font-bold flex items-center gap-1.5">
+              <Crosshair size={13} className="text-purple-400 animate-pulse" />
+              {exploitMessage}
+            </span>
+          )}
           <button
-            onClick={handleCreateBackup}
+            onClick={() => handleCreateBackup('json')}
             disabled={backingUp}
             className="btn-ghost text-xs border-cyan-400/40 text-cyan-300 hover:bg-cyan-500/15 flex items-center gap-1.5"
-            title="Create instant backup"
+            title="Create instant backup and download JSON"
           >
             {backingUp ? <Loader2 size={14} className="animate-spin text-cyan-400" /> : <Database size={14} />}
             Backup Database

@@ -56,34 +56,96 @@ export default function Shell() {
     }
   }, [user, location.pathname])
 
-  const adminNav = [
-    { to: '/app/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-    { to: '/app/kali-control', label: 'Kali Control', icon: Terminal },
-    { to: '/app/clients', label: 'Clients', icon: Users },
-    { to: '/app/scans', label: 'All Scans', icon: Radar },
-    { to: '/app/github', label: 'GitHub Auto', icon: GitBranch },
-    { to: '/app/exploits', label: 'Exploits', icon: Crosshair },
-    { to: '/app/findings', label: 'Findings', icon: Bug },
-    { to: '/app/monitoring', label: 'Monitoring', icon: Activity },
-    { to: '/app/consultants', label: 'Consultations', icon: UserCheck },
-    { to: '/app/integrations', label: 'Integrations', icon: Plug },
-    { to: '/app/custom-scripts', label: 'Custom Scripts', icon: FileCode },
-    { to: '/app/billing', label: 'Billing & Plans', icon: CreditCard },
-    { to: '/app/settings', label: 'Settings', icon: SettingsIcon },
+  const adminSections = [
+    {
+      title: 'Operations',
+      items: [
+        { to: '/app/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+        {
+          to: '/app/scans',
+          label: 'Security Scans',
+          icon: Radar,
+          subItems: [
+            { to: '/app/scans', label: 'Target Scans' },
+            { to: '/app/github', label: 'GitHub CI/CD' },
+          ]
+        },
+        { to: '/app/findings', label: 'Findings', icon: Bug },
+        { to: '/app/exploits', label: 'Exploit Lab', icon: Crosshair },
+      ]
+    },
+    {
+      title: 'Kali Engine',
+      items: [
+        {
+          to: '/app/kali-control',
+          label: 'Kali Console',
+          icon: Terminal,
+          subItems: [
+            { to: '/app/kali-control', label: 'Host & Terminal' },
+            { to: '/app/custom-scripts', label: 'Custom Scripts' },
+          ]
+        },
+        { to: '/app/monitoring', label: 'Telemetry', icon: Activity },
+      ]
+    },
+    {
+      title: 'Management',
+      items: [
+        {
+          to: '/app/clients',
+          label: 'Clients & Advisory',
+          icon: Users,
+          subItems: [
+            { to: '/app/clients', label: 'Client Accounts' },
+            { to: '/app/consultants', label: 'Consultations' },
+          ]
+        },
+        {
+          to: '/app/settings',
+          label: 'Settings',
+          icon: SettingsIcon,
+          subItems: [
+            { to: '/app/settings', label: 'General & AI' },
+            { to: '/app/integrations', label: 'Integrations' },
+            { to: '/app/billing', label: 'Billing & Plans' },
+          ]
+        },
+      ]
+    }
   ]
 
-  const clientNav = [
-    { to: '/app/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-    { to: '/app/scans', label: 'My Scans', icon: Radar },
-    { to: '/app/github', label: 'GitHub Automation', icon: GitBranch },
-    { to: '/app/findings', label: 'Vulnerability Findings', icon: Bug },
-    { to: '/app/consultants', label: 'Hire Security Expert', icon: UserCheck },
-    { to: '/app/billing', label: 'Billing & Quota', icon: CreditCard },
-    { to: '/app/settings', label: 'Settings', icon: SettingsIcon },
+  const clientSections = [
+    {
+      title: 'Operations',
+      items: [
+        { to: '/app/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+        {
+          to: '/app/scans',
+          label: 'My Scans',
+          icon: Radar,
+          subItems: [
+            { to: '/app/scans', label: 'Target Scans' },
+            { to: '/app/github', label: 'GitHub CI/CD' },
+          ]
+        },
+        { to: '/app/findings', label: 'Findings', icon: Bug },
+      ]
+    },
+    {
+      title: 'Account & Advisory',
+      items: [
+        { to: '/app/consultants', label: 'Hire Expert', icon: UserCheck },
+        { to: '/app/billing', label: 'Billing & Quota', icon: CreditCard },
+        { to: '/app/settings', label: 'Settings', icon: SettingsIcon },
+      ]
+    }
   ]
 
-  const navItems = isAdmin ? adminNav : clientNav
-  const currentNav = navItems.find(n => location.pathname.startsWith(n.to)) || { label: 'Platform' }
+  const navSections = isAdmin ? adminSections : clientSections
+  const allNavItems = navSections.flatMap(s => s.items)
+  const allSubItems = allNavItems.flatMap(n => n.subItems || [])
+  const currentNav = allSubItems.find(sub => location.pathname === sub.to) || allNavItems.find(n => location.pathname.startsWith(n.to)) || { label: 'Platform' }
 
   // Paywall Condition: Client has expired subscription or exhausted trial quota
   // Community Open Access Switch: Set to true so community members can freely test without being locked out
@@ -170,7 +232,7 @@ export default function Shell() {
               </>
             ) : (
               <>
-                <Moon size={14} className="text-cyan-400" />
+                <Moon size={14} className="text-purple-400" />
                 <span className="text-[11px] font-extrabold hidden sm:inline">Dark</span>
               </>
             )}
@@ -198,7 +260,7 @@ export default function Shell() {
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
         className={`fixed inset-y-0 left-0 flex flex-col z-50 overflow-hidden transition-all duration-300 ease-in-out shadow-2xl border-r border-white/10 bg-slate-950/95 backdrop-blur-xl ${
-          isExpanded ? 'w-64 shadow-cyan-950/40' : 'w-64 lg:w-20'
+          isExpanded ? 'w-64 shadow-purple-950/40' : 'w-64 lg:w-20'
         } ${
           mobileOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
         }`}
@@ -210,8 +272,7 @@ export default function Shell() {
             {showLabels && (
               <div className="min-w-0 animate-in fade-in duration-200">
                 <p className="text-sm font-extrabold text-white tracking-tight truncate">SentinelAI</p>
-                <p className="text-[9px] uppercase tracking-widest text-cyan-400 font-bold truncate flex items-center gap-1">
-                  <Sparkles size={10} className="animate-spin" /> {isAdmin ? 'Admin Portal' : 'Client Portal'}
+                <p className="text-[9px] uppercase tracking-widest text-purple-400 font-bold truncate flex items-center gap-1">
                   <Sparkles size={10} className="animate-spin" /> {isAdmin ? 'Admin Portal' : isClient ? 'Client Portal' : 'Analyst Portal'}
                 </p>
               </div>
@@ -227,7 +288,7 @@ export default function Shell() {
                   localStorage.setItem('sentinel_sidebar_pinned', String(next))
                 }}
                 title={pinned ? "Collapse Sidebar" : "Pin Sidebar Expanded"}
-                className="hidden lg:flex p-1.5 text-slate-400 hover:text-cyan-300 hover:bg-white/5 rounded-lg transition-colors"
+                className="hidden lg:flex p-1.5 text-slate-400 hover:text-purple-300 hover:bg-white/5 rounded-lg transition-colors"
               >
                 <ChevronLeft size={16} className={`transition-transform duration-300 ${pinned ? '' : 'rotate-180'}`} />
               </button>
@@ -259,68 +320,107 @@ export default function Shell() {
           </button>
         </div>
 
-        {/* Vision Navigation Links */}
-        <nav className="flex-1 px-3 space-y-1 overflow-y-auto">
-          {navItems.map(({ to, label, icon: Icon }) => {
-            const isLocked = isSubscriptionExpired && !to.startsWith('/app/billing') && !to.startsWith('/app/settings')
-            const navItem = (
-              <NavLink
-                key={to}
-                to={to}
-                onClick={() => setMobileOpen(false)}
-                className={({ isActive }) =>
-                  !showLabels
-                    ? `w-11 h-11 mx-auto rounded-2xl flex items-center justify-center transition-all duration-200 relative group ${
-                        isActive
-                          ? 'bg-gradient-to-tr from-cyan-500/25 to-blue-600/35 text-cyan-300 border border-cyan-400/50 shadow-[0_0_16px_rgba(0,242,254,0.3)]'
-                          : isLocked
-                          ? 'text-slate-500 opacity-60 border border-transparent'
-                          : 'text-slate-400 hover:text-white hover:bg-white/[0.08] border border-transparent'
-                      }`
-                    : `flex items-center gap-3 px-3 py-2.5 rounded-2xl text-sm font-semibold transition-all duration-200 relative group ${
-                        isActive
-                          ? 'bg-gradient-to-r from-cyan-500/15 via-blue-500/10 to-transparent text-cyan-200 border border-cyan-400/30 shadow-[0_0_15px_rgba(0,242,254,0.12)]'
-                          : isLocked
-                          ? 'text-slate-500 hover:text-slate-400 opacity-60 border border-transparent'
-                          : 'text-slate-400 border border-transparent hover:bg-white/[0.04] hover:text-slate-100'
-                      }`
-                }
-              >
-                {({ isActive }) => (
-                  <>
-                    {/* Glowing active indicator dot/bar */}
-                    {isActive && (
-                      <span className={`absolute bg-cyan-400 rounded-r-full shadow-[0_0_8px_#00f2fe] ${
-                        !showLabels ? '-left-3 top-2.5 bottom-2.5 w-1' : 'left-0 top-2 bottom-2 w-1'
-                      }`} />
-                    )}
+        {/* Vision Navigation Links - Grouped & Categorized */}
+        <nav className="flex-1 px-3 space-y-3 overflow-y-auto">
+          {navSections.map((section, sIdx) => (
+            <div key={section.title || sIdx} className="space-y-1">
+              {/* Category Header (when expanded) or subtle divider (when collapsed) */}
+              {showLabels ? (
+                <div className="px-3 pt-2 pb-1 text-[10px] font-extrabold uppercase tracking-widest text-slate-500 flex items-center justify-between">
+                  <span>{section.title}</span>
+                </div>
+              ) : sIdx > 0 ? (
+                <div className="border-t border-white/5 my-2 mx-1" />
+              ) : null}
 
-                    {!showLabels ? (
-                      isLocked ? <Lock size={16} className="text-amber-400" /> : <Icon size={18} className={isActive ? 'text-cyan-300 drop-shadow-[0_0_6px_rgba(0,242,254,0.6)]' : 'group-hover:scale-110 transition-transform'} />
-                    ) : (
+              {section.items.map((item) => {
+                const isSubActive = item.subItems && item.subItems.some(sub => location.pathname === sub.to || location.pathname.startsWith(sub.to + '/'))
+                const isItemActive = location.pathname === item.to || isSubActive
+                const isLocked = isSubscriptionExpired && !item.to.startsWith('/app/billing') && !item.to.startsWith('/app/settings')
+                const Icon = item.icon
+
+                const navItem = (
+                  <div key={item.to} className="space-y-0.5">
+                    <NavLink
+                      to={item.to}
+                      onClick={() => setMobileOpen(false)}
+                      className={() => {
+                        return !showLabels
+                          ? `w-11 h-11 mx-auto rounded-2xl flex items-center justify-center transition-all duration-200 relative group ${
+                              isItemActive
+                                ? 'bg-gradient-to-tr from-purple-500/25 to-violet-600/35 text-purple-300 border border-purple-400/50 shadow-[0_0_16px_rgba(168,85,247,0.3)]'
+                                : isLocked
+                                ? 'text-slate-500 opacity-60 border border-transparent'
+                                : 'text-slate-400 hover:text-white hover:bg-white/[0.08] border border-transparent'
+                            }`
+                          : `flex items-center gap-3 px-3 py-2 rounded-2xl text-sm font-semibold transition-all duration-200 relative group ${
+                              isItemActive
+                                ? 'bg-gradient-to-r from-purple-500/15 via-violet-500/10 to-transparent text-purple-200 border border-purple-400/30 shadow-[0_0_15px_rgba(168,85,247,0.15)]'
+                                : isLocked
+                                ? 'text-slate-500 hover:text-slate-400 opacity-60 border border-transparent'
+                                : 'text-slate-400 border border-transparent hover:bg-white/[0.04] hover:text-slate-100'
+                            }`
+                      }}
+                    >
                       <>
-                        <div className={`p-1.5 rounded-xl transition-colors ${
-                          isActive
-                            ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-400/30 shadow-[0_0_8px_rgba(0,242,254,0.25)]'
-                            : 'bg-white/[0.03] text-slate-400 group-hover:text-slate-200'
-                        }`}>
-                          {isLocked ? <Lock size={15} className="text-amber-400" /> : <Icon size={15} />}
-                        </div>
-                        <span className="truncate flex items-center justify-between flex-1">
-                          <span className={isActive ? 'font-bold text-white' : 'text-slate-300 group-hover:text-white'}>{label}</span>
-                          {isLocked && <Lock size={12} className="text-amber-400" />}
-                        </span>
+                        {isItemActive && (
+                          <span className={`absolute bg-purple-400 rounded-r-full shadow-[0_0_8px_#a855f7] ${
+                            !showLabels ? '-left-3 top-2.5 bottom-2.5 w-1' : 'left-0 top-2 bottom-2 w-1'
+                          }`} />
+                        )}
+
+                        {!showLabels ? (
+                          isLocked ? <Lock size={16} className="text-amber-400" /> : <Icon size={18} className={isItemActive ? 'text-purple-300 drop-shadow-[0_0_6px_rgba(168,85,247,0.6)]' : 'group-hover:scale-110 transition-transform'} />
+                        ) : (
+                          <>
+                            <div className={`p-1.5 rounded-xl transition-colors ${
+                              isItemActive
+                                ? 'bg-purple-500/20 text-purple-300 border border-purple-400/30 shadow-[0_0_8px_rgba(168,85,247,0.25)]'
+                                : 'bg-white/[0.03] text-slate-400 group-hover:text-slate-200'
+                            }`}>
+                              {isLocked ? <Lock size={15} className="text-amber-400" /> : <Icon size={15} />}
+                            </div>
+                            <span className="truncate flex items-center justify-between flex-1">
+                              <span className={isItemActive ? 'font-bold text-white' : 'text-slate-300 group-hover:text-white'}>{item.label}</span>
+                              {isLocked && <Lock size={12} className="text-amber-400" />}
+                            </span>
+                          </>
+                        )}
                       </>
+                    </NavLink>
+
+                    {/* Sub-items (when parent group is active and sidebar is expanded) */}
+                    {showLabels && item.subItems && isItemActive && (
+                      <div className="ml-7 pl-2.5 border-l border-white/10 space-y-0.5 pt-0.5">
+                        {item.subItems.map((sub) => {
+                          const isSubDirectActive = location.pathname === sub.to || location.pathname.startsWith(sub.to + '/')
+                          return (
+                            <NavLink
+                              key={sub.to}
+                              to={sub.to}
+                              onClick={() => setMobileOpen(false)}
+                              className={`block text-xs py-1 px-2.5 rounded-lg transition-colors ${
+                                isSubDirectActive
+                                  ? 'text-purple-300 font-bold bg-purple-500/10'
+                                  : 'text-slate-400 hover:text-slate-200 hover:bg-white/[0.03]'
+                              }`}
+                            >
+                              {sub.label}
+                            </NavLink>
+                          )
+                        })}
+                      </div>
                     )}
-                  </>
-                )}
-              </NavLink>
-            )
-            // When sidebar is collapsed, wrap in tooltip for accessibility
-            return !showLabels
-              ? <Tooltip key={to} content={isLocked ? `${label} (Locked — Upgrade to unlock)` : label}>{navItem}</Tooltip>
-              : <React.Fragment key={to}>{navItem}</React.Fragment>
-          })}
+                  </div>
+                )
+
+                // When sidebar is collapsed, wrap in tooltip for accessibility
+                return !showLabels
+                  ? <Tooltip key={item.to} content={isLocked ? `${item.label} (Locked — Upgrade to unlock)` : item.label}>{navItem}</Tooltip>
+                  : <React.Fragment key={item.to}>{navItem}</React.Fragment>
+              })}
+            </div>
+          ))}
         </nav>
 
         {/* User Info Footer */}
@@ -329,7 +429,7 @@ export default function Shell() {
             {showLabels && (
               <div className="min-w-0 pr-2">
                 <p className="text-sm font-bold text-slate-100 truncate">{user?.username}</p>
-                <p className="text-[10px] uppercase tracking-wider font-extrabold text-cyan-400">{user?.role}</p>
+                <p className="text-[10px] uppercase tracking-wider font-extrabold text-purple-400">{user?.role}</p>
               </div>
             )}
             <Tooltip content="Sign Out">
@@ -352,7 +452,7 @@ export default function Shell() {
           <div className="flex items-center gap-2 text-xs font-semibold px-3 py-1.5 rounded-xl bg-slate-900/80 border border-white/15 text-slate-200 shadow-md backdrop-blur-md">
             <span className="text-slate-300 font-medium">Portal</span>
             <span className="text-slate-500 font-bold">/</span>
-            <span className="text-cyan-300 font-extrabold tracking-wide">
+            <span className="text-purple-300 font-extrabold tracking-wide">
               {currentNav.label}
             </span>
           </div>
@@ -364,15 +464,15 @@ export default function Shell() {
                 className={`chip text-xs px-3 py-1 font-bold flex items-center gap-2 transition-colors ${
                   isSubscriptionExpired
                     ? 'bg-rose-500/20 text-rose-300 border-rose-500/40'
-                    : 'bg-slate-900/80 border-white/10 hover:border-cyan-400/50 text-slate-300'
+                    : 'bg-slate-900/80 border-white/10 hover:border-purple-400/50 text-slate-300'
                 }`}
               >
-                <CreditCard size={13} className={isSubscriptionExpired ? 'text-rose-400' : 'text-cyan-400'} />
+                <CreditCard size={13} className={isSubscriptionExpired ? 'text-rose-400' : 'text-purple-400'} />
                 <span>
                   {isSubscriptionExpired ? (
                     <strong className="text-rose-300">Subscription Inactive</strong>
                   ) : (
-                    <>Quota: <strong className="text-cyan-300">{subscription.isUnlimited ? 'Unlimited' : `${subscription.scan_quota_used}/${subscription.scan_quota_total}`}</strong></>
+                    <>Quota: <strong className="text-purple-300">{subscription.isUnlimited ? 'Unlimited' : `${subscription.scan_quota_used}/${subscription.scan_quota_total}`}</strong></>
                   )}
                 </span>
               </Link>
@@ -382,7 +482,7 @@ export default function Shell() {
             {/* Prominent Dark / Light Mode Pill Toggle */}
             <button
               onClick={toggleNightMode}
-              className="flex items-center gap-2 px-3.5 py-1.5 rounded-xl border border-white/15 hover:border-cyan-400/50 bg-slate-900/80 hover:bg-slate-800 text-slate-200 hover:text-white transition-all cursor-pointer shadow-sm group active:scale-95"
+              className="flex items-center gap-2 px-3.5 py-1.5 rounded-xl border border-white/15 hover:border-purple-400/50 bg-slate-900/80 hover:bg-slate-800 text-slate-200 hover:text-white transition-all cursor-pointer shadow-sm group active:scale-95"
               title={isNight ? 'Click to switch to Light Mode' : 'Click to switch to Dark Mode'}
               aria-label="Toggle Theme"
             >
@@ -393,7 +493,7 @@ export default function Shell() {
                 </>
               ) : (
                 <>
-                  <Moon size={15} className="text-cyan-400 group-hover:-rotate-12 transition-transform duration-300" />
+                  <Moon size={15} className="text-purple-400 group-hover:-rotate-12 transition-transform duration-300" />
                   <span className="text-xs font-bold text-slate-200 group-hover:text-white">Dark Mode</span>
                 </>
               )}
@@ -427,17 +527,17 @@ export default function Shell() {
 
                   {/* Plan Selection Cards Preview */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-left pt-6 max-w-xl mx-auto">
-                    <div className="p-5 rounded-2xl border border-cyan-500/40 bg-cyan-950/20 flex flex-col justify-between space-y-4">
+                    <div className="p-5 rounded-2xl border border-purple-500/40 bg-purple-950/20 flex flex-col justify-between space-y-4">
                       <div>
                         <div className="flex items-center justify-between">
                           <span className="font-extrabold text-white text-base">SentinelAI Pro</span>
-                          <span className="text-[10px] px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-300 font-bold">Popular</span>
+                          <span className="text-[10px] px-2 py-0.5 rounded bg-purple-500/20 text-purple-300 font-bold">Popular</span>
                         </div>
-                        <div className="text-2xl font-black text-cyan-300 mt-1">$19<span className="text-xs text-slate-400 font-normal">/mo</span></div>
+                        <div className="text-2xl font-black text-purple-300 mt-1">$19<span className="text-xs text-slate-400 font-normal">/mo</span></div>
                         <ul className="text-xs text-slate-300 space-y-1.5 mt-3">
-                          <li className="flex items-center gap-2"><CheckCircle2 size={14} className="text-cyan-400 shrink-0" /> 50 AI Code Audits / mo</li>
-                          <li className="flex items-center gap-2"><CheckCircle2 size={14} className="text-cyan-400 shrink-0" /> 5 Linked Repositories</li>
-                          <li className="flex items-center gap-2"><CheckCircle2 size={14} className="text-cyan-400 shrink-0" /> Automated Email PDF</li>
+                          <li className="flex items-center gap-2"><CheckCircle2 size={14} className="text-purple-400 shrink-0" /> 50 AI Code Audits / mo</li>
+                          <li className="flex items-center gap-2"><CheckCircle2 size={14} className="text-purple-400 shrink-0" /> 5 Linked Repositories</li>
+                          <li className="flex items-center gap-2"><CheckCircle2 size={14} className="text-purple-400 shrink-0" /> Automated Email PDF</li>
                         </ul>
                       </div>
                       <Link to="/app/billing" className="btn-primary text-xs py-2 w-full justify-center shadow-glow">
@@ -467,7 +567,7 @@ export default function Shell() {
                   <div className="pt-4">
                     <Link
                       to="/app/billing"
-                      className="text-xs font-bold text-slate-400 hover:text-cyan-300 transition-colors inline-flex items-center gap-1.5"
+                      className="text-xs font-bold text-slate-400 hover:text-purple-300 transition-colors inline-flex items-center gap-1.5"
                     >
                       <CreditCard size={14} /> Go to Billing & Payment Management Center →
                     </Link>

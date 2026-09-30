@@ -62,13 +62,23 @@ fi
 # 1. BACKUP DATABASE before doing anything else
 echo "[1/7] Backing up database..."
 mkdir -p "${USER_HOME}/db-backups"
-if [ -f "${USER_HOME}/SentinelAI/output/fyp2.db" ]; then
+# The canonical database lives on the external HDD. The old in-repo copy at
+#   SentinelAI/output/fyp2.db
+# is a retired artifact -- do NOT back it up as if it were live.
+#
+# Copying a WAL database file by itself silently loses every uncheckpointed
+# committed transaction. VACUUM INTO reads through the WAL and does not block
+# the writer, so it is the only correct way to take this backup.
+CANONICAL_DB="/home/kali/server/SentinelAI_Data/fyp2.db"
+if [ -f "${CANONICAL_DB}" ]; then
   TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-  DB_SIZE=$(stat -c%s "${USER_HOME}/SentinelAI/output/fyp2.db" 2>/dev/null || echo 0)
-  cp "${USER_HOME}/SentinelAI/output/fyp2.db" "${USER_HOME}/db-backups/fyp2_${TIMESTAMP}.db"
-  cp "${USER_HOME}/SentinelAI/output/fyp2.db-wal" "${USER_HOME}/db-backups/fyp2_${TIMESTAMP}.db-wal" 2>/dev/null || true
-  cp "${USER_HOME}/SentinelAI/output/fyp2.db-shm" "${USER_HOME}/db-backups/fyp2_${TIMESTAMP}.db-shm" 2>/dev/null || true
-  echo "  ✓ Database backed up: ${USER_HOME}/db-backups/fyp2_${TIMESTAMP}.db (${DB_SIZE} bytes)"
+  BACKUP_DB="${USER_HOME}/db-backups/fyp2_${TIMESTAMP}.db"
+  if sqlite3 "${CANONICAL_DB}" "VACUUM INTO '${BACKUP_DB}'" 2>/dev/null; then
+    DB_SIZE=$(stat -c%s "${BACKUP_DB}" 2>/dev/null || echo 0)
+    echo "  ✓ Database backed up (consistent, WAL included): ${BACKUP_DB} (${DB_SIZE} bytes)"
+  else
+    echo "  ✗ BACKUP FAILED for ${CANONICAL_DB} -- refusing to substitute a plain file copy"
+  fi
   
   # Auto-prune: keep only the 10 most recent backups
   cd "${USER_HOME}/db-backups"
@@ -92,11 +102,20 @@ fi
 sudo chown -R kali:kali "${USER_HOME}/SentinelAI" "${USER_HOME}/msfrpcd.log" "${USER_HOME}/cloudflared.log" "${USER_HOME}/sentinelai.log" 2>/dev/null || true
 rm -rf "${USER_HOME}/SentinelAI/frontend/node_modules/.vite" 2>/dev/null || true
 
-# 3. Kill existing processes on ports 5000 & 5173
-echo "[3/7] Cleaning up old processes..."
-fuser -k 5000/tcp 2>/dev/null || true
-fuser -k 5173/tcp 2>/dev/null || true
-sleep 1
+# 3. Verify port ownership - deliberately does NOT kill anything (defect N-06)
+echo "[3/7] Verifying port ownership (no kills - see defect N-06)..."
+# PM2 owns 5000/5173/3010/20128. sentinelai.service owns 55553 alone.
+# This script must NEVER fuser -k another supervisor's port: doing so SIGKILLs
+# the backend mid-transaction and corrupts SQLite backups (see
+# resources/ARCHIVED-second-supervisor.md). Report, do not enforce.
+for _p in 5000 5173; do
+  _holder=$(ss -tlnp 2>/dev/null | awk -v port=":$_p" '$4 ~ port {print $6}' | head -1)
+  if [ -n "$_holder" ]; then
+    echo "  - port $_p held by ${_holder:-unknown} - leaving it alone (PM2 owns it)"
+  else
+    echo "  - port $_p free"
+  fi
+done
 
 # 4. Setup AI Agent Personas
 echo "[4/7] Deploying 51 AI Agent Personas..."
@@ -132,19 +151,19 @@ cloudflared tunnel route dns --overwrite-dns sentinelai sentinelai.studio 2>/dev
 # 7. Setup Metasploit RPC daemon (msfrpcd)
 echo "[7/7] Configuring Metasploit services..."
 
-# Start Metasploit RPC daemon (msfrpcd) for autonomous exploitation
-echo "  ⚔️ Starting Metasploit RPC daemon (msfrpcd)..."
+# Start Metasploit RPC daemon (msfrpcd) through its systemd unit.
+# sentinelai.service is the ONLY owner of port 55553. This script used to
+# `pkill -f msfrpcd` and spawn its own nohup copy, which defeated systemd
+# tracking and produced a second daemon (defect N-06).
+echo "  Starting Metasploit RPC daemon (msfrpcd) via sentinelai.service..."
 MSF_USER="${MSF_USER:-msf}"
 MSF_PASS="${MSF_PASS:-msf}"
 if command -v msfrpcd &> /dev/null; then
-  # Kill any existing msfrpcd
-  pkill -f msfrpcd 2>/dev/null || true
-  sleep 1
-  nohup msfrpcd -U "$MSF_USER" -P "$MSF_PASS" -a 127.0.0.1 -p 55553 -S > "${USER_HOME}/msfrpcd.log" 2>&1 &
-  echo "  ✓ msfrpcd started on 127.0.0.1:55553 (user: $MSF_USER)"
+  sudo systemctl restart sentinelai 2>/dev/null || true
+  echo "  - msfrpcd managed by sentinelai.service on 127.0.0.1:55553"
   echo "    Set MSF_USER / MSF_PASS in .env to customize credentials"
 else
-  echo "  ⚠ msfrpcd not found — install Metasploit Framework for exploit capabilities"
+  echo "  ! msfrpcd not found - install Metasploit Framework for exploit capabilities"
   echo "    Run: sudo apt install -y metasploit-framework"
 fi
 
@@ -153,16 +172,23 @@ cd "${USER_HOME}/SentinelAI"
 # 8. Register and start systemd service for 24/7 auto-restart
 echo "[8/8] Registering & Starting SentinelAI systemd service..."
 if [ -f "${USER_HOME}/SentinelAI/resources/sentinelai.service" ]; then
-  sudo cp "${USER_HOME}/SentinelAI/resources/sentinelai.service" /etc/systemd/system/sentinelai.service
-  sudo systemctl daemon-reload
-  sudo systemctl enable sentinelai
-  sudo systemctl restart sentinelai
-  echo "  ✓ SentinelAI service started and registered for 24/7 auto-start!"
-  echo "  📋 Commands:"
-  echo "     sudo systemctl start sentinelai   — start now"
-  echo "     sudo systemctl stop sentinelai    — stop"
-  echo "     sudo systemctl status sentinelai  — check status"
-  echo "     sudo journalctl -u sentinelai -f  — follow logs"
+  # Guard rail: refuse to install a unit that kills another supervisor's ports.
+  # This exact regression already happened once (defect N-06).
+  if grep -vE '^[[:space:]]*#' "${USER_HOME}/SentinelAI/resources/sentinelai.service" | grep -qE 'fuser -k|pkill -f (clou|msfr)'; then
+    echo "  X REFUSING to install sentinelai.service - it contains fuser -k / pkill"
+    echo "    That is defect N-06. See resources/ARCHIVED-second-supervisor.md"
+  else
+    sudo cp "${USER_HOME}/SentinelAI/resources/sentinelai.service" /etc/systemd/system/sentinelai.service
+    sudo systemctl daemon-reload
+    sudo systemctl enable sentinelai
+    sudo systemctl restart sentinelai
+    echo "  ✓ SentinelAI service installed, enabled and restarted!"
+    echo "  📋 Commands:"
+    echo "     sudo systemctl start sentinelai   — start now"
+    echo "     sudo systemctl stop sentinelai    — stop"
+    echo "     sudo systemctl status sentinelai  — check status"
+    echo "     sudo journalctl -u sentinelai -f  — follow logs"
+  fi
 else
   echo "  ⚠ sentinelai.service not found — skipping auto-start setup"
   echo "  ⚠ After reboot, re-run: bash ~/SentinelAI/setup-kali.sh"

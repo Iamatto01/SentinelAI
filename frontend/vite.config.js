@@ -6,7 +6,21 @@ export default defineConfig({
   server: {
     host: true,
     port: 5173,
-    allowedHosts: ['sentinelai.studio', 'localhost'],
+    allowedHosts: ['sentinelai.studio', 'www.sentinelai.studio', 'localhost', '.sentinelai.studio'],
+    headers: {
+      'Cache-Control': 'no-store, no-cache, must-revalidate',
+      'Pragma': 'no-cache',
+      'Expires': '0',
+    },
+    proxy: {
+      '/api': { target: 'http://localhost:5000', changeOrigin: true },
+      '/socket.io': { target: 'http://localhost:5000', ws: true, changeOrigin: true },
+    },
+  },
+  preview: {
+    host: true,
+    port: 5173,
+    allowedHosts: ['sentinelai.studio', 'www.sentinelai.studio', 'localhost', '.sentinelai.studio'],
     headers: {
       'Cache-Control': 'no-store, no-cache, must-revalidate',
       'Pragma': 'no-cache',

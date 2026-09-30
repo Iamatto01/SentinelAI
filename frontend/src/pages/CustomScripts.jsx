@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import {
   Loader2, RefreshCw, FileCode, Plus, Trash2, Pencil, Play, ToggleLeft, ToggleRight,
-  CheckCircle2, XCircle, AlertTriangle, Terminal, Info
+  CheckCircle2, XCircle, AlertTriangle, Terminal, Info, Sparkles
 } from 'lucide-react'
 import { api } from '../lib/api.js'
 
@@ -54,6 +54,8 @@ export default function CustomScripts() {
   const [testingId, setTestingId] = useState(null)
   const [testTarget, setTestTarget] = useState('')
   const [testResult, setTestResult] = useState(null)
+  const [seeding, setSeeding] = useState(false)
+  const [seedMsg, setSeedMsg] = useState('')
 
   const load = () => {
     setLoading(true)
@@ -89,6 +91,23 @@ export default function CustomScripts() {
     } catch (e) { setErr(e.message) }
   }
 
+  async function handleSeedDefaults() {
+    setSeeding(true)
+    setSeedMsg('')
+    setErr('')
+    try {
+      const res = await api.seedCustomScripts()
+      const total = res.count || (res.scripts && res.scripts.length) || 103
+      setSeedMsg(`Loaded ${total} built-in security auditing scripts!`)
+      load()
+    } catch (e) {
+      setErr(`Failed to load built-in scripts: ${e.message}`)
+    } finally {
+      setSeeding(false)
+      setTimeout(() => setSeedMsg(''), 6000)
+    }
+  }
+
   async function remove(s) {
     if (!window.confirm(`Delete script "${s.name}"?`)) return
     try { await api.deleteCustomScript(s.id); load() } catch (e) { setErr(e.message) }
@@ -115,7 +134,21 @@ export default function CustomScripts() {
             Write your own scanning scripts (bash / python / node). They run as a pipeline stage and report findings as JSON lines.
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex items-center gap-2">
+          {seedMsg && (
+            <span className="text-xs text-emerald-300 bg-emerald-500/15 border border-emerald-500/30 px-3 py-1.5 rounded-xl font-bold">
+              {seedMsg}
+            </span>
+          )}
+          <button
+            onClick={handleSeedDefaults}
+            disabled={seeding || loading}
+            className="btn-ghost text-xs border border-cyan-400/30 text-cyan-300 hover:bg-cyan-500/10 flex items-center gap-1.5"
+            title="Load or restore the 103 built-in security auditing scripts"
+          >
+            {seeding ? <Loader2 size={14} className="animate-spin text-cyan-400" /> : <Sparkles size={14} />}
+            {scripts.length > 0 ? 'Restore 103 Built-in' : 'Load 103 Built-in'}
+          </button>
           <button onClick={load} className="btn-ghost flex items-center gap-2" disabled={loading}>
             {loading ? <Loader2 size={16} className="animate-spin" /> : <RefreshCw size={16} />} Refresh
           </button>
@@ -151,10 +184,22 @@ export default function CustomScripts() {
       {loading ? (
         <div className="card p-8 grid place-items-center text-slate-400"><Loader2 className="animate-spin" /></div>
       ) : scripts.length === 0 ? (
-        <div className="card p-8 text-center text-slate-400 space-y-2">
-          <Terminal size={32} className="mx-auto text-slate-600" />
-          <p>No custom scripts yet.</p>
-          <p className="text-xs">Create one to extend the scanner with your own detection logic — e.g. niche CVE checks, custom header audits, business-logic probes.</p>
+        <div className="card p-10 text-center text-slate-400 space-y-4">
+          <Terminal size={40} className="mx-auto text-cyan-400/60" />
+          <div className="space-y-1">
+            <p className="text-base font-bold text-white">No custom scripts currently in database.</p>
+            <p className="text-xs text-slate-400 max-w-md mx-auto">
+              You have 103 built-in security auditing scripts (covering HTTP security, JWT, DNS, API flaws, misconfigurations, and CVE checks) ready to load.
+            </p>
+          </div>
+          <button
+            onClick={handleSeedDefaults}
+            disabled={seeding}
+            className="btn-primary text-xs px-5 py-2.5 mx-auto flex items-center gap-2 shadow-lg shadow-cyan-500/20"
+          >
+            {seeding ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
+            Load 103 Built-in Scripts
+          </button>
         </div>
       ) : (
         <div className="grid gap-4">

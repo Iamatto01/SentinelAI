@@ -8,6 +8,10 @@ import { config } from './config.js'
 
 import path from 'node:path'
 import fs from 'node:fs'
+import { fileURLToPath } from 'node:url'
+
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = path.dirname(__filename)
 
 let db
 
@@ -550,6 +554,54 @@ function migrate(d) {
   CREATE INDEX IF NOT EXISTS idx_custom_scripts_trigger ON custom_scripts(trigger_point, enabled);
     `)
   } catch (e) { if (!/already exists/i.test(String(e))) throw e }
+
+  // Seed default custom scripts if table is empty
+  try {
+    seedDefaultScripts(d)
+  } catch (e) {
+    console.warn('[db] custom_scripts seed notice:', e.message)
+  }
+}
+
+export function seedDefaultScripts(d = getDb()) {
+  try {
+    const existingCount = d.prepare('SELECT count(*) as c FROM custom_scripts').get()?.c || 0
+    if (existingCount > 0) {
+      return { seeded: false, count: existingCount, message: 'Custom scripts already present' }
+    }
+    const seedPath = path.join(__dirname, 'data', 'default-custom-scripts.json')
+    if (!fs.existsSync(seedPath)) {
+      return { seeded: false, count: 0, message: 'Seed file not found' }
+    }
+    const defaultScripts = JSON.parse(fs.readFileSync(seedPath, 'utf8'))
+    const insertStmt = d.prepare(`
+      INSERT OR IGNORE INTO custom_scripts (id, name, description, language, command, trigger_point, enabled, severity_floor, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `)
+    const tx = d.transaction((scripts) => {
+      for (const s of scripts) {
+        insertStmt.run(
+          s.id,
+          s.name,
+          s.description || '',
+          s.language || 'bash',
+          s.command,
+          s.trigger_point || 'post-scan',
+          s.enabled != null ? s.enabled : 1,
+          s.severity_floor || 'info',
+          s.created_at || new Date().toISOString(),
+          s.updated_at || new Date().toISOString()
+        )
+      }
+    })
+    tx(defaultScripts)
+    const newCount = d.prepare('SELECT count(*) as c FROM custom_scripts').get()?.c || 0
+    console.log(`[db] Seeded ${newCount} built-in custom security scripts into database`)
+    return { seeded: true, count: newCount }
+  } catch (err) {
+    console.error('[db] seedDefaultScripts error:', err.message)
+    return { seeded: false, error: err.message }
+  }
 }
 
 // ── generic helpers ──────────────────────────────────────────────────────────

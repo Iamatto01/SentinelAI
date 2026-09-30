@@ -1,30 +1,44 @@
 [Unit]
-Description=SentinelAI Pentest Platform
-After=network.target network-online.target
+Description=SentinelAI - Metasploit RPC daemon (auxiliary)
+Documentation=file:///home/kali/SentinelAI/resources/ARCHIVED-second-supervisor.md
+After=network-online.target
 Wants=network-online.target
+StartLimitIntervalSec=0
 
 [Service]
 Type=simple
 User=kali
 WorkingDirectory=/home/kali/SentinelAI
-Environment="NODE_ENV=production"
-Environment="PORT=5173"
-Environment="PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/home/kali/.nvm/versions/node/v20.18.0/bin:/home/kali/go/bin"
+Environment=MSF_USER=msf
+Environment=MSF_PASS=msf
 EnvironmentFile=-/home/kali/SentinelAI/.env
 
-# Clean all ports before start
-ExecStartPre=/bin/bash -c 'fuser -k 5000/tcp 2>/dev/null || true; fuser -k 5173/tcp 2>/dev/null || true; fuser -k 8888/tcp 2>/dev/null || true; fuser -k 55553/tcp 2>/dev/null || true; sleep 1'
+# ---------------------------------------------------------------------------
+# HISTORICAL DEFECT N-06 - DO NOT REINTRODUCE
+#
+# This unit previously ran resources/start-all.sh, which did:
+#     fuser -k 5000/tcp ; fuser -k 5173/tcp
+#     pkill -f msfrpcd ; pkill -f hexstrike_server
+# then exec'd a SECOND copy of the FYP2 platform via `npm run dev`.
+#
+# Ports 5000 and 5173 are owned by PM2 (sentinel-backend / sentinel-frontend).
+# Every stop/restart of this unit SIGKILLed the PM2 backend mid-transaction -
+# the source of sentinel-backend's 33,563 restart counter and of the 4 KB
+# table-less files that were published as fyp2_latest_backup.db.
+#
+# Rule: PM2 owns ports 5000 (API) and 5173 (frontend) and 3010.
+#       This unit owns port 55553 (msfrpcd) and nothing else.
+#       No unit may ever run `fuser -k` or `pkill` against another unit's port.
+#
+# msfrpcd daemonizes unless -f is given; -f keeps it in the foreground so
+# systemd can track the real PID. -S disables SSL, matching MSF_RPC_URL=http://
+# ---------------------------------------------------------------------------
+ExecStart=/usr/bin/msfrpcd -U ${MSF_USER} -P ${MSF_PASS} -a 127.0.0.1 -p 55553 -S -f
 
-# Start everything via a single script (systemd can only track ONE main process)
-ExecStart=/bin/bash /home/kali/SentinelAI/resources/start-all.sh
-
-Restart=always
-RestartSec=15
-TimeoutStartSec=180
-
-# Cleanup on stop — kill all services
-ExecStop=/bin/bash -c 'fuser -k 5000/tcp 2>/dev/null; fuser -k 5173/tcp 2>/dev/null; fuser -k 55553/tcp 2>/dev/null; pkill -f cloudflared 2>/dev/null; pkill -f msfrpcd 2>/dev/null; true'
-ExecStopPost=/bin/sleep 2
+Restart=on-failure
+RestartSec=10
+KillSignal=SIGKILL
+TimeoutStopSec=5
 
 [Install]
 WantedBy=multi-user.target

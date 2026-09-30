@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import {
   X, Globe, FileCode2, Loader2, FolderOpen, ChevronRight, ChevronUp, ChevronDown, Plus,
-  Trash2, Code2, ShieldCheck, Swords, User, Zap, Check, CheckCircle2, ShieldAlert
+  Trash2, Code2, User, Zap, Check, CheckCircle2, ShieldAlert
 } from 'lucide-react'
 import { api } from '../lib/api.js'
 
@@ -145,11 +145,11 @@ export default function NewScanModal({ onClose, onStarted, initialProjectId = ''
   const [creatingFolder, setCreatingFolder] = useState(false)
 
   const [target, setTarget] = useState(initialTarget)
-  const [objective, setObjective] = useState('offensive')
+  const objective = 'offensive'
   const [modules, setModules] = useState(BLACKBOX_MODULES) // all ticked
   const [owaspCategories, setOwaspCategories] = useState(OWASP_CATEGORIES.map(c => c.code)) // all ticked by default
   const [owaspExpanded, setOwaspExpanded] = useState(null) // which OWASP section is expanded (null = all collapsed)
-  const [depth, setDepth] = useState('offensive')
+  const depth = 'offensive'
   const [verify, setVerify] = useState(true)
   const [code, setCode] = useState('')
   const [filename, setFilename] = useState('app.js')
@@ -506,54 +506,6 @@ export default function NewScanModal({ onClose, onStarted, initialProjectId = ''
                     required
                   />
                   <Globe className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500" size={16} />
-                </div>
-              </div>
-
-              {/* 2 Simplified Objectives */}
-              <div>
-                <label className="label text-xs font-bold text-slate-200">Scan Objective</label>
-                <div className="grid grid-cols-2 gap-3 mt-1.5">
-                  <div
-                    onClick={() => {
-                      setObjective('comprehensive')
-                      setDepth('standard')
-                      setModules(BLACKBOX_MODULES)
-                    }}
-                    className={`p-3.5 rounded-xl border cursor-pointer transition-all ${
-                      objective === 'comprehensive'
-                        ? 'bg-cyan-500/15 border-cyan-500/60 ring-2 ring-cyan-500/30'
-                        : 'bg-slate-900/80 border-slate-700/60 hover:border-slate-500'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2 mb-1">
-                      <ShieldCheck className={objective === 'comprehensive' ? 'text-cyan-400' : 'text-slate-400'} size={18} />
-                      <span className="font-bold text-xs text-slate-100">Normal</span>
-                    </div>
-                    <p className="text-[11px] text-slate-400 leading-relaxed">
-                      Standard vulnerability scanning across <strong>all 16 modules</strong> with stealth & web checks.
-                    </p>
-                  </div>
-
-                  <div
-                    onClick={() => {
-                      setObjective('offensive')
-                      setDepth('offensive')
-                      setModules(BLACKBOX_MODULES)
-                    }}
-                    className={`p-3.5 rounded-xl border cursor-pointer transition-all ${
-                      objective === 'offensive'
-                        ? 'bg-red-500/15 border-red-500/60 ring-2 ring-red-500/30'
-                        : 'bg-slate-900/80 border-slate-700/60 hover:border-slate-500'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2 mb-1">
-                      <Swords className={objective === 'offensive' ? 'text-red-400' : 'text-slate-400'} size={18} />
-                      <span className="font-bold text-xs text-slate-100">⚔️ Offensive</span>
-                    </div>
-                    <p className="text-[11px] text-slate-400 leading-relaxed">
-                      Max aggression across <strong>ALL modules</strong> — NSE vulns, deep SQLi, XSS cookie steals & cred checks.
-                    </p>
-                  </div>
                 </div>
               </div>
 

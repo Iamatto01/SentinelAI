@@ -46,7 +46,14 @@ export function getScriptsForTrigger(trigger) {
 
 export function getAllScripts() {
   const db = require_db()
-  return db.all(`SELECT * FROM custom_scripts ORDER BY created_at ASC`)
+  let rows = db.all(`SELECT * FROM custom_scripts ORDER BY created_at ASC`)
+  if (!rows || rows.length === 0) {
+    if (typeof db.seedDefaultScripts === 'function') {
+      db.seedDefaultScripts()
+      rows = db.all(`SELECT * FROM custom_scripts ORDER BY created_at ASC`)
+    }
+  }
+  return rows || []
 }
 
 export function getScript(id) {

@@ -96,7 +96,9 @@ export const PLANS = new Proxy({}, {
   }
 })
 
-export const COMMUNITY_FREE_ACCESS_MODE = process.env.COMMUNITY_FREE_ACCESS_MODE !== 'false'
+// Fail-CLOSED: this flag disables per-client data scoping and quota enforcement,
+// so it must only ever be on when an operator explicitly opts in.
+export const COMMUNITY_FREE_ACCESS_MODE = process.env.COMMUNITY_FREE_ACCESS_MODE === 'true'
 
 /**
  * Create a new subscription plan (Admin)
@@ -523,7 +525,11 @@ export function getUserSubscription(userId) {
  */
 export function consumeScanQuota(userId) {
   const sub = getUserSubscription(userId)
-  
+
+  if (!sub) {
+    throw new Error('Unable to resolve an active subscription for this account. Please sign in again or contact support.')
+  }
+
   if (!COMMUNITY_FREE_ACCESS_MODE) {
     if (sub.isExpired) {
       throw new Error(`Your SentinelAI subscription has expired. Please renew your plan in Billing to continue scanning.`)

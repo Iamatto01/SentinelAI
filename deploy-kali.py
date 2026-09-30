@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """
 SentinelAI 1-Click Deployment Script to Kali Linux Server
-Target: kali@192.168.68.132 (/home/kali/SentinelAI)
+Target: kali@192.168.68.132 (/home/kali/server/SentinelAI)
 
 Actions:
 1. Compresses local project into lightweight tar.gz (excluding node_modules, .git, .env)
 2. Connects to Kali server via SSH/SFTP
 3. Uploads archive to /home/kali/sentinel-deploy.tar.gz
-4. Extracts cleanly into /home/kali/SentinelAI
+4. Extracts cleanly into /home/kali/server/SentinelAI
 5. Installs dependencies, builds frontend, and restarts services
 """
 
@@ -31,7 +31,7 @@ KALI_HOST = os.environ.get("KALI_HOST", "192.168.68.132")
 KALI_PORT = int(os.environ.get("KALI_PORT", 22))
 KALI_USER = os.environ.get("KALI_USER", "kali")
 KALI_PASS = os.environ.get("KALI_PASS", "kali")
-REMOTE_DIR = "/home/kali/SentinelAI"
+REMOTE_DIR = "/home/kali/server/SentinelAI"
 REMOTE_TAR = "/home/kali/sentinel-deploy.tar.gz"
 
 PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -108,6 +108,9 @@ mkdir -p {REMOTE_DIR}
 tar -xzf {REMOTE_TAR} -C {REMOTE_DIR}
 rm -f {REMOTE_TAR}
 
+mkdir -p /home/kali
+ln -sfn {REMOTE_DIR} /home/kali/SentinelAI
+
 echo "   ✓ Files extracted to {REMOTE_DIR}"
 
 cd {REMOTE_DIR}
@@ -120,7 +123,7 @@ fi
 # Ensure Stripe keys and currency are populated in .env on Kali
 python3 -c "
 import os, re
-env_file = '/home/kali/SentinelAI/.env'
+env_file = '{REMOTE_DIR}/.env'
 keys = {{
     'STRIPE_SECRET_KEY': '{stripe_sec}',
     'STRIPE_PUBLISHABLE_KEY': '{stripe_pub}',
@@ -150,21 +153,18 @@ npm install --prefix frontend
 echo "   🔨 Building frontend..."
 npm run build --prefix frontend
 
-# Restart running SentinelAI server processes
-echo "   🔄 Restarting SentinelAI server processes on Kali..."
-fuser -k 5000/tcp 2>/dev/null || true
-fuser -k 5173/tcp 2>/dev/null || true
-pkill -9 -f "concurrently.*SentinelAI" 2>/dev/null || true
-pkill -9 -f "node.*src/index.js" 2>/dev/null || true
-pkill -9 -f "node.*vite" 2>/dev/null || true
-sleep 2
-
-# Start SentinelAI in background
-nohup npm run dev > sentinelai.log 2>&1 &
+# Reload through PM2. PM2 owns 5000/5173 -- this script must NEVER fuser -k or
+# pkill them. Killing another supervisor's port SIGKILLs the backend
+# mid-transaction and corrupts SQLite backups. See defect N-06 in
+# resources/ARCHIVED-second-supervisor.md and the port-ownership table.
+echo "   🔄 Reloading SentinelAI via PM2 (PM2 owns 5000/5173)..."
+pm2 reload sentinel-backend 2>/dev/null || pm2 restart sentinel-backend 2>/dev/null || true
+pm2 reload sentinel-frontend 2>/dev/null || pm2 restart sentinel-frontend 2>/dev/null || true
+pm2 save 2>/dev/null || true
 sleep 3
 
-echo "   ✓ SentinelAI successfully restarted!"
-ps aux | grep -E "node.*src/index.js|vite" | grep -v grep || true
+echo "   ✓ SentinelAI reloaded via PM2"
+pm2 jlist 2>/dev/null | head -c 400 || true
 """
     
     stdin, stdout, stderr = ssh.exec_command(remote_commands, get_pty=True)

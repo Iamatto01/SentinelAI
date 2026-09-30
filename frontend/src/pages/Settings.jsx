@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from 'react'
 import {
   Loader2, Save, KeyRound, UserCircle, CheckCircle2, Database, Bell,
-  Building2, Moon, Upload, Sparkles, Image, Eye, Sliders, RefreshCw,
+  Building2, Moon, Upload, Sparkles, Image, Eye, EyeOff, Sliders, RefreshCw,
   Layers, Send, ExternalLink, ShieldCheck, Unlink, Bot, MessageSquare,
-  Tag, Percent, Lock, Unlock, Star, Plus
+  Tag, Percent, Lock, Unlock, Star, Plus, AlertCircle
 } from 'lucide-react'
 import { api } from '../lib/api.js'
 import { useAuth } from '../lib/AuthContext.jsx'
@@ -15,6 +15,15 @@ export default function Settings() {
   const { theme, setTheme, blur, setBlur, opacity, setOpacity, isStatic, setIsStatic, randomizeNow, wallpapers, activeWallpaper } = useTheme()
   const [email, setEmail] = useState('')
   const [pw, setPw] = useState({ currentPassword: '', newPassword: '', confirm: '' })
+  const [pwShow, setPwShow] = useState({ current: false, next: false, confirm: false })
+  const [pwBusy, setPwBusy] = useState(false)
+  const [pwMsg, setPwMsg] = useState('')
+  const [pwErr, setPwErr] = useState('')
+
+  const [profileBusy, setProfileBusy] = useState(false)
+  const [profileMsg, setProfileMsg] = useState('')
+  const [profileErr, setProfileErr] = useState('')
+
   const [msg, setMsg] = useState('')
   const [err, setErr] = useState('')
 
@@ -163,16 +172,51 @@ export default function Settings() {
   }
 
   async function saveProfile(e) {
-    e.preventDefault(); setMsg(''); setErr('')
-    try { const u = await api.updateMe({ email }); setUser?.(u); setMsg('Profile saved.') }
-    catch (e2) { setErr(e2.message) }
+    e.preventDefault()
+    setProfileMsg('')
+    setProfileErr('')
+    setProfileBusy(true)
+    try {
+      const u = await api.updateMe({ email })
+      setUser?.(u)
+      setProfileMsg('Profile updated successfully.')
+    } catch (e2) {
+      setProfileErr(e2.message || 'Failed to update profile')
+    } finally {
+      setProfileBusy(false)
+    }
   }
 
   async function savePassword(e) {
-    e.preventDefault(); setMsg(''); setErr('')
-    if (pw.newPassword !== pw.confirm) { setErr('New passwords do not match'); return }
-    try { await api.changePassword(pw.currentPassword, pw.newPassword); setMsg('Password changed.'); setPw({ currentPassword: '', newPassword: '', confirm: '' }) }
-    catch (e2) { setErr(e2.message) }
+    e.preventDefault()
+    setPwMsg('')
+    setPwErr('')
+    if (!pw.currentPassword) {
+      setPwErr('Please enter your current password.')
+      return
+    }
+    if (!pw.newPassword) {
+      setPwErr('Please enter a new password.')
+      return
+    }
+    if (pw.newPassword.length < 4) {
+      setPwErr('New password must be at least 4 characters long.')
+      return
+    }
+    if (pw.newPassword !== pw.confirm) {
+      setPwErr('New passwords do not match.')
+      return
+    }
+    setPwBusy(true)
+    try {
+      const res = await api.changePassword(pw.currentPassword, pw.newPassword)
+      setPwMsg(res.message || 'Password updated successfully! You can now use your new password.')
+      setPw({ currentPassword: '', newPassword: '', confirm: '' })
+    } catch (e2) {
+      setPwErr(e2.message || 'Failed to update password')
+    } finally {
+      setPwBusy(false)
+    }
   }
 
   async function saveApiKeys(e) { 
@@ -482,31 +526,171 @@ export default function Settings() {
 
           {/* USER PROFILE & SECURITY CREDENTIALS */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+            {/* User Profile Form */}
             <form onSubmit={saveProfile} className="card p-6 space-y-5 hover:border-cyan-400/40 transition-all duration-300 flex flex-col justify-between">
               <div className="space-y-5">
                 <div className="flex items-center justify-between border-b border-white/10 pb-3">
-                  <h3 className="flex items-center gap-2 text-base font-bold text-white"><UserCircle size={18} className="text-cyan-400" /> User Profile</h3>
+                  <h3 className="flex items-center gap-2 text-base font-bold text-white">
+                    <UserCircle size={18} className="text-cyan-400" /> User Profile
+                  </h3>
+                  <span className="text-[10px] font-mono uppercase px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 font-bold border border-cyan-400/30">
+                    {user?.role || 'user'}
+                  </span>
                 </div>
+
+                {profileErr && (
+                  <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs font-semibold flex items-center gap-2 animate-in fade-in">
+                    <AlertCircle size={15} className="shrink-0 text-rose-400" />
+                    <span>{profileErr}</span>
+                  </div>
+                )}
+
+                {profileMsg && (
+                  <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs font-semibold flex items-center gap-2 animate-in fade-in">
+                    <CheckCircle2 size={15} className="shrink-0 text-emerald-400" />
+                    <span>{profileMsg}</span>
+                  </div>
+                )}
+
                 <div className="space-y-4">
-                  <div><label className="label">Username</label><input className="input !bg-white/5 opacity-80" value={user?.username || ''} disabled /></div>
-                  <div><label className="label">Email Address</label><input className="input" value={email} onChange={(e) => setEmail(e.target.value)} /></div>
+                  <div>
+                    <label className="label">Username</label>
+                    <input className="input !bg-white/5 opacity-80 cursor-not-allowed" value={user?.username || ''} disabled />
+                  </div>
+                  <div>
+                    <label className="label">Email Address</label>
+                    <input className="input" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+                  </div>
                 </div>
               </div>
-              <div className="flex justify-end pt-4"><button type="submit" className="btn-primary text-xs w-full sm:w-auto"><Save size={15} /> Save Profile</button></div>
+              <div className="flex justify-end pt-4">
+                <button type="submit" disabled={profileBusy} className="btn-primary text-xs w-full sm:w-auto flex items-center justify-center gap-2 cursor-pointer">
+                  {profileBusy ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />}
+                  <span>{profileBusy ? 'Saving...' : 'Save Profile'}</span>
+                </button>
+              </div>
             </form>
 
-            <form onSubmit={savePassword} className="card p-6 space-y-5 hover:border-cyan-400/40 transition-all duration-300 flex flex-col justify-between">
+            {/* Security Credentials Form */}
+            <form onSubmit={savePassword} className="card p-6 space-y-5 hover:border-purple-400/40 transition-all duration-300 flex flex-col justify-between">
               <div className="space-y-5">
                 <div className="flex items-center justify-between border-b border-white/10 pb-3">
-                  <h3 className="flex items-center gap-2 text-base font-bold text-white"><KeyRound size={18} className="text-purple-400" /> Security Credentials</h3>
+                  <h3 className="flex items-center gap-2 text-base font-bold text-white">
+                    <KeyRound size={18} className="text-purple-400" /> Security Credentials
+                  </h3>
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 font-bold border border-purple-400/30">
+                    Bcrypt 12R
+                  </span>
                 </div>
+
+                {pwErr && (
+                  <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs font-semibold flex items-center gap-2 animate-in fade-in">
+                    <AlertCircle size={15} className="shrink-0 text-rose-400" />
+                    <span>{pwErr}</span>
+                  </div>
+                )}
+
+                {pwMsg && (
+                  <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs font-semibold flex items-center gap-2 animate-in fade-in">
+                    <CheckCircle2 size={15} className="shrink-0 text-emerald-400" />
+                    <span>{pwMsg}</span>
+                  </div>
+                )}
+
                 <div className="space-y-4">
-                  <div><label className="label">Current password</label><input type="password" className="input" value={pw.currentPassword} onChange={(e) => setPw({ ...pw, currentPassword: e.target.value })} required /></div>
-                  <div><label className="label">New password</label><input type="password" className="input" value={pw.newPassword} onChange={(e) => setPw({ ...pw, newPassword: e.target.value })} required /></div>
-                  <div><label className="label">Confirm new password</label><input type="password" className="input" value={pw.confirm} onChange={(e) => setPw({ ...pw, confirm: e.target.value })} required /></div>
+                  {/* Current Password */}
+                  <div>
+                    <label className="label">Current Password</label>
+                    <div className="relative flex items-center">
+                      <input
+                        type={pwShow.current ? 'text' : 'password'}
+                        className="input pr-10"
+                        value={pw.currentPassword}
+                        onChange={(e) => setPw({ ...pw, currentPassword: e.target.value })}
+                        placeholder="Enter current password"
+                        required
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setPwShow({ ...pwShow, current: !pwShow.current })}
+                        className="absolute right-3 text-slate-400 hover:text-white p-1"
+                        tabIndex={-1}
+                      >
+                        {pwShow.current ? <EyeOff size={15} /> : <Eye size={15} />}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* New Password */}
+                  <div>
+                    <div className="flex items-center justify-between">
+                      <label className="label">New Password</label>
+                      <span className="text-[10px] text-slate-400 font-mono">Min 4 characters</span>
+                    </div>
+                    <div className="relative flex items-center">
+                      <input
+                        type={pwShow.next ? 'text' : 'password'}
+                        className="input pr-10"
+                        value={pw.newPassword}
+                        onChange={(e) => setPw({ ...pw, newPassword: e.target.value })}
+                        placeholder="Enter new password"
+                        required
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setPwShow({ ...pwShow, next: !pwShow.next })}
+                        className="absolute right-3 text-slate-400 hover:text-white p-1"
+                        tabIndex={-1}
+                      >
+                        {pwShow.next ? <EyeOff size={15} /> : <Eye size={15} />}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Confirm Password */}
+                  <div>
+                    <div className="flex items-center justify-between">
+                      <label className="label">Confirm New Password</label>
+                      {pw.confirm && (
+                        <span className={`text-[10px] font-bold ${
+                          pw.newPassword === pw.confirm ? 'text-emerald-400' : 'text-rose-400'
+                        }`}>
+                          {pw.newPassword === pw.confirm ? '✓ Passwords match' : '✕ Do not match'}
+                        </span>
+                      )}
+                    </div>
+                    <div className="relative flex items-center">
+                      <input
+                        type={pwShow.confirm ? 'text' : 'password'}
+                        className="input pr-10"
+                        value={pw.confirm}
+                        onChange={(e) => setPw({ ...pw, confirm: e.target.value })}
+                        placeholder="Confirm new password"
+                        required
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setPwShow({ ...pwShow, confirm: !pwShow.confirm })}
+                        className="absolute right-3 text-slate-400 hover:text-white p-1"
+                        tabIndex={-1}
+                      >
+                        {pwShow.confirm ? <EyeOff size={15} /> : <Eye size={15} />}
+                      </button>
+                    </div>
+                  </div>
                 </div>
               </div>
-              <div className="flex justify-end pt-4"><button type="submit" className="btn-primary text-xs w-full sm:w-auto"><Save size={15} /> Update Password</button></div>
+
+              <div className="flex justify-end pt-4">
+                <button
+                  type="submit"
+                  disabled={pwBusy}
+                  className="btn-primary text-xs w-full sm:w-auto flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  {pwBusy ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />}
+                  <span>{pwBusy ? 'Updating Password...' : 'Update Password'}</span>
+                </button>
+              </div>
             </form>
           </div>
         </div>

@@ -1,0 +1,1402 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SentinelAI — Comprehensive FYP2 Technical Report</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+  :root {
+    --primary: #0ea5e9;
+    --primary-dark: #0284c7;
+    --accent: #22d3ee;
+    --bg: #ffffff;
+    --text: #1e293b;
+    --text-secondary: #64748b;
+    --border: #e2e8f0;
+    --card-bg: #f8fafc;
+    --code-bg: #f1f5f9;
+    --critical: #ef4444;
+    --high: #f97316;
+    --medium: #eab308;
+    --low: #3b82f6;
+    --info: #94a3b8;
+    --success: #22c55e;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  @page {
+    size: A4;
+    margin: 20mm 18mm 25mm 18mm;
+    @bottom-center {
+      content: "SentinelAI — FYP2 Comprehensive Report | Page " counter(page);
+      font-size: 9px;
+      color: #94a3b8;
+    }
+  }
+
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    color: var(--text);
+    line-height: 1.7;
+    font-size: 11pt;
+    background: var(--bg);
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* ===== COVER PAGE ===== */
+  .cover-page {
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+    background: linear-gradient(135deg, #0f172a 0%, #1e293b 40%, #0f172a 100%);
+    color: white;
+    page-break-after: always;
+    padding: 40px;
+    position: relative;
+    overflow: hidden;
+  }
+  .cover-page::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: radial-gradient(ellipse at 30% 20%, rgba(34,211,238,0.15) 0%, transparent 60%),
+                radial-gradient(ellipse at 70% 80%, rgba(14,165,233,0.1) 0%, transparent 60%);
+  }
+  .cover-page * { position: relative; z-index: 1; }
+  .cover-logo { font-size: 72px; margin-bottom: 10px; }
+  .cover-title { font-size: 38px; font-weight: 800; letter-spacing: -1px; margin-bottom: 8px; }
+  .cover-subtitle { font-size: 16px; color: var(--accent); font-weight: 500; margin-bottom: 40px; letter-spacing: 2px; text-transform: uppercase; }
+  .cover-meta { font-size: 13px; color: #94a3b8; line-height: 2.2; }
+  .cover-meta strong { color: #e2e8f0; }
+  .cover-badge {
+    display: inline-block;
+    padding: 6px 18px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 600;
+    margin: 4px;
+    letter-spacing: 0.5px;
+  }
+  .badge-agents { background: rgba(139,92,246,0.25); color: #a78bfa; border: 1px solid rgba(139,92,246,0.4); }
+  .badge-tools { background: rgba(239,68,68,0.2); color: #fca5a5; border: 1px solid rgba(239,68,68,0.4); }
+  .badge-owasp { background: rgba(245,158,11,0.2); color: #fcd34d; border: 1px solid rgba(245,158,11,0.4); }
+  .badge-rag { background: rgba(34,211,238,0.2); color: #67e8f9; border: 1px solid rgba(34,211,238,0.4); }
+  .cover-line { width: 120px; height: 2px; background: linear-gradient(90deg, transparent, var(--accent), transparent); margin: 30px auto; }
+  .cover-university { margin-top: 40px; font-size: 12px; color: #64748b; }
+
+  /* ===== GENERAL LAYOUT ===== */
+  .content { max-width: 100%; padding: 0; }
+
+  h1 {
+    font-size: 28px;
+    font-weight: 800;
+    color: var(--primary-dark);
+    margin: 50px 0 20px 0;
+    padding-bottom: 10px;
+    border-bottom: 3px solid var(--primary);
+    page-break-after: avoid;
+  }
+  h2 {
+    font-size: 20px;
+    font-weight: 700;
+    color: #1e293b;
+    margin: 35px 0 14px 0;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--border);
+    page-break-after: avoid;
+  }
+  h3 {
+    font-size: 15px;
+    font-weight: 600;
+    color: #334155;
+    margin: 22px 0 10px 0;
+    page-break-after: avoid;
+  }
+  h4 { font-size: 13px; font-weight: 600; color: #475569; margin: 14px 0 6px 0; }
+
+  p { margin-bottom: 10px; text-align: justify; }
+
+  /* ===== TABLE OF CONTENTS ===== */
+  .toc { page-break-after: always; }
+  .toc h1 { text-align: center; border: none; }
+  .toc-list { list-style: none; padding: 0; }
+  .toc-list li { padding: 6px 0; border-bottom: 1px dotted #e2e8f0; font-size: 12px; }
+  .toc-list li a { text-decoration: none; color: var(--text); display: flex; justify-content: space-between; }
+  .toc-list li a:hover { color: var(--primary); }
+  .toc-section { font-weight: 700; font-size: 13px; margin-top: 12px; color: var(--primary-dark); }
+
+  /* ===== TABLES ===== */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 14px 0 20px 0;
+    font-size: 10.5px;
+    page-break-inside: auto;
+  }
+  thead { background: #f1f5f9; }
+  th {
+    padding: 8px 10px;
+    text-align: left;
+    font-weight: 600;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: #475569;
+    border-bottom: 2px solid var(--border);
+  }
+  td {
+    padding: 7px 10px;
+    border-bottom: 1px solid #f1f5f9;
+    vertical-align: top;
+  }
+  tr:nth-child(even) { background: #fafbfc; }
+
+  /* ===== CODE BLOCKS ===== */
+  code {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9.5px;
+    background: var(--code-bg);
+    padding: 2px 5px;
+    border-radius: 3px;
+    color: #be185d;
+  }
+  pre {
+    background: #0f172a;
+    color: #e2e8f0;
+    padding: 16px;
+    border-radius: 8px;
+    overflow-x: auto;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    line-height: 1.6;
+    margin: 12px 0 18px 0;
+    page-break-inside: avoid;
+  }
+  pre code { background: none; color: inherit; padding: 0; }
+
+  /* ===== CALLOUT BOXES ===== */
+  .callout {
+    padding: 14px 18px;
+    border-radius: 8px;
+    margin: 14px 0;
+    font-size: 11px;
+    border-left: 4px solid;
+    page-break-inside: avoid;
+  }
+  .callout-info { background: #eff6ff; border-color: #3b82f6; }
+  .callout-warn { background: #fffbeb; border-color: #f59e0b; }
+  .callout-danger { background: #fef2f2; border-color: #ef4444; }
+  .callout-success { background: #f0fdf4; border-color: #22c55e; }
+  .callout-title { font-weight: 700; margin-bottom: 4px; font-size: 12px; }
+
+  /* ===== SEVERITY BADGES ===== */
+  .sev { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 9px; font-weight: 700; color: white; }
+  .sev-critical { background: var(--critical); }
+  .sev-high { background: var(--high); }
+  .sev-medium { background: var(--medium); color: #1e293b; }
+  .sev-low { background: var(--low); }
+  .sev-info { background: var(--info); }
+
+  /* ===== IMAGES ===== */
+  .figure {
+    margin: 20px 0;
+    text-align: center;
+    page-break-inside: avoid;
+  }
+  .figure img {
+    max-width: 100%;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+  }
+  .figure-caption {
+    font-size: 10px;
+    color: var(--text-secondary);
+    margin-top: 8px;
+    font-style: italic;
+  }
+
+  /* ===== FILE ANALYSIS CARDS ===== */
+  .file-card {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 18px;
+    margin: 10px 0;
+    page-break-inside: avoid;
+  }
+  .file-card-header {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--primary-dark);
+    margin-bottom: 6px;
+  }
+  .file-card p { font-size: 10.5px; margin-bottom: 5px; }
+
+  /* ===== DIRECTORY TREE ===== */
+  .dir-tree {
+    background: #0f172a;
+    color: #94a3b8;
+    padding: 18px;
+    border-radius: 8px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    line-height: 1.8;
+    margin: 12px 0;
+  }
+  .dir-tree .dir { color: #38bdf8; font-weight: 600; }
+  .dir-tree .file { color: #e2e8f0; }
+  .dir-tree .comment { color: #64748b; }
+
+  /* ===== STATS GRID ===== */
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+    margin: 20px 0;
+  }
+  .stat-card {
+    background: linear-gradient(135deg, var(--card-bg), white);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px;
+    text-align: center;
+  }
+  .stat-value { font-size: 28px; font-weight: 800; color: var(--primary-dark); }
+  .stat-label { font-size: 10px; color: var(--text-secondary); margin-top: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
+
+  /* ===== SECTION BREAKS ===== */
+  .section-break { page-break-before: always; }
+  .no-break { page-break-inside: avoid; }
+
+  /* ===== LISTS ===== */
+  ul, ol { margin: 8px 0 14px 24px; }
+  li { margin-bottom: 4px; font-size: 11px; }
+
+  /* ===== FOOTER ===== */
+  .page-footer {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    text-align: center;
+    font-size: 9px;
+    color: #94a3b8;
+    padding: 8px;
+  }
+
+  /* ===== FLOW DIAGRAM TEXT ===== */
+  .flow-box {
+    display: inline-block;
+    padding: 8px 14px;
+    border: 2px solid var(--primary);
+    border-radius: 8px;
+    font-size: 10px;
+    font-weight: 600;
+    margin: 4px;
+    background: #eff6ff;
+  }
+  .flow-arrow { display: inline-block; font-size: 18px; color: var(--primary); vertical-align: middle; margin: 0 4px; }
+
+  @media print {
+    body { font-size: 10pt; }
+    .cover-page { height: 100vh; }
+    .no-print { display: none; }
+    a { color: var(--text) !important; text-decoration: none !important; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ============================== COVER PAGE ============================== -->
+<div class="cover-page">
+  <div class="cover-logo">🛡️</div>
+  <div class="cover-title">SentinelAI</div>
+  <div class="cover-subtitle">Autonomous Multi-Agent AI Penetration Testing<br>& Vulnerability Assessment Platform</div>
+  <div class="cover-line"></div>
+  <div style="margin: 20px 0;">
+    <span class="cover-badge badge-agents">53 AI Specialist Personas</span>
+    <span class="cover-badge badge-tools">150+ Kali Linux Tools</span>
+    <span class="cover-badge badge-owasp">OWASP 2025 Compliant</span>
+    <span class="cover-badge badge-rag">Dual RAG Knowledge Base</span>
+  </div>
+  <div class="cover-line"></div>
+  <div class="cover-meta">
+    <strong>Comprehensive Final Year Project (FYP 2) Technical Report</strong><br><br>
+    <strong>Author / Lead Developer:</strong> Muhammad Saifudin Bin Mohd Jamal<br>
+    <strong>Institution:</strong> Kulliyyah of Information &amp; Communication Technology (KICT)<br>
+    <strong>University:</strong> International Islamic University Malaysia (IIUM)<br>
+    <strong>Production URL:</strong> https://sentinelai.studio<br>
+    <strong>Report Date:</strong> September 2026<br>
+    <strong>Project Category:</strong> Autonomous Offensive Cybersecurity · Multi-Agent AI Systems · DevSecOps
+  </div>
+  <div class="cover-university">
+    © 2026 Muhammad Saifudin Bin Mohd Jamal — All Rights Reserved
+  </div>
+</div>
+
+<!-- ============================== TABLE OF CONTENTS ============================== -->
+<div class="toc">
+  <h1>Table of Contents</h1>
+  <ul class="toc-list">
+    <li class="toc-section"><a href="#ch1">1. Executive Summary & Abstract</a></li>
+    <li class="toc-section"><a href="#ch2">2. Problem Statement & Research Motivation</a></li>
+    <li class="toc-section"><a href="#ch3">3. Project Objectives</a></li>
+    <li class="toc-section"><a href="#ch4">4. System Architecture & Pipeline Methodology</a></li>
+    <li><a href="#ch4-1">4.1 High-Level Data Flow</a></li>
+    <li><a href="#ch4-2">4.2 The 4-Stage Vulnerability Enrichment Chain</a></li>
+    <li><a href="#ch4-3">4.3 Multi-Tier Architecture Breakdown</a></li>
+    <li class="toc-section"><a href="#ch5">5. Technology Stack Matrix</a></li>
+    <li class="toc-section"><a href="#ch6">6. Project Directory Structure</a></li>
+    <li class="toc-section"><a href="#ch7">7. Backend — Detailed File Analysis</a></li>
+    <li><a href="#ch7-1">7.1 Core Runtime & Configuration</a></li>
+    <li><a href="#ch7-2">7.2 Authentication & Authorization</a></li>
+    <li><a href="#ch7-3">7.3 Database Layer</a></li>
+    <li><a href="#ch7-4">7.4 Unified Scan Pipeline</a></li>
+    <li><a href="#ch7-5">7.5 AI Engine & LLM Client</a></li>
+    <li><a href="#ch7-6">7.6 Autonomous Exploitation Engine</a></li>
+    <li><a href="#ch7-7">7.7 Integrations (GitHub, RAG, Native Tools)</a></li>
+    <li><a href="#ch7-8">7.8 Communication Channels</a></li>
+    <li><a href="#ch7-9">7.9 Reporting, Billing & Other Modules</a></li>
+    <li class="toc-section"><a href="#ch8">8. Frontend — Detailed File Analysis</a></li>
+    <li><a href="#ch8-1">8.1 Configuration & Entry Points</a></li>
+    <li><a href="#ch8-2">8.2 Library & Context Files</a></li>
+    <li><a href="#ch8-3">8.3 Shared Components</a></li>
+    <li><a href="#ch8-4">8.4 Page Components</a></li>
+    <li class="toc-section"><a href="#ch9">9. The 53 AI Specialist Persona Mesh</a></li>
+    <li class="toc-section"><a href="#ch10">10. Dual RAG Knowledge Base</a></li>
+    <li><a href="#ch10-1">10.1 PayloadsAllTheThings (201 Docs, 64 Categories)</a></li>
+    <li><a href="#ch10-2">10.2 Cybersecurity Skills Corpus (817 Playbooks)</a></li>
+    <li class="toc-section"><a href="#ch11">11. Database Schema & Data Model</a></li>
+    <li class="toc-section"><a href="#ch12">12. REST API Reference</a></li>
+    <li class="toc-section"><a href="#ch13">13. WebSocket Real-Time Architecture</a></li>
+    <li class="toc-section"><a href="#ch14">14. Security Analysis & Hardening</a></li>
+    <li class="toc-section"><a href="#ch15">15. Deployment Architecture</a></li>
+    <li class="toc-section"><a href="#ch16">16. Key System Features & Interface Showcase</a></li>
+    <li class="toc-section"><a href="#ch17">17. Experimental Evaluation & Testing</a></li>
+    <li class="toc-section"><a href="#ch18">18. Improvements & Recommendations</a></li>
+    <li class="toc-section"><a href="#ch19">19. Limitations</a></li>
+    <li class="toc-section"><a href="#ch20">20. Conclusion</a></li>
+    <li class="toc-section"><a href="#appendix">Appendix: System Statistics</a></li>
+  </ul>
+</div>
+
+<!-- ============================== CHAPTER 1 ============================== -->
+<div class="content">
+
+<h1 id="ch1">1. Executive Summary &amp; Abstract</h1>
+
+<p>Penetration testing and vulnerability assessment are critical components of contemporary cyber defence. However, conventional security audits remain heavily reliant on manual labour, while existing automated scanners typically suffer from high false-positive rates, lack contextual exploitability reasoning, and create a disconnect between static source code analysis (SAST) and dynamic runtime testing (DAST).</p>
+
+<p><strong>SentinelAI</strong> is an autonomous, full-stack, local-first penetration testing and vulnerability assessment platform designed to bridge this gap. By unifying a <strong>Native Kali Linux Offensive Engine (150+ tools)</strong>, a <strong>swarm of 53 domain-specialist AI personas</strong>, and an <strong>embedded FTS5 Retrieval-Augmented Generation (RAG) exploit knowledge base</strong> (derived from <em>PayloadsAllTheThings</em> + 817 Cybersecurity Skills playbooks), SentinelAI delivers autonomous end-to-end security audits.</p>
+
+<p>The platform executes automated Blackbox (DAST) network/web probing and Whitebox (SAST) source code reviews, enriches every identified vulnerability through an automated 4-stage verification chain, and outputs boardroom-ready executive and technical PDF reports with near-zero false-positive noise.</p>
+
+<div class="stats-grid">
+  <div class="stat-card"><div class="stat-value">53</div><div class="stat-label">AI Specialist Agents</div></div>
+  <div class="stat-card"><div class="stat-value">150+</div><div class="stat-label">Kali Linux Tools</div></div>
+  <div class="stat-card"><div class="stat-value">1,018</div><div class="stat-label">RAG Knowledge Docs</div></div>
+  <div class="stat-card"><div class="stat-value">90+</div><div class="stat-label">REST API Endpoints</div></div>
+</div>
+
+<div class="stats-grid">
+  <div class="stat-card"><div class="stat-value">28</div><div class="stat-label">Database Tables</div></div>
+  <div class="stat-card"><div class="stat-value">15</div><div class="stat-label">Frontend Pages</div></div>
+  <div class="stat-card"><div class="stat-value">4</div><div class="stat-label">LLM Providers</div></div>
+  <div class="stat-card"><div class="stat-value">64</div><div class="stat-label">Exploit Categories</div></div>
+</div>
+
+<!-- ============================== CHAPTER 2 ============================== -->
+<h1 id="ch2" class="section-break">2. Problem Statement &amp; Research Motivation</h1>
+
+<p>Contemporary cybersecurity operations encounter three fundamental bottlenecks that SentinelAI aims to solve:</p>
+
+<table>
+  <thead>
+    <tr><th>Challenge</th><th>Real-World Impact</th><th>How SentinelAI Solves It</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><strong>1. The Human Expertise Bottleneck</strong></td>
+      <td>Certified penetration testers and red-team consultants are scarce and prohibitively expensive for recurring audits.</td>
+      <td>An autonomous multi-agent swarm emulates 53 specialized red-team roles, from recon specialists to exploit chainers.</td>
+    </tr>
+    <tr>
+      <td><strong>2. High Noise & False-Positive Fatigue</strong></td>
+      <td>Automated scanners (Nikto, Nuclei, ZAP) produce voluminous raw outputs with benign warnings and false flags.</td>
+      <td>Every raw tool finding is cross-referenced with real PoC payloads and validated by AI consensus before triage.</td>
+    </tr>
+    <tr>
+      <td><strong>3. Disconnected SAST & DAST Workflows</strong></td>
+      <td>Security teams perform code audits and dynamic web scans in separate silos without correlation.</td>
+      <td>A unified pipeline ingests both web target URLs (DAST) and raw source code (SAST), normalizing all findings into OWASP Top 10 standards.</td>
+    </tr>
+  </tbody>
+</table>
+
+<!-- ============================== CHAPTER 3 ============================== -->
+<h1 id="ch3">3. Project Objectives</h1>
+
+<ol>
+  <li><strong>Objective 1 — Unified Multi-Tool Orchestration:</strong> To build a robust orchestration layer capable of invoking 150+ native Kali Linux security tools (Nmap, Nuclei, SQLMap, FFUF, Nikto, Subfinder, etc.) via asynchronous subprocesses and REST interfaces.</li>
+  <li><strong>Objective 2 — Multi-Agent AI Verification Mesh:</strong> To architect a 53-persona AI reasoning core that analyses raw outputs, validates exploitability, calculates CVSS v3.1 scores, and filters out false positives.</li>
+  <li><strong>Objective 3 — Embedded Exploit RAG Knowledge Base:</strong> To construct a local-first SQLite FTS5 full-text search index over curated attack vectors (PayloadsAllTheThings + 817 Cybersecurity Skills), automatically attaching verified Proof-of-Concept payloads to discovered vulnerabilities.</li>
+  <li><strong>Objective 4 — Real-Time Telemetry & Modern UX:</strong> To implement a responsive web application featuring real-time WebSocket stdout streaming, interactive OWASP threat categorization, and a dual-protocol (Obsidian Dark / Sunlight Light) design system.</li>
+  <li><strong>Objective 5 — Automated Reporting & Continuous Monitoring:</strong> To engineer automated PDF generation for executive and technical audiences, alongside background cron-based monitoring for continuous target scanning.</li>
+</ol>
+
+<!-- ============================== CHAPTER 4 ============================== -->
+<h1 id="ch4" class="section-break">4. System Architecture &amp; Pipeline Methodology</h1>
+
+<p>SentinelAI utilizes an asynchronous, decoupled architecture separating the presentation layer, orchestration gateway, offensive execution engine, and AI reasoning mesh.</p>
+
+<div class="figure">
+  <img src="docs/images/12-system-architecture.png" alt="System Architecture">
+  <div class="figure-caption">Figure 4.1: Real System Architecture & Flow Tree — showcasing the 4-layer decomposition from Frontend to AI Core.</div>
+</div>
+
+<h2 id="ch4-1">4.1 High-Level Data Flow</h2>
+
+<p>The system operates as a pipeline architecture where scan requests flow through multiple processing stages:</p>
+
+<div style="text-align:center; margin: 20px 0;">
+  <span class="flow-box">React 18 SPA</span>
+  <span class="flow-arrow">→</span>
+  <span class="flow-box">Express REST API</span>
+  <span class="flow-arrow">→</span>
+  <span class="flow-box">Unified Pipeline</span>
+  <span class="flow-arrow">→</span>
+  <span class="flow-box">Kali Tools / AST Parser</span>
+  <span class="flow-arrow">→</span>
+  <span class="flow-box">4-Stage Enrichment</span>
+  <span class="flow-arrow">→</span>
+  <span class="flow-box">SQLite + WebSocket</span>
+</div>
+
+<h2 id="ch4-2">4.2 The 4-Stage Vulnerability Enrichment Chain</h2>
+
+<p>Whenever a tool or code parser produces a potential security issue, it passes through the strict 4-stage pipeline inside <code>backend/src/pipeline.js</code>:</p>
+
+<table>
+  <thead><tr><th>Stage</th><th>Name</th><th>Description</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Stage 1</strong></td><td>OWASP Normalization</td><td>Matches finding signatures against OWASP Top 10 2025 categories, assigning standard CWE identifiers and base severity scores.</td></tr>
+    <tr><td><strong>Stage 2</strong></td><td>RAG Exploit Cross-Referencing</td><td>Queries the SQLite FTS5 database against vulnerability type and tech stack, extracting concrete PoC exploit payloads from PayloadsAllTheThings + 817 Skills.</td></tr>
+    <tr><td><strong>Stage 3</strong></td><td>Specialist Agent Verification</td><td>Routes the finding to the appropriate specialist persona (e.g., <code>sql-injection-specialist</code>, <code>crypto-analyzer</code>). The persona confirms whether the finding is actionable or a false positive.</td></tr>
+    <tr><td><strong>Stage 4</strong></td><td>Privacy & PII Scrubbing</td><td>Redacts internal credentials, session tokens, passwords, and private identifiers before the finding is persisted and broadcast.</td></tr>
+  </tbody>
+</table>
+
+<h2 id="ch4-3">4.3 Multi-Tier Architecture Breakdown</h2>
+
+<table>
+  <thead><tr><th>Architecture Layer</th><th>Core Technologies</th><th>Responsibilities</th></tr></thead>
+  <tbody>
+    <tr><td><strong>1. Presentation</strong></td><td>React 18, Vite 5, Tailwind CSS, Framer Motion, Recharts, Socket.IO Client</td><td>Interactive dashboards, real-time terminals, severity charts, and dual Dark/Light protocol transitions.</td></tr>
+    <tr><td><strong>2. Orchestration</strong></td><td>Node.js (ESM), Express 4, Socket.IO 4, better-sqlite3 (WAL+FTS5), PDFKit</td><td>API endpoints, JWT auth & RBAC, scan coordination, 4-stage pipeline, PDF report generation.</td></tr>
+    <tr><td><strong>3. Offensive Engine</strong></td><td>Kali Linux, child_process (argv arrays), Metasploit RPC, AST Tokenizer</td><td>Direct execution of 150+ native pentest binaries and lexical AST parsing of uploaded source files.</td></tr>
+    <tr><td><strong>4. AI Reasoning Core</strong></td><td>53 Markdown Personas, Multi-LLM (Bandelbanget/OpenRouter/Groq), FTS5 RAG</td><td>Autonomous triage, false-positive elimination, CVSS scoring, remediation drafting, and contextual security chat.</td></tr>
+  </tbody>
+</table>
+
+<!-- ============================== CHAPTER 5 ============================== -->
+<h1 id="ch5" class="section-break">5. Technology Stack Matrix</h1>
+
+<table>
+  <thead><tr><th>Category</th><th>Technology</th><th>Version</th><th>Purpose & Rationale</th></tr></thead>
+  <tbody>
+    <tr><td>Frontend UI</td><td><strong>React</strong></td><td>18.3.1</td><td>Component-driven SPA architecture</td></tr>
+    <tr><td>Build Tooling</td><td><strong>Vite</strong></td><td>5.4.11</td><td>ESM bundling with HMR for rapid development</td></tr>
+    <tr><td>Styling</td><td><strong>Tailwind CSS</strong></td><td>3.4.15</td><td>Utility-first CSS with dual-protocol CSS variables</td></tr>
+    <tr><td>Animation</td><td><strong>Framer Motion</strong></td><td>Latest</td><td>Hardware-accelerated animations and page transitions</td></tr>
+    <tr><td>Charts</td><td><strong>Recharts</strong></td><td>Latest</td><td>Threat metric donut charts and severity distribution</td></tr>
+    <tr><td>Diagrams</td><td><strong>Mermaid.js</strong></td><td>Latest</td><td>Interactive architecture workflow diagrams</td></tr>
+    <tr><td>Backend Runtime</td><td><strong>Node.js</strong></td><td>18+ (ESM)</td><td>Non-blocking event-driven concurrent scan handling</td></tr>
+    <tr><td>API Framework</td><td><strong>Express.js</strong></td><td>4.19.x</td><td>RESTful API gateway with modular routing</td></tr>
+    <tr><td>Real-Time</td><td><strong>Socket.IO</strong></td><td>4.8.x</td><td>Bi-directional WebSocket telemetry streaming</td></tr>
+    <tr><td>Database</td><td><strong>SQLite (better-sqlite3)</strong></td><td>11.x (WAL)</td><td>Zero-cloud embedded relational store with FTS5</td></tr>
+    <tr><td>Knowledge</td><td><strong>PayloadsAllTheThings</strong></td><td>201 Docs</td><td>Curated offensive PoC corpus indexed via FTS5</td></tr>
+    <tr><td>Knowledge</td><td><strong>Anthropic Skills</strong></td><td>817 Playbooks</td><td>Practitioner-grade cybersecurity skill workflows</td></tr>
+    <tr><td>AI LLM</td><td><strong>Bandelbanget DeepSeek V4 Pro</strong></td><td>Primary</td><td>Heavy reasoning tier for verification & code audit</td></tr>
+    <tr><td>AI LLM</td><td><strong>OpenRouter / Groq</strong></td><td>Fallback</td><td>Fast tier for chat, summaries, and lightweight tasks</td></tr>
+    <tr><td>Security OS</td><td><strong>Kali Linux</strong></td><td>2026.x Rolling</td><td>Native execution environment for 150+ security tools</td></tr>
+    <tr><td>Reporting</td><td><strong>PDFKit</strong></td><td>0.15.x</td><td>Programmatic vector PDF generation for audit delivery</td></tr>
+    <tr><td>Authentication</td><td><strong>jsonwebtoken + bcryptjs</strong></td><td>Latest</td><td>JWT token signing + salted password hashing</td></tr>
+    <tr><td>Payments</td><td><strong>Stripe</strong></td><td>Latest</td><td>Credit card payments with webhook fulfillment</td></tr>
+    <tr><td>Email</td><td><strong>Nodemailer</strong></td><td>Latest</td><td>SMTP-based scan report delivery and notifications</td></tr>
+    <tr><td>Exploitation</td><td><strong>Metasploit RPC</strong></td><td>Latest</td><td>Module execution, session management, post-exploitation</td></tr>
+    <tr><td>Tunnel</td><td><strong>Cloudflare Tunnel</strong></td><td>Latest</td><td>Secure public access to self-hosted Kali VM</td></tr>
+  </tbody>
+</table>
+
+<!-- ============================== CHAPTER 6 ============================== -->
+<h1 id="ch6" class="section-break">6. Project Directory Structure</h1>
+
+<pre><code>FYP2PROJECT/
+├── .env                          # Environment configuration (API keys, secrets)
+├── ARCHITECTURE.md               # Persistent system state & design document
+├── README.md                     # Project documentation & setup guide
+├── TODO.md                       # Task tracking
+├── speciality_update.md          # Full system capability document
+├── package.json                  # Root workspace scripts (concurrently)
+├── deploy-kali.py                # 1-click Python deployment to Kali server
+├── setup-kali.sh                 # Kali Linux environment bootstrap script
+│
+├── agents/                       # 54 AI specialist persona markdown files
+│   ├── _scope-guard.md           # Shared offensive operations mandate
+│   ├── web-hunter.md             # Default web vulnerability hunter
+│   ├── code-auditor.md           # Whitebox SAST specialist
+│   ├── database-attacker.md      # SQL/NoSQL exploitation specialist
+│   ├── ... (50 more specialists)
+│
+├── knowledge/
+│   ├── payloads/                 # PayloadsAllTheThings (64 categories, 201 docs)
+│   │   ├── SQL Injection/
+│   │   ├── XSS Injection/
+│   │   ├── Command Injection/
+│   │   └── ... (61 more categories)
+│   └── skills/                   # Anthropic Cybersecurity Skills (817 playbooks)
+│       ├── index.md              # Master catalog (159 KB)
+│       └── [817 skill directories with SKILL.md, scripts/, references/]
+│
+├── backend/
+│   ├── package.json              # Express + better-sqlite3 + PDFKit + Stripe
+│   ├── scripts/                  # 31 test, diagnostic & migration scripts
+│   └── src/
+│       ├── index.js              # Express + Socket.IO server (2,784 LOC)
+│       ├── config.js             # Centralized configuration loader
+│       ├── db.js                 # SQLite driver, schema, migrations (28 tables)
+│       ├── auth.js               # JWT + RBAC middleware
+│       ├── pipeline.js           # Unified DAST/SAST pipeline orchestrator
+│       ├── owasp.js              # OWASP 2025 Top 10 classification
+│       ├── report.js             # PDFKit enterprise report generator
+│       ├── billing.js            # SaaS plans, quotas, promo validation
+│       ├── stripe.js             # Stripe Checkout + webhook fulfillment
+│       ├── cve.js                # NVD CVE lookup + 24h cache
+│       ├── monitor-scheduler.js  # Cron-based recurring scans
+│       ├── kali-control.js       # Remote Kali host administration
+│       ├── email.js              # Nodemailer SMTP transport
+│       ├── custom-scripts.js     # User-defined scan scripts engine
+│       ├── folder-walker.js      # Recursive source code traversal
+│       ├── ai/
+│       │   ├── ai-engine.js      # AI verification, code audit, PoC generation
+│       │   ├── llm-client.js     # Multi-provider LLM failover client
+│       │   └── agent-registry.js # 53 persona loader & finding router
+│       ├── exploits/
+│       │   ├── orchestrator.js   # Autonomous Exploitation Engine (AEE)
+│       │   ├── registry.js       # Exploit technique matching database
+│       │   ├── msf-client.js     # Metasploit RPC MsgPack client
+│       │   ├── post-exploit.js   # Credential harvesting & persistence
+│       │   └── cpanel-authbypass.js # CVE-2026-41940 detection module
+│       ├── integrations/
+│       │   ├── native-tools.js   # 22 Kali tool subprocess executor
+│       │   ├── payloads-rag.js   # PayloadsAllTheThings FTS5 RAG engine
+│       │   ├── skills-rag.js     # 817-playbook FTS5 RAG engine
+│       │   └── github.js         # GitHub API + webhook integration
+│       └── channels/
+│           ├── telegram.js       # Zero-dependency Telegram bot
+│           ├── discord.js        # Raw WebSocket Discord bot
+│           └── index.js          # Unified channel gateway
+│
+├── frontend/
+│   ├── package.json              # React 18 + Vite 5 + Tailwind CSS
+│   ├── vite.config.js            # Dev proxy → backend:5000
+│   ├── tailwind.config.js        # Design tokens & colour system
+│   ├── public/
+│   │   ├── project-covers/       # 12 AI thematic cover images
+│   │   └── wallpapers/           # 6 high-res AI background wallpapers
+│   └── src/
+│       ├── App.jsx               # Routes, error boundary, context providers
+│       ├── index.css             # 800+ line design system (glassmorphism)
+│       ├── lib/
+│       │   ├── api.js            # 70+ endpoint HTTP client with JWT
+│       │   ├── AuthContext.jsx   # Authentication provider
+│       │   ├── ThemeContext.jsx   # Night/Day theme + wallpaper engine
+│       │   ├── ScanContext.jsx   # Active scan tracking context
+│       │   ├── AiContext.jsx     # AI chat history & toast notifications
+│       │   ├── cache.js          # Stale-while-revalidate cache + useQuery
+│       │   └── socket.js        # Socket.IO singleton + room subscriptions
+│       ├── components/           # 19 reusable UI components
+│       │   ├── Shell.jsx         # Master sidebar layout with RBAC nav
+│       │   ├── FindingDetailDrawer.jsx # 6-tab vulnerability inspector
+│       │   ├── NewScanModal.jsx  # Blackbox/Whitebox scan launcher
+│       │   ├── StructuralMappingView.jsx # Force-directed attack surface graph
+│       │   └── ...
+│       └── pages/                # 24 page components
+│           ├── Dashboard.jsx     # Central operational dashboard
+│           ├── ScanDetail.jsx    # Live terminal + findings + controls
+│           ├── Findings.jsx      # Global vulnerability catalog
+│           ├── ExploitCampaign.jsx # Metasploit campaign orchestration
+│           ├── KaliControl.jsx   # Remote Kali host administration
+│           └── ...
+│
+├── resources/                    # 12 tool shims, wrappers & service scripts
+├── docs/images/                  # 12 platform screenshots
+└── output/                       # Runtime: SQLite DB, PDFs, script logs
+</code></pre>
+
+<!-- ============================== CHAPTER 7 ============================== -->
+<h1 id="ch7" class="section-break">7. Backend — Detailed File Analysis</h1>
+
+<p>The backend comprises <strong>30+ source files</strong> totalling approximately <strong>15,000+ lines of code</strong>, implementing the entire orchestration, authentication, scanning, AI reasoning, exploitation, billing, and reporting subsystems.</p>
+
+<h2 id="ch7-1">7.1 Core Runtime &amp; Configuration</h2>
+
+<div class="file-card">
+  <div class="file-card-header">📄 backend/src/index.js — Main Application Server (2,784 LOC)</div>
+  <p><strong>Purpose:</strong> Primary Express + Socket.IO HTTP server. Mounts all middleware, CORS configuration, rate limiters, and 90+ API route handlers.</p>
+  <p><strong>Key Features:</strong> CORS whitelist (localhost + LAN + sentinelai.studio), login rate limiter (100 req/15min), feedback rate limiter (10 req/1h), JWT-authenticated WebSocket handshakes, scan/exploit room subscriptions.</p>
+  <p><strong>Security:</strong> Explicit origin checking via regex for subdomains and private LAN IPs. WebSocket connections rejected without valid JWT.</p>
+</div>
+
+<div class="file-card">
+  <div class="file-card-header">📄 backend/src/config.js — Configuration Loader</div>
+  <p><strong>Purpose:</strong> Centralised environment variable loader with defaults. Parses CORS allowlists, AI provider configs, Stripe keys, GitHub OAuth, Kali control, and path confinement settings.</p>
+  <p><strong>Security:</strong> Generates dynamic cryptographic JWT secrets if <code>JWT_SECRET</code> is missing. Path confinement via <code>whiteboxRoots</code> restricts which server directories can be inspected.</p>
+</div>
+
+<h2 id="ch7-2">7.2 Authentication &amp; Authorization</h2>
+
+<div class="file-card">
+  <div class="file-card-header">📄 backend/src/auth.js — JWT + RBAC Middleware</div>
+  <p><strong>Purpose:</strong> Authentication and authorisation middleware with token management.</p>
+  <p><strong>Key Functions:</strong></p>
+  <ul>
+    <li><code>signToken(user)</code> — Signs JWT with user ID, username, role, 12-hour expiration</li>
+    <li><code>authMiddleware()</code> — Extracts Bearer token, verifies signature, populates <code>req.user</code></li>
+    <li><code>requireRole(...roles)</code> — RBAC guard checking user role membership</li>
+  </ul>
+  <p><strong>Security:</strong> Rejects query-string tokens to prevent leakage in server logs. Timing-attack resistant. Built-in admin normalization.</p>
+</div>
+
+<h2 id="ch7-3">7.3 Database Layer</h2>
+
+<div class="file-card">
+  <div class="file-card-header">📄 backend/src/db.js — SQLite Database Driver &amp; Schema</div>
+  <p><strong>Purpose:</strong> <code>better-sqlite3</code> connection manager with WAL mode, schema creation (28 tables), migrations, and seed data.</p>
+  <p><strong>Key Functions:</strong> <code>getDb()</code> (lazy singleton), <code>initSchema()</code> (28 tables + indexes), <code>migrate()</code> (idempotent upgrades), <code>backupDatabase()</code> (online snapshots), <code>query/get/all/run/transaction</code> wrappers.</p>
+  <p><strong>Security:</strong> 100% prepared statements with parameter binding — completely immune to SQL injection. Bcrypt hashing for all credential columns.</p>
+</div>
+
+<h2 id="ch7-4">7.4 Unified Scan Pipeline</h2>
+
+<div class="file-card">
+  <div class="file-card-header">📄 backend/src/pipeline.js — Unified DAST/SAST Orchestrator</div>
+  <p><strong>Purpose:</strong> The master orchestration engine for both Blackbox (DAST) and Whitebox (SAST) pentest workflows. Implements the 4-stage enrichment chain.</p>
+  <p><strong>Key Methods:</strong></p>
+  <ul>
+    <li><code>runBlackbox(scan, options)</code> — Multi-phase native tool execution (Recon → Nuclei/Katana → Dalfox/SQLMap injection chaining → AI verification)</li>
+    <li><code>runWhitebox(scan, options)</code> — Pass 0 (deterministic regex, 50+ rules) + 3 specialist AI audit passes (Injection, Auth/Secrets, Logic/Config)</li>
+    <li><code>_patternScan(files)</code> — Fast deterministic SAST with 50+ compiled regex rules mapped to OWASP 2025</li>
+    <li><code>ingestFinding()</code> — Deduplication, AI verification, CWE/OWASP enrichment, persistence</li>
+    <li><code>pauseScan()</code> / <code>resumeScan()</code> / <code>stopScan()</code> — Scan lifecycle control</li>
+    <li><code>computeRiskScore()</code> — Weighted formula: critical×3 + high×2 + medium×0.8 + low×0.2</li>
+  </ul>
+  <p><strong>Security:</strong> All subprocess tool executions use strict argument arrays (no shell interpolation). URL sanitisation strips content-type junk. Memory leak protection via <code>releaseScanState()</code>.</p>
+</div>
+
+<div class="file-card">
+  <div class="file-card-header">📄 backend/src/owasp.js — OWASP 2025 Top 10 Classification</div>
+  <p><strong>Purpose:</strong> Maps findings to OWASP Top 10 (2025 edition) categories. Contains comprehensive CWE-to-OWASP mapping (100+ CWE IDs), keyword-based heuristics, and legacy 2021→2025 migration.</p>
+</div>
+
+<div class="file-card">
+  <div class="file-card-header">📄 backend/src/folder-walker.js — Source Code Traversal</div>
+  <p><strong>Purpose:</strong> Recursive directory walker for whitebox auditing with limits (300 files, 10MB max), binary detection, and fair-share per-folder quotas. Never reads <code>.env</code> or sensitive local secrets.</p>
+</div>
+
+<h2 id="ch7-5">7.5 AI Engine &amp; LLM Client</h2>
+
+<div class="file-card">
+  <div class="file-card-header">📄 backend/src/ai/llm-client.js — Multi-Provider LLM Failover</div>
+  <p><strong>Purpose:</strong> Multi-provider LLM client with automatic failover chain: Bandelbanget (DeepSeek V4 Pro) → OpenRouter → Groq → Heuristic Engine.</p>
+  <p><strong>Key Features:</strong> Smart provider routing (heavy reasoning vs fast operations), per-call abort timeouts (25s–90s), exponential backoff on 429/5xx errors, prompt injection stripping.</p>
+</div>
+
+<div class="file-card">
+  <div class="file-card-header">📄 backend/src/ai/ai-engine.js — AI Security Intelligence Engine</div>
+  <p><strong>Purpose:</strong> Core AI engine for finding verification, code auditing, attack-chain generation, and PoC exploit creation.</p>
+  <p><strong>Key Methods:</strong></p>
+  <ul>
+    <li><code>verifyFinding()</code> — True/false positive classification with confidence scoring (0–100%)</li>
+    <li><code>auditCode()</code> — Multi-pass specialist code analysis with parallel worker pool (5 concurrent, batch size 3)</li>
+    <li><code>generateAttackChain()</code> — Chains isolated findings into coherent attack scenarios</li>
+    <li><code>generateExploitPoc()</code> — Generates concrete curl/python PoC scripts with prerequisites</li>
+    <li><code>chat()</code> — Interactive conversational security copilot with all 53 agents</li>
+  </ul>
+</div>
+
+<div class="file-card">
+  <div class="file-card-header">📄 backend/src/ai/agent-registry.js — 53 Persona Loader &amp; Router</div>
+  <p><strong>Purpose:</strong> Discovers, parses, and hot-reloads 53 markdown persona files. Routes findings to the most appropriate specialist based on keyword matching against title, description, CWE, and module.</p>
+  <p><strong>Security:</strong> Automatically sanitises system prompts upon loading, removing dangerous jailbreak-like instructions.</p>
+</div>
+
+<h2 id="ch7-6">7.6 Autonomous Exploitation Engine</h2>
+
+<div class="file-card">
+  <div class="file-card-header">📄 backend/src/exploits/orchestrator.js — AEE Orchestrator</div>
+  <p><strong>Purpose:</strong> Autonomous Exploitation Engine with human-in-the-loop approval gates. Launches exploitation campaigns against verified high/critical findings (confidence ≥ 70%).</p>
+  <p><strong>Workflow:</strong> Verified Finding → matchExploits() → classifyRisk() → Build ordered steps → Execute (low-risk: auto; medium+: gated approval) → Post-exploitation → Live WebSocket broadcast.</p>
+  <p><strong>Security:</strong> Destructive actions (database dumps, reverse shells, password spraying) enter <code>requires_approval</code> status and pause until explicitly approved by authenticated operator.</p>
+</div>
+
+<div class="file-card">
+  <div class="file-card-header">📄 backend/src/exploits/msf-client.js — Metasploit RPC Client</div>
+  <p><strong>Purpose:</strong> Metasploit Framework RPC client using custom pure-JS MsgPack encoder/decoder. Supports <code>auth.login</code>, <code>module.execute</code>, <code>session.list</code>, <code>session.shell_write</code>.</p>
+  <p><strong>Security:</strong> Admin-only access restriction — MSF session command execution is strictly barred from client accounts.</p>
+</div>
+
+<div class="file-card">
+  <div class="file-card-header">📄 backend/src/exploits/post-exploit.js — Post-Exploitation Module</div>
+  <p><strong>Purpose:</strong> Executes post-exploitation modules: credential harvesting (passwd, shadow, env vars), persistence (cron, systemd, SSH keys), lateral movement, and data exfiltration. Persists findings to <code>exploit_loot</code> table.</p>
+</div>
+
+<div class="file-card">
+  <div class="file-card-header">📄 backend/src/exploits/registry.js — Exploit Technique Database</div>
+  <p><strong>Purpose:</strong> Strategy database mapping vulnerability CWEs to exploit playbooks (SQLi data extraction, LFI traversal, cPanel bypass, RCE). Risk classification: low → medium → high → critical.</p>
+</div>
+
+<h2 id="ch7-7">7.7 Integrations</h2>
+
+<div class="file-card">
+  <div class="file-card-header">📄 backend/src/integrations/native-tools.js — 22 Kali Tool Executor</div>
+  <p><strong>Purpose:</strong> Direct subprocess executor for 22 Kali tools: nmap, nuclei, nikto, gobuster, ffuf, wpscan, sqlmap, dalfox, subfinder, httpx, katana, hydra, metasploit, trivy, semgrep, gitleaks, feroxbuster, whatweb, sslscan, commix, amass, testssl.</p>
+  <p><strong>Security:</strong> Completely avoids <code>child_process.exec</code> and <code>shell: true</code>. All commands executed as discrete argument arrays — command injection impossible.</p>
+</div>
+
+<div class="file-card">
+  <div class="file-card-header">📄 backend/src/integrations/payloads-rag.js — PayloadsAllTheThings FTS5 RAG</div>
+  <p><strong>Purpose:</strong> Builds and queries FTS5 full-text search index over 201 payload documents across 47 vulnerability categories. BM25 ranking for relevance-scored retrieval.</p>
+</div>
+
+<div class="file-card">
+  <div class="file-card-header">📄 backend/src/integrations/skills-rag.js — 817 Skills FTS5 RAG</div>
+  <p><strong>Purpose:</strong> Indexes 817 Anthropic Cybersecurity Skills playbooks using tiered FTS5 query strategy (full AND → pairwise AND → OR fallback). BM25 column weights: name(8.0) > tags(4.0) > description(3.0) > subdomain(2.0) > body(0.5).</p>
+</div>
+
+<div class="file-card">
+  <div class="file-card-header">📄 backend/src/integrations/github.js — GitHub REST API Client</div>
+  <p><strong>Purpose:</strong> Repository ingestion, branch tree traversal, and webhook parsing. HMAC SHA-256 webhook signature verification via <code>timingSafeEqual</code>. Rejects binary and oversized files during whitebox ingestion.</p>
+</div>
+
+<h2 id="ch7-8">7.8 Communication Channels</h2>
+
+<div class="file-card">
+  <div class="file-card-header">📄 backend/src/channels/telegram.js — Telegram Bot</div>
+  <p><strong>Purpose:</strong> Zero-dependency Telegram bot using long polling. Commands: <code>/start</code>, <code>/status</code>, <code>/scans</code>, <code>/scan &lt;target&gt;</code>, <code>/help</code>. 6-digit pairing workflow for account linking.</p>
+</div>
+
+<div class="file-card">
+  <div class="file-card-header">📄 backend/src/channels/discord.js — Discord Bot</div>
+  <p><strong>Purpose:</strong> Lightweight Discord bot using raw WebSocket Gateway (v10). No heavy <code>discord.js</code> dependency — direct gateway connection with heartbeat management.</p>
+</div>
+
+<h2 id="ch7-9">7.9 Reporting, Billing &amp; Other Modules</h2>
+
+<div class="file-card">
+  <div class="file-card-header">📄 backend/src/report.js — Enterprise PDF Generator</div>
+  <p><strong>Purpose:</strong> Multi-section professional PDF reports via PDFKit. Sections: Cover Page, Executive Summary, Methodology, Findings Summary (severity bar charts), Detailed Findings (CVSS/CWE/OWASP per finding), Proof of Concept, and Appendix.</p>
+  <p><strong>Features:</strong> 30+ category-specific PoC procedures, colour-coded severity system, ANSI/emoji/binary noise stripping, smart page breaks, info-level recon collapsed into summary tables.</p>
+</div>
+
+<div class="file-card">
+  <div class="file-card-header">📄 backend/src/billing.js — SaaS Subscription Engine</div>
+  <p><strong>Purpose:</strong> Plan CRUD, quota enforcement, promo code validation, and subscription management. Auto-provisions Free Trial (3 scans) for new users. Admins are quota-exempt.</p>
+  <p><strong>Security:</strong> Quota verification runs in transactional SQLite blocks to prevent race conditions during concurrent scan launches.</p>
+</div>
+
+<div class="file-card">
+  <div class="file-card-header">📄 backend/src/stripe.js — Stripe Payment Integration</div>
+  <p><strong>Purpose:</strong> Stripe Checkout Sessions in MYR currency. Idempotent session verification with <code>activateSubscription()</code>. Webhook signature verification using <code>stripe.webhooks.constructEvent</code>.</p>
+  <p><strong>Security:</strong> Database deduplication on <code>sessionId</code> prevents double-credit replay attacks.</p>
+</div>
+
+<div class="file-card">
+  <div class="file-card-header">📄 backend/src/cve.js — NVD CVE Lookup</div>
+  <p><strong>Purpose:</strong> Fetches CVE details from NIST NVD API v2 with 24-hour SQLite cache. 12-second timeout. Requires internet connectivity.</p>
+</div>
+
+<div class="file-card">
+  <div class="file-card-header">📄 backend/src/kali-control.js — Remote Kali Administration</div>
+  <p><strong>Purpose:</strong> Host CPU/RAM/disk metrics, allowlisted command execution, AI natural-language-to-command translation, and tool audit/install.</p>
+  <p><strong>Security:</strong> Strict command allowlist — only pre-approved binary patterns can execute. Arbitrary shell meta-characters and destructive commands are blocked.</p>
+</div>
+
+<div class="file-card">
+  <div class="file-card-header">📄 backend/src/monitor-scheduler.js — Scheduled Rescans</div>
+  <p><strong>Purpose:</strong> Cron-based recurring scan scheduling. Each monitor tick runs a real blackbox scan (template <code>monitor</code>, maxTools 4). Requires engine on :8888.</p>
+</div>
+
+<div class="file-card">
+  <div class="file-card-header">📄 backend/src/custom-scripts.js — Custom Script Engine</div>
+  <p><strong>Purpose:</strong> Operator-defined scanning scripts (Python, Bash, Node) executed during pipeline stages. Blacklists catastrophic shell commands (<code>rm -rf /</code>, <code>mkfs</code>, <code>dd</code>). Script storage isolated in <code>output/custom-scripts/</code>.</p>
+</div>
+
+<!-- ============================== CHAPTER 8 ============================== -->
+<h1 id="ch8" class="section-break">8. Frontend — Detailed File Analysis</h1>
+
+<p>The frontend is a high-performance React 18 SPA with <strong>24 pages</strong>, <strong>19 components</strong>, and <strong>7 library files</strong>, implementing a cybersecurity operations centre aesthetic with obsidian glassmorphism and a dual-theme visual engine.</p>
+
+<h2 id="ch8-1">8.1 Configuration &amp; Entry Points</h2>
+
+<div class="file-card">
+  <div class="file-card-header">📄 frontend/vite.config.js — Bundler Configuration</div>
+  <p>Configures React plugin, reverse proxies (<code>/api</code> → localhost:5000, <code>/socket.io</code> → localhost:5000 with WebSocket support), cache-control headers, and unique timestamped asset naming.</p>
+</div>
+
+<div class="file-card">
+  <div class="file-card-header">📄 frontend/tailwind.config.js — Design System Tokens</div>
+  <p>Extends colour palette with <code>ink</code> (400-950), <code>accent</code> (#22d3ee), and severity colours (critical #f43f5e, high #fb923c, medium #facc15, low #38bdf8, info #94a3b8). Custom fonts (Inter, JetBrains Mono), shadows, and animations.</p>
+</div>
+
+<div class="file-card">
+  <div class="file-card-header">📄 frontend/src/index.css — Global Design System (800+ lines)</div>
+  <p>CSS variables for dual-protocol switching. Component classes: <code>.glass</code>, <code>.card</code>, <code>.btn-primary</code>, <code>.terminal</code>, <code>.glass-table</code>. Day Mode overrides for high readability. Animation suite with shimmer loaders, glassmorphic tooltips, and micro-interactions.</p>
+</div>
+
+<div class="file-card">
+  <div class="file-card-header">📄 frontend/src/App.jsx — Root Router &amp; Error Boundary</div>
+  <p>Routes: Public (/, /about, /tools, /services, /pricing, /contact, /login) and Protected /app/* hierarchy nested under <code>Protected</code> → <code>ScanProvider</code> → <code>AiProvider</code> → <code>Shell</code> → <code>&lt;Outlet /&gt;</code>.</p>
+</div>
+
+<h2 id="ch8-2">8.2 Library &amp; Context Files</h2>
+
+<div class="file-card">
+  <div class="file-card-header">📄 frontend/src/lib/api.js — Centralised API Client (70+ Methods)</div>
+  <p>Authenticated <code>apiFetch()</code> wrapper with JWT management. 70+ method covering Auth, Dashboard, Projects, Scans, Findings, CVE, Monitors, AI Chat, Custom Scripts, Metasploit, Exploits, Audit, GitHub, Billing, Clients, Kali Control, Consultations, and Telegram/Discord.</p>
+</div>
+
+<div class="file-card">
+  <div class="file-card-header">📄 frontend/src/lib/AuthContext.jsx — Authentication Provider</div>
+  <p>Token persistence in <code>localStorage</code> (<code>fyp2_token</code>). Session restoration via <code>api.me()</code>. Provides <code>{ user, loading, login, logout, isAuthed }</code>.</p>
+</div>
+
+<div class="file-card">
+  <div class="file-card-header">📄 frontend/src/lib/ThemeContext.jsx — Theme &amp; Wallpaper Engine</div>
+  <p>9 wallpaper modes (random_ai, circuittree, matrix, quantum, sentinel, aurora, obsidian, canvas_neural, static_dark). Night/Day body class synchronisation. Persisted to <code>localStorage</code>.</p>
+</div>
+
+<div class="file-card">
+  <div class="file-card-header">📄 frontend/src/lib/cache.js — Stale-While-Revalidate Cache</div>
+  <p>In-memory TTL cache with <code>useQuery</code> hook for instant re-renders while silently revalidating data in the background.</p>
+</div>
+
+<div class="file-card">
+  <div class="file-card-header">📄 frontend/src/lib/socket.js — Socket.IO Singleton</div>
+  <p>Lazy singleton WebSocket client. <code>subscribeScan()</code> manages scan room events. <code>subscribeExploit()</code> manages exploit campaign events. Auto-reconnection with room re-joining.</p>
+</div>
+
+<h2 id="ch8-3">8.3 Shared Components (19 Components)</h2>
+
+<table>
+  <thead><tr><th>Component</th><th>Purpose</th><th>Key Features</th></tr></thead>
+  <tbody>
+    <tr><td><code>Shell.jsx</code></td><td>Master sidebar layout</td><td>Collapsible/expandable sidebar, role-based RBAC navigation (admin vs client), paywall enforcement, global New Scan Modal</td></tr>
+    <tr><td><code>FindingDetailDrawer.jsx</code></td><td>6-tab vulnerability inspector</td><td>Overview, Evidence, AI Chat, CVE Lookup, Notes, Exploit tabs. 21-pattern plain-English explanation engine.</td></tr>
+    <tr><td><code>NewScanModal.jsx</code></td><td>Scan launcher</td><td>Blackbox (16 tools, 10 OWASP categories, 4 depths) / Whitebox (folder upload + code paste). Client/project assignment.</td></tr>
+    <tr><td><code>StructuralMappingView.jsx</code></td><td>Attack surface graph</td><td>Force-directed SVG physics layout (140 iterations). Nodes: Target, Subdomains, Endpoints, Modules, Severity Clusters. Zoom/pan/drag.</td></tr>
+    <tr><td><code>AIChatWidget.jsx</code></td><td>Floating AI assistant</td><td>Bottom-right chat with 50 agent selection. Context-aware (injects current scan data).</td></tr>
+    <tr><td><code>AIBackgroundCanvas.jsx</code></td><td>Dynamic background</td><td>28-particle constellation physics engine (O(N²) interconnection). Theme-aware wallpaper layer.</td></tr>
+    <tr><td><code>CyberDoorTransition.jsx</code></td><td>Login animation</td><td>Cinematic vault door opening with cyan laser seam and biometric "ACCESS GRANTED" badge.</td></tr>
+    <tr><td><code>DiagonalThemeSelector.jsx</code></td><td>Theme selection overlay</td><td>Diagonal viewport split (Light vs Dark). SVG laser seam with clip-path transitions.</td></tr>
+    <tr><td><code>ReportModal.jsx</code></td><td>PDF report generator</td><td>Report type (simple/full), severity filter, status filter, custom title/scope/summary editor.</td></tr>
+    <tr><td><code>MermaidDiagram.jsx</code></td><td>Architecture diagrams</td><td>Pipeline, DAST/SAST, AI Engine diagrams with zoom controls.</td></tr>
+    <tr><td><code>SeverityBadge.jsx</code></td><td>Severity chip</td><td>Colour-coded pill; interactive dropdown for severity override when handler provided.</td></tr>
+    <tr><td><code>StatCard.jsx</code></td><td>Metric cards</td><td>Animated count-up, tone gradients, trend indicators, live green ping for active jobs.</td></tr>
+    <tr><td><code>SystemTree.jsx</code></td><td>Architecture tree</td><td>6-layer vertical hierarchy: Frontend → API → Kali → AI → RAG → CI/CD.</td></tr>
+    <tr><td><code>SkeletonLoader.jsx</code></td><td>Loading placeholders</td><td>Dashboard, ScanList, Finding, Billing, and List skeleton variants.</td></tr>
+    <tr><td><code>PublicLayout.jsx</code></td><td>Marketing page wrapper</td><td>Glass header, responsive navigation, sitemap footer.</td></tr>
+    <tr><td><code>AdminSubscriptionManager.jsx</code></td><td>Admin billing suite</td><td>Plans, promo codes, and client subscription override management.</td></tr>
+    <tr><td><code>InspectorLogo.jsx</code></td><td>Platform logo</td><td>Custom SVG squircle with shield, crosshair eye, and telemetry ticks.</td></tr>
+    <tr><td><code>PageTurnTransition.jsx</code></td><td>Route transition</td><td>Subtle sweeping curtain effect on page entry.</td></tr>
+    <tr><td><code>Tooltip.jsx</code></td><td>Floating tooltip</td><td>Glassmorphic with auto-flipping edge detection.</td></tr>
+  </tbody>
+</table>
+
+<h2 id="ch8-4">8.4 Page Components (24 Pages)</h2>
+
+<table>
+  <thead><tr><th>Page</th><th>Purpose</th><th>Key Features</th></tr></thead>
+  <tbody>
+    <tr><td><code>Landing.jsx</code></td><td>Marketing landing page</td><td>Hero section, metric cards, architecture pipeline switcher, feature highlights, ROI metrics, pricing preview, testimonials</td></tr>
+    <tr><td><code>Login.jsx</code></td><td>Authentication gateway</td><td>Sign In / Register modes, plan pre-selection from URL params, eye cursor tracker SVG, CyberDoorTransition on success</td></tr>
+    <tr><td><code>Dashboard.jsx</code></td><td>Operational dashboard</td><td>SWR-cached stats, Recharts donut pie chart, Security Posture Health Score gauge (0-100%), recent vulnerabilities, quick-launch cards</td></tr>
+    <tr><td><code>Scans.jsx</code></td><td>Scan management</td><td>Real-time WebSocket + 6s polling, folder-grouped / flat table views, project folder creation, scan actions (resume/delete/re-run/PDF)</td></tr>
+    <tr><td><code>ScanDetail.jsx</code></td><td>Live scan inspection</td><td>Real-time terminal, live findings stream, progress bar, Pause/Resume/Stop/Retry, Audio Briefing (Fish Audio TTS), Structural Mapping, Report download, Console Terminal</td></tr>
+    <tr><td><code>Findings.jsx</code></td><td>Vulnerability catalog</td><td>36 security domain categories, multi-dimensional filtering, one-click Metasploit campaign launch, database backup, status triage</td></tr>
+    <tr><td><code>Projects.jsx</code></td><td>Project management</td><td>12 AI thematic covers, project CRUD, target management, stored credentials (HTTP basic, Bearer, SSH), linked scans</td></tr>
+    <tr><td><code>Exploits.jsx</code></td><td>Exploit dashboard</td><td>Campaign list with real-time WebSocket updates, Metasploit RPC status, risk badges, progress bars</td></tr>
+    <tr><td><code>ExploitCampaign.jsx</code></td><td>Campaign orchestration</td><td>Step timeline, Human-in-the-Loop approval gates, loot inspection, execution log terminal, Start/Pause/Resume/Abort controls</td></tr>
+    <tr><td><code>GitHubAutomation.jsx</code></td><td>DevSecOps CI/CD</td><td>GitHub PAT connection, repo tracking, auto-scan on push/PR, webhook setup guide, on-demand audits</td></tr>
+    <tr><td><code>KaliControl.jsx</code></td><td>Remote Kali admin</td><td>CPU/RAM/Disk telemetry, service manager, tool health audit, interactive shell, AI command drafter, 5-iteration self-healing loop</td></tr>
+    <tr><td><code>Monitoring.jsx</code></td><td>Recurring scan monitors</td><td>Create monitors with intervals, enable/disable, run-now, event logs, admin audit logs</td></tr>
+    <tr><td><code>Billing.jsx</code></td><td>Billing & payments</td><td>Subscription status, multi-provider checkout (Stripe, DuitNow QR, FPX), promo codes, transaction history</td></tr>
+    <tr><td><code>ClientsManagement.jsx</code></td><td>Admin CRM portal</td><td>Client list, customer folder drawer, project/scan creation for clients, subscription quota modifier</td></tr>
+    <tr><td><code>Consultants.jsx</code></td><td>Advisory booking</td><td>Expert profiles, advisory packages, booking modal (Google Meet/Zoom/Telegram), admin status controls</td></tr>
+    <tr><td><code>CustomScripts.jsx</code></td><td>Custom scripting</td><td>Bash/Python/Node scripts, pipeline trigger stages, in-browser editor, live test runner with JSON finding parsing</td></tr>
+    <tr><td><code>Settings.jsx</code></td><td>Account settings</td><td>Profile, password, wallpaper settings, admin AI provider config, Telegram/Discord pairing, feedback form</td></tr>
+    <tr><td><code>Integrations.jsx</code></td><td>System health</td><td>Engine/RAG/MSF status, Telegram/Discord pairing, 53 agent persona matrix, AI provider health</td></tr>
+    <tr><td><code>Tools.jsx</code></td><td>Tool directory</td><td>150+ Kali tools (DAST/SAST/Recon/Fuzzing/Exploit categories), 53 AI Persona Matrix, instant search</td></tr>
+    <tr><td><code>About.jsx</code></td><td>About page</td><td>Academic FYP2 origins, mission, vision, design philosophies, developer bio</td></tr>
+    <tr><td><code>Services.jsx</code></td><td>Services breakdown</td><td>Blackbox pentesting, Whitebox DevSecOps, AEE, Virtual CISO, 24/7 monitoring</td></tr>
+    <tr><td><code>Pricing.jsx</code></td><td>Pricing overview</td><td>Monthly/yearly toggle, plan comparison, ROI calculator, 22-row feature matrix, Malaysian payment badges</td></tr>
+    <tr><td><code>Contact.jsx</code></td><td>Contact hub</td><td>Multi-channel contacts, inquiry form, consultation booking, responsible disclosure policy</td></tr>
+  </tbody>
+</table>
+
+<!-- ============================== CHAPTER 9 ============================== -->
+<h1 id="ch9" class="section-break">9. The 53 AI Specialist Persona Mesh</h1>
+
+<p>SentinelAI features <strong>53 specialized AI agent personas</strong> stored as markdown files in <code>agents/*.md</code>. Each persona is loaded into memory at startup by <code>agent-registry.js</code> and possesses distinct domain instructions, system prompts, and heuristics. An additional <code>_scope-guard.md</code> provides the shared offensive operations mandate.</p>
+
+<table>
+  <thead><tr><th>Domain</th><th>Personas</th><th>Core Function</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Web & Application Security</strong></td><td>web-hunter, api-security, bizlogic-hunter, payload-crafter</td><td>Discovers injection flaws (SQLi, XSS, SSRF), IDOR, and broken access logic</td></tr>
+    <tr><td><strong>Source Code Auditing</strong></td><td>code-auditor, exploit-dev-whitebox, whitebox-fuzzer</td><td>Analyses source code ASTs for unsafe functions, deserialisation, hardcoded secrets</td></tr>
+    <tr><td><strong>Infrastructure & Cloud</strong></td><td>cloud-security, container-breakout, network-attacker, ad-attacker</td><td>Audits Docker/K8s, Active Directory, and network perimeter weaknesses</td></tr>
+    <tr><td><strong>Exploitation & PoC</strong></td><td>exploit-chainer, privesc-advisor, c2-operator, credential-tester</td><td>Correlates low-severity findings into high-impact chains; verifies privesc</td></tr>
+    <tr><td><strong>Threat Intelligence & Risk</strong></td><td>threat-modeler, risk-scorer, compliance-mapper, report-generator</td><td>CVSS scoring, NIST/ISO 27001 compliance mapping, executive summaries</td></tr>
+    <tr><td><strong>AI/LLM Red Team</strong></td><td>ai-recon, llm-redteam</td><td>LLM endpoint discovery, prompt injection, OWASP LLM Top 10 testing</td></tr>
+    <tr><td><strong>Forensics & IR</strong></td><td>forensics-analyst, malware-analyst, detection-engineer</td><td>DFIR, malware reverse engineering, Sigma/YARA rule generation</td></tr>
+    <tr><td><strong>Specialised Systems</strong></td><td>iot-pentester, scada-attacker, mobile-pentester, wireless-pentester</td><td>IoT firmware, ICS/SCADA protocols, Android/iOS, WiFi/Bluetooth</td></tr>
+    <tr><td><strong>Operations & Planning</strong></td><td>swarm-orchestrator, engagement-planner, opsec-anonymizer, social-engineer</td><td>Multi-agent coordination, RoE generation, OpSec, human-factor testing</td></tr>
+    <tr><td><strong>Post-Exploitation</strong></td><td>lateral-movement, persistence-planner, data-exfiltrator, evasion-specialist</td><td>Internal pivoting, foothold persistence, DLP testing, AV/EDR evasion</td></tr>
+  </tbody>
+</table>
+
+<div class="callout callout-info">
+  <div class="callout-title">ℹ️ Intelligent Finding Routing</div>
+  <p>Every finding is <strong>deterministically routed</strong> to the most appropriate specialist agent based on keyword matching against the finding's title, description, CWE, and module. For example: SQL injection → <code>database-attacker</code>, XSS → <code>web-hunter</code>, Active Directory → <code>ad-attacker</code>, Cloud misconfigurations → <code>cloud-security</code>.</p>
+</div>
+
+<!-- ============================== CHAPTER 10 ============================== -->
+<h1 id="ch10" class="section-break">10. Dual RAG Knowledge Base</h1>
+
+<h2 id="ch10-1">10.1 PayloadsAllTheThings (201 Docs, 64 Categories)</h2>
+<p>The first RAG corpus contains <strong>201 curated documents</strong> across <strong>64 vulnerability categories</strong> from the PayloadsAllTheThings repository, indexed using SQLite FTS5 with BM25 ranking:</p>
+<p><strong>Categories include:</strong> SQL Injection, XSS, Command Injection, SSTI, SSRF, CSRF, LFI/RFI, Path Traversal, File Upload, XXE, IDOR, JWT, NoSQL Injection, LDAP Injection, XPath Injection, Open Redirect, CORS, GraphQL, Deserialisation, Prototype Pollution, Race Condition, Request Smuggling, Prompt Injection, WebSocket, OAuth, SAML, CRLF, Type Juggling, Business Logic, Account Takeover, Clickjacking, Zip Slip, API Key Leaks, Web Cache Deception, and 30+ more.</p>
+
+<h2 id="ch10-2">10.2 Cybersecurity Skills Corpus (817 Playbooks)</h2>
+<p>The second RAG corpus contains <strong>817 practitioner-grade SKILL.md playbooks</strong> from the Anthropic-Cybersecurity-Skills collection (Apache-2.0), spanning <strong>46 subdomains</strong>:</p>
+
+<table>
+  <thead><tr><th>Subdomain</th><th>Skill Count</th><th>Examples</th></tr></thead>
+  <tbody>
+    <tr><td>Cloud Security</td><td>66</td><td>Pacu AWS pentesting, Stratus Red Team, CloudFox, GCP/Azure privesc</td></tr>
+    <tr><td>Container Security</td><td>33</td><td>Falco eBPF rules, kube-bench CIS audits, container escape</td></tr>
+    <tr><td>API Security</td><td>28</td><td>RESTler fuzzing, GraphQL depth attacks, BOLA testing, JWT confusion</td></tr>
+    <tr><td>DevSecOps</td><td>18</td><td>AFL++ CI/CD fuzzing, Semgrep SAST, Sigstore artifact signing</td></tr>
+    <tr><td>Cryptography</td><td>16</td><td>Hashcat cracking, post-quantum migration, TLS 1.3, AES-GCM audit</td></tr>
+    <tr><td>AI Security</td><td>14</td><td>Prompt injection detection, garak red-teaming, PyRIT, MCP audit</td></tr>
+  </tbody>
+</table>
+
+<div class="callout callout-success">
+  <div class="callout-title">✅ Lazy-Load Architecture</div>
+  <p>Instead of flooding the LLM context with 817 skills, the system uses a <strong>catalog-first pattern</strong>: a master <code>index.md</code> catalog → FTS5 retrieval (on-demand) → top 1-3 relevant skills injected into prompt. BM25 column weights prioritise skill name (8.0) over body (0.5) for precision.</p>
+</div>
+
+<!-- ============================== CHAPTER 11 ============================== -->
+<h1 id="ch11" class="section-break">11. Database Schema &amp; Data Model (28 Tables)</h1>
+
+<table>
+  <thead><tr><th>#</th><th>Table</th><th>Purpose</th><th>Key Columns</th></tr></thead>
+  <tbody>
+    <tr><td>1</td><td><code>users</code></td><td>System users & analysts</td><td>id, username, email, password_hash, role, last_login</td></tr>
+    <tr><td>2</td><td><code>projects</code></td><td>Workspaces & target scopes</td><td>id, name, client, description, scope, risk_level, user_id, client_id</td></tr>
+    <tr><td>3</td><td><code>client_credentials</code></td><td>Stored portal credentials</td><td>id, project_id, label, type, data (encrypted)</td></tr>
+    <tr><td>4</td><td><code>scans</code></td><td>Pentest scan records</td><td>id, project_id, target, mode, status, progress, risk_score, whitebox_meta, blackbox_meta</td></tr>
+    <tr><td>5</td><td><code>scan_configs</code></td><td>Saved scan parameters</td><td>id, scan_id, config_json</td></tr>
+    <tr><td>6</td><td><code>findings</code></td><td>Discovered vulnerabilities</td><td>id, scan_id, title, severity, cwe_id, owasp_category, cvss_score, evidence, remediation, ai_verified</td></tr>
+    <tr><td>7</td><td><code>finding_notes</code></td><td>Collaboration comments</td><td>id, finding_id, author, note, ts</td></tr>
+    <tr><td>8</td><td><code>logs</code></td><td>Real-time scan logs</td><td>id, scan_id, level, message, ts</td></tr>
+    <tr><td>9</td><td><code>monitors</code></td><td>Scheduled recurring scans</td><td>id, name, target, interval_min, modules, enabled, next_run</td></tr>
+    <tr><td>10</td><td><code>monitor_events</code></td><td>Monitor execution history</td><td>id, monitor_id, scan_id, kind, message</td></tr>
+    <tr><td>11</td><td><code>cve_cache</code></td><td>24h NVD CVE cache</td><td>id, data, fetched_at</td></tr>
+    <tr><td>12</td><td><code>audit</code></td><td>Immutable event log</td><td>id, actor, action, detail, ts</td></tr>
+    <tr><td>13</td><td><code>custom_scripts</code></td><td>User-defined test scripts</td><td>id, name, language, trigger, content</td></tr>
+    <tr><td>14</td><td><code>exploit_campaigns</code></td><td>Autonomous exploit campaigns</td><td>id, scan_id, finding_id, status, risk_level</td></tr>
+    <tr><td>15</td><td><code>exploit_steps</code></td><td>Campaign execution steps</td><td>id, campaign_id, technique, status, result</td></tr>
+    <tr><td>16</td><td><code>exploit_loot</code></td><td>Exfiltrated data</td><td>id, campaign_id, loot_type, data</td></tr>
+    <tr><td>17</td><td><code>exploit_approvals</code></td><td>Human-in-the-loop gates</td><td>id, step_id, approved_by, decision, ts</td></tr>
+    <tr><td>18</td><td><code>plans</code></td><td>SaaS subscription tiers</td><td>id, name, price, scan_limit, features</td></tr>
+    <tr><td>19</td><td><code>promo_codes</code></td><td>Discount codes</td><td>id, code, discount_type, discount_value, max_uses</td></tr>
+    <tr><td>20</td><td><code>subscriptions</code></td><td>Active user subscriptions</td><td>id, user_id, plan_id, quota_remaining, expires_at</td></tr>
+    <tr><td>21</td><td><code>payment_transactions</code></td><td>Financial transactions</td><td>id, user_id, amount, provider, status, session_id</td></tr>
+    <tr><td>22</td><td><code>github_integrations</code></td><td>Connected GitHub accounts</td><td>id, user_id, token, username</td></tr>
+    <tr><td>23</td><td><code>github_repos</code></td><td>Tracked repositories</td><td>id, integration_id, repo, auto_push, auto_pr</td></tr>
+    <tr><td>24</td><td><code>consultation_requests</code></td><td>Advisory bookings</td><td>id, user_id, service, expert, date, status</td></tr>
+    <tr><td>25</td><td><code>telegram_pairings</code></td><td>Bot pairing bridge</td><td>id, user_id, chat_id, platform, paired_at</td></tr>
+    <tr><td>26</td><td><code>rag_docs</code></td><td>Payloads FTS5 index</td><td>category, file, title, content, keywords</td></tr>
+    <tr><td>27</td><td><code>skills_corpus</code></td><td>Skills FTS5 index</td><td>name, subdomain, tags, description, body</td></tr>
+    <tr><td>28</td><td><code>ai_prompt_adjustments</code></td><td>AI self-correction learning</td><td>id, agent, adjustment, created_at</td></tr>
+  </tbody>
+</table>
+
+<!-- ============================== CHAPTER 12 ============================== -->
+<h1 id="ch12" class="section-break">12. REST API Reference (90+ Endpoints)</h1>
+
+<p>Base URL: <code>http://localhost:5000</code>. All routes except public endpoints require <code>Authorization: Bearer &lt;jwt&gt;</code>.</p>
+
+<div class="callout callout-info">
+  <div class="callout-title">ℹ️ API Documentation</div>
+  <p>A live Swagger UI is available at <code>/api/docs</code> powered by OpenAPI 3.0 specification in <code>openapi.js</code>.</p>
+</div>
+
+<p><strong>Key API endpoint categories:</strong></p>
+<ul>
+  <li><strong>Authentication (4 endpoints):</strong> Login, Register, User profile, Password change</li>
+  <li><strong>Scans (12 endpoints):</strong> CRUD, launch blackbox/whitebox, pause/resume/stop, re-run, retry-failed</li>
+  <li><strong>Findings (6 endpoints):</strong> List, status update, severity override, delete, notes CRUD</li>
+  <li><strong>Projects (8 endpoints):</strong> CRUD, credentials management (staff-only)</li>
+  <li><strong>Exploits (12 endpoints):</strong> MSF status/sessions, campaign CRUD, approve/deny steps, pause/resume/abort</li>
+  <li><strong>AI & Knowledge (10 endpoints):</strong> Agent list, chat, provider health, payloads/skills search/reindex</li>
+  <li><strong>Admin (16 endpoints):</strong> Plans, promo codes, client management, subscription overrides, AI settings</li>
+  <li><strong>GitHub (7 endpoints):</strong> Connect, disconnect, repos, track, scan, webhook</li>
+  <li><strong>Billing (7 endpoints):</strong> Plans, subscription, checkout, verify session, webhook, history</li>
+  <li><strong>Kali Control (6 endpoints):</strong> System info, exec, suggest, service management, tools audit/install</li>
+  <li><strong>Monitoring (5 endpoints):</strong> CRUD, trigger, enable/disable</li>
+  <li><strong>Reports (3 endpoints):</strong> Generate, download, audio briefing</li>
+  <li><strong>Channels (4 endpoints):</strong> Pairing status, pair, unpair, active channels</li>
+</ul>
+
+<!-- ============================== CHAPTER 13 ============================== -->
+<h1 id="ch13">13. WebSocket Real-Time Architecture</h1>
+
+<p>Connections are JWT-authenticated via <code>io.use</code> middleware. Clients join rooms via <code>scan:subscribe</code> and <code>exploit:subscribe</code> events.</p>
+
+<table>
+  <thead><tr><th>Event</th><th>Payload</th><th>Emitted When</th></tr></thead>
+  <tbody>
+    <tr><td><code>scan:log</code></td><td><code>{scanId, level, message, ts}</code></td><td>Any pipeline log line</td></tr>
+    <tr><td><code>scan:update</code></td><td><code>{scanId, progress, status?}</code></td><td>Progress % change (throttled 250ms)</td></tr>
+    <tr><td><code>scan:finding</code></td><td><code>{scanId, finding}</code></td><td>Finding completes enrichment chain</td></tr>
+    <tr><td><code>scan:done</code></td><td><code>{scanId, status, riskScore}</code></td><td>Pipeline finishes</td></tr>
+    <tr><td><code>exploit:campaign</code></td><td><code>{campaignId, status}</code></td><td>Campaign state change</td></tr>
+    <tr><td><code>exploit:step</code></td><td><code>{campaignId, step}</code></td><td>Step execution update</td></tr>
+    <tr><td><code>exploit:approval</code></td><td><code>{campaignId, stepId}</code></td><td>Step requires human approval</td></tr>
+    <tr><td><code>exploit:loot</code></td><td><code>{campaignId, loot}</code></td><td>New loot item discovered</td></tr>
+  </tbody>
+</table>
+
+<!-- ============================== CHAPTER 14 ============================== -->
+<h1 id="ch14" class="section-break">14. Security Analysis &amp; Hardening</h1>
+
+<h2>14.1 Applied Security Controls</h2>
+
+<table>
+  <thead><tr><th>Control</th><th>Implementation</th><th>Status</th></tr></thead>
+  <tbody>
+    <tr><td>CORS Lockdown</td><td>Whitelist via <code>config.corsOrigins</code> from <code>CLIENT_ORIGIN</code></td><td><span class="sev sev-low" style="background:#22c55e">✅ Active</span></td></tr>
+    <tr><td>Login Rate Limiting</td><td><code>express-rate-limit</code>, 100 attempts / 15 min per IP</td><td><span class="sev sev-low" style="background:#22c55e">✅ Active</span></td></tr>
+    <tr><td>WebSocket Auth</td><td>JWT verification on every socket handshake via <code>io.use</code></td><td><span class="sev sev-low" style="background:#22c55e">✅ Active</span></td></tr>
+    <tr><td>Security Headers</td><td>X-Content-Type-Options, X-Frame-Options, Referrer-Policy</td><td><span class="sev sev-low" style="background:#22c55e">✅ Active</span></td></tr>
+    <tr><td>Password Hashing</td><td>bcryptjs with salt rounds</td><td><span class="sev sev-low" style="background:#22c55e">✅ Active</span></td></tr>
+    <tr><td>Token Security</td><td>Query-string tokens rejected, 12h expiration</td><td><span class="sev sev-low" style="background:#22c55e">✅ Active</span></td></tr>
+    <tr><td>SQL Injection Prevention</td><td>100% prepared statements with parameter binding</td><td><span class="sev sev-low" style="background:#22c55e">✅ Active</span></td></tr>
+    <tr><td>Command Injection Prevention</td><td>Strict argument arrays, no <code>shell: true</code></td><td><span class="sev sev-low" style="background:#22c55e">✅ Active</span></td></tr>
+    <tr><td>PII/Secret Redaction</td><td>All secrets stripped before LLM submission</td><td><span class="sev sev-low" style="background:#22c55e">✅ Active</span></td></tr>
+    <tr><td>RBAC Enforcement</td><td>3-tier roles (admin, analyst, client) with scoped data access</td><td><span class="sev sev-low" style="background:#22c55e">✅ Active</span></td></tr>
+    <tr><td>Audit Logging</td><td>Immutable <code>audit</code> table for all admin actions</td><td><span class="sev sev-low" style="background:#22c55e">✅ Active</span></td></tr>
+    <tr><td>Webhook Integrity</td><td>Stripe + GitHub HMAC SHA-256 verification</td><td><span class="sev sev-low" style="background:#22c55e">✅ Active</span></td></tr>
+    <tr><td>Human-in-the-Loop Exploitation</td><td>Mandatory approval gates for destructive exploit steps</td><td><span class="sev sev-low" style="background:#22c55e">✅ Active</span></td></tr>
+    <tr><td>Exploit Risk Gating</td><td>Auto-exploit only for findings with confidence ≥ 70%</td><td><span class="sev sev-low" style="background:#22c55e">✅ Active</span></td></tr>
+    <tr><td>Kali Command Allowlist</td><td>Only pre-approved binary patterns can execute remotely</td><td><span class="sev sev-low" style="background:#22c55e">✅ Active</span></td></tr>
+    <tr><td>Custom Script Sanitisation</td><td>Blacklists destructive commands (rm -rf /, mkfs, dd)</td><td><span class="sev sev-low" style="background:#22c55e">✅ Active</span></td></tr>
+  </tbody>
+</table>
+
+<h2>14.2 AI-Specific Security Controls</h2>
+<ul>
+  <li><strong>Prompt Injection Defence:</strong> System prompts sanitised to strip contradictory "Ignore previous instructions" preambles</li>
+  <li><strong>False Positive Prevention:</strong> Multi-layer: precision mode prompts + heuristic verification (12+ true-positive, 4 false-positive patterns) + severity bounds enforcement + confidence thresholds + deduplication</li>
+  <li><strong>AI Self-Correction:</strong> Feedback loop catching 10 error types with max 2 retries per finding</li>
+  <li><strong>Context Isolation:</strong> Per-call abort timeouts (25s–90s) prevent hanging on LLM outage</li>
+</ul>
+
+<!-- ============================== CHAPTER 15 ============================== -->
+<h1 id="ch15" class="section-break">15. Deployment Architecture</h1>
+
+<div class="figure">
+  <img src="docs/images/10-integrations-subsystems.png" alt="Integrations & Subsystems">
+  <div class="figure-caption">Figure 15.1: Subsystem connectivity including Kali Engine, Metasploit RPC, and Cloudflare Tunnel.</div>
+</div>
+
+<h2>15.1 Production Deployment (sentinelai.studio)</h2>
+<ul>
+  <li><strong>Host:</strong> Dedicated Kali Linux VM at <code>kali@192.168.68.132</code></li>
+  <li><strong>Public Access:</strong> Cloudflare Tunnel (HTTP/2 protocol) mapping <code>sentinelai.studio</code> → <code>127.0.0.1:5173</code></li>
+  <li><strong>Backend:</strong> Node.js Express on port 5000 (localhost-only)</li>
+  <li><strong>Offensive Engine:</strong> Hexstrike-AI on port 8888 (firewalled to localhost)</li>
+  <li><strong>Exploitation:</strong> Metasploit RPC on port 55553 (localhost-only)</li>
+  <li><strong>Service Manager:</strong> <code>systemd</code> unit (<code>sentinelai.service</code>) for 24/7 auto-restart</li>
+</ul>
+
+<h2>15.2 Automated Deployment Tools</h2>
+<ul>
+  <li><strong><code>deploy-kali.py</code>:</strong> 1-click Python deployment script. Packages repository into tar.gz (excluding node_modules, .git, .env), uploads via SSH/SFTP, extracts, installs deps, builds frontend, restarts services.</li>
+  <li><strong><code>setup-kali.sh</code>:</strong> Full environment bootstrap. Installs 19+ security tools (apt + go install + pip + gem fallbacks), database backup with 10-backup rotation, Cloudflare Tunnel configuration, Metasploit RPC daemon, systemd service registration.</li>
+</ul>
+
+<!-- ============================== CHAPTER 16 ============================== -->
+<h1 id="ch16" class="section-break">16. Key System Features &amp; Interface Showcase</h1>
+
+<div class="figure">
+  <img src="docs/images/01-landing-dual-protocol.png" alt="Dual Protocol Landing">
+  <div class="figure-caption">Figure 16.1: Interactive diagonal split-screen protocol selector — Obsidian Dark vs Sunlight Light.</div>
+</div>
+
+<div class="figure">
+  <img src="docs/images/04-dashboard-dark.png" alt="Dashboard Dark Mode">
+  <div class="figure-caption">Figure 16.2: Security Overview Dashboard (Obsidian Dark Protocol) with severity donut chart and health score.</div>
+</div>
+
+<div class="figure">
+  <img src="docs/images/05-dashboard-light.png" alt="Dashboard Light Mode">
+  <div class="figure-caption">Figure 16.3: Security Overview Dashboard (Sunlight Light Protocol) for executive presentations.</div>
+</div>
+
+<div class="figure">
+  <img src="docs/images/06-scans-management.png" alt="Scans Management">
+  <div class="figure-caption">Figure 16.4: Centralised Security Assessments repository — tracking targets, modes, findings count, and risk scores.</div>
+</div>
+
+<div class="figure">
+  <img src="docs/images/07-scan-live-terminal.png" alt="Live Scan Terminal">
+  <div class="figure-caption">Figure 16.5: Live terminal stdout feed, progress tracker, and interactive OWASP 2025 finding categories.</div>
+</div>
+
+<div class="figure">
+  <img src="docs/images/08-vulnerability-findings.png" alt="Vulnerability Findings">
+  <div class="figure-caption">Figure 16.6: Discovered findings triage panel with severity filters and OWASP compliance tags.</div>
+</div>
+
+<div class="figure">
+  <img src="docs/images/09-monitoring-automation.png" alt="Monitoring Automation">
+  <div class="figure-caption">Figure 16.7: Continuous target rescans and event feed for 24/7 monitoring.</div>
+</div>
+
+<div class="figure">
+  <img src="docs/images/11-new-scan-modal.png" alt="New Scan Modal">
+  <div class="figure-caption">Figure 16.8: Scan configuration modal with tool selection, OWASP categories, and scan depth options.</div>
+</div>
+
+<!-- ============================== CHAPTER 17 ============================== -->
+<h1 id="ch17" class="section-break">17. Experimental Evaluation &amp; Testing</h1>
+
+<h2>17.1 Test Case 1: Live Target Assessment (IIUM Infrastructure)</h2>
+<table>
+  <thead><tr><th>Parameter</th><th>Value</th></tr></thead>
+  <tbody>
+    <tr><td>Target</td><td><code>https://italeemc.iium.edu.my</code></td></tr>
+    <tr><td>Scan Mode</td><td>Blackbox DAST Probing</td></tr>
+    <tr><td>Total Findings</td><td>57</td></tr>
+    <tr><td>False Positives</td><td>0 (all verified by AI reasoning mesh)</td></tr>
+    <tr><td>Categories Found</td><td>A02 Security Misconfiguration, A04 Cryptographic Failures, A05 Injection Surfaces, A07 Authentication Failures</td></tr>
+  </tbody>
+</table>
+
+<h2>17.2 Test Case 2: SAST Whitebox Code Audit</h2>
+<table>
+  <thead><tr><th>Parameter</th><th>Value</th></tr></thead>
+  <tbody>
+    <tr><td>Scan Mode</td><td>Static Code AST Analysis</td></tr>
+    <tr><td>Languages Tested</td><td>JavaScript (Express/Node), PHP, Python</td></tr>
+    <tr><td>Findings</td><td>Blind Boolean SQL injection, arbitrary file upload vectors, unvalidated redirects with line numbers and remediation patches</td></tr>
+  </tbody>
+</table>
+
+<h2>17.3 Testing Infrastructure</h2>
+<p>The project includes <strong>31 test and diagnostic scripts</strong> in <code>backend/scripts/</code>:</p>
+<ul>
+  <li><code>test-all-features.mjs</code> — Comprehensive end-to-end integration test</li>
+  <li><code>test-security-fixes.mjs</code> — RBAC isolation, query-string token rejection, IDOR protections</li>
+  <li><code>test-exploit-e2e.mjs</code> — End-to-end autonomous exploitation campaign verification</li>
+  <li><code>test-cpanel-authbypass.mjs</code> — CVE-2026-41940 detection logic</li>
+  <li><code>test-saas-flow.js</code> — SaaS subscription and billing workflow</li>
+  <li><code>qa_quota.cjs</code> — Scan quota consumption and trial auto-provisioning</li>
+  <li><code>qa_leak.cjs</code> — Memory deallocation verification in pipeline</li>
+</ul>
+
+<!-- ============================== CHAPTER 18 ============================== -->
+<h1 id="ch18" class="section-break">18. Improvements &amp; Recommendations</h1>
+
+<h2>18.1 Architecture Improvements</h2>
+<table>
+  <thead><tr><th>#</th><th>Area</th><th>Current State</th><th>Recommended Improvement</th><th>Priority</th></tr></thead>
+  <tbody>
+    <tr><td>1</td><td>Scalability</td><td>Single-process Node.js server</td><td>Implement PM2 cluster mode or container orchestration (Docker Compose → K8s) for horizontal scaling</td><td><span class="sev sev-high">HIGH</span></td></tr>
+    <tr><td>2</td><td>Database</td><td>SQLite (single-writer)</td><td>Migrate to PostgreSQL for concurrent write support, connection pooling, and enterprise-grade replication</td><td><span class="sev sev-medium">MEDIUM</span></td></tr>
+    <tr><td>3</td><td>Monolith</td><td><code>index.js</code> is 2,784 LOC</td><td>Decompose into Express Router modules per domain (auth, scans, findings, exploits, billing, admin)</td><td><span class="sev sev-high">HIGH</span></td></tr>
+    <tr><td>4</td><td>Task Queue</td><td>In-memory scan state Maps</td><td>Add a proper job queue (BullMQ/Redis) for scan orchestration with retry, priority, and dead-letter support</td><td><span class="sev sev-high">HIGH</span></td></tr>
+    <tr><td>5</td><td>Caching</td><td>SWR client-side only</td><td>Add server-side Redis caching for dashboard aggregates, agent lists, and RAG search results</td><td><span class="sev sev-low">LOW</span></td></tr>
+  </tbody>
+</table>
+
+<h2>18.2 Security Improvements</h2>
+<table>
+  <thead><tr><th>#</th><th>Area</th><th>Current State</th><th>Recommended Improvement</th><th>Priority</th></tr></thead>
+  <tbody>
+    <tr><td>1</td><td>HTTPS</td><td>Relies on Cloudflare Tunnel</td><td>Implement TLS termination at the Node.js level for local/LAN access</td><td><span class="sev sev-high">HIGH</span></td></tr>
+    <tr><td>2</td><td>CSRF Protection</td><td>Not implemented (relies on JWT Bearer tokens)</td><td>Add CSRF tokens for state-changing operations, especially for cookie-based sessions in the future</td><td><span class="sev sev-medium">MEDIUM</span></td></tr>
+    <tr><td>3</td><td>Input Validation</td><td>Basic validation in route handlers</td><td>Implement Joi/Zod schema validation middleware for all API inputs</td><td><span class="sev sev-high">HIGH</span></td></tr>
+    <tr><td>4</td><td>Secret Management</td><td>Plaintext <code>.env</code> file</td><td>Migrate to HashiCorp Vault or AWS Secrets Manager for production</td><td><span class="sev sev-medium">MEDIUM</span></td></tr>
+    <tr><td>5</td><td>JWT Refresh</td><td>12-hour tokens, no refresh flow</td><td>Implement short-lived access tokens (15 min) with secure HttpOnly refresh tokens</td><td><span class="sev sev-medium">MEDIUM</span></td></tr>
+    <tr><td>6</td><td>Content Security Policy</td><td>Not implemented</td><td>Add CSP headers to mitigate XSS in the frontend</td><td><span class="sev sev-medium">MEDIUM</span></td></tr>
+    <tr><td>7</td><td>Dependency Audit</td><td>No automated scanning</td><td>Add <code>npm audit</code> and Snyk/Dependabot to CI/CD pipeline</td><td><span class="sev sev-low">LOW</span></td></tr>
+  </tbody>
+</table>
+
+<h2>18.3 Feature Improvements</h2>
+<table>
+  <thead><tr><th>#</th><th>Feature</th><th>Current State</th><th>Recommended Improvement</th></tr></thead>
+  <tbody>
+    <tr><td>1</td><td>GitHub OAuth</td><td>Placeholders only</td><td>Complete OAuth flow for private repository whitebox ingestion</td></tr>
+    <tr><td>2</td><td>Multi-User</td><td>Admin panel exists</td><td>Full RBAC admin panel with user creation, role assignment, and team management</td></tr>
+    <tr><td>3</td><td>Finding Assignment</td><td>Notes done, assignment pending</td><td>Add finding assignment to specific analysts with notification workflow</td></tr>
+    <tr><td>4</td><td>Automated Testing</td><td>Manual test scripts</td><td>Implement CI/CD with Jest/Vitest unit tests and Playwright E2E tests</td></tr>
+    <tr><td>5</td><td>Scan Comparison</td><td>Not available</td><td>Add delta comparison between scan runs to track remediation progress</td></tr>
+    <tr><td>6</td><td>API Versioning</td><td>Single unversioned API</td><td>Implement <code>/api/v1/</code> prefix for backward compatibility</td></tr>
+    <tr><td>7</td><td>Log Aggregation</td><td>SQLite logs table</td><td>Stream logs to ELK Stack or Loki for production-grade observability</td></tr>
+    <tr><td>8</td><td>Mobile App</td><td>Web-only responsive UI</td><td>React Native mobile app for on-the-go monitoring and alerts</td></tr>
+  </tbody>
+</table>
+
+<h2>18.4 Code Quality Improvements</h2>
+<ul>
+  <li><strong>TypeScript Migration:</strong> Convert backend and frontend to TypeScript for type safety, better IDE support, and reduced runtime errors</li>
+  <li><strong>ESLint + Prettier:</strong> Enforce consistent code style across the entire codebase</li>
+  <li><strong>Error Handling:</strong> Implement centralised error handling middleware with proper error classification</li>
+  <li><strong>Documentation:</strong> Generate API documentation automatically from JSDoc/TSDoc comments</li>
+  <li><strong>Logging:</strong> Replace console.log with structured logging (Winston/Pino) with log levels and correlation IDs</li>
+</ul>
+
+<!-- ============================== CHAPTER 19 ============================== -->
+<h1 id="ch19" class="section-break">19. Limitations</h1>
+
+<div class="callout callout-warn">
+  <div class="callout-title">⚠️ Known System Limitations</div>
+</div>
+
+<h2>19.1 Architecture Limitations</h2>
+<ol>
+  <li><strong>Single-Process Architecture:</strong> The Node.js backend runs as a single process. Under heavy concurrent scan loads, this can become a bottleneck since JavaScript is single-threaded for CPU operations.</li>
+  <li><strong>SQLite Concurrency:</strong> SQLite in WAL mode supports only one writer at a time. Concurrent scan ingestion during multiple simultaneous scans may experience write contention.</li>
+  <li><strong>In-Memory Scan State:</strong> Active scan state is held in JavaScript Maps. If the server crashes mid-scan, all in-progress scan state is lost and cannot be recovered.</li>
+  <li><strong>Monolithic Codebase:</strong> The main <code>index.js</code> file is 2,784 lines, making it harder to maintain, test, and deploy independently.</li>
+</ol>
+
+<h2>19.2 Scanning Limitations</h2>
+<ol>
+  <li><strong>Cooperative Pause/Resume:</strong> Pause/resume is cooperative — it takes effect at the next tool run or finding checkpoint. An in-flight HTTP call to the engine is not aborted mid-request.</li>
+  <li><strong>Engine Dependency:</strong> Blackbox scanning requires the Hexstrike engine running on port 8888. If the engine is offline, scans degrade to native-only tool execution with reduced coverage.</li>
+  <li><strong>Monitor Engine Requirement:</strong> Monitor (scheduled rescan) scans need the engine running to produce findings. Offline engine → error events in the monitor feed.</li>
+  <li><strong>Whitebox Language Support:</strong> SAST analysis is currently limited to JavaScript, Python, PHP, Java, and Go. Languages like Rust, C/C++, and Ruby are not fully supported.</li>
+  <li><strong>Network-Only DAST:</strong> Blackbox scanning targets web URLs and IP addresses. It does not support thick client, mobile API, or desktop application testing directly.</li>
+</ol>
+
+<h2>19.3 AI & Knowledge Base Limitations</h2>
+<ol>
+  <li><strong>LLM Dependency:</strong> AI verification quality depends on the availability and capability of the configured LLM providers. If all providers are down, the system falls back to a deterministic heuristic engine with reduced accuracy.</li>
+  <li><strong>Prompt Engineering Sensitivity:</strong> The quality of AI-generated PoC and verification depends on prompt engineering. Changes to LLM models may require prompt adjustments.</li>
+  <li><strong>RAG Corpus Staleness:</strong> The PayloadsAllTheThings and Cybersecurity Skills corpora are static snapshots. New vulnerability techniques and CVEs published after indexing are not automatically included.</li>
+  <li><strong>Token Limits:</strong> Large codebases in whitebox mode may exceed LLM context windows, requiring chunking which can lose cross-file context.</li>
+  <li><strong>AI Hallucination Risk:</strong> Despite multiple mitigation layers (precision mode, heuristic fallback, severity bounds), AI can still occasionally generate inaccurate descriptions or PoC steps.</li>
+</ol>
+
+<h2>19.4 Deployment & Operational Limitations</h2>
+<ol>
+  <li><strong>Local-First Only:</strong> The platform is designed for local/LAN deployment. Cloud-native deployment (AWS ECS, GKE) would require significant architecture changes.</li>
+  <li><strong>Report Download:</strong> PDF report download assumes same-origin access (works via Vite proxy in dev; requires reverse-proxy configuration in production).</li>
+  <li><strong>GitHub OAuth:</strong> Private repository ingestion via GitHub OAuth is not yet implemented (placeholders in <code>.env</code> only).</li>
+  <li><strong>Single Admin:</strong> The system seeds a single default admin account. Multi-user management UI is partial.</li>
+  <li><strong>No Offline LLM:</strong> While Ollama is referenced as a future fallback, local LLM inference is not currently integrated, making the system dependent on internet-accessible AI providers.</li>
+</ol>
+
+<h2>19.5 Security Limitations</h2>
+<ol>
+  <li><strong>No CSRF Tokens:</strong> The API relies on Bearer JWT tokens in headers, which prevents CSRF for API calls but offers no protection for potential future cookie-based authentication.</li>
+  <li><strong>Default Credentials:</strong> The system ships with default admin credentials (<code>admin / kali</code>). Users must change these before production deployment.</li>
+  <li><strong>Plaintext Secret Storage:</strong> API keys and secrets are stored in a plaintext <code>.env</code> file rather than a dedicated secret manager.</li>
+  <li><strong>No Automated CVE Scanning:</strong> The codebase itself does not undergo automated vulnerability scanning of its own dependencies.</li>
+</ol>
+
+<!-- ============================== CHAPTER 20 ============================== -->
+<h1 id="ch20" class="section-break">20. Conclusion</h1>
+
+<p>SentinelAI represents a comprehensive and ambitious Final Year Project that successfully demonstrates the feasibility of autonomous, AI-driven penetration testing. The platform addresses the three core challenges in cybersecurity operations: the human expertise bottleneck, false-positive fatigue, and disconnected SAST/DAST workflows.</p>
+
+<p><strong>Key Achievements:</strong></p>
+<ul>
+  <li>Successfully unified 150+ Kali Linux security tools under a single orchestration layer with real-time WebSocket telemetry</li>
+  <li>Implemented a novel 53-persona AI reasoning mesh that routes findings to domain-specific specialists for verification</li>
+  <li>Built a dual RAG knowledge base (1,018 documents) providing concrete exploit evidence and practitioner workflows</li>
+  <li>Developed a complete SaaS platform with billing, multi-tenant access control, continuous monitoring, and autonomous exploitation with human-in-the-loop safety gates</li>
+  <li>Achieved zero false positives in live testing against IIUM infrastructure through the 4-stage enrichment chain</li>
+  <li>Delivered professional-grade PDF reports rivalling commercial penetration testing deliverables</li>
+</ul>
+
+<p>The project demonstrates strong engineering practices including prepared SQL statements, subprocess argument arrays, HMAC webhook verification, JWT authentication with RBAC, and comprehensive audit logging. While limitations exist (particularly around scalability, SQLite concurrency, and LLM dependency), these are well-documented and represent natural extension points for future work.</p>
+
+<p>SentinelAI stands as a production-ready platform deployed at <strong>https://sentinelai.studio</strong>, serving as both an academic achievement and a practical cybersecurity tool.</p>
+
+<!-- ============================== APPENDIX ============================== -->
+<h1 id="appendix" class="section-break">Appendix: System Statistics</h1>
+
+<table>
+  <thead><tr><th>Metric</th><th>Value</th></tr></thead>
+  <tbody>
+    <tr><td>Specialist AI Agents</td><td>53 active + 1 scope guard = 54 files</td></tr>
+    <tr><td>Security Tools (via Kali/Hexstrike)</td><td>150+</td></tr>
+    <tr><td>Native Tool Executors</td><td>22 (in native-tools.js)</td></tr>
+    <tr><td>RAG Knowledge Documents</td><td>201 PoC + 817 skills = 1,018 total</td></tr>
+    <tr><td>RAG Skill Subdomains</td><td>46</td></tr>
+    <tr><td>Vulnerability Categories (PoC)</td><td>64</td></tr>
+    <tr><td>Framework Mappings per Skill</td><td>6 (ATT&CK, NIST CSF, ATLAS, D3FEND, AI RMF, F3)</td></tr>
+    <tr><td>OWASP 2025 Categories</td><td>10 + OTH</td></tr>
+    <tr><td>CWE Mappings</td><td>100+</td></tr>
+    <tr><td>REST API Endpoints</td><td>90+</td></tr>
+    <tr><td>Database Tables</td><td>28</td></tr>
+    <tr><td>Frontend Pages</td><td>24</td></tr>
+    <tr><td>Frontend Components</td><td>19</td></tr>
+    <tr><td>Library/Context Files</td><td>7</td></tr>
+    <tr><td>LLM Providers</td><td>4 (with failover chain)</td></tr>
+    <tr><td>Exploit Techniques</td><td>15+ registered</td></tr>
+    <tr><td>Post-Exploit Action Categories</td><td>5</td></tr>
+    <tr><td>AI Self-Correction Error Types</td><td>10</td></tr>
+    <tr><td>Pattern Scanner Regex Rules</td><td>50+</td></tr>
+    <tr><td>Backend Source Files</td><td>30+</td></tr>
+    <tr><td>Backend Main Entry LOC</td><td>2,784</td></tr>
+    <tr><td>Test/Diagnostic Scripts</td><td>31</td></tr>
+    <tr><td>Tool Shims & Service Scripts</td><td>12</td></tr>
+    <tr><td>Platform Screenshots</td><td>12</td></tr>
+    <tr><td>Generated PDF Reports</td><td>15+ (in output/)</td></tr>
+    <tr><td>Custom Script Execution Logs</td><td>618</td></tr>
+  </tbody>
+</table>
+
+<div style="text-align:center; margin: 60px 0; padding: 40px; background: linear-gradient(135deg, #f8fafc, #eff6ff); border-radius: 16px; border: 1px solid #e2e8f0;">
+  <div style="font-size: 32px; margin-bottom: 10px;">🛡️</div>
+  <div style="font-size: 18px; font-weight: 800; color: #0284c7;">SentinelAI</div>
+  <div style="font-size: 11px; color: #64748b; margin-top: 8px;">From reconnaissance to exploitation to reporting — fully autonomous, fully local.</div>
+  <div style="font-size: 10px; color: #94a3b8; margin-top: 16px;">
+    Comprehensive FYP2 Technical Report<br>
+    Kulliyyah of Information & Communication Technology (KICT)<br>
+    International Islamic University Malaysia (IIUM)<br>
+    © 2026 Muhammad Saifudin Bin Mohd Jamal
+  </div>
+</div>
+
+</div>
+</body>
+</html>

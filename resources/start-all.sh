@@ -1,71 +1,39 @@
 #!/bin/bash
-# start-all.sh — launched by systemd, keeps npm as foreground process
-# so systemd can track it. All other services are backgrounded.
+# start-all.sh - RETIRED 2026-09-26 (defect N-06). DO NOT RESURRECT.
 #
-# Startup order: msfrpcd → cloudflared → FYP2 backend
-# Each service is verified before moving to the next.
-# Note: Hexstrike engine removed — tools run natively via direct subprocess.
+# HISTORICAL DEFECT N-06 - DO NOT REINTRODUCE
+# ---------------------------------------------------------------------------
+# This script used to be ExecStart of sentinelai.service. It did three harmful
+# things, each of which is now owned by a different supervisor:
+#
+#   1. `pkill -f msfrpcd` + `fuser -k 55553/tcp` -> killed the msfrpcd that
+#      sentinelai.service itself owns, defeating systemd process tracking.
+#   2. `pkill -f "tunnel.*run sentinelai"` -> killed the cloudflared that
+#      PM2 owns (id=4).
+#   3. `exec npm run dev` -> started a SECOND copy of FYP2 on ports 5000/5173
+#      that PM2 already owned. Result: EADDRINUSE on day one, a duplicate vite
+#      squatting port 5174 for 14 days, and PM2's backend SIGKILLed
+#      mid-transaction 33,563 times. That is what produced the 4,096-byte,
+#      0-table backup files published as fyp2_latest_backup.db - silent,
+#      valid-looking, useless backups.
+#
+# PORT OWNERSHIP - SINGLE SOURCE OF TRUTH
+#   PM2                -> 5000 sentinel-backend, 5173 sentinel-frontend,
+#                         3010 sentinel-api, 20128 9router, 3005, 8016, 8029
+#   sentinelai.service -> 55553 msfrpcd  (and nothing else)
+#   cloudflared        -> PM2 id=4
+#
+# A supervisor killing another supervisor's port is not a restart strategy;
+# it is silent data corruption with a scheduler.
+# See resources/ARCHIVED-second-supervisor.md
+# ---------------------------------------------------------------------------
 
-set -e
-
-cd /home/kali/SentinelAI
-LOG_DIR="/home/kali"
-
-# ── Helpers ──────────────────────────────────────────────────────────────────
-
-log() { echo "[$(date '+%H:%M:%S')] $1" | tee -a "$LOG_DIR/sentinelai.log"; }
-
-wait_for_port() {
-  local port="$1"
-  local name="$2"
-  local max_wait="${3:-30}"
-  local waited=0
-  log "  Waiting for $name on port $port (max ${max_wait}s)..."
-  while [ $waited -lt $max_wait ]; do
-    if ss -tlnp 2>/dev/null | grep -q ":$port "; then
-      log "  ✓ $name is listening on port $port"
-      return 0
-    fi
-    sleep 1
-    waited=$((waited + 1))
-  done
-  log "  ⚠ $name did not start on port $port within ${max_wait}s"
-  return 1
-}
-
-# ── 1. Metasploit RPC (port 55553) ──────────────────────────────────────────
-
-log "=== Starting SentinelAI services ==="
-
-log "[1/3] Starting Metasploit RPC daemon..."
-MSF_USER="${MSF_USER:-msf}"
-MSF_PASS="${MSF_PASS:-msf}"
-
-if command -v msfrpcd &> /dev/null; then
-  # Kill any stale instance
-  pkill -f msfrpcd 2>/dev/null || true
-  fuser -k 55553/tcp 2>/dev/null || true
-  sleep 1
-  nohup msfrpcd -U "$MSF_USER" -P "$MSF_PASS" -a 127.0.0.1 -p 55553 -S > "$LOG_DIR/msfrpcd.log" 2>&1 &
-  wait_for_port 55553 "msfrpcd" 20 || log "  ⚠ msfrpcd may still be initializing — check $LOG_DIR/msfrpcd.log"
-else
-  log "[1/3] ⚠ msfrpcd not found — install: sudo apt install -y metasploit-framework"
-fi
-
-# ── 2. Cloudflare Tunnel ────────────────────────────────────────────────────
-
-log "[2/3] Starting Cloudflare tunnel..."
-if command -v cloudflared &> /dev/null; then
-  pkill -f "tunnel.*run sentinelai" 2>/dev/null || true
-  sleep 1
-  nohup cloudflared tunnel --edge-ip-version 4 run sentinelai > "$LOG_DIR/cloudflared.log" 2>&1 &
-  log "  ✓ Cloudflare tunnel started"
-else
-  log "[3/4] ⚠ cloudflared not installed — tunnel unavailable"
-fi
-
-# ── 3. FYP2 Platform (FOREGROUND — systemd tracks this) ─────────────────────
-
-log "[3/3] Starting FYP2 Platform..."
-log "=== All services started, FYP2 Platform running ==="
-exec npm run dev
+echo "start-all.sh is RETIRED (defect N-06). It starts nothing by design." >&2
+echo "" >&2
+echo "  PM2                owns 5000/5173/3010/20128/3005/8016/8029" >&2
+echo "                          -> pm2 status" >&2
+echo "  sentinelai.service owns 55553 (msfrpcd) only" >&2
+echo "                          -> systemctl status sentinelai" >&2
+echo "" >&2
+echo "  Do not add this script to any systemd unit." >&2
+exit 1

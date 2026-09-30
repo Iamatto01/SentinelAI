@@ -4,6 +4,7 @@ import { runNativeTool, previewNativeCommand, nativeToolsStatus, NATIVE_TOOLS } 
 import { aiEngine } from './ai/ai-engine.js'
 import { enrichWithOwasp } from './owasp.js'
 import { getScriptsForTrigger, runCustomScript } from './custom-scripts.js'
+import { findVersionVulnerabilities } from './cve.js'
 import * as db from './db.js'
 
 /**
@@ -88,32 +89,89 @@ export class UnifiedPipeline {
     this._urlPool = new Map()
     // scanId -> Array of harvested login forms {url, userField, passField, extra}
     this._loginForms = new Map()
+    // Recently finished scanIds. Without this, a pause/stop call arriving after
+    // a scan completed would lazily re-create a `control` entry that nothing
+    // ever deletes — one leaked entry per post-finish API call. Bounded below.
+    this._finishedScans = new Set()
+  }
+
+  /** Cap for the finished-scan tombstone set so it can never grow unbounded. */
+  static FINISHED_TOMBSTONE_MAX = 512
+
+  _markFinished(scanId) {
+    this._finishedScans.add(scanId)
+    if (this._finishedScans.size > UnifiedPipeline.FINISHED_TOMBSTONE_MAX) {
+      // Set preserves insertion order — drop the oldest tombstone.
+      this._finishedScans.delete(this._finishedScans.values().next().value)
+    }
+  }
+
+  /**
+   * Reset per-scan state before a run starts.
+   *
+   * Required because re-run / retry-failed operate on the SAME scan id. Without
+   * this the tombstone from the previous run would block control creation, and a
+   * leftover `stopped: true` flag would abort the new run at its first
+   * waitIfPaused() checkpoint.
+   */
+  _beginScan(scanId) {
+    this._finishedScans.delete(scanId)
+    this.control.delete(scanId)
+  }
+
+  /** Drop every map entry keyed by this scanId. Safe to call more than once. */
+  releaseScanState(scanId) {
+    this.control.delete(scanId)
+    this._lastProgressEmit?.delete(scanId)
+    this._urlPool?.delete(scanId)
+    this._loginForms?.delete(scanId)
+    this._blackboxMeta?.delete(scanId)
   }
 
   emit(scanId, event, data) {
     this.io?.to(`scan:${scanId}`).emit(event, data)
   }
 
-  _ctl(scanId) {
-    if (!this.control.has(scanId)) this.control.set(scanId, { paused: false, stopped: false })
-    return this.control.get(scanId)
+  /**
+   * Look up control state for a scan.
+   *
+   * `create === false` (read paths) returns the live entry or undefined and
+   * NEVER inserts. `create === true` (an explicit pause/resume/stop request)
+   * still must not resurrect a finished scan, otherwise every post-completion
+   * API call leaks one map entry — `finish()` has already cleaned up, so the
+   * entry would never be removed again.
+   */
+  _ctl(scanId, { create = false } = {}) {
+    const existing = this.control.get(scanId)
+    if (existing) return existing
+    if (!create || this._finishedScans.has(scanId)) return undefined
+    const ctl = { paused: false, stopped: false }
+    this.control.set(scanId, ctl)
+    return ctl
   }
 
   /** Pause a running scan (cooperative — takes effect at next checkpoint). */
-  pauseScan(scanId) { this._ctl(scanId).paused = true }
+  pauseScan(scanId) {
+    const ctl = this._ctl(scanId, { create: true })
+    if (ctl) ctl.paused = true
+  }
 
-  resumeScan(scanId) { this._ctl(scanId).paused = false }
+  resumeScan(scanId) {
+    const ctl = this._ctl(scanId, { create: true })
+    if (ctl) ctl.paused = false
+  }
 
   /** Stop a running scan — causes waitIfPaused to throw, aborting the loop. */
   stopScan(scanId) {
-    const ctl = this._ctl(scanId)
+    const ctl = this._ctl(scanId, { create: true })
+    if (!ctl) return
     ctl.stopped = true
     ctl.paused = false // unblock any pause waiter so the loop exits
   }
 
-  isPaused(scanId) { return this._ctl(scanId).paused }
+  isPaused(scanId) { return this._ctl(scanId)?.paused === true }
 
-  isStopped(scanId) { return this._ctl(scanId).stopped }
+  isStopped(scanId) { return this._ctl(scanId)?.stopped === true }
 
   /** Await while paused. Throws if stopped (aborts the scan loop). */
   async waitIfPaused(scanId) {
@@ -291,7 +349,7 @@ export class UnifiedPipeline {
   async runBlackbox(scan, { modules = [], objective = 'comprehensive', maxTools = 6, verify = true, depth = 'standard', owaspCategories = [] } = {}) {
     const scanId = scan.id
     const target = scan.target
-    this._currentTarget = target
+    this._beginScan(scanId)
     const catLabel = owaspCategories.length ? ` [OWASP: ${owaspCategories.join(',')}]` : ''
     this.log(scanId, 'info', `▶ Blackbox scan started on ${target} (depth=offensive — all probes active)${catLabel}`)
     this.progress(scanId, 2)
@@ -347,9 +405,9 @@ export class UnifiedPipeline {
         const results = await Promise.allSettled(
           batch.map(async (mod) => {
             if (!NATIVE_TOOLS[mod]) { this.log(scanId, 'warn', `Unknown module: ${mod}`); return }
-            this.log(scanId, 'info', `▶ Running tool: ${mod} [native]\n$ ${previewNativeCommand(mod, this._currentTarget || target)}`)
-            const res = await runNativeTool(mod, this._currentTarget || target)
-            await this.processToolOutput(scanId, mod, res, { verify, targetType: scan.target_type })
+            this.log(scanId, 'info', `▶ Running tool: ${mod} [native]\n$ ${previewNativeCommand(mod, target)}`)
+            const res = await runNativeTool(mod, target)
+            await this.processToolOutput(scanId, mod, res, { verify, targetType: scan.target_type, target })
           })
         )
         for (let i = 0; i < results.length; i++) {
@@ -365,7 +423,7 @@ export class UnifiedPipeline {
     // ── INJECTION CHAINING STAGE ──
     // Feed parameterized URLs discovered by katana/ffuf/arjun into dalfox (XSS)
     // and sqlmap (SQLi). This is where most SEVERE vulns are actually found.
-    await this.chainInjectionTests(scanId, { verify, targetType: scan.target_type, offensive: true })
+    await this.chainInjectionTests(scanId, { verify, targetType: scan.target_type, offensive: true, target })
     this.progress(scanId, 70)
 
     // ── OFFENSIVE STAGES (always active) ──
@@ -490,17 +548,58 @@ export class UnifiedPipeline {
       const eol = new Date(`${eolDate}-01`)
       if (eol < now) {
         const monthsPast = Math.floor((now - eol) / (1000 * 60 * 60 * 24 * 30))
+
+        // ── CVE ENRICHMENT: look up known vulnerabilities for this product+version ──
+        let cveResults = []
+        let topCveId = null
+        let cveNote = ''
+        try {
+          this.log(scanId, 'info', `🔍 Looking up CVEs for ${entry.product} ${majorMinor} on NVD...`)
+          const nvdResult = await findVersionVulnerabilities(entry.product, majorMinor)
+          if (nvdResult && !nvdResult.error && nvdResult.results?.length > 0) {
+            // Sort by CVSS score descending to get the most severe CVE
+            cveResults = nvdResult.results
+              .filter(r => r.cvss?.score != null)
+              .sort((a, b) => (b.cvss?.score || 0) - (a.cvss?.score || 0))
+            topCveId = cveResults[0]?.id || nvdResult.results[0]?.id || null
+            const totalCves = nvdResult.results.length
+            const criticalCount = cveResults.filter(r => (r.cvss?.score || 0) >= 9.0).length
+            const highCount = cveResults.filter(r => (r.cvss?.score || 0) >= 7.0 && (r.cvss?.score || 0) < 9.0).length
+            cveNote = ` NVD lists ${totalCves} known CVE(s) affecting ${entry.product} ${majorMinor}${criticalCount ? ` (${criticalCount} critical, ${highCount} high)` : highCount ? ` (${highCount} high)` : ''}.`
+            this.log(scanId, 'info', `🔍 Found ${totalCves} CVEs for ${entry.product} ${majorMinor}${topCveId ? ` — top: ${topCveId} (CVSS ${cveResults[0]?.cvss?.score})` : ''}`)
+          } else {
+            this.log(scanId, 'info', `🔍 No specific CVEs found on NVD for ${entry.product} ${majorMinor} (EOL risk still applies)`)
+          }
+        } catch (e) {
+          this.log(scanId, 'warn', `🔍 CVE lookup failed for ${entry.product} ${majorMinor}: ${e.message}`)
+        }
+
         await this.ingestFinding(scanId, {
           title: `${entry.product} ${majorMinor} is END-OF-LIFE (${eolDate}) — no security patches for ${monthsPast} months`,
           severity: monthsPast > 24 ? 'high' : 'medium',
           cweId: 'CWE-1104',
+          cveId: topCveId || null,
           owaspCategory: 'A03:2025-Software Supply Chain Failures',
-          description: `${entry.product} ${majorMinor} was detected on the target and reached end-of-life on ${eolDate} — ${monthsPast} months ago. ${entry.note} EOL software receives NO security patches: every vulnerability disclosed since ${eolDate} remains unpatched and publicly exploitable. This is frequently the single highest-impact risk on a target, even when no specific CVE is matched.`,
+          description: `${entry.product} ${majorMinor} was detected on the target and reached end-of-life on ${eolDate} — ${monthsPast} months ago. ${entry.note} EOL software receives NO security patches: every vulnerability disclosed since ${eolDate} remains unpatched and publicly exploitable. This is frequently the single highest-impact risk on a target, even when no specific CVE is matched.${cveNote}`,
           remediation: `Upgrade ${entry.product} from ${majorMinor} to the latest supported release. If immediate upgrade is impossible, isolate the service (WAF rules, network segmentation) and schedule the upgrade as a priority.`,
           module: 'version-lifecycle',
-          evidence: { product: entry.product, version: majorMinor, eolDate, monthsPast, detectedFrom: m[0] },
+          evidence: {
+            product: entry.product,
+            version: majorMinor,
+            eolDate,
+            monthsPast,
+            detectedFrom: m[0],
+            // Attach top CVEs so users can see details in the drawer
+            knownCves: cveResults.slice(0, 10).map(c => ({
+              id: c.id,
+              score: c.cvss?.score,
+              severity: c.cvss?.severity || c.severity,
+              description: (c.description || '').slice(0, 300),
+            })),
+            totalCves: cveResults.length || 0,
+          },
         }, { verify })
-        this.log(scanId, 'info', `📅 EOL: ${entry.product} ${majorMinor} (EOL ${eolDate}, ${monthsPast} months past)`)
+        this.log(scanId, 'info', `📅 EOL: ${entry.product} ${majorMinor} (EOL ${eolDate}, ${monthsPast} months past)${topCveId ? ` — top CVE: ${topCveId}` : ''}`)
       } else {
         const monthsLeft = Math.ceil((eol - now) / (1000 * 60 * 60 * 24 * 30))
         if (monthsLeft <= 6) {
@@ -1059,14 +1158,14 @@ export class UnifiedPipeline {
    * Injection chaining: take all parameterized URLs discovered during recon,
    * and actively test them with dalfox (XSS) and sqlmap (SQLi).
    */
-  async chainInjectionTests(scanId, { verify, targetType, offensive = false } = {}) {
+  async chainInjectionTests(scanId, { verify, targetType, offensive = false, target = '' } = {}) {
     // Strip URL fragments (#) — SPAs use them client-side; sqlmap/dalfox can't test them
     const urls = this._drainUrls(scanId).map(u => u.split('#')[0]).filter(Boolean)
     const withParams = urls.filter(u => /\?[^=]+=/.test(u))
     let candidates = (withParams.length ? withParams : urls.filter(u => /api|search|query|id=|page=|cat=/i.test(u))).slice(0, 15)
     if (!candidates.length) {
       // Fallback: still probe the base URL with dalfox (DOM/reflective XSS can exist on SPAs)
-      const base = (this._currentTarget || '').split('#')[0]
+      const base = (target || '').split('#')[0]
       if (base) {
         this.log(scanId, 'info', '🔗 No parameterized URLs — probing base URL with dalfox only')
         candidates = [base]
@@ -1542,7 +1641,7 @@ export class UnifiedPipeline {
   }
 
   /** Parse raw tool stdout into structured findings (heuristic + severity extraction). */
-  async processToolOutput(scanId, tool, res, { verify, targetType } = {}) {
+  async processToolOutput(scanId, tool, res, { verify, targetType, target = '' } = {}) {
     // Native-only execution: res is the runNativeTool() result (or a
     // { nativeResult } wrapper from callers that already ran the tool).
     const native = res?.nativeResult || res
@@ -1562,7 +1661,7 @@ export class UnifiedPipeline {
       return
     }
     this.log(scanId, 'info', `📤 [${tool}] raw output (${nativeOut.split('\n').length} lines):\n${nativeOut.slice(0, 2000)}${nativeOut.length > 2000 ? '\n… (truncated)' : ''}`)
-    const { findings, discoveredUrls } = extractFindingsFromOutput(tool, nativeOut, this._currentTarget || '')
+    const { findings, discoveredUrls } = extractFindingsFromOutput(tool, nativeOut, target || '')
     this._collectUrls(scanId, discoveredUrls)
     if (!findings.length) {
       this.log(scanId, 'info', `🔍 [${tool}] parser extracted 0 findings${discoveredUrls.length ? ` (${discoveredUrls.length} URLs queued for chaining)` : ''}`)
@@ -1604,6 +1703,7 @@ export class UnifiedPipeline {
   // ── WHITEBOX ───────────────────────────────────────────────────────────────
   async runWhitebox(scan, { files = [], language = '', focus = '', verify = true, depth = 'standard', owaspCategories = [], whiteboxPasses = null } = {}) {
     const scanId = scan.id
+    this._beginScan(scanId)
     // ALWAYS full offensive: pattern scanner + 3 specialist AI passes
     const catLabel = owaspCategories.length ? ` [OWASP: ${owaspCategories.join(',')}]` : ''
     this.log(scanId, 'info', `▶ Whitebox static analysis started (${files.length} files, depth=offensive)${catLabel}`)
@@ -1729,6 +1829,7 @@ export class UnifiedPipeline {
    */
   async retryFailedWhitebox(scan, { files = [], language = '', focus = '', verify = true } = {}) {
     const scanId = scan.id
+    this._beginScan(scanId)
     this.log(scanId, 'info', `🔁 Retrying failed whitebox passes on ${files.length} files...`)
 
     // Load previous metadata to find failed passes
@@ -1860,7 +1961,7 @@ export class UnifiedPipeline {
   async retryFailedBlackbox(scan, { verify = true, modules = [] } = {}) {
     const scanId = scan.id
     const target = scan.target
-    this._currentTarget = target
+    this._beginScan(scanId)
     this.log(scanId, 'info', `🔁 Retrying failed blackbox tools on ${target}...`)
 
     const failedTools = new Set()
@@ -1917,7 +2018,7 @@ export class UnifiedPipeline {
             if (idx >= 0) meta.tools[idx] = updatedItem
             else meta.tools.push(updatedItem)
           }
-          await this.processToolOutput(scanId, tool, res, { verify, targetType: scan.target_type })
+          await this.processToolOutput(scanId, tool, res, { verify, targetType: scan.target_type, target })
         } catch (e) {
           this.log(scanId, 'warn', `Retry ${tool} still failed: ${e.message}`)
         }
@@ -1952,7 +2053,7 @@ export class UnifiedPipeline {
       'A07:2025-Authentication Failures': 'The login system is weak. An attacker can brute-force passwords (try thousands of combinations until one works), use default credentials (admin/admin), or steal session tokens to impersonate legitimate users. Without multi-factor authentication, a single leaked password grants full access.',
       'A08:2025-Software or Data Integrity Failures': 'The application trusts external data without verification. Unsafe deserialization lets attackers send crafted data that executes code when the application reads it. An attacker can achieve remote code execution by uploading a malicious serialized object or tampering with a software update.',
       'A09:2025-Security Logging and Alerting Failures': 'No one is watching for attacks. Without proper logging, a breach can go undetected for months. Attackers can brute-force passwords, exfiltrate data, or maintain persistent access without triggering any alerts. There is no audit trail to investigate what happened after an incident.',
-      'A05:2025-Injection': 'The server can be tricked into making requests to internal systems that are normally firewalled off. An attacker can scan internal networks, access cloud metadata services (AWS/GCP/Azure) to steal credentials, or attack internal APIs that are not exposed to the internet.',
+      'A05:2025-Injection': 'An attacker can inject malicious commands or code into the application. For SQL injection, this means reading/modifying/deleting the entire database — including stealing all user passwords, credit card numbers, and private data. For command injection, the attacker can run any command on the server, potentially taking full control of the machine. Injection also covers SSRF, where the server is tricked into requesting internal systems that are normally firewalled off — attackers can scan internal networks, reach cloud metadata services (AWS/GCP/Azure) to steal credentials, or attack internal APIs not exposed to the internet.',
     }
 
     // Helper: check if rule applies to this file based on extension
@@ -2099,9 +2200,10 @@ export class UnifiedPipeline {
     this.progress(scanId, 100, status)
     this.emit(scanId, 'scan:done', { scanId, status, scan, counts, riskScore: score })
     // Release per-scan runtime state so Maps don't grow unbounded.
-    this.control.delete(scanId)
-    this._lastProgressEmit?.delete(scanId)
-    this._urlPool?.delete(scanId)
+    // releaseScanState covers _loginForms/_blackboxMeta too, which finish()
+    // previously never removed.
+    this.releaseScanState(scanId)
+    this._markFinished(scanId)
 
     // ── TELEGRAM & DISCORD REAL-TIME SCAN NOTIFICATION ──
     if (status === 'completed') {
@@ -2111,7 +2213,7 @@ export class UnifiedPipeline {
     }
 
     // ── AUTOMATED PDF REPORT & EMAIL DISPATCH ──
-    if (status === 'completed' && (scan.email_notify || scan.trigger_source?.startsWith('github'))) {
+    if (status === 'completed' && (scan?.email_notify || scan?.trigger_source?.startsWith('github'))) {
       setImmediate(async () => {
         try {
           const { generateReport } = await import('./report.js')
