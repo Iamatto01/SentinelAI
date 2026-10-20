@@ -1831,15 +1831,18 @@ app.post('/api/scripts/:id/test', requireAuth, requireRole('admin'), async (req,
 // ── Reports ──────────────────────────────────────────────────────────────────
 app.post('/api/reports/generate', requireAuth, requireScanAccess, async (req, res) => {
   try {
-    const r = await generateReport(req.body.scanId, req.body.minSeverity || 'info', req.body.statusFilter || 'all')
-    audit(req.user.username, 'report:generate', `${req.body.scanId} (min: ${req.body.minSeverity || 'info'}, status: ${req.body.statusFilter || 'all'})`)
-    res.json({ ok: true, file: r.file, riskScore: r.riskScore, counts: r.counts })
+    const { scanId, minSeverity = 'info', statusFilter = 'all', reportType = 'full', ...custom } = req.body
+    const r = await generateReport(scanId, minSeverity, statusFilter, { reportType, custom })
+    audit(req.user.username, 'report:generate', `${scanId} (type: ${reportType}, min: ${minSeverity}, status: ${statusFilter})`)
+    res.json({ ok: true, file: r.file, riskScore: r.riskScore, counts: r.counts, reportType: r.reportType })
   } catch (e) { res.status(500).json({ error: e.message }) }
 })
 app.get('/api/reports/download/:scanId', requireAuth, requireScanAccess, (req, res) => {
   // scanId is server-generated (scan_<uuid>) — strip path separators defensively
   const safeId = String(req.params.scanId).replace(/[^a-zA-Z0-9_-]/g, '')
-  const file = `${config.outputDir}/report-${safeId}.pdf`
+  const reportType = String(req.query.type || 'full').replace(/[^a-zA-Z0-9_-]/g, '')
+  const prefix = reportType === 'simple' ? 'simplified-report-' : 'report-'
+  const file = `${config.outputDir}${prefix}${safeId}.pdf`
   if (!fs.existsSync(file)) return res.status(404).json({ error: 'report not generated' })
   res.download(file)
 })

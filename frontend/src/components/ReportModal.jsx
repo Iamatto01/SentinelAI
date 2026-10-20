@@ -58,7 +58,7 @@ export default function ReportModal({ isOpen, onClose, scanId }) {
       })
       // Secure download: use fetch with Authorization header instead of ?token= query param
       const token = localStorage.getItem('fyp2_token') || ''
-      const res = await fetch(`/api/reports/download/${scanId}`, {
+      const res = await fetch(`/api/reports/download/${scanId}?type=${reportType}`, {
         headers: { Authorization: `Bearer ${token}` }
       })
       if (!res.ok) throw new Error(`Download failed (${res.status})`)
@@ -66,7 +66,7 @@ export default function ReportModal({ isOpen, onClose, scanId }) {
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = `report-${scanId}.pdf`
+      a.download = reportType === 'simple' ? `simplified-report-${scanId}.pdf` : `report-${scanId}.pdf`
       document.body.appendChild(a)
       a.click()
       setTimeout(() => { URL.revokeObjectURL(url); document.body.removeChild(a) }, 1000)

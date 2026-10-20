@@ -520,6 +520,63 @@ Respond ONLY with JSON:
     } catch { return null }
   }
 
+  /**
+   * Generate a SIMPLIFIED IT Action Guide for non-technical stakeholders.
+     * This is the "Pass B" report — plain-language remediation steps using
+     * the "Medical Report" analogy (Symptom → Risk → Prescription) with
+     * detected-tech click paths and urgency/difficulty badges.
+     * Used by the dual-report pipeline (reportType: 'simple').
+     */
+    async generateSimplifiedActionGuide(findings, target, detectedTech = []) {
+      if (!this.llm.isConfigured() || !findings.length) return null
+      const actionable = findings
+        .filter(f => ['critical', 'high', 'medium'].includes(f.severity))
+        .slice(0, 15)
+      if (!actionable.length) return null
+
+      const findingList = actionable.map((f, i) =>
+        `${i + 1}. [${f.severity.toUpperCase()}] ${f.title}
+     Location: ${f.evidence?.url || f.evidence?.file || f.asset || 'N/A'}
+     Technical description: ${(f.description || '').slice(0, 200)}
+     Suggested remediation: ${(f.remediation || '').slice(0, 200)}`
+      ).join('\n\n')
+
+      const techStr = detectedTech.length ? detectedTech.join(', ') : 'not specified'
+      const prompt = `You are a senior IT manager writing a SIMPLIFIED remediation guide for a junior IT admin. Target: ${target || 'a web application'}
+  DETECTED TECHNOLOGY STACK (from whatweb): ${techStr}
+
+  FINDINGS TO REMEDIATE:
+  ${findingList}
+
+  For EACH finding, write a plain-language action item using the "Medical Report" analogy. Avoid ALL jargon — no CWE numbers, no CVSS scores, no OWASP codes. Format as JSON:
+  {
+    "actionItems": [
+      {
+        "title": "short plain-language title a non-technical person understands",
+        "severity": "critical|high|medium",
+        "symptom": "1-2 sentences: what we found, in plain language (e.g. 'Anyone can guess passwords on the login page at unlimited speed without getting locked out')",
+        "risk": "1-2 sentences: why it matters in business terms (e.g. 'Hackers can use an automated bot to guess thousands of passwords in minutes and hijack accounts')",
+        "prescription": "copy-paste fix instructions. If the detected tech stack includes a known product (Cloudflare, Moodle, WordPress, nginx, Apache, IIS, etc.), give the EXACT dashboard click path or config line. Example: 'Cloudflare Dashboard → Security → WAF → Rate limiting rules → Create rule (If URL contains /login and requests > 5 per minute → Block)'",
+        "urgency": "fix-today|this-week|optional",
+        "difficulty": "easy|medium|hard",
+        "estimatedMinutes": "estimated minutes to fix (integer)",
+        "verification": "how to verify the fix worked, in plain language"
+      }
+    ],
+    "topPriority": "the single most important thing to fix first, in 1 plain sentence",
+    "estimatedTimeline": "rough timeline to fix all critical/high items (e.g. '2 hours total')",
+    "taskCountToday": "number of items with urgency=fix-today (integer)"
+  }`
+
+      try {
+        const raw = await this.llm.analyze(prompt, {
+          context: { operation: 'simplified-action-guide' },
+          maxTokens: 2000, timeoutMs: 60000,
+        })
+        return this.llm.parseJSON(raw)
+      } catch { return null }
+    }
+
   /** Free-form chat with a chosen agent persona (fast model). */
   async chat(message, agentName = 'web-hunter', history = []) {
     const persona = this.agents.prompt(agentName) || 'You are a helpful security assistant.'

@@ -27,7 +27,7 @@ except ImportError:
     sys.exit(1)
 
 # Configuration
-KALI_HOST = os.environ.get("KALI_HOST", "192.168.68.132")
+KALI_HOST = os.environ.get("KALI_HOST", "192.168.31.128")
 KALI_PORT = int(os.environ.get("KALI_PORT", 22))
 KALI_USER = os.environ.get("KALI_USER", "kali")
 KALI_PASS = os.environ.get("KALI_PASS", "kali")

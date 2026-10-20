@@ -211,7 +211,26 @@ export class UnifiedPipeline {
       const scan = db.get(`SELECT target FROM scans WHERE id = ?`, scanId)
       rawFinding.target = scan?.target || rawFinding.evidence?.url || ''
     }
-    // 1. OWASP enrich
+
+      // ── OUT-OF-SCOPE TAGGING ──
+      // Compare the finding's hostname to the primary scan target hostname.
+      // Subdomains of the primary target are in-scope; unrelated hosts are tagged
+      // out_of_scope so the report can group them under "Related Hosts" instead
+      // of mixing them with primary-target findings.
+      try {
+        const scan = db.get(`SELECT target FROM scans WHERE id = ?`, scanId)
+        const primaryTarget = scan?.target || ''
+        const findingUrl = rawFinding.evidence?.url || rawFinding.target || ''
+        if (primaryTarget && findingUrl) {
+          const primaryHost = (() => { try { return new URL(primaryTarget.startsWith('http') ? primaryTarget : `https://${primaryTarget}`).hostname.toLowerCase() } catch { return String(primaryTarget).toLowerCase().replace(/\/.*$/, '') } })()
+          const findingHost = (() => { try { return new URL(findingUrl.startsWith('http') ? findingUrl : `https://${findingUrl}`).hostname.toLowerCase() } catch { return String(findingUrl).toLowerCase().replace(/\/.*$/, '') } })()
+          if (primaryHost && findingHost && findingHost !== primaryHost && !findingHost.endsWith(`.${primaryHost}`)) {
+            rawFinding.evidence = { ...(rawFinding.evidence || {}), out_of_scope: true, primaryHost, findingHost }
+          }
+        }
+      } catch { /* non-fatal */ }
+
+      // 1. OWASP enrich
     let f = enrichWithOwasp(rawFinding)
     // 2. RAG PoC cross-reference
     try { f = payloadsRag.crossReference(f) } catch { /* non-fatal */ }
@@ -2414,11 +2433,13 @@ function extractFindingsFromOutput(tool, output, target = '') {
     } catch { /* fall through to text mode */ }
     if (!findings.length) {
       for (const line of lines) {
-        if (/\[POC\]|\[V\]|vulnerable|reflected|stored/i.test(line) && /param|xss|inject/i.test(line) && !/not vulnerable|no (?:vulnerab|result|parameter)|couldn'?t find/i.test(line)) {
-          push(`dalfox: ${line.trim().slice(0, 140)}`, 'medium', line.trim(), { cweId: 'CWE-79' })
+            // Require dalfox's explicit finding markers [POC] or [V] to avoid
+            // catching banner/status lines that mention "vulnerable" or "xss".
+            if (/\[POC\]|\[V\]/i.test(line) && /param|xss|inject/i.test(line) && !/not vulnerable|no (?:vulnerab|result|parameter)|couldn'?t find/i.test(line)) {
+              push(`dalfox: ${line.trim().slice(0, 140)}`, 'medium', line.trim(), { cweId: 'CWE-79' })
+            }
+          }
         }
-      }
-    }
     if (findings.length) return { findings: findings.slice(0, 30), discoveredUrls }
   }
 
@@ -2458,8 +2479,28 @@ function extractFindingsFromOutput(tool, output, target = '') {
       if (stack.length) {
         push(`whatweb: Technology stack — ${stack.slice(0, 12).join(', ')}`, 'info', line, { url })
       }
-    }
-    if (findings.length) return { findings: findings.slice(0, 10), discoveredUrls }
+
+        // ── VERSION UNVERIFIED DETECTION ──
+        // When a product is detected but its version is empty/obscured (often due
+        // to Cloudflare/WAF masking), flag it so the report can show "version
+        // unverified" instead of silently dropping or guessing.
+        const wafDetected = /Cloudflare|Incapsula|Sucuri|Imperva|Akamai|Fastly/i.test(rest)
+        const productMatches = [...rest.matchAll(/\b([A-Za-z][A-Za-z0-9_-]{1,30})\[([^\]]*)\]/g)]
+        for (const pm of productMatches) {
+          const product = pm[1]
+          const version = (pm[2] || '').trim()
+          if (/^(IP|Country|Title|HTTPServer|Email|Script|Open-Graph-Protocol|X-Frame-Options|Content-Security-Policy|Strict-Transport-Security|X-XSS-Protection)\b/i.test(product)) continue
+          if (version) continue // version present — verified
+          // Product detected but version obscured
+          push(`whatweb: ${product} detected but version obscured${wafDetected ? ' (behind WAF/CDN)' : ''}`, 'info', line, {
+            url,
+            version_unverified: true,
+            product,
+            wafDetected,
+          })
+        }
+      }
+      if (findings.length) return { findings: findings.slice(0, 10), discoveredUrls }
   }
 
   // ── subfinder / amass / dnsbrute: one subdomain per line ──
