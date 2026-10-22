@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AbuseLab — Offensive Security Exploitation Range</title>
+  <link rel="stylesheet" href="/style.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220%22><text y=%2226%22 font-size=%2226%22>🔥</text></svg>">
+</head>
+<body>
+  <header>
+    <a href="/" class="logo">
+      🔥 ABUSE<span>LAB</span> <small>RANGE v2.0</small>
+    </a>
+    <nav>
+      <a href="/" class="active">Matrix</a>
+      <a href="/admin.html">⚡ RCE Terminal</a>
+      <a href="/login.html">💉 SQLi Hub</a>
+      <a href="/upload.html">📤 Web Shells</a>
+      <a href="/documents.html">📁 LFI Vault</a>
+      <a href="/ssrf.html">🌐 SSRF Probe</a>
+      <a href="/profile.html">👤 IDOR</a>
+      <a href="/feedback.html">☣️ XSS</a>
+    </nav>
+  </header>
+
+  <div class="container">
+    <!-- Live CTF Progress Banner -->
+    <div class="ctf-banner">
+      <div class="ctf-info">
+        <h2>🎯 AbuseLab Exploitation Range</h2>
+        <p>Interactive vulnerable target environment designed for <strong>SentinelAI</strong> automated scans & manual offensive security testing.</p>
+        <p style="margin-top: 8px; font-family: monospace; color: var(--cyan); font-size: 13px;">
+          Target URL: <strong>https://abuse.sentinelai.studio</strong>
+        </p>
+      </div>
+
+      <div class="ctf-progress">
+        <div class="progress-box">
+          <div class="score" id="user-score">0 / 890</div>
+          <div class="label" id="user-stats">0 of 10 FLAGS UNLOCKED</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Flag Submission Card -->
+    <div class="card" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 14px; background: rgba(15, 21, 36, 0.7);">
+      <div>
+        <h4 style="color: #fff; font-size: 15px;">🚩 Submit Exploit Flag</h4>
+        <p style="color: var(--text-muted); font-size: 13px;">Found a flag like <code>FLAG{...}</code> during your penetration testing? Submit it here to score points!</p>
+      </div>
+      <form id="flag-submit-form" class="flag-form" onsubmit="submitFlag(event)">
+        <input type="text" id="flag-input" placeholder="FLAG{...}" required>
+        <button type="submit" class="btn-primary">SUBMIT FLAG</button>
+      </form>
+    </div>
+    <div id="flag-msg" style="margin-top: -14px; margin-bottom: 20px; font-size: 13px; font-weight: bold; display: none;"></div>
+
+    <!-- Quick Scan Helper -->
+    <div class="card" style="border-left: 4px solid var(--cyan);">
+      <h3 style="color: var(--cyan); margin-bottom: 8px;">🚀 Ready to Abuse with SentinelAI</h3>
+      <p style="color: var(--text-muted); font-size: 14px; line-height: 1.6;">
+        Launch an automated scan directly against this target from your SentinelAI scanner dashboard:
+        <code style="background: #060911; padding: 4px 10px; border-radius: 4px; color: #fff; border: 1px solid var(--card-border); margin-left: 6px;">https://abuse.sentinelai.studio</code>
+      </p>
+    </div>
+
+    <!-- Attack Surface Matrix -->
+    <h2 style="margin: 30px 0 16px; font-size: 20px; font-weight: 800; letter-spacing: 0.5px; display: flex; align-items: center; gap: 8px;">
+      ⚡ VULNERABILITY ATTACK MATRIX
+    </h2>
+
+    <div class="grid-3" id="matrix-grid">
+      <!-- Injected dynamically via API -->
+    </div>
+  </div>
+
+  <footer>
+    <p>AbuseLab v2.0 — Official Offensive Security Testbed for SentinelAI Platform.</p>
+    <p style="margin-top: 6px; font-family: monospace;">
+      <a href="/robots.txt">robots.txt</a> • 
+      <a href="/.env">.env (secrets)</a> • 
+      <a href="/backup.sql">backup.sql</a> • 
+      <a href="/actuator/env">actuator/env</a>
+    </p>
+  </footer>
+
+  <script>
+    async function loadStatus() {
+      try {
+        const res = await fetch('/api/flags/status')
+        const data = await res.json()
+        document.getElementById('user-score').innerText = `${data.score} / ${data.maxScore}`
+        document.getElementById('user-stats').innerText = `${data.solvedCount} of ${data.totalChallenges} FLAGS UNLOCKED`
+
+        const grid = document.getElementById('matrix-grid')
+        grid.innerHTML = data.challenges.map(c => {
+          let badgeClass = 'badge-crit'
+          if (c.points <= 70) badgeClass = 'badge-med'
+          else if (c.points <= 90) badgeClass = 'badge-high'
+
+          let actionUrl = '/admin.html'
+          if (c.id.includes('sqli')) actionUrl = '/login.html'
+          else if (c.id.includes('lfi')) actionUrl = '/documents.html'
+          else if (c.id.includes('upload')) actionUrl = '/upload.html'
+          else if (c.id.includes('ssrf')) actionUrl = '/ssrf.html'
+          else if (c.id.includes('idor')) actionUrl = '/profile.html'
+          else if (c.id.includes('xss')) actionUrl = '/feedback.html'
+
+          return `
+            <div class="matrix-card ${c.solved ? 'solved' : ''}">
+              <div>
+                <div class="badges">
+                  <span class="badge ${badgeClass}">${c.cwe}</span>
+                  <span class="badge badge-med">${c.points} PTS</span>
+                </div>
+                <h3 style="color: #fff; font-size: 16px; font-weight: 700; margin-bottom: 8px;">${c.name}</h3>
+                <p style="color: var(--text-muted); font-size: 13px; line-height: 1.5;">${c.hint}</p>
+              </div>
+              <div style="margin-top: 18px; display: flex; justify-content: space-between; align-items: center;">
+                <span style="font-size: 12px; color: var(--text-dim); text-transform: uppercase;">${c.category}</span>
+                <a href="${actionUrl}" class="btn-primary" style="padding: 6px 12px; font-size: 12px;">ABUSE THIS &rarr;</a>
+              </div>
+            </div>
+          `
+        }).join('')
+      } catch (err) {
+        console.error(err)
+      }
+    }
+
+    async function submitFlag(e) {
+      e.preventDefault()
+      const input = document.getElementById('flag-input')
+      const msg = document.getElementById('flag-msg')
+      msg.style.display = 'block'
+      msg.innerText = 'Verifying flag...'
+      msg.style.color = 'var(--text-muted)'
+
+      try {
+        const res = await fetch('/api/flags/submit', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ flag: input.value.trim() })
+        })
+        const data = await res.json()
+        if (data.success) {
+          msg.innerText = data.message
+          msg.style.color = 'var(--success)'
+          input.value = ''
+          loadStatus()
+        } else {
+          msg.innerText = data.message
+          msg.style.color = 'var(--danger)'
+        }
+      } catch (err) {
+        msg.innerText = 'Network error while submitting flag'
+        msg.style.color = 'var(--danger)'
+      }
+    }
+
+    loadStatus()
+  </script>
+</body>
+</html>

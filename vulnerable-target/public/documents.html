@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LFI & Path Traversal Vault — AbuseLab</title>
+  <link rel="stylesheet" href="/style.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220%22><text y=%2226%22 font-size=%2226%22>📁</text></svg>">
+</head>
+<body>
+  <header>
+    <a href="/" class="logo">🔥 ABUSE<span>LAB</span> <small>LFI</small></a>
+    <nav>
+      <a href="/">Matrix</a>
+      <a href="/admin.html">⚡ RCE Terminal</a>
+      <a href="/login.html">💉 SQLi Hub</a>
+      <a href="/upload.html">📤 Web Shells</a>
+      <a href="/documents.html" class="active">📁 LFI Vault</a>
+      <a href="/ssrf.html">🌐 SSRF Probe</a>
+      <a href="/profile.html">👤 IDOR</a>
+      <a href="/feedback.html">☣️ XSS</a>
+    </nav>
+  </header>
+
+  <div class="container" style="max-width: 900px;">
+    <div class="card">
+      <div class="badges">
+        <span class="badge badge-crit">CWE-22: Path Traversal / LFI</span>
+        <span class="badge badge-high">Sensitive File Disclosure</span>
+      </div>
+      <h2>📁 Document Vault & Local File Inclusion</h2>
+      <p style="color: var(--text-muted); font-size: 14px; margin-top: 6px; margin-bottom: 20px;">
+        The <code>/api/documents/view?file=</code> parameter reads server filesystem contents without input sanitization or directory sandboxing. Traverse directories using <code>../</code> to extract secrets.
+      </p>
+
+      <div style="margin-bottom: 16px;">
+        <span style="font-size: 12px; color: var(--text-dim); text-transform: uppercase; font-weight: bold;">Quick LFI Payloads:</span>
+        <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px;">
+          <button class="btn-secondary" onclick="setDoc('company_secret.txt')">Company Secret</button>
+          <button class="btn-secondary" onclick="setDoc('../../../../etc/passwd')">/etc/passwd (System Users)</button>
+          <button class="btn-secondary" onclick="setDoc('../../server.js')">Source Code (server.js)</button>
+          <button class="btn-secondary" onclick="setDoc('../../../../proc/version')">/proc/version (Kernel Info)</button>
+          <button class="btn-secondary" onclick="setDoc('../../package.json')">package.json</button>
+        </div>
+      </div>
+
+      <div style="display: flex; gap: 10px; margin-top: 12px;">
+        <input type="text" id="doc-file" value="company_secret.txt" style="flex: 1; background: #090c15; border: 1px solid var(--card-border); color: #fff; padding: 12px 16px; border-radius: 6px; font-family: monospace; font-size: 14px;">
+        <button id="view-btn" class="btn-primary" onclick="loadDoc()">READ FILE &rarr;</button>
+      </div>
+
+      <div id="flag-alert" style="display: none; margin-top: 18px; padding: 14px; background: rgba(16, 185, 129, 0.15); border: 1px solid var(--success); border-radius: 8px; color: #fff;">
+        🎉 <strong>LFI EXPLOITED! Flag Unlocked:</strong> <code id="flag-code" style="color: var(--success); font-weight: bold; font-size: 14px; margin-left: 8px;"></code>
+        <a href="/" style="color: var(--cyan); margin-left: 14px; font-size: 12px; text-decoration: underline;">Submit on Board &rarr;</a>
+      </div>
+
+      <div class="terminal-window">
+        <div class="terminal-header">
+          <span class="term-dot red"></span>
+          <span class="term-dot yellow"></span>
+          <span class="term-dot green"></span>
+          <span style="color: var(--text-muted); font-size: 12px; margin-left: 10px;">File Stream Viewer</span>
+        </div>
+        <div id="doc-content" class="terminal-body">Select or input a file path and click Read File...</div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    function setDoc(f) {
+      document.getElementById('doc-file').value = f
+      loadDoc()
+    }
+
+    async function loadDoc() {
+      const file = document.getElementById('doc-file').value
+      const box = document.getElementById('doc-content')
+      box.innerText = `[+] Reading file: ${file} ...\n[+] Requesting /api/documents/view?file=${encodeURIComponent(file)} ...`
+
+      try {
+        const res = await fetch(`/api/documents/view?file=${encodeURIComponent(file)}`)
+        const text = await res.text()
+        box.innerText = text
+
+        if (text.includes('FLAG{lfi')) {
+          const match = text.match(/FLAG\{lfi[^}]+\}/)
+          if (match) {
+            document.getElementById('flag-alert').style.display = 'block'
+            document.getElementById('flag-code').innerText = match[0]
+          }
+        }
+      } catch (err) {
+        box.innerText = 'Failed to load file: ' + err.message
+      }
+    }
+  </script>
+</body>
+</html>

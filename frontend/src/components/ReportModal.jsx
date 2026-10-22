@@ -49,20 +49,25 @@ export default function ReportModal({ isOpen, onClose, scanId }) {
     setLoading(true)
     setError('')
     try {
-      await api.generateReport(scanId, minSeverity, statusFilter, reportType, {
+      const genResult = await api.generateReport(scanId, minSeverity, statusFilter, reportType, {
         customTitle: customTitle.trim() || undefined,
         customSummary: customSummary.trim() || undefined,
         customScope: customScope.trim() || undefined,
         customConclusion: customConclusion.trim() || undefined,
         filterNoise,
       })
+      if (!genResult?.ok) throw new Error('Report generation failed')
       // Secure download: use fetch with Authorization header instead of ?token= query param
       const token = localStorage.getItem('fyp2_token') || ''
       const res = await fetch(`/api/reports/download/${scanId}?type=${reportType}`, {
         headers: { Authorization: `Bearer ${token}` }
       })
-      if (!res.ok) throw new Error(`Download failed (${res.status})`)
+      if (!res.ok) {
+        if (res.status === 404) throw new Error('PDF not found — report may have failed to generate. Try again.')
+        throw new Error(`Download failed (${res.status})`)
+      }
       const blob = await res.blob()
+      if (blob.size < 100) throw new Error('Generated PDF is empty — AI may have timed out. Try again.')
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
@@ -161,6 +166,18 @@ export default function ReportModal({ isOpen, onClose, scanId }) {
                 })}
               </div>
 
+              {/* Simplified mode: hide all filters — only important stuff shown */}
+              {reportType === 'simple' ? (
+                <div className="rounded-xl border border-accent/30 bg-accent/5 p-4 text-xs text-slate-300 space-y-2">
+                  <div className="flex items-center gap-2 font-bold text-accent">
+                    <Sparkles size={14} /> Simplified Mode Active
+                  </div>
+                  <p className="text-slate-400 leading-relaxed">
+                    The simplified report automatically filters out noise (INFO/low findings) and shows only actionable critical, high, and medium issues with plain-language fix cards. No additional configuration needed — just download.
+                  </p>
+                </div>
+              ) : (
+                <>
               {/* Severity Options */}
               <div className="space-y-2.5">
                 <div className="text-xs font-bold uppercase tracking-wider text-slate-400">
@@ -260,10 +277,23 @@ export default function ReportModal({ isOpen, onClose, scanId }) {
                   </div>
                 </button>
               </div>
+                </>
+              )}
             </>
           ) : (
             /* Live Preview & Text Editor Tab */
             <div className="space-y-5">
+              {reportType === 'simple' ? (
+                <div className="p-4 rounded-xl border border-accent/30 bg-accent/5 text-xs text-slate-300 space-y-2">
+                  <div className="flex items-center gap-2 font-bold text-accent">
+                    <Sparkles size={14} /> Simplified Report — Auto-Generated
+                  </div>
+                  <p className="text-slate-400 leading-relaxed">
+                    The simplified report is fully auto-generated from your scan results. It filters out noise and shows only actionable findings with plain-language fix cards. No manual editing needed — just download.
+                  </p>
+                </div>
+              ) : (
+              <>
               <div className="p-3.5 rounded-xl border border-cyan-500/30 bg-cyan-950/30 text-xs text-cyan-300 flex items-center gap-2">
                 <Edit3 size={16} className="shrink-0 text-cyan-400" />
                 <span>You can edit the report title, executive summary, and recommendations before downloading the PDF.</span>
@@ -313,6 +343,8 @@ export default function ReportModal({ isOpen, onClose, scanId }) {
                   className="w-full rounded-xl border border-slate-700 bg-slate-950 p-3 text-xs text-slate-100 focus:border-cyan-400 focus:outline-none"
                 />
               </div>
+              </>
+              )}
 
               {/* Live Formatted PDF Card Preview */}
               <div className="space-y-2 border-t border-slate-800 pt-4">
@@ -325,10 +357,19 @@ export default function ReportModal({ isOpen, onClose, scanId }) {
                       {reportType === 'simple' ? 'SIMPLIFIED REPORT PREVIEW' : 'FULL TECHNICAL REPORT PREVIEW'}
                     </span>
                     <h3 className="text-sm font-extrabold text-white mt-1">
-                      {customTitle.trim() || (reportType === 'simple' ? 'Simplified Security Assessment Summary' : 'Full Vulnerability Assessment & Penetration Test')}
+                      {reportType === 'simple' ? 'Simplified Security Assessment Summary' : (customTitle.trim() || 'Full Vulnerability Assessment & Penetration Test')}
                     </h3>
-                    <p className="text-[11px] text-slate-400 mt-0.5">Scope: {customScope || 'Default Scan Target'}</p>
+                    <p className="text-[11px] text-slate-400 mt-0.5">Scope: {reportType === 'simple' ? 'Auto-detected from scan' : (customScope || 'Default Scan Target')}</p>
                   </div>
+                  {reportType === 'simple' ? (
+                    <div className="space-y-1.5">
+                      <span className="text-[11px] font-bold text-emerald-400 uppercase tracking-wider">Action Items Preview</span>
+                      <p className="text-xs text-slate-300 leading-relaxed italic bg-slate-900/60 p-3 rounded-xl border border-white/5">
+                        Auto-generated fix cards will appear here based on scan findings. Only critical, high, and medium issues are shown — noise is filtered out automatically.
+                      </p>
+                    </div>
+                  ) : (
+                    <>
                   <div className="space-y-1.5">
                     <span className="text-[11px] font-bold text-cyan-400 uppercase tracking-wider">Executive Summary</span>
                     <p className="text-xs text-slate-300 leading-relaxed italic bg-slate-900/60 p-3 rounded-xl border border-white/5">
@@ -339,6 +380,8 @@ export default function ReportModal({ isOpen, onClose, scanId }) {
                     <span className="text-[11px] font-bold text-emerald-400 uppercase tracking-wider">Conclusion</span>
                     <p className="text-[11px] text-slate-400">{customConclusion}</p>
                   </div>
+                    </>
+                  )}
                 </div>
               </div>
             </div>

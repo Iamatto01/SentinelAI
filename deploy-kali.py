@@ -11,6 +11,7 @@ Actions:
 5. Installs dependencies, builds frontend, and restarts services
 """
 
+import hashlib
 import os
 import sys
 import tarfile
@@ -27,7 +28,7 @@ except ImportError:
     sys.exit(1)
 
 # Configuration
-KALI_HOST = os.environ.get("KALI_HOST", "192.168.31.128")
+KALI_HOST = os.environ.get("KALI_HOST", "192.168.68.132")
 KALI_PORT = int(os.environ.get("KALI_PORT", 22))
 KALI_USER = os.environ.get("KALI_USER", "kali")
 KALI_PASS = os.environ.get("KALI_PASS", "kali")
@@ -75,10 +76,40 @@ def get_local_env_var(name):
                 return line.split("=", 1)[1].strip()
     return ""
 
+
+# Critical modules whose stale deployed copies have caused silent regressions
+# (e.g. an Oct-2 index.js dropped the reportType argument, making the
+# "simplified" PDF byte-identical to the full one). Verify by hash after deploy.
+CRITICAL_MODULES = [
+    "backend/src/index.js",
+    "backend/src/report.js",
+    "backend/src/version-audit.js",
+    "backend/src/exploits/registry.js",
+]
+
+
+def local_module_hashes():
+    hashes = {}
+    for rel in CRITICAL_MODULES:
+        path = os.path.join(PROJECT_ROOT, rel.replace("/", os.sep))
+        if not os.path.isfile(path):
+            continue
+        with open(path, "rb") as f:
+            hashes[rel] = hashlib.md5(f.read()).hexdigest()
+    return hashes
+
 def deploy_to_kali(local_tar):
     stripe_sec = get_local_env_var("STRIPE_SECRET_KEY")
     stripe_pub = get_local_env_var("STRIPE_PUBLISHABLE_KEY")
     stripe_cur = get_local_env_var("STRIPE_CURRENCY") or "MYR"
+    # AI provider keys — sync from local .env so Kali backend can use AI features
+    or_key = get_local_env_var("OPENROUTER_API_KEY")
+    or_model = get_local_env_var("OPENROUTER_MODEL") or "deepseek/deepseek-r1-distill-qwen-32b:free"
+    bb_key = get_local_env_var("BANDELBANGET_API_KEY")
+    bb_backup = get_local_env_var("BANDELBANGET_BACKUP_API_KEY")
+    bb_model = get_local_env_var("BANDELBANGET_MODEL") or "deepseek-v4-pro"
+    groq_key = get_local_env_var("GROQ_API_KEY")
+    groq_model = get_local_env_var("GROQ_MODEL") or "openai/gpt-oss-120b"
 
     print(f"🚀 [2/4] Connecting via SSH to {KALI_USER}@{KALI_HOST}:{KALI_PORT}...")
     ssh = paramiko.SSHClient()
@@ -102,6 +133,10 @@ def deploy_to_kali(local_tar):
     print("   ✓ Upload complete!")
 
     print(f"⚙️  [4/4] Extracting & deploying on Kali server ({REMOTE_DIR})...")
+    verify_block = "\n".join(
+        f'echo "HASHCHECK::{rel}::$(md5sum {rel} 2>/dev/null | cut -d" " -f1)"'
+        for rel in local_module_hashes()
+    )
     remote_commands = f"""
 set -e
 mkdir -p {REMOTE_DIR}
@@ -115,6 +150,9 @@ echo "   ✓ Files extracted to {REMOTE_DIR}"
 
 cd {REMOTE_DIR}
 
+echo "   🔍 Verifying critical module hashes..."
+{verify_block}
+
 # Ensure .env exists if not present
 if [ ! -f .env ] && [ -f .env.example ]; then
     cp .env.example .env
@@ -127,7 +165,14 @@ env_file = '{REMOTE_DIR}/.env'
 keys = {{
     'STRIPE_SECRET_KEY': '{stripe_sec}',
     'STRIPE_PUBLISHABLE_KEY': '{stripe_pub}',
-    'STRIPE_CURRENCY': '{stripe_cur}'
+    'STRIPE_CURRENCY': '{stripe_cur}',
+    'OPENROUTER_API_KEY': '{or_key}',
+    'OPENROUTER_MODEL': '{or_model}',
+    'BANDELBANGET_API_KEY': '{bb_key}',
+    'BANDELBANGET_BACKUP_API_KEY': '{bb_backup}',
+    'BANDELBANGET_MODEL': '{bb_model}',
+    'GROQ_API_KEY': '{groq_key}',
+    'GROQ_MODEL': '{groq_model}',
 }}
 content = open(env_file).read() if os.path.exists(env_file) else ''
 for k, v in keys.items():
@@ -153,30 +198,64 @@ npm install --prefix frontend
 echo "   🔨 Building frontend..."
 npm run build --prefix frontend
 
-# Reload through PM2. PM2 owns 5000/5173 -- this script must NEVER fuser -k or
+# Setup and run Vulnerable Target Web Application (VulnCorp) on port 8080
+if [ -d vulnerable-target ]; then
+    echo "   📦 Installing vulnerable-target dependencies..."
+    npm install --prefix vulnerable-target --ignore-scripts=false
+    echo "   🎯 Starting VulnCorp target web app on PM2 (Port 8080)..."
+    pm2 describe vulncorp-target >/dev/null 2>&1 && pm2 restart vulncorp-target || pm2 start vulnerable-target/server.js --name "vulncorp-target" --time
+fi
+
+# Reload through PM2. PM2 owns 5000/5173/8080 -- this script must NEVER fuser -k or
 # pkill them. Killing another supervisor's port SIGKILLs the backend
 # mid-transaction and corrupts SQLite backups. See defect N-06 in
 # resources/ARCHIVED-second-supervisor.md and the port-ownership table.
-echo "   🔄 Reloading SentinelAI via PM2 (PM2 owns 5000/5173)..."
+echo "   🔄 Reloading SentinelAI via PM2..."
 pm2 reload sentinel-backend 2>/dev/null || pm2 restart sentinel-backend 2>/dev/null || true
 pm2 reload sentinel-frontend 2>/dev/null || pm2 restart sentinel-frontend 2>/dev/null || true
 pm2 save 2>/dev/null || true
 sleep 3
 
-echo "   ✓ SentinelAI reloaded via PM2"
+echo "   ✓ SentinelAI and VulnCorp target reloaded via PM2"
 pm2 jlist 2>/dev/null | head -c 400 || true
 """
     
     stdin, stdout, stderr = ssh.exec_command(remote_commands, get_pty=True)
+    deployed_hashes = {}
+    local_hashes = local_module_hashes()
     for line in stdout:
-        print(line.rstrip())
+        clean = line.rstrip()
+        print(clean)
+        if "HASHCHECK::" in clean:
+            payload = clean.split("HASHCHECK::", 1)[1].strip()
+            rel, _, digest = payload.partition("::")
+            rel, digest = rel.strip(), digest.strip()
+            if rel in local_hashes:
+                deployed_hashes[rel] = digest
+
+    print()
+    mismatches = []
+    for rel, local_hash in local_hashes.items():
+        remote_hash = deployed_hashes.get(rel)
+        if remote_hash is None:
+            mismatches.append((rel, local_hash, "NOT FOUND"))
+        elif remote_hash != local_hash:
+            mismatches.append((rel, local_hash, remote_hash))
+    if mismatches:
+        print("⚠️  CRITICAL MODULE HASH MISMATCH — deployment did NOT land correctly:")
+        for rel, local_hash, remote_hash in mismatches:
+            print(f"     {rel}\n       local={local_hash}\n       remote={remote_hash}")
+        print("   The running backend is serving stale code. Re-run the deploy or upload manually.")
+    elif deployed_hashes:
+        print(f"✅ Critical module hashes match local ({len(deployed_hashes)} verified).")
     
     ssh.close()
     print("\n🎉 ========================================================")
     print(f"✅ SentinelAI successfully deployed & running on Kali!")
     print(f"� Public Domain: https://sentinelai.studio")
-    print(f"🌐 Local Web:     http://{KALI_HOST}:5173")
-    print(f"🔌 Local API:     http://{KALI_HOST}:5000")
+    print(f"🌐 SentinelAI Web:  http://{KALI_HOST}:5173 (or https://sentinelai.studio)")
+    print(f"🔌 SentinelAI API:  http://{KALI_HOST}:5000")
+    print(f"🎯 VulnCorp Target: http://{KALI_HOST}:8080")
     print("========================================================\n")
 
 def main():

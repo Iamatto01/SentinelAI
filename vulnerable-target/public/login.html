@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SQL Injection Hub & Auth Bypass — AbuseLab</title>
+  <link rel="stylesheet" href="/style.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220%22><text y=%2226%22 font-size=%2226%22>💉</text></svg>">
+</head>
+<body>
+  <header>
+    <a href="/" class="logo">🔥 ABUSE<span>LAB</span> <small>SQLi</small></a>
+    <nav>
+      <a href="/">Matrix</a>
+      <a href="/admin.html">⚡ RCE Terminal</a>
+      <a href="/login.html" class="active">💉 SQLi Hub</a>
+      <a href="/upload.html">📤 Web Shells</a>
+      <a href="/documents.html">📁 LFI Vault</a>
+      <a href="/ssrf.html">🌐 SSRF Probe</a>
+      <a href="/profile.html">👤 IDOR</a>
+      <a href="/feedback.html">☣️ XSS</a>
+    </nav>
+  </header>
+
+  <div class="container" style="max-width: 1000px;">
+    <div class="grid-3" style="grid-template-columns: 1fr 1fr; align-items: start;">
+      <!-- Part 1: Auth Bypass -->
+      <div class="card">
+        <div class="badges">
+          <span class="badge badge-crit">CWE-89: SQL Injection</span>
+          <span class="badge badge-high">Auth Bypass</span>
+        </div>
+        <h3 style="margin-bottom: 8px;">🔐 Portal Authentication Bypass</h3>
+        <p style="color: var(--text-muted); font-size: 13px; margin-bottom: 16px;">
+          The login query concatenates raw input into the SQL string. Bypass authentication without knowing the password.
+        </p>
+
+        <div style="margin-bottom: 14px;">
+          <span style="font-size: 11px; color: var(--text-dim); text-transform: uppercase; font-weight: bold;">Quick SQLi Payloads:</span>
+          <div style="display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px;">
+            <button class="btn-secondary" onclick="setLogin('admin\' --', 'any')"><code>admin' --</code></button>
+            <button class="btn-secondary" onclick="setLogin('\' OR \'1\'=\'1\' --', 'any')"><code>' OR '1'='1' --</code></button>
+            <button class="btn-secondary" onclick="setLogin('admin\' OR 1=1 #', 'any')"><code>admin' OR 1=1</code></button>
+          </div>
+        </div>
+
+        <form id="login-form">
+          <div style="margin-bottom: 12px;">
+            <label style="font-size: 12px; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 4px;">Username</label>
+            <input type="text" id="username" value="admin' --" style="width: 100%; background: #090c15; border: 1px solid var(--card-border); color: #fff; padding: 10px; border-radius: 6px; font-family: monospace;">
+          </div>
+          <div style="margin-bottom: 16px;">
+            <label style="font-size: 12px; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 4px;">Password</label>
+            <input type="password" id="password" value="anything" style="width: 100%; background: #090c15; border: 1px solid var(--card-border); color: #fff; padding: 10px; border-radius: 6px; font-family: monospace;">
+          </div>
+          <button type="submit" class="btn-primary" style="width: 100%;">TEST SQLi AUTHENTICATION &rarr;</button>
+        </form>
+
+        <div id="login-result" style="margin-top: 16px; font-size: 13px; display: none;"></div>
+      </div>
+
+      <!-- Part 2: Union-Based Data Exfiltration -->
+      <div class="card">
+        <div class="badges">
+          <span class="badge badge-crit">CWE-89: Union-Based SQLi</span>
+          <span class="badge badge-high">Database Exfil</span>
+        </div>
+        <h3 style="margin-bottom: 8px;">📊 Search & Data Exfiltration</h3>
+        <p style="color: var(--text-muted); font-size: 13px; margin-bottom: 16px;">
+          Product catalog query is vulnerable to <code>UNION SELECT</code> injection. Dump user credit cards or secret flags.
+        </p>
+
+        <div style="margin-bottom: 14px;">
+          <span style="font-size: 11px; color: var(--text-dim); text-transform: uppercase; font-weight: bold;">Quick Union Payloads:</span>
+          <div style="display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px;">
+            <button class="btn-secondary" onclick="setSearch('\' UNION SELECT id, username, credit_card, email, role FROM users --')">Dump Credit Cards</button>
+            <button class="btn-secondary" onclick="setSearch('\' UNION SELECT id, title, secret_value, null, null FROM secrets --')">Dump Secret Vault Flag</button>
+          </div>
+        </div>
+
+        <div style="display: flex; gap: 8px;">
+          <input type="text" id="search-q" value="' UNION SELECT id, title, secret_value, null, null FROM secrets --" style="flex: 1; background: #090c15; border: 1px solid var(--card-border); color: #fff; padding: 10px; border-radius: 6px; font-family: monospace; font-size: 12px;">
+          <button class="btn-primary" onclick="executeSearch()">SEARCH</button>
+        </div>
+
+        <div id="search-results" style="margin-top: 16px; font-size: 12px; max-height: 260px; overflow-y: auto; background: #060911; border: 1px solid var(--card-border); border-radius: 6px; padding: 12px; font-family: monospace;">
+          Results will be rendered here...
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    function setLogin(u, p) {
+      document.getElementById('username').value = u
+      document.getElementById('password').value = p
+    }
+
+    function setSearch(q) {
+      document.getElementById('search-q').value = q
+      executeSearch()
+    }
+
+    document.getElementById('login-form').addEventListener('submit', async (e) => {
+      e.preventDefault()
+      const u = document.getElementById('username').value
+      const p = document.getElementById('password').value
+      const resEl = document.getElementById('login-result')
+
+      try {
+        const res = await fetch('/api/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username: u, password: p })
+        })
+        const data = await res.json()
+        resEl.style.display = 'block'
+        if (data.success) {
+          resEl.innerHTML = `
+            <div style="padding: 12px; background: rgba(16, 185, 129, 0.15); border: 1px solid var(--success); border-radius: 6px; color: #fff;">
+              <strong>🎉 Bypassed as:</strong> ${data.user.username} (Role: <code>${data.user.role}</code>)<br>
+              ${data.flag ? `<div style="margin-top: 8px; font-weight: bold; color: var(--success); font-family: monospace;">FLAG: ${data.flag}</div>` : ''}
+            </div>
+          `
+        } else {
+          resEl.innerHTML = `
+            <div style="padding: 12px; background: rgba(239, 68, 68, 0.15); border: 1px solid var(--danger); border-radius: 6px; color: #fff;">
+              <strong>Error:</strong> ${data.error || data.message}
+            </div>
+          `
+        }
+      } catch (err) {
+        resEl.style.display = 'block'
+        resEl.innerText = 'Network error: ' + err.message
+      }
+    })
+
+    async function executeSearch() {
+      const q = document.getElementById('search-q').value
+      const resBox = document.getElementById('search-results')
+      resBox.innerText = 'Executing query...'
+
+      try {
+        const res = await fetch(`/api/products/search?q=${encodeURIComponent(q)}`)
+        const data = await res.json()
+        if (Array.isArray(data)) {
+          resBox.innerText = JSON.stringify(data, null, 2)
+        } else {
+          resBox.innerText = data.error || JSON.stringify(data)
+        }
+      } catch (err) {
+        resBox.innerText = 'Error: ' + err.message
+      }
+    }
+  </script>
+</body>
+</html>

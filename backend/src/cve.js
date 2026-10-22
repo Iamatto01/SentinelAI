@@ -77,8 +77,11 @@ export async function findVersionVulnerabilities(product, version) {
   }
   try {
     const params = new URLSearchParams({ keywordSearch: `${name} ${release}`, resultsPerPage: '20' })
-    const res = await fetch(`${NVD}?${params}`, { headers: { 'User-Agent': 'fyp2-pentest-platform' } })
-    if (!res.ok) return { error: `NVD HTTP ${res.status}` }
+      const ctrl = new AbortController()
+      const t = setTimeout(() => ctrl.abort(), 15000)
+      const res = await fetch(`${NVD}?${params}`, { headers: { 'User-Agent': 'fyp2-pentest-platform' }, signal: ctrl.signal })
+      clearTimeout(t)
+      if (!res.ok) return { error: `NVD HTTP ${res.status}` }
     const json = await res.json()
     const output = {
       product: name,
@@ -88,7 +91,7 @@ export async function findVersionVulnerabilities(product, version) {
     }
     db.run(`INSERT INTO cve_cache (id, data, fetched_at) VALUES (?,?,?) ON CONFLICT(id) DO UPDATE SET data = excluded.data, fetched_at = excluded.fetched_at`, key, JSON.stringify(output), new Date().toISOString())
     return output
-  } catch (error) { return { error: error.message } }
+  } catch (error) { return { error: error.name === 'AbortError' ? 'NVD request timed out' : error.message } }
 }
 
 export default { getCve, findVersionVulnerabilities }

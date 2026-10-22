@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>IDOR & Broken Object Auth — AbuseLab</title>
+  <link rel="stylesheet" href="/style.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220%22><text y=%2226%22 font-size=%2226%22>👤</text></svg>">
+</head>
+<body>
+  <header>
+    <a href="/" class="logo">🔥 ABUSE<span>LAB</span> <small>IDOR</small></a>
+    <nav>
+      <a href="/">Matrix</a>
+      <a href="/admin.html">⚡ RCE Terminal</a>
+      <a href="/login.html">💉 SQLi Hub</a>
+      <a href="/upload.html">📤 Web Shells</a>
+      <a href="/documents.html">📁 LFI Vault</a>
+      <a href="/ssrf.html">🌐 SSRF Probe</a>
+      <a href="/profile.html" class="active">👤 IDOR</a>
+      <a href="/feedback.html">☣️ XSS</a>
+    </nav>
+  </header>
+
+  <div class="container" style="max-width: 900px;">
+    <div class="card">
+      <div class="badges">
+        <span class="badge badge-crit">CWE-639: Broken Object Level Authorization (IDOR)</span>
+        <span class="badge badge-high">Sensitive Data Leak</span>
+      </div>
+      <h2>👤 IDOR: Order Invoices & Customer Profiles</h2>
+      <p style="color: var(--text-muted); font-size: 14px; margin-top: 6px; margin-bottom: 20px;">
+        The application accepts direct object identifiers (<code>/api/orders/:id</code> and <code>/api/users/:id</code>) without validating if the current session owns the resource. Enumerate IDs to exfiltrate VIP orders, flags, and plaintext credit cards.
+      </p>
+
+      <div style="margin-bottom: 16px;">
+        <span style="font-size: 12px; color: var(--text-dim); text-transform: uppercase; font-weight: bold;">Quick Object Enumeration:</span>
+        <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px;">
+          <button class="btn-secondary" onclick="fetchResource('order', 1)">Order #1 (Secret Quantum Server)</button>
+          <button class="btn-secondary" onclick="fetchResource('order', 2)">Order #2 (Regular Order)</button>
+          <button class="btn-secondary" onclick="fetchResource('user', 1)">User #1 (Admin Credit Card & Token)</button>
+          <button class="btn-secondary" onclick="fetchResource('user', 2)">User #2 (Alice)</button>
+        </div>
+      </div>
+
+      <div style="display: flex; gap: 10px; margin-top: 12px;">
+        <select id="resource-type" style="background: #090c15; border: 1px solid var(--card-border); color: #fff; padding: 12px; border-radius: 6px; font-weight: bold;">
+          <option value="order">Order ID (/api/orders/)</option>
+          <option value="user">User ID (/api/users/)</option>
+        </select>
+        <input type="number" id="resource-id" value="1" style="width: 120px; background: #090c15; border: 1px solid var(--card-border); color: #fff; padding: 12px; border-radius: 6px; font-family: monospace; font-size: 14px;">
+        <button class="btn-primary" onclick="handleLookup()">FETCH RESOURCE &rarr;</button>
+      </div>
+
+      <div id="flag-alert" style="display: none; margin-top: 18px; padding: 14px; background: rgba(16, 185, 129, 0.15); border: 1px solid var(--success); border-radius: 8px; color: #fff;">
+        🎉 <strong>IDOR EXPLOITED! Flag Unlocked:</strong> <code id="flag-code" style="color: var(--success); font-weight: bold; font-size: 14px; margin-left: 8px;"></code>
+        <a href="/" style="color: var(--cyan); margin-left: 14px; font-size: 12px; text-decoration: underline;">Submit on Board &rarr;</a>
+      </div>
+
+      <div class="terminal-window">
+        <div class="terminal-header">
+          <span class="term-dot red"></span>
+          <span class="term-dot yellow"></span>
+          <span class="term-dot green"></span>
+          <span style="color: var(--text-muted); font-size: 12px; margin-left: 10px;">Direct Object Response (JSON)</span>
+        </div>
+        <div id="order-box" class="terminal-body">Loading resource...</div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    function fetchResource(type, id) {
+      document.getElementById('resource-type').value = type
+      document.getElementById('resource-id').value = id
+      handleLookup()
+    }
+
+    async function handleLookup() {
+      const type = document.getElementById('resource-type').value
+      const id = document.getElementById('resource-id').value
+      const box = document.getElementById('order-box')
+      const endpoint = type === 'order' ? `/api/orders/${id}` : `/api/users/${id}`
+
+      box.innerText = `[+] Fetching GET ${endpoint} ...`
+
+      try {
+        const res = await fetch(endpoint)
+        const data = await res.json()
+        box.innerText = JSON.stringify(data, null, 2)
+
+        if (data.flag || JSON.stringify(data).includes('FLAG{idor')) {
+          const flag = data.flag || (JSON.stringify(data).match(/FLAG\{idor[^}]+\}/) || [])[0]
+          if (flag) {
+            document.getElementById('flag-alert').style.display = 'block'
+            document.getElementById('flag-code').innerText = flag
+          }
+        }
+      } catch (err) {
+        box.innerText = 'Error: ' + err.message
+      }
+    }
+
+    handleLookup()
+  </script>
+</body>
+</html>

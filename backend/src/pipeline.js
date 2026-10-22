@@ -5,6 +5,14 @@ import { aiEngine } from './ai/ai-engine.js'
 import { enrichWithOwasp } from './owasp.js'
 import { getScriptsForTrigger, runCustomScript } from './custom-scripts.js'
 import { findVersionVulnerabilities } from './cve.js'
+import { matchExploits, classifyRisk, needsApproval } from './exploits/registry.js'
+import {
+  extractVersions,
+  extractProductsWithoutVersion,
+  correlateVersion,
+  buildVersionFinding,
+  buildUnversionedFinding,
+} from './version-audit.js'
 import * as db from './db.js'
 
 /**
@@ -234,6 +242,28 @@ export class UnifiedPipeline {
     let f = enrichWithOwasp(rawFinding)
     // 2. RAG PoC cross-reference
     try { f = payloadsRag.crossReference(f) } catch { /* non-fatal */ }
+      // 2b. Attach matching exploit playbooks so every finding carries a
+      // concrete, runnable attack path instead of an empty exploit section.
+      try {
+        const matched = matchExploits(f)
+        if (matched.length) {
+          f.exploitPlaybooks = matched.slice(0, 5).map(p => ({
+            id: p.id,
+            risk: p.risk,
+            techniques: (p.techniques || []).map(t => ({
+              step: t.step,
+              label: t.label,
+              tool: t.tool,
+              command: typeof t.args === 'function' ? t.args(f.target || '') : t.args,
+              needsApproval: needsApproval(t, classifyRisk(f)),
+            })),
+          }))
+          f.evidence = {
+            ...(f.evidence || {}),
+            exploitPlaybooks: f.exploitPlaybooks,
+          }
+        }
+      } catch { /* non-fatal */ }
     // 3. AI verification (specialist-routed) — SKIP for AI-generated findings
     // (code-audit:* / ai-audit modules) since they are already LLM-verified.
     // Circular re-verification destroys the rich AI analysis and replaces
@@ -257,7 +287,8 @@ export class UnifiedPipeline {
       'native:gobuster',
       'native:feroxbuster', 'native:dirsearch', 'native:gau', 'native:sslscan', 'native:masscan',
       'offensive:service-probe', 'offensive:login-surface', 'response-body-scan',
-      'cookie-audit', 'cors-audit', 'form-harvest', 'api-discovery', 'offensive:default-creds']
+      'cookie-audit', 'cors-audit', 'form-harvest', 'api-discovery', 'offensive:default-creds',
+      'version-audit', 'version-lifecycle']
     const isFactual = factualModules.includes(f.module) ||
       // Low/info findings from native tools are observational
       ((f.module || '').startsWith('native:') || (f.module || '').startsWith('chain:')) &&
@@ -330,6 +361,44 @@ export class UnifiedPipeline {
     }
     f.evidence = { ...f.evidence, fingerprint, sources: [f.module || 'unknown'] }
 
+    function beautifyFindingTitle(raw) {
+      if (!raw) return 'Untitled Finding'
+      let t = String(raw).trim()
+      if (/uncommon header\(s\)\s*['"]([^'"]+)['"]/i.test(t)) {
+        const m = t.match(/uncommon header\(s\)\s*['"]([^'"]+)['"]/i)
+        return `Uncommon Header Detected: '${m[1]}'`
+      }
+      if (/alt-svc header was found.*advertising HTTP\/3/i.test(t)) {
+        return 'HTTP/3 Advertised via Alt-Svc Header'
+      }
+      if (/anti-clickjacking X-Frame-Options/i.test(t)) {
+        return 'Missing Anti-Clickjacking Header (X-Frame-Options)'
+      }
+      if (/X-Content-Type-Options header is not set/i.test(t)) {
+        return 'Missing MIME Sniffing Protection (X-Content-Type-Options)'
+      }
+      if (/Strict-Transport-Security/i.test(t) && /missing|not set|not present/i.test(t)) {
+        return 'Missing Strict-Transport-Security (HSTS) Header'
+      }
+      if (/Content-Security-Policy/i.test(t) && /missing|not set|not present/i.test(t)) {
+        return 'Missing Content-Security-Policy (CSP) Header'
+      }
+      if (/HTML forms discovered\s*—\s*(\d+)\s*injection surfaces?/i.test(t)) {
+        const m = t.match(/HTML forms discovered\s*—\s*(\d+)\s*injection surfaces?/i)
+        const count = m ? m[1] : '1'
+        return `HTML Form Discovered (${count} Injection Surface${count === '1' ? '' : 's'})`
+      }
+      t = t.replace(/^(?:nikto|nuclei|nmap|httpx|katana|dalfox|ffuf|subfinder|sqlmap|wpscan|arjun|native:[\w-]+|custom:[\w-]+)\s*:\s*/i, '')
+      t = t.replace(/^\[(?:\d+|[+*✓x!~]|info|low|medium|high|critical)\]\s*/gi, '')
+      t = t.replace(/^\/?[:\-]\s*/, '')
+      t = t.replace(/^\[(?:\d+|[+*✓x!~])\]\s*/gi, '')
+      t = t.replace(/^\/?[:\-]\s*/, '')
+      t = t.replace(/[\.\s]+$/, '').replace(/\s{2,}/g, ' ').trim()
+      if (t.length > 0) t = t.charAt(0).toUpperCase() + t.slice(1)
+      return t || 'Untitled Finding'
+    }
+
+    f.title = beautifyFindingTitle(f.title)
     const id = `fnd_${randomUUID()}`
     const now = new Date().toISOString()
     try {
@@ -418,9 +487,12 @@ export class UnifiedPipeline {
       const vulnBatch = modules.filter(m => ['nikto', 'arjun', 'dalfox', 'sqlmap', 'wpscan'].includes(m))
       const otherBatch = modules.filter(m => !['nmap', 'whatweb', 'wafw00f', 'sslscan', 'masscan', 'katana', 'ffuf', 'gobuster', 'nuclei', 'feroxbuster', 'dirsearch', 'gau', 'nikto', 'arjun', 'dalfox', 'sqlmap', 'wpscan'].includes(m))
       const batches = [reconBatch, crawlBatch, vulnBatch, otherBatch].filter(b => b.length)
+      const batchNames = ['recon', 'crawl', 'vuln', 'other']
       let done = 0
-      for (const batch of batches) {
+      for (let bi = 0; bi < batches.length; bi++) {
+        const batch = batches[bi]
         await this.waitIfPaused(scanId)
+        this.log(scanId, 'info', `▶ Starting ${batchNames[bi]} batch (${batch.length} tools: ${batch.join(', ')})`)
         const results = await Promise.allSettled(
           batch.map(async (mod) => {
             if (!NATIVE_TOOLS[mod]) { this.log(scanId, 'warn', `Unknown module: ${mod}`); return }
@@ -442,53 +514,73 @@ export class UnifiedPipeline {
     // ── INJECTION CHAINING STAGE ──
     // Feed parameterized URLs discovered by katana/ffuf/arjun into dalfox (XSS)
     // and sqlmap (SQLi). This is where most SEVERE vulns are actually found.
-    await this.chainInjectionTests(scanId, { verify, targetType: scan.target_type, offensive: true, target })
-    this.progress(scanId, 70)
+        this.log(scanId, 'info', '▶ Starting injection chaining stage (dalfox + sqlmap on discovered URLs)')
+        await this.chainInjectionTests(scanId, { verify, targetType: scan.target_type, offensive: true, target })
+        this.progress(scanId, 70)
 
-    // ── OFFENSIVE STAGES (always active) ──
-    await this._probeServiceVulns(scanId, target, { verify })
-    this.progress(scanId, 78)
-    // ── VERSION LIFECYCLE (EOL) ANALYSIS ──
-    // Cross-references whatweb/nmap/header versions against EOL dates.
-    // Must run AFTER tool batches so findings carry version strings.
-    try {
-      await this._analyzeVersionLifecycle(scanId, { verify })
-    } catch (err) {
-      this.log(scanId, 'warn', `EOL analysis warning: ${err.message}`)
-    }
-    await this._discoverLoginSurfaces(scanId, target, { verify })
-    await this._matchOffsecPayloads(scanId)
-    this.progress(scanId, 85)
+        // ── OFFENSIVE STAGES (always active) ──
+        this.log(scanId, 'info', '▶ Starting service vulnerability probing (nmap NSE scripts)')
+        await this._probeServiceVulns(scanId, target, { verify })
+        this.progress(scanId, 78)
+        // ── VERSION LIFECYCLE (EOL) ANALYSIS ──
+        // Cross-references whatweb/nmap/header versions against EOL dates.
+        // Must run AFTER tool batches so findings carry version strings.
+        this.log(scanId, 'info', '▶ Starting version lifecycle (EOL) analysis')
+        try {
+          await this._analyzeVersionLifecycle(scanId, { verify })
+        } catch (err) {
+          this.log(scanId, 'warn', `EOL analysis warning: ${err.message}`)
+        }
+        // ── VERSION AUDIT (architecture fingerprint → CVE/CWE correlation) ──
+        // Detects every software version visible on the target (web server,
+        // language runtime, framework, CMS, JS library, database hints) and
+        // correlates each against NIST NVD, mapping results to OWASP Top 10.
+        this.log(scanId, 'info', '▶ Starting version audit (architecture fingerprint → CVE correlation)')
+        try {
+          await this._auditVersions(scanId, target, { verify })
+        } catch (err) {
+          this.log(scanId, 'warn', `Version audit warning: ${err.message}`)
+        }
+        this.log(scanId, 'info', '▶ Starting login surface discovery')
+        await this._discoverLoginSurfaces(scanId, target, { verify })
+        this.log(scanId, 'info', '▶ Starting offensive payload matching')
+        await this._matchOffsecPayloads(scanId)
+        this.progress(scanId, 85)
 
-    // ── RESPONSE BODY SCANNING ──
-    await this._scanResponseBodies(scanId, target, { verify })
-    this.progress(scanId, 90)
+        // ── RESPONSE BODY SCANNING ──
+        this.log(scanId, 'info', '▶ Starting response body scanning')
+        await this._scanResponseBodies(scanId, target, { verify })
+        this.progress(scanId, 90)
 
     // ── COOKIE + CORS + HTML FORM HARVESTING ──
     // Runs BEFORE default-cred testing: this stage harvests login forms
     // (password + user/email inputs) into this._loginForms for the stage below.
-    await this._auditCookiesCors(scanId, target, { verify })
-    this.progress(scanId, 95)
+        this.log(scanId, 'info', '▶ Starting cookie/CORS and login form harvesting')
+        await this._auditCookiesCors(scanId, target, { verify })
+        this.progress(scanId, 95)
 
-    // ── DEFAULT-CREDENTIAL BRUTE-FORCE STAGE ──
-    // Actually interact with discovered login forms: try common default
-    // credential pairs (admin/admin, admin/password, ...) via HTTP POST.
-    // Must run AFTER _auditCookiesCors so harvested login forms are available.
-    await this._tryDefaultCreds(scanId, target, { verify })
-    // ── LOGIN RATE-LIMIT TEST ──
-    // Burst of failed logins → checks for 429/CAPTCHA/lockout/slowdown.
-    try {
-      await this._testLoginRateLimit(scanId, target, { verify })
-    } catch (err) {
-      this.log(scanId, 'warn', `Rate-limit test warning: ${err.message}`)
-    }
+        // ── DEFAULT-CREDENTIAL BRUTE-FORCE STAGE ──
+        // Actually interact with discovered login forms: try common default
+        // credential pairs (admin/admin, admin/password, ...) via HTTP POST.
+        // Must run AFTER _auditCookiesCors so harvested login forms are available.
+        this.log(scanId, 'info', '▶ Starting default-credential testing on login forms')
+        await this._tryDefaultCreds(scanId, target, { verify })
+        // ── LOGIN RATE-LIMIT TEST ──
+        // Burst of failed logins → checks for 429/CAPTCHA/lockout/slowdown.
+        this.log(scanId, 'info', '▶ Starting login rate-limit testing')
+        try {
+          await this._testLoginRateLimit(scanId, target, { verify })
+        } catch (err) {
+          this.log(scanId, 'warn', `Rate-limit test warning: ${err.message}`)
+        }
 
-    // ── CUSTOM SCRIPTS STAGE ──
-    // Admin-defined scripts (bash/python/node) that emit JSONL findings.
-    // Runs last so scripts can leverage any state gathered earlier.
-    try {
-      await this._runCustomScripts(scanId, target, { verify })
-    } catch (err) {
+        // ── CUSTOM SCRIPTS STAGE ──
+        // Admin-defined scripts (bash/python/node) that emit JSONL findings.
+        // Runs last so scripts can leverage any state gathered earlier.
+        this.log(scanId, 'info', '▶ Starting custom scripts stage')
+        try {
+          await this._runCustomScripts(scanId, target, { verify })
+        } catch (err) {
       this.log(scanId, 'warn', `Custom scripts stage warning: ${err.message}`)
     }
 
@@ -634,6 +726,97 @@ export class UnifiedPipeline {
           }, { verify })
         }
       }
+    }
+  }
+
+  /**
+   * VERSION AUDIT — architecture fingerprinting + CVE/CWE correlation.
+   *
+   * Collects every version string visible on the target from three sources:
+   *   1. Live HTTP response (headers + body) — the authoritative source
+   *   2. Stored findings from whatweb / nmap / httpx / nikto
+   *   3. Error-page fingerprints and cookie names (product without version)
+   *
+   * Each detected product+version is then correlated against NIST NVD and
+   * mapped to the OWASP Top 10 (2025) category that fits the component type.
+   */
+  async _auditVersions(scanId, target, { verify } = {}) {
+    const baseUrl = /^https?:\/\//i.test(target) ? target : `https://${target}`
+
+    // ── 1. Live fetch: headers + body ──
+    let liveText = ''
+    try {
+      const ctrl = new AbortController()
+      const t = setTimeout(() => ctrl.abort(), 15000)
+      const res = await fetch(baseUrl, {
+        redirect: 'follow',
+        signal: ctrl.signal,
+        headers: { 'User-Agent': 'Mozilla/5.0 (compatible; SentinelAI/2.0; +security-audit)' },
+      })
+      clearTimeout(t)
+      const headerText = [...res.headers.entries()].map(([k, v]) => `${k}: ${v}`).join('\n')
+      const body = await res.text().catch(() => '')
+      liveText = `${headerText}\n${body.slice(0, 200000)}`
+      this.log(scanId, 'info', `🔬 Version audit: fetched ${baseUrl} (${res.status}, ${body.length} bytes body)`)
+    } catch (e) {
+      this.log(scanId, 'warn', `🔬 Version audit: live fetch failed (${e.message}) — falling back to stored findings`)
+    }
+
+    // ── 2. Stored findings from earlier tool batches ──
+    const rows = db.all(`SELECT title, description, evidence FROM findings WHERE scan_id = ?`, scanId)
+    const storedText = rows.map(r => `${r.title} ${r.description} ${r.evidence || ''}`).join('\n').slice(0, 300000)
+
+    const combined = `${liveText}\n${storedText}`
+
+    // ── 3. Extract versions ──
+    const detected = extractVersions(combined, liveText ? 'live-http-response' : 'stored-findings')
+    const unversioned = extractProductsWithoutVersion(combined, liveText ? 'live-http-response' : 'stored-findings')
+
+    if (!detected.length && !unversioned.length) {
+      this.log(scanId, 'info', '🔬 Version audit: no software versions could be fingerprinted (WAF/CDN masking likely)')
+      return
+    }
+
+    this.log(scanId, 'info', `🔬 Version audit: ${detected.length} versioned component(s), ${unversioned.length} unversioned product(s) detected`)
+    for (const d of detected) {
+      this.log(scanId, 'info', `🔬 Detected: ${d.product} ${d.version} (${d.kind}) via ${d.source}`)
+    }
+
+    // ── 4. Correlate each version against NVD (sequential — NVD rate-limits) ──
+    const seenProducts = new Set()
+    for (const d of detected) {
+      await this.waitIfPaused(scanId)
+      const key = `${d.product}@${d.version}`.toLowerCase()
+      if (seenProducts.has(key)) continue
+      seenProducts.add(key)
+
+      const correlation = await correlateVersion({
+        product: d.product,
+        version: d.version,
+        log: (msg) => this.log(scanId, 'info', msg),
+      })
+
+      if (correlation.error) {
+        this.log(scanId, 'warn', `🔬 CVE lookup failed for ${d.product} ${d.version}: ${correlation.error}`)
+        continue
+      }
+      if (!correlation.total) {
+        this.log(scanId, 'info', `🔬 ${d.product} ${d.version}: no matching CVEs on NVD`)
+        continue
+      }
+
+      const finding = buildVersionFinding(d, correlation)
+      await this.ingestFinding(scanId, finding, { verify })
+      this.log(scanId, 'info', `📌 [${finding.severity}] ${finding.title}`)
+    }
+
+    // ── 5. Unversioned products (lower severity, still reported) ──
+    for (const u of unversioned) {
+      const alreadyVersioned = detected.some(d => d.product.toLowerCase() === u.product.toLowerCase())
+      if (alreadyVersioned) continue
+      const finding = buildUnversionedFinding(u)
+      await this.ingestFinding(scanId, finding, { verify })
+      this.log(scanId, 'info', `📌 [${finding.severity}] ${finding.title}`)
     }
   }
 
@@ -2422,11 +2605,24 @@ function extractFindingsFromOutput(tool, output, target = '') {
       if (start >= 0) {
         const arr = JSON.parse(output.slice(start))
         for (const r of arr.slice(0, 20)) {
+          const xssType = String(r.type || r.inject_type || 'reflected').toLowerCase()
+          const xssParam = r.param || r.parameter || ''
+          const xssWhere = r.data || r.url || r.evidence || target || ''
+          const where = String(xssWhere).slice(0, 100)
+          // Only include clauses we actually resolved — no "unknown parameter" / trailing dashes.
+          const title = [
+            `XSS (${xssType})`,
+            xssParam ? `in parameter "${xssParam}"` : 'on ' + (where || 'target'),
+            !xssParam && where ? '' : (where ? `— ${where}` : '')
+          ].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim()
+          const detail = xssParam
+            ? `${xssType} XSS via parameter "${xssParam}" at ${where || 'target'}`
+            : `${xssType} XSS confirmed on ${where || 'target'}`
           push(
-            `XSS (${r.type || 'reflected'}) in param "${r.param || '?'}" — ${(r.data || r.url || '').slice(0, 100)}`,
-            /stored/i.test(r.type) ? 'high' : 'medium',
-            `${r.type} XSS via ${r.param}: ${r.poc || r.data || ''}`.slice(0, 300),
-            { cweId: 'CWE-79', url: r.data || r.url }
+            title,
+            /stored/i.test(xssType) ? 'high' : 'medium',
+            `${detail} — payload: ${String(r.poc || r.payload || (r.evidence ? '' : 'see tool output')).slice(0, 200)}`.replace(/ — payload: $/, '').slice(0, 300),
+            { cweId: 'CWE-79', url: xssWhere }
           )
         }
       }

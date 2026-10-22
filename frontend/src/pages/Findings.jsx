@@ -6,6 +6,7 @@ import { api } from '../lib/api.js'
 import { useAi } from '../lib/AiContext.jsx'
 import SeverityBadge from '../components/SeverityBadge.jsx'
 import FindingDetailDrawer from '../components/FindingDetailDrawer.jsx'
+import { prettifyTitle } from '../lib/formatters.js'
 
 const CATEGORY_ORDER = [
   'Web Application Attacks', 'API Security', 'JWT / Token Attacks',
@@ -419,7 +420,7 @@ export default function Findings() {
             >
               <div className="flex items-start justify-between gap-3">
                 <h3 className="font-bold text-white leading-snug flex-1 min-w-0 break-words group-hover:text-cyan-300 transition-colors">
-                  {f.title}
+                  {prettifyTitle(f.title)}
                 </h3>
                 <div className="flex items-center gap-2 shrink-0">
                   <Tooltip content="Launch AI Exploit Campaign">

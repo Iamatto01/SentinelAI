@@ -8,6 +8,8 @@ import {
 import { api } from '../lib/api.js'
 import { useScanContext } from '../lib/ScanContext.jsx'
 import { useTheme } from '../lib/ThemeContext.jsx'
+import { prettifyTitle } from '../lib/formatters.js'
+
 import { subscribeScan } from '../lib/socket.js'
 import SeverityBadge from '../components/SeverityBadge.jsx'
 import FindingDetailDrawer from '../components/FindingDetailDrawer.jsx'
@@ -516,7 +518,7 @@ export default function ScanDetail() {
                             >
                               <div className="flex items-start justify-between gap-3">
                                 <p className={`text-sm font-semibold leading-snug ${isNight ? 'text-slate-100' : 'text-slate-900'}`}>
-                                  {f.title}
+                                  {prettifyTitle(f.title)}
                                 </p>
                                 <SeverityBadge severity={f.severity} />
                               </div>

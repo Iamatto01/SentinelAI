@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RCE & Command Injection Console — AbuseLab</title>
+  <link rel="stylesheet" href="/style.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220%22><text y=%2226%22 font-size=%2226%22>⚡</text></svg>">
+</head>
+<body>
+  <header>
+    <a href="/" class="logo">🔥 ABUSE<span>LAB</span> <small>RCE</small></a>
+    <nav>
+      <a href="/">Matrix</a>
+      <a href="/admin.html" class="active">⚡ RCE Terminal</a>
+      <a href="/login.html">💉 SQLi Hub</a>
+      <a href="/upload.html">📤 Web Shells</a>
+      <a href="/documents.html">📁 LFI Vault</a>
+      <a href="/ssrf.html">🌐 SSRF Probe</a>
+      <a href="/profile.html">👤 IDOR</a>
+      <a href="/feedback.html">☣️ XSS</a>
+    </nav>
+  </header>
+
+  <div class="container" style="max-width: 900px;">
+    <div class="card">
+      <div class="badges">
+        <span class="badge badge-crit">CWE-78: OS Command Injection</span>
+        <span class="badge badge-high">CVSS 9.8 Critical</span>
+      </div>
+      <h2 style="margin-bottom: 6px;">⚡ Remote Code Execution (RCE) Console</h2>
+      <p style="color: var(--text-muted); font-size: 14px; margin-bottom: 20px;">
+        This diagnostic tool executes system ping commands via a raw subshell. Inject delimiters (<code>;</code>, <code>&&</code>, <code>|</code>) to compromise the underlying Kali Linux server.
+      </p>
+
+      <!-- Quick Exploit Chips -->
+      <div style="margin-bottom: 16px;">
+        <span style="font-size: 12px; color: var(--text-dim); text-transform: uppercase; font-weight: bold;">Quick Exploit Payloads:</span>
+        <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px;">
+          <button class="btn-secondary" onclick="setPayload('127.0.0.1; whoami')"><code>127.0.0.1; whoami</code></button>
+          <button class="btn-secondary" onclick="setPayload('127.0.0.1; id')"><code>127.0.0.1; id</code></button>
+          <button class="btn-secondary" onclick="setPayload('127.0.0.1; uname -a')"><code>127.0.0.1; uname -a</code></button>
+          <button class="btn-secondary" onclick="setPayload('127.0.0.1; cat /etc/passwd | head -n 8')"><code>cat /etc/passwd</code></button>
+          <button class="btn-secondary" onclick="setPayload('127.0.0.1; ls -la /home/kali')"><code>ls -la /home/kali</code></button>
+        </div>
+      </div>
+
+      <div style="display: flex; gap: 10px; margin-top: 12px;">
+        <input type="text" id="target-host" value="127.0.0.1; whoami" style="flex: 1; background: #090c15; border: 1px solid var(--card-border); color: #fff; padding: 12px 16px; border-radius: 6px; font-family: monospace; font-size: 14px;">
+        <button id="ping-btn" class="btn-primary" onclick="executePing()">EXECUTE PAYLOAD</button>
+      </div>
+
+      <div id="flag-alert" style="display: none; margin-top: 18px; padding: 14px; background: rgba(16, 185, 129, 0.15); border: 1px solid var(--success); border-radius: 8px; color: #fff;">
+        🎉 <strong>PWNED! Flag Discovered:</strong> <code id="flag-code" style="color: var(--success); font-weight: bold; font-size: 14px; margin-left: 8px;"></code>
+        <a href="/" style="color: var(--cyan); margin-left: 14px; font-size: 12px; text-decoration: underline;">Submit on Board &rarr;</a>
+      </div>
+
+      <!-- Hacker Terminal Window -->
+      <div class="terminal-window">
+        <div class="terminal-header">
+          <span class="term-dot red"></span>
+          <span class="term-dot yellow"></span>
+          <span class="term-dot green"></span>
+          <span style="color: var(--text-muted); font-size: 12px; margin-left: 10px;">bash — kali@sentinelai-server:~</span>
+        </div>
+        <div id="output-box" class="terminal-body">$ Ready. Select or type a payload and click Execute Payload...</div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    function setPayload(payload) {
+      document.getElementById('target-host').value = payload
+      executePing()
+    }
+
+    async function executePing() {
+      const host = document.getElementById('target-host').value
+      const box = document.getElementById('output-box')
+      box.innerText = `$ ping ${host}\n[+] Executing payload against subshell...\n[+] Waiting for process output...`
+
+      try {
+        const res = await fetch(`/api/tools/ping?host=${encodeURIComponent(host)}`)
+        const data = await res.json()
+        box.innerText = `$ ${data.command}\n\n${data.output}`
+        
+        if (data.flag) {
+          document.getElementById('flag-alert').style.display = 'block'
+          document.getElementById('flag-code').innerText = data.flag
+        }
+      } catch (err) {
+        box.innerText = `$ Error: Failed to communicate with server: ${err.message}`
+      }
+    }
+  </script>
+</body>
+</html>

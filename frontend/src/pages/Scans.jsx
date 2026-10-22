@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import {
   Loader2, Radar, MoreVertical, Play, FileDown, Trash2, RefreshCw, Search,
   Coins, Sparkles, Activity, Folder, FolderPlus, ChevronDown, ChevronRight,
-  Plus, Layers, List, Check, ShieldAlert, Bug, Globe, AlertCircle, X
+  Plus, Layers, List, Check, ShieldAlert, Bug, Globe, AlertCircle, X, Square, Pause
 } from 'lucide-react'
 import { api, apiFetch } from '../lib/api.js'
 import { useAuth } from '../lib/AuthContext.jsx'
@@ -186,6 +186,35 @@ export default function Scans() {
     }
   }
 
+  async function handleStop(id, e) {
+    if (e) e.stopPropagation()
+    if (!confirm('Stop this scan? Running tools will be terminated at the next checkpoint.')) return
+    setActionBusy(id)
+    try {
+      await api.stopScan(id)
+      setScans((prev) => (prev || []).map((s) => (s.id === id ? { ...s, status: 'stopped' } : s)))
+    } catch (err2) {
+      alert(`Stop failed: ${err2.message}`)
+    } finally {
+      setActionBusy(null)
+      setActiveMenu(null)
+    }
+  }
+
+  async function handlePause(id, e) {
+    if (e) e.stopPropagation()
+    setActionBusy(id)
+    try {
+      await api.pauseScan(id)
+      setScans((prev) => (prev || []).map((s) => (s.id === id ? { ...s, status: 'paused' } : s)))
+    } catch (err2) {
+      alert(`Pause failed: ${err2.message}`)
+    } finally {
+      setActionBusy(null)
+      setActiveMenu(null)
+    }
+  }
+
   async function handleDelete(id, e) {
     if (e) e.stopPropagation()
     // Optimistic: remove immediately, restore on failure
@@ -332,6 +361,36 @@ export default function Scans() {
                           />
                         </div>
                         <span className={`text-[10px] font-bold ${isNight ? 'text-cyan-300' : 'text-cyan-600'}`}>{Math.round(s.progress || 0)}%</span>
+                        {s.status === 'running' && (
+                          <button
+                            onClick={(e) => handlePause(s.id, e)}
+                            disabled={actionBusy === s.id}
+                            className="p-1 rounded-md text-amber-500 hover:bg-amber-500/20 transition-colors disabled:opacity-50"
+                            title="Pause Scan"
+                          >
+                            {actionBusy === s.id ? <Loader2 size={12} className="animate-spin" /> : <Pause size={12} />}
+                          </button>
+                        )}
+                        {(s.status === 'running' || s.status === 'paused') && (
+                          <button
+                            onClick={(e) => handleStop(s.id, e)}
+                            disabled={actionBusy === s.id}
+                            className="p-1 rounded-md text-rose-500 hover:bg-rose-500/20 transition-colors disabled:opacity-50"
+                            title="Stop Scan"
+                          >
+                            {actionBusy === s.id ? <Loader2 size={12} className="animate-spin" /> : <Square size={12} />}
+                          </button>
+                        )}
+                        {s.status === 'paused' && (
+                          <button
+                            onClick={(e) => handleResume(s.id, e)}
+                            disabled={actionBusy === s.id}
+                            className="p-1 rounded-md text-emerald-500 hover:bg-emerald-500/20 transition-colors disabled:opacity-50"
+                            title="Resume Scan"
+                          >
+                            {actionBusy === s.id ? <Loader2 size={12} className="animate-spin" /> : <Play size={12} />}
+                          </button>
+                        )}
                       </div>
                     )}
                   </td>
@@ -358,6 +417,22 @@ export default function Scans() {
                         ref={menuRef}
                         className={`absolute right-5 ${isBottomRow ? 'bottom-10' : 'top-12'} z-50 w-48 rounded-xl ${isNight ? 'bg-[#141b2b] border border-white/20' : 'bg-white border border-slate-200 shadow-2xl'} p-1.5 space-y-1 text-left backdrop-blur-2xl`}
                       >
+                        {s.status === 'running' && (
+                          <button
+                            onClick={(e) => handleStop(s.id, e)}
+                            className="w-full flex items-center gap-2 px-3 py-2 text-xs text-rose-500 hover:bg-rose-500/10 rounded-lg transition-colors font-semibold"
+                          >
+                            <Square size={14} className="text-rose-500" /> Stop Scan
+                          </button>
+                        )}
+                        {s.status === 'running' && (
+                          <button
+                            onClick={(e) => handlePause(s.id, e)}
+                            className="w-full flex items-center gap-2 px-3 py-2 text-xs text-amber-500 hover:bg-amber-500/10 rounded-lg transition-colors font-semibold"
+                          >
+                            <Pause size={14} className="text-amber-500" /> Pause Scan
+                          </button>
+                        )}
                         {(s.status === 'interrupted' || s.status === 'paused') && (
                           <button
                             onClick={(e) => handleResume(s.id, e)}

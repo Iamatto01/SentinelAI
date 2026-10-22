@@ -200,8 +200,9 @@ export const NATIVE_TOOLS = {
       const u = toUrl(t)
       return ['url', u, '--silence', '--timeout', '30']
     },
-    desc: 'XSS scanning',
-  },
+      timeout: 180000, // 3 min — dalfox on a single URL should finish well under this
+      desc: 'XSS scanning',
+    },
   wpscan: {
     bin: 'wpscan',
     args: (t) => ['--url', toUrl(t), '--no-banner', '--format', 'json'],
@@ -211,8 +212,9 @@ export const NATIVE_TOOLS = {
   sqlmap: {
     bin: 'sqlmap',
     args: (t) => ['-u', toUrl(t), '--batch', '--level=1', '--risk=1', '--smart', '--disable-coloring'],
-    desc: 'SQL injection testing',
-  },
+      timeout: 240000, // 4 min — sqlmap --batch --level=1 on a single URL should finish under this
+      desc: 'SQL injection testing',
+    },
   arjun: {
     // arjun buffers stdout when run via the easy-install wrapper — run as an
     // unbuffered python module so output streams live. GET-only + tuned
@@ -262,11 +264,14 @@ export const NATIVE_TOOLS = {
     desc: 'WAF detection',
   },
   // Ad-hoc nmap NSE script runs — target string carries full args: "host --script X -p Y"
-  'nmap-script': {
-    bin: 'nmap',
-    args: (t) => t.split(' ').filter(Boolean),
-    desc: 'Nmap NSE script probe',
-  },
+    // Short timeout: NSE scripts against filtered ports (common behind Cloudflare/WAF)
+    // will otherwise hang for the full 600s default × 5 scripts = 50 min of dead time.
+    'nmap-script': {
+      bin: 'nmap',
+      args: (t) => t.split(' ').filter(Boolean),
+      desc: 'Nmap NSE script probe',
+      timeout: 120000, // 2 min — enough for a single NSE script on a live host
+    },
   // Interactive console — run arbitrary commands (e.g., telnet, nc, curl, hydra, msfconsole)
   console: {
     bin: 'bash',

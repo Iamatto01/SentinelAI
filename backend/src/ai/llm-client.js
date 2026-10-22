@@ -231,8 +231,9 @@ export class LLMClient {
     // on sequential 60s timeouts. Each failing model wastes a full API call.
     const modelsToTry = Array.from(new Set([
       this.openrouter.model,
+      'openrouter/free',
+      'minimax/minimax-m3.1-flash:free',
       'nvidia/nemotron-3-super-120b-a12b:free',
-      'google/gemma-4-26b-a4b-it:free',
     ].filter(Boolean)))
 
     let lastErr = null

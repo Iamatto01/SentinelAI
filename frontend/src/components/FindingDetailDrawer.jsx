@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react'
-import { X, Loader2, ShieldAlert, BookOpen, StickyNote, Send, ExternalLink, Trash2, Bot, Sparkles, AlertTriangle, Target, Wrench, Crosshair, Bug, Play, Pause, Square, ChevronRight, CheckCircle, XCircle, Clock } from 'lucide-react'
+import { X, Loader2, ShieldAlert, BookOpen, StickyNote, Send, ExternalLink, Trash2, Bot, Sparkles, AlertTriangle, Target, Wrench, Crosshair, Bug, Play, Pause, Square, ChevronRight, CheckCircle, XCircle, Clock, Copy, Check, Terminal } from 'lucide-react'
+import { prettifyTitle } from '../lib/formatters.js'
 import { api } from '../lib/api.js'
 import { useAi } from '../lib/AiContext.jsx'
 import SeverityBadge from './SeverityBadge.jsx'
@@ -71,6 +72,9 @@ export default function FindingDetailDrawer({ finding, onClose, onStatusChange, 
   const [exploitCampaign, setExploitCampaign] = useState(null) // active campaign for this finding
   const [exploitLaunching, setExploitLaunching] = useState(false)
   const [exploitError, setExploitError] = useState('')
+  const [customPoc, setCustomPoc] = useState(null)
+  const [generatingPoc, setGeneratingPoc] = useState(false)
+  const [pocCopied, setPocCopied] = useState(false)
 
   useEffect(() => {
     if (!finding) return
@@ -85,6 +89,7 @@ export default function FindingDetailDrawer({ finding, onClose, onStatusChange, 
     setExploitCheck(null)
     setExploitCampaign(null)
     setExploitError('')
+    setCustomPoc(safeParse(finding.poc, null))
     api.findingNotes(finding.id).then(setNotes).catch(() => setNotes([]))
 
     // Auto-check exploitability
@@ -146,6 +151,29 @@ export default function FindingDetailDrawer({ finding, onClose, onStatusChange, 
     } finally {
       setExploitChecking(false)
     }
+  }
+
+  async function handleGeneratePoc() {
+    if (!finding?.id) return
+    setGeneratingPoc(true)
+    setExploitError('')
+    try {
+      const res = await api.generatePoc(finding.id)
+      if (res?.poc) {
+        setCustomPoc(res.poc)
+      }
+    } catch (e) {
+      setExploitError(e.message)
+    } finally {
+      setGeneratingPoc(false)
+    }
+  }
+
+  function copyAttackCommand(cmd) {
+    if (!cmd) return
+    navigator.clipboard.writeText(cmd)
+    setPocCopied(true)
+    setTimeout(() => setPocCopied(false), 2000)
   }
 
   async function launchExploit() {
@@ -273,7 +301,7 @@ export default function FindingDetailDrawer({ finding, onClose, onStatusChange, 
         <div className="sticky top-0 z-10 glass-deep border-b border-white/10 p-5 shrink-0">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
-              <h2 className="text-lg font-bold text-slate-100 leading-snug">{finding.title}</h2>
+              <h2 className="text-lg font-bold text-slate-100 leading-snug">{prettifyTitle(finding.title)}</h2>
               <p className="text-xs text-slate-500 mt-1">{finding.target || finding.module}</p>
             </div>
             <div className="flex items-center gap-2 shrink-0">
@@ -581,11 +609,97 @@ export default function FindingDetailDrawer({ finding, onClose, onStatusChange, 
                 </div>
               )}
 
-              {!exploitChecking && !exploitCheck && !exploitCampaign && (
-                <div className="text-center py-4">
-                  <p className="text-sm text-slate-500">Checking exploitability...</p>
+              {/* Interactive Exploit PoC & Verification Section */}
+              <div className="rounded-xl border border-white/10 bg-white/[0.02] p-4 space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <Terminal size={15} className="text-cyan-400 shrink-0" />
+                    <span className="text-xs font-bold text-slate-200 uppercase tracking-wider">
+                      Exploit & Reproduction PoC
+                    </span>
+                  </div>
+                  <button
+                    onClick={handleGeneratePoc}
+                    disabled={generatingPoc}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-cyan-500/15 border border-cyan-500/30 text-cyan-300 text-xs font-semibold hover:bg-cyan-500/25 transition-all disabled:opacity-50 shrink-0 shadow-sm"
+                  >
+                    {generatingPoc ? (
+                      <><Loader2 size={12} className="animate-spin" /> Generating AI PoC...</>
+                    ) : (
+                      <><Sparkles size={12} /> {customPoc ? 'Regenerate AI Exploit' : 'Generate AI Exploit / PoC'}</>
+                    )}
+                  </button>
                 </div>
-              )}
+
+                {/* Display generated or existing PoC */}
+                {customPoc ? (
+                  <div className="space-y-3 pt-1">
+                    {customPoc.attackCommand && (
+                      <div>
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Attack / Verification Command</span>
+                          <button
+                            onClick={() => copyAttackCommand(customPoc.attackCommand)}
+                            className="text-[10px] flex items-center gap-1 text-cyan-400 hover:text-cyan-300 font-semibold"
+                          >
+                            {pocCopied ? <><Check size={11} /> Copied</> : <><Copy size={11} /> Copy Command</>}
+                          </button>
+                        </div>
+                        <pre className="text-xs font-mono text-cyan-300 bg-black/60 border border-white/10 rounded-xl p-3 overflow-x-auto whitespace-pre-wrap break-all select-text">
+                          {customPoc.attackCommand}
+                        </pre>
+                      </div>
+                    )}
+
+                    {customPoc.pocPayload && (
+                      <div>
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">Payload</span>
+                        <pre className="text-xs font-mono text-amber-300 bg-black/60 border border-white/10 rounded-xl p-3 overflow-x-auto whitespace-pre-wrap break-all select-text">
+                          {customPoc.pocPayload}
+                        </pre>
+                      </div>
+                    )}
+
+                    {customPoc.exploitSteps && customPoc.exploitSteps.length > 0 && (
+                      <div>
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1.5">Exploitation Procedure</span>
+                        <div className="space-y-1.5 pl-2 border-l-2 border-cyan-500/40">
+                          {customPoc.exploitSteps.map((s, idx) => (
+                            <p key={idx} className="text-xs text-slate-300 leading-relaxed">
+                              <span className="text-cyan-400 font-bold mr-1.5">{idx + 1}.</span> {s}
+                            </p>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {customPoc.impact && (
+                      <div className="rounded-lg bg-rose-500/10 border border-rose-500/20 p-2.5">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-rose-400 block mb-0.5">Exploitation Impact</span>
+                        <p className="text-xs text-rose-200">{customPoc.impact}</p>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="space-y-2.5 pt-1">
+                    <p className="text-xs text-slate-400 leading-relaxed">
+                      Manual verification probe for this target endpoint. Click <strong>Generate AI Exploit / PoC</strong> above to synthesize an automated exploit payload.
+                    </p>
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Quick Probe</span>
+                      <button
+                        onClick={() => copyAttackCommand(`curl -isk -A "Mozilla/5.0 SentinelAI/2.0" "${finding.target || (evidence && evidence.url) || 'https://target'}"`)}
+                        className="text-[10px] flex items-center gap-1 text-cyan-400 hover:text-cyan-300 font-semibold"
+                      >
+                        {pocCopied ? <><Check size={11} /> Copied</> : <><Copy size={11} /> Copy</>}
+                      </button>
+                    </div>
+                    <pre className="text-xs font-mono text-cyan-300 bg-black/60 border border-white/10 rounded-xl p-3 overflow-x-auto whitespace-pre-wrap break-all select-text">
+                      {`curl -isk -A "Mozilla/5.0 SentinelAI/2.0" "${finding.target || (evidence && evidence.url) || 'https://target'}"`}
+                    </pre>
+                  </div>
+                )}
+              </div>
 
               {exploitError && (
                 <div className="rounded-lg bg-red-500/10 border border-red-500/30 p-3">

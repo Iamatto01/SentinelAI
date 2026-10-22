@@ -7,6 +7,7 @@ import { Server as SocketIOServer } from 'socket.io'
 import { randomUUID, createHmac, timingSafeEqual } from 'node:crypto'
 import bcrypt from 'bcryptjs'
 import fs from 'node:fs'
+import path from 'node:path'
 
 import { config } from './config.js'
 import * as db from './db.js'
@@ -1842,7 +1843,7 @@ app.get('/api/reports/download/:scanId', requireAuth, requireScanAccess, (req, r
   const safeId = String(req.params.scanId).replace(/[^a-zA-Z0-9_-]/g, '')
   const reportType = String(req.query.type || 'full').replace(/[^a-zA-Z0-9_-]/g, '')
   const prefix = reportType === 'simple' ? 'simplified-report-' : 'report-'
-  const file = `${config.outputDir}${prefix}${safeId}.pdf`
+  const file = path.join(config.outputDir, `${prefix}${safeId}.pdf`)
   if (!fs.existsSync(file)) return res.status(404).json({ error: 'report not generated' })
   res.download(file)
 })

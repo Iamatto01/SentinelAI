@@ -117,11 +117,18 @@ const LEGACY_2021_TO_2025 = {
   'A10': 'OTH', // SSRF → Others (no longer in Top 10 2025)
 }
 
-/** Convert a stored OWASP label (e.g. "A03:2021-Injection" or "A05") to the 2025 code. */
+/**
+ * Convert a stored OWASP label to the 2025 code.
+ * Labels already tagged with the 2025 edition are returned as-is — only
+ * pre-2025 labels (or bare codes) go through the legacy remap.
+ */
 export function normalizeOwasp(label) {
-  const m = String(label || '').match(/^A0?(\d{1,2})/i)
+  const raw = String(label || '')
+  const m = raw.match(/^A0?(\d{1,2})/i)
   if (!m) return 'OTH'
   const code = `A${String(m[1]).padStart(2, '0')}`
+  const year = raw.match(/A\d{1,2}\s*:\s*(\d{4})/i)
+  if (year && Number(year[1]) >= 2025) return OWASP[code] ? code : 'OTH'
   return LEGACY_2021_TO_2025[code] || 'OTH'
 }
 

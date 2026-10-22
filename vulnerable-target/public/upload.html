@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Unrestricted File Upload & Web Shells — AbuseLab</title>
+  <link rel="stylesheet" href="/style.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220%22><text y=%2226%22 font-size=%2226%22>📤</text></svg>">
+</head>
+<body>
+  <header>
+    <a href="/" class="logo">🔥 ABUSE<span>LAB</span> <small>UPLOAD</small></a>
+    <nav>
+      <a href="/">Matrix</a>
+      <a href="/admin.html">⚡ RCE Terminal</a>
+      <a href="/login.html">💉 SQLi Hub</a>
+      <a href="/upload.html" class="active">📤 Web Shells</a>
+      <a href="/documents.html">📁 LFI Vault</a>
+      <a href="/ssrf.html">🌐 SSRF Probe</a>
+      <a href="/profile.html">👤 IDOR</a>
+      <a href="/feedback.html">☣️ XSS</a>
+    </nav>
+  </header>
+
+  <div class="container" style="max-width: 900px;">
+    <div class="card">
+      <div class="badges">
+        <span class="badge badge-crit">CWE-434: Unrestricted Upload of File with Dangerous Type</span>
+        <span class="badge badge-high">CVSS 9.8 Critical</span>
+      </div>
+      <h2>📤 Arbitrary File Upload & Web Shell Lab</h2>
+      <p style="color: var(--text-muted); font-size: 14px; margin-top: 6px; margin-bottom: 20px;">
+        This file repository accepts arbitrary uploads without content-type validation, extension filtering, or path sanitization. Upload a web shell, HTML defacement, or script to compromise the target.
+      </p>
+
+      <div style="background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); padding: 14px; border-radius: 8px; font-size: 13px; margin-bottom: 24px;">
+        💡 <strong>Example Attack Vectors:</strong><br>
+        • Upload <code>shell.html</code> containing JavaScript payload: <code>&lt;script&gt;alert(document.domain)&lt;/script&gt;</code><br>
+        • Upload <code>exploit.sh</code> or <code>payload.php</code> to bypass filters<br>
+        • Target storage directory: <code>/uploads/&lt;filename&gt;</code> (publicly accessible)
+      </div>
+
+      <form id="upload-form" onsubmit="handleUpload(event)" style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
+        <input type="file" id="file-input" required style="background: #090c15; border: 1px solid var(--card-border); color: #fff; padding: 10px; border-radius: 6px; flex: 1;">
+        <button type="submit" class="btn-primary">UPLOAD PAYLOAD &rarr;</button>
+      </form>
+
+      <div id="upload-result" style="display: none; margin-top: 20px; padding: 16px; border-radius: 8px; background: rgba(16, 185, 129, 0.1); border: 1px solid var(--success);">
+        <h4 style="color: var(--success); font-size: 15px;">✓ Upload Successful!</h4>
+        <p id="upload-details" style="color: var(--text-muted); font-size: 13px; margin-top: 6px;"></p>
+        <p style="margin-top: 10px;">
+          Access live file: <a id="file-link" href="#" target="_blank" style="color: var(--cyan); text-decoration: underline; font-family: monospace;"></a>
+        </p>
+        <div id="flag-box" style="margin-top: 12px; padding: 10px; background: #060911; border: 1px solid var(--success); border-radius: 6px; font-family: monospace; color: var(--success); font-weight: bold;"></div>
+      </div>
+    </div>
+
+    <!-- Repository File Browser -->
+    <div class="card">
+      <h3 style="margin-bottom: 14px;">📂 Stored Uploads Repository (/uploads/)</h3>
+      <div id="files-list" style="color: var(--text-muted); font-size: 13px;">
+        Loading files...
+      </div>
+    </div>
+  </div>
+
+  <script>
+    async function loadFiles() {
+      try {
+        const res = await fetch('/api/uploads/list')
+        const files = await res.json()
+        const container = document.getElementById('files-list')
+        if (files.length === 0) {
+          container.innerHTML = '<p style="color: var(--text-dim);">No files uploaded yet.</p>'
+          return
+        }
+        container.innerHTML = files.map(f => `
+          <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; background: #090c15; border: 1px solid var(--card-border); border-radius: 6px; margin-bottom: 8px;">
+            <span style="font-family: monospace; color: #fff;">${f.name}</span>
+            <div style="display: flex; gap: 14px; align-items: center;">
+              <span style="color: var(--text-dim); font-size: 12px;">${(f.size / 1024).toFixed(1)} KB</span>
+              <a href="/uploads/${encodeURIComponent(f.name)}" target="_blank" class="btn-secondary" style="padding: 4px 10px;">VIEW / RUN &rarr;</a>
+            </div>
+          </div>
+        `).join('')
+      } catch (err) {
+        document.getElementById('files-list').innerHTML = '<p style="color: var(--danger);">Failed to list files</p>'
+      }
+    }
+
+    async function handleUpload(e) {
+      e.preventDefault()
+      const input = document.getElementById('file-input')
+      if (!input.files[0]) return
+
+      const formData = new FormData()
+      formData.append('file', input.files[0])
+
+      try {
+        const res = await fetch('/api/upload', {
+          method: 'POST',
+          body: formData
+        })
+        const data = await res.json()
+        if (data.success) {
+          const resBox = document.getElementById('upload-result')
+          resBox.style.display = 'block'
+          document.getElementById('upload-details').innerText = `${data.message} (${data.size} bytes)`
+          const link = document.getElementById('file-link')
+          link.href = data.url
+          link.innerText = data.url
+
+          if (data.flag) {
+            document.getElementById('flag-box').innerText = `🎉 CTF FLAG: ${data.flag}`
+          }
+          loadFiles()
+        }
+      } catch (err) {
+        alert('Upload failed: ' + err.message)
+      }
+    }
+
+    loadFiles()
+  </script>
+</body>
+</html>
