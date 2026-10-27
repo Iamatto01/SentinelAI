@@ -777,6 +777,7 @@ export default function Scans() {
           isOpen={Boolean(reportModalScanId)}
           onClose={() => setReportModalScanId(null)}
           scanId={reportModalScanId}
+          scan={scans?.find((s) => s.id === reportModalScanId)}
         />
       )}
     </div>

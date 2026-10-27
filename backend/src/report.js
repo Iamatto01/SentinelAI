@@ -2254,6 +2254,80 @@ function renderAppendix(doc, { scans, project, isWhitebox }) {
 
 // == Exports & PDF Pipeline ===================================================
 
+/**
+ * Builds standard report filename matching user specification:
+ * (scanner_name-target-full/simplify-date.pdf)
+ * e.g. sentinelai-example.com-full-2026-10-27.pdf
+ *      nuclei-192.168.1.100-simplify-2026-10-27.pdf
+ */
+export function buildReportFilename({ scan, reportType = 'full', customScanner = '', customTarget = '' } = {}) {
+  // 1. Scanner Name
+  let scanner = String(customScanner || '').trim().toLowerCase()
+  if (!scanner && scan) {
+    if (scan.scanner_name) {
+      scanner = String(scan.scanner_name).trim().toLowerCase()
+    } else {
+      let mods = []
+      if (Array.isArray(scan.modules)) {
+        mods = scan.modules
+      } else if (typeof scan.modules === 'string') {
+        try {
+          const parsed = JSON.parse(scan.modules)
+          if (Array.isArray(parsed)) mods = parsed
+        } catch {}
+      }
+      const toolMods = mods.filter(m => m && m !== 'folder-walker')
+      if (toolMods.length === 1) {
+        scanner = toolMods[0].toLowerCase()
+      } else if (scan.template && !['standard', 'deep', 'quick', 'monitor', 'folder', 'code-audit'].includes(scan.template)) {
+        scanner = scan.template.toLowerCase()
+      }
+    }
+  }
+  scanner = scanner.replace(/[^a-z0-9_-]/g, '') || 'sentinelai'
+
+  // 2. Target Name
+  let rawTarget = String(customTarget || scan?.target || scan?.repo_name || 'target').trim()
+  if (rawTarget === '(whitebox)' && scan?.repo_name) rawTarget = scan.repo_name
+
+  let target = rawTarget
+  try {
+    if (/^https?:\/\//i.test(target)) {
+      const u = new URL(target)
+      target = u.hostname + (u.port && !['80', '443'].includes(u.port) ? `-${u.port}` : '')
+    }
+  } catch {
+    target = target.replace(/^https?:\/\//i, '')
+  }
+
+  // If path (like whitebox folder path), use last folder segment
+  if (target.includes('\\') || (target.includes('/') && !target.includes('.'))) {
+    const parts = target.split(/[\\/]/).filter(Boolean)
+    if (parts.length > 0) target = parts[parts.length - 1]
+  }
+
+  target = target.split('?')[0].split('#')[0].replace(/\/+$/, '')
+  target = target.replace(/[^a-zA-Z0-9.-]/g, '-')
+  target = target.replace(/-+/g, '-')
+  target = target.replace(/^[-.]+|[-.]+$/g, '') || 'target'
+
+  // 3. full / simplify
+  const typeStr = (reportType === 'simple' || reportType === 'simplify') ? 'simplify' : 'full'
+
+  // 4. Date (YYYY-MM-DD)
+  let dateStr = ''
+  if (scan?.created_at) {
+    try {
+      const d = new Date(scan.created_at)
+      if (!isNaN(d.getTime())) dateStr = d.toISOString().slice(0, 10)
+    } catch {}
+  }
+  if (!dateStr) dateStr = new Date().toISOString().slice(0, 10)
+
+  return `${scanner}-${target}-${typeStr}-${dateStr}.pdf`
+}
+
+
 export async function generateReport(scanId, minSeverity = 'info', statusFilter = 'all', opts = {}) {
   const { reportType = 'full', custom = {} } = opts
   const scan = db.get(`SELECT * FROM scans WHERE id = ?`, scanId)
@@ -2358,6 +2432,13 @@ export async function generateReport(scanId, minSeverity = 'info', statusFilter 
   }
 
   const file = path.join(config.outputDir, reportType === 'simple' ? `simplified-report-${scanId}.pdf` : `report-${scanId}.pdf`)
+  const filename = buildReportFilename({
+    scan,
+    reportType,
+    customScanner: custom.scannerName || custom.customScanner,
+    customTarget: custom.targetName || custom.customTarget,
+  })
+  const friendlyFile = path.join(config.outputDir, filename)
     if (reportType === 'simple') {
         // Extract detected tech stack from whatweb findings for click-path prescriptions
         const detectedTech = []
@@ -2379,12 +2460,20 @@ export async function generateReport(scanId, minSeverity = 'info', statusFilter 
           file, reportTitle: custom.customTitle || `Simplified IT Action Guide: ${scan.target || 'Unknown Target'}`,
           scans, project, vulnerabilities, isWhitebox, aiNarrative, simplifiedGuide, custom, detectedTech: uniqueTech,
         })
-        return { file, counts, riskScore: scan.risk_score, reportType: 'simple' }
+        try { fs.copyFileSync(file, friendlyFile) } catch {}
+        return { file, friendlyFile, filename, counts, riskScore: scan.risk_score, reportType: 'simple' }
       }
 
     await renderPdf({ file, reportTitle, scans, project, vulnerabilities, isWhitebox, aiNarrative, aiAttackChain, custom })
 
-    return { file, counts, riskScore: scan.risk_score, reportType: 'full' }
+    try {
+      fs.copyFileSync(file, friendlyFile)
+      const scanDir = path.join(config.outputDir, 'scans', scanId)
+      if (!fs.existsSync(scanDir)) fs.mkdirSync(scanDir, { recursive: true })
+      fs.copyFileSync(file, path.join(scanDir, 'report.pdf'))
+      fs.copyFileSync(file, path.join(scanDir, path.basename(file)))
+    } catch {}
+    return { file, friendlyFile, filename, counts, riskScore: scan.risk_score, reportType: 'full' }
   }
 
 export async function generateProjectReport(projectId) {
@@ -3188,4 +3277,4 @@ async function renderSimplifiedPdf({ file, reportTitle, scans = [], project = nu
   })
 }
 
-export default { generateReport, generateProjectReport }
+export default { generateReport, generateProjectReport, buildReportFilename }

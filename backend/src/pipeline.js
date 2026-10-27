@@ -2423,10 +2423,10 @@ export class UnifiedPipeline {
           const scanFindings = db.all(`SELECT * FROM findings WHERE scan_id = ? ORDER BY CASE severity WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 ELSE 4 END`, scanId)
           
           this.log(scanId, 'info', `📄 Auto-generating PDF audit report for email notification...`)
-          await generateReport(scanId, 'info', 'all', 'full')
+          const repResult = await generateReport(scanId, 'info', 'all', 'full')
           const path = (await import('node:path')).default
           const { config } = await import('./config.js')
-          const pdfPath = path.join(config.outputDir, `report-${scanId}.pdf`)
+          const pdfPath = repResult?.file || path.join(config.outputDir, `report-${scanId}.pdf`)
           
           const userEmail = scan.email_notify || process.env.NOTIFICATION_EMAIL || 'muhammadsaifudinmj@gmail.com'
           this.log(scanId, 'info', `📧 Dispatching audit report email to ${userEmail}...`)
@@ -2436,6 +2436,7 @@ export class UnifiedPipeline {
             scan,
             findings: scanFindings,
             pdfPath,
+            pdfFilename: repResult?.filename,
             repoName: scan.repo_name || scan.target,
             triggerSource: scan.trigger_source || 'automation',
             commitHash: scan.commit_hash,

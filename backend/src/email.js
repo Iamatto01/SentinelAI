@@ -211,7 +211,7 @@ export async function sendAnonymousFeedbackNotification({ category = 'General Fe
 /**
  * Send automated Security Audit Report Email with PDF attachment to subscriber/user
  */
-export async function sendScanAuditReportEmail({ userEmail, scan, findings = [], pdfPath, repoName, triggerSource, commitHash }) {
+export async function sendScanAuditReportEmail({ userEmail, scan, findings = [], pdfPath, pdfFilename, repoName, triggerSource, commitHash }) {
   const recipient = userEmail || process.env.NOTIFICATION_EMAIL || DEFAULT_NOTIFY_EMAIL
 
   const smtpHost = process.env.SMTP_HOST || 'smtp.gmail.com'
@@ -349,7 +349,7 @@ export async function sendScanAuditReportEmail({ userEmail, scan, findings = [],
   const attachments = []
   if (pdfPath && fs.existsSync(pdfPath)) {
     attachments.push({
-      filename: `SentinelAI-Audit-${(repoName || 'Scan').replace(/[^a-zA-Z0-9-_]/g, '_')}.pdf`,
+      filename: pdfFilename || `SentinelAI-Audit-${(repoName || 'Scan').replace(/[^a-zA-Z0-9-_]/g, '_')}.pdf`,
       path: pdfPath,
       contentType: 'application/pdf',
     })

@@ -542,7 +542,7 @@ export default function ScanDetail() {
 
       {/* Drawer & Modals */}
       {selected && <FindingDetailDrawer finding={selected} onClose={() => setSelected(null)} />}
-      <ReportModal isOpen={showReportModal} onClose={() => setShowReportModal(false)} scanId={id} />
+      <ReportModal isOpen={showReportModal} onClose={() => setShowReportModal(false)} scanId={id} scan={scan} />
       {showMapping && (
         <StructuralMappingView
           scan={scan}

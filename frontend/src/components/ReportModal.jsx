@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
 import { FileDown, X, ShieldAlert, AlertTriangle, Info, Check, Flag, Eye, Edit3, Sliders, Sparkles, ShieldCheck } from 'lucide-react'
 import { api } from '../lib/api.js'
 
@@ -23,13 +23,88 @@ const REPORT_TYPES = [
   { id: 'full', label: '📄 Full Technical Report', desc: 'Complete pentest report with executive summary, methodology, evidence, and appendix' },
 ]
 
-export default function ReportModal({ isOpen, onClose, scanId }) {
+export function extractScannerName(scanObj) {
+  if (!scanObj) return 'sentinelai'
+  if (scanObj.scanner_name) return scanObj.scanner_name
+  let mods = []
+  if (Array.isArray(scanObj.modules)) mods = scanObj.modules
+  else if (typeof scanObj.modules === 'string') {
+    try { mods = JSON.parse(scanObj.modules) } catch {}
+  }
+  const toolMods = mods.filter(m => m && m !== 'folder-walker')
+  if (toolMods.length === 1) return toolMods[0].toLowerCase()
+  if (scanObj.template && !['standard', 'deep', 'quick', 'monitor', 'folder', 'code-audit'].includes(scanObj.template)) {
+    return scanObj.template.toLowerCase()
+  }
+  return 'sentinelai'
+}
+
+export function extractTargetName(scanObj) {
+  if (!scanObj) return 'target'
+  let raw = scanObj.target || scanObj.repo_name || 'target'
+  if (raw === '(whitebox)' && scanObj.repo_name) raw = scanObj.repo_name
+  try {
+    if (/^https?:\/\//i.test(raw)) {
+      const u = new URL(raw)
+      raw = u.hostname + (u.port && !['80', '443'].includes(u.port) ? `-${u.port}` : '')
+    }
+  } catch {
+    raw = raw.replace(/^https?:\/\//i, '')
+  }
+  if (raw.includes('\\') || (raw.includes('/') && !raw.includes('.'))) {
+    const parts = raw.split(/[\\/]/).filter(Boolean)
+    if (parts.length > 0) raw = parts[parts.length - 1]
+  }
+  raw = raw.split('?')[0].split('#')[0].replace(/\/+$/, '')
+  raw = raw.replace(/[^a-zA-Z0-9.-]/g, '-')
+  raw = raw.replace(/-+/g, '-')
+  return raw.replace(/^[-.]+|[-.]+$/g, '') || 'target'
+}
+
+export default function ReportModal({ isOpen, onClose, scanId, scan: propScan }) {
   const [activeTab, setActiveTab] = useState('settings') // 'settings' | 'preview'
   const [minSeverity, setMinSeverity] = useState('info')
   const [statusFilter, setStatusFilter] = useState('all')
   const [reportType, setReportType] = useState('full')
   const [filterNoise, setFilterNoise] = useState(false)
   
+  // Scan details & filename state
+  const [scan, setScan] = useState(propScan || null)
+  const [scannerName, setScannerName] = useState(() => extractScannerName(propScan))
+  const [targetName, setTargetName] = useState(() => extractTargetName(propScan))
+
+  useEffect(() => {
+    if (propScan) {
+      setScan(propScan)
+      setScannerName(extractScannerName(propScan))
+      setTargetName(extractTargetName(propScan))
+    } else if (scanId && isOpen) {
+      api.scan(scanId).then((data) => {
+        if (data?.scan) {
+          setScan(data.scan)
+          setScannerName(extractScannerName(data.scan))
+          setTargetName(extractTargetName(data.scan))
+        }
+      }).catch(() => {})
+    }
+  }, [scanId, propScan, isOpen])
+
+  // Computed report filename matching: (scanner_name-target-full/simplify-date.pdf)
+  const computedFilename = useMemo(() => {
+    const sc = (scannerName || 'sentinelai').trim().toLowerCase().replace(/[^a-z0-9_-]/g, '') || 'sentinelai'
+    const tg = (targetName || 'target').trim().replace(/[^a-zA-Z0-9.-]/g, '-').replace(/-+/g, '-').replace(/^[-.]+|[-.]+$/g, '') || 'target'
+    const tp = (reportType === 'simple' || reportType === 'simplify') ? 'simplify' : 'full'
+    let dt = ''
+    if (scan?.created_at) {
+      try {
+        const d = new Date(scan.created_at)
+        if (!isNaN(d.getTime())) dt = d.toISOString().slice(0, 10)
+      } catch {}
+    }
+    if (!dt) dt = new Date().toISOString().slice(0, 10)
+    return `${sc}-${tg}-${tp}-${dt}.pdf`
+  }, [scannerName, targetName, reportType, scan])
+
   // Custom Editable Fields
   const [customTitle, setCustomTitle] = useState('')
   const [customSummary, setCustomSummary] = useState(
@@ -50,6 +125,8 @@ export default function ReportModal({ isOpen, onClose, scanId }) {
     setError('')
     try {
       const genResult = await api.generateReport(scanId, minSeverity, statusFilter, reportType, {
+        scannerName: scannerName.trim() || undefined,
+        targetName: targetName.trim() || undefined,
         customTitle: customTitle.trim() || undefined,
         customSummary: customSummary.trim() || undefined,
         customScope: customScope.trim() || undefined,
@@ -57,9 +134,15 @@ export default function ReportModal({ isOpen, onClose, scanId }) {
         filterNoise,
       })
       if (!genResult?.ok) throw new Error('Report generation failed')
+      
       // Secure download: use fetch with Authorization header instead of ?token= query param
       const token = localStorage.getItem('fyp2_token') || ''
-      const res = await fetch(`/api/reports/download/${scanId}?type=${reportType}`, {
+      const downloadParams = new URLSearchParams({
+        type: reportType,
+        ...(scannerName.trim() ? { scanner: scannerName.trim() } : {}),
+        ...(targetName.trim() ? { target: targetName.trim() } : {}),
+      })
+      const res = await fetch(`/api/reports/download/${scanId}?${downloadParams.toString()}`, {
         headers: { Authorization: `Bearer ${token}` }
       })
       if (!res.ok) {
@@ -68,10 +151,20 @@ export default function ReportModal({ isOpen, onClose, scanId }) {
       }
       const blob = await res.blob()
       if (blob.size < 100) throw new Error('Generated PDF is empty — AI may have timed out. Try again.')
+      
+      let finalFilename = genResult?.filename || computedFilename
+      const disposition = res.headers.get('content-disposition')
+      if (disposition && disposition.includes('filename=')) {
+        const match = disposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/)
+        if (match && match[1]) {
+          finalFilename = match[1].replace(/['"]/g, '').trim()
+        }
+      }
+
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = reportType === 'simple' ? `simplified-report-${scanId}.pdf` : `report-${scanId}.pdf`
+      a.download = finalFilename
       document.body.appendChild(a)
       a.click()
       setTimeout(() => { URL.revokeObjectURL(url); document.body.removeChild(a) }, 1000)
@@ -95,7 +188,7 @@ export default function ReportModal({ isOpen, onClose, scanId }) {
             </div>
             <div>
               <h2 className="text-base sm:text-lg font-bold text-slate-100">Export & Customise PDF Report</h2>
-              <p className="text-xs text-slate-400">Configure filters, preview, & edit text content before download</p>
+              <p className="text-xs text-slate-400">Configure filters, preview, & edit report details before download</p>
             </div>
           </div>
           <button onClick={onClose} className="rounded-xl p-1.5 text-slate-400 hover:bg-slate-800 hover:text-slate-200">
@@ -164,6 +257,55 @@ export default function ReportModal({ isOpen, onClose, scanId }) {
                     </button>
                   )
                 })}
+              </div>
+
+              {/* Report Output Filename & Identification */}
+              <div className="rounded-xl border border-slate-800 bg-slate-950/70 p-3.5 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <FileDown size={14} className="text-cyan-400" />
+                    <span className="text-xs font-bold text-slate-200">Report Download Filename</span>
+                  </div>
+                  <span className="text-[10px] text-cyan-400/80 font-mono bg-cyan-950/40 px-2 py-0.5 rounded border border-cyan-800/40">
+                    (scanner-target-full/simplify-date)
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[11px] font-semibold text-slate-400 block mb-1">
+                      Scanner Name
+                    </label>
+                    <input
+                      type="text"
+                      value={scannerName}
+                      onChange={(e) => setScannerName(e.target.value)}
+                      placeholder="e.g. sentinelai, nuclei, nmap"
+                      className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs text-slate-100 font-mono focus:border-cyan-400 focus:outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-[11px] font-semibold text-slate-400 block mb-1">
+                      Target Name
+                    </label>
+                    <input
+                      type="text"
+                      value={targetName}
+                      onChange={(e) => setTargetName(e.target.value)}
+                      placeholder="e.g. example.com, 192.168.1.1"
+                      className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs text-slate-100 font-mono focus:border-cyan-400 focus:outline-none"
+                    />
+                  </div>
+                </div>
+
+                {/* Live Filename Preview Banner */}
+                <div className="flex items-center gap-2 pt-2 border-t border-slate-800/80 text-xs">
+                  <span className="text-[11px] text-slate-400 shrink-0 font-medium">Download file:</span>
+                  <span className="font-mono font-bold text-cyan-300 bg-cyan-950/60 px-2.5 py-1 rounded-md border border-cyan-500/30 truncate max-w-full">
+                    {computedFilename}
+                  </span>
+                </div>
               </div>
 
               {/* Simplified mode: hide all filters — only important stuff shown */}
@@ -248,57 +390,95 @@ export default function ReportModal({ isOpen, onClose, scanId }) {
                 </div>
               </div>
 
-              {/* Report Noise Filter */}
-              <div className="space-y-2.5">
-                <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-slate-400">
-                  <ShieldCheck size={13} className="text-accent" /> False-Positive Filter
+              {/* Noise Filter Toggle */}
+              <div className="rounded-xl border border-slate-800 bg-ink-950/60 p-3.5 flex items-center justify-between">
+                <div>
+                  <span className="text-xs font-semibold text-slate-200">Noise Reduction Filter</span>
+                  <p className="text-[11px] text-slate-400 mt-0.5">Exclude unverified version findings and out-of-scope notices</p>
                 </div>
                 <button
                   type="button"
                   onClick={() => setFilterNoise(!filterNoise)}
-                  className={`w-full flex items-center gap-3 rounded-xl border p-3 text-left transition-all ${
-                    filterNoise
-                      ? 'border-accent bg-accent/10 ring-1 ring-accent'
-                      : 'border-slate-800/80 bg-ink-950/60 hover:bg-ink-800/50'
+                  className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+                    filterNoise ? 'bg-accent' : 'bg-slate-700'
                   }`}
                 >
-                  <div className={`flex h-5 w-5 shrink-0 items-center justify-center rounded border ${
-                    filterNoise ? 'border-accent bg-accent text-slate-950' : 'border-slate-700'
-                  }`}>
-                    {filterNoise && <Check size={13} strokeWidth={3} />}
-                  </div>
-                  <div className="flex-1">
-                    <span className={`text-xs sm:text-sm font-semibold ${filterNoise ? 'text-slate-100' : 'text-slate-200'}`}>
-                      Suppress low-value noise findings
-                    </span>
-                    <p className="mt-0.5 text-[11px] text-slate-400">
-                      Hides info/low recon + generic pattern hits (console.log, image upload, path traversal hints, http:// cleartext, rate-limit) from the PDF. High/Critical findings are never hidden.
-                    </p>
-                  </div>
+                  <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
+                    filterNoise ? 'translate-x-4.5' : 'translate-x-1'
+                  }`} />
                 </button>
               </div>
-                </>
+              </>
               )}
             </>
           ) : (
-            /* Live Preview & Text Editor Tab */
-            <div className="space-y-5">
+            /* Live Text Editor Tab */
+            <div className="space-y-4">
+              <div className="flex items-center gap-2 rounded-xl border border-cyan-500/20 bg-cyan-500/5 p-3 text-xs text-cyan-300">
+                <Edit3 size={15} className="shrink-0" />
+                <span>You can edit the report title, executive summary, and recommendations before downloading the PDF.</span>
+              </div>
+
+              {/* Report Output Filename & Identification */}
+              <div className="rounded-xl border border-slate-800 bg-slate-950/70 p-3.5 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <FileDown size={14} className="text-cyan-400" />
+                    <span className="text-xs font-bold text-slate-200">Report Download Filename</span>
+                  </div>
+                  <span className="text-[10px] text-cyan-400/80 font-mono bg-cyan-950/40 px-2 py-0.5 rounded border border-cyan-800/40">
+                    (scanner-target-full/simplify-date)
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[11px] font-semibold text-slate-400 block mb-1">
+                      Scanner Name
+                    </label>
+                    <input
+                      type="text"
+                      value={scannerName}
+                      onChange={(e) => setScannerName(e.target.value)}
+                      placeholder="e.g. sentinelai, nuclei, nmap"
+                      className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs text-slate-100 font-mono focus:border-cyan-400 focus:outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-[11px] font-semibold text-slate-400 block mb-1">
+                      Target Name
+                    </label>
+                    <input
+                      type="text"
+                      value={targetName}
+                      onChange={(e) => setTargetName(e.target.value)}
+                      placeholder="e.g. example.com, 192.168.1.1"
+                      className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs text-slate-100 font-mono focus:border-cyan-400 focus:outline-none"
+                    />
+                  </div>
+                </div>
+
+                {/* Live Filename Preview Banner */}
+                <div className="flex items-center gap-2 pt-2 border-t border-slate-800/80 text-xs">
+                  <span className="text-[11px] text-slate-400 shrink-0 font-medium">Download file:</span>
+                  <span className="font-mono font-bold text-cyan-300 bg-cyan-950/60 px-2.5 py-1 rounded-md border border-cyan-500/30 truncate max-w-full">
+                    {computedFilename}
+                  </span>
+                </div>
+              </div>
+
               {reportType === 'simple' ? (
-                <div className="p-4 rounded-xl border border-accent/30 bg-accent/5 text-xs text-slate-300 space-y-2">
+                <div className="rounded-xl border border-accent/30 bg-accent/5 p-4 text-xs text-slate-300 space-y-2">
                   <div className="flex items-center gap-2 font-bold text-accent">
-                    <Sparkles size={14} /> Simplified Report — Auto-Generated
+                    <Sparkles size={14} /> Simplified Mode Active
                   </div>
                   <p className="text-slate-400 leading-relaxed">
                     The simplified report is fully auto-generated from your scan results. It filters out noise and shows only actionable findings with plain-language fix cards. No manual editing needed — just download.
                   </p>
                 </div>
               ) : (
-              <>
-              <div className="p-3.5 rounded-xl border border-cyan-500/30 bg-cyan-950/30 text-xs text-cyan-300 flex items-center gap-2">
-                <Edit3 size={16} className="shrink-0 text-cyan-400" />
-                <span>You can edit the report title, executive summary, and recommendations before downloading the PDF.</span>
-              </div>
-
+                <>
               {/* Custom Report Title */}
               <div className="space-y-1.5">
                 <label className="text-xs font-bold uppercase tracking-wider text-slate-300">Custom Report Title</label>
@@ -348,8 +528,13 @@ export default function ReportModal({ isOpen, onClose, scanId }) {
 
               {/* Live Formatted PDF Card Preview */}
               <div className="space-y-2 border-t border-slate-800 pt-4">
-                <div className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
-                  <Sparkles size={13} className="text-accent" /> Live PDF Cover & Summary Preview
+                <div className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center justify-between">
+                  <span className="flex items-center gap-1.5">
+                    <Sparkles size={13} className="text-accent" /> Live PDF Cover & Summary Preview
+                  </span>
+                  <span className="font-mono text-[10px] text-cyan-400 truncate max-w-[260px]">
+                    {computedFilename}
+                  </span>
                 </div>
                 <div className="rounded-2xl border border-slate-700 bg-slate-950 p-5 space-y-3 font-sans text-left shadow-inner">
                   <div className="border-b border-slate-800 pb-3">

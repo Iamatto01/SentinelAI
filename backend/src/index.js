@@ -21,7 +21,7 @@ import { payloadsRag, skillsRag } from './integrations/index.js'
 import { nativeToolsStatus } from './integrations/native-tools.js'
 import { agentRegistry } from './ai/agent-registry.js'
 import { aiEngine } from './ai/ai-engine.js'
-import { generateReport } from './report.js'
+import { generateReport, buildReportFilename } from './report.js'
 import { getCve, findVersionVulnerabilities } from './cve.js'
 import * as monitors from './monitor-scheduler.js'
 import swaggerUi from 'swagger-ui-express'
@@ -1832,10 +1832,25 @@ app.post('/api/scripts/:id/test', requireAuth, requireRole('admin'), async (req,
 // ── Reports ──────────────────────────────────────────────────────────────────
 app.post('/api/reports/generate', requireAuth, requireScanAccess, async (req, res) => {
   try {
-    const { scanId, minSeverity = 'info', statusFilter = 'all', reportType = 'full', ...custom } = req.body
-    const r = await generateReport(scanId, minSeverity, statusFilter, { reportType, custom })
+    const { scanId, minSeverity = 'info', statusFilter = 'all', reportType = 'full', scannerName, targetName, ...custom } = req.body
+    const r = await generateReport(scanId, minSeverity, statusFilter, {
+      reportType,
+      custom: { ...custom, scannerName, targetName }
+    })
     audit(req.user.username, 'report:generate', `${scanId} (type: ${reportType}, min: ${minSeverity}, status: ${statusFilter})`)
-    res.json({ ok: true, file: r.file, riskScore: r.riskScore, counts: r.counts, reportType: r.reportType })
+    const downloadParams = new URLSearchParams({ type: reportType })
+    if (scannerName) downloadParams.set('scanner', scannerName)
+    if (targetName) downloadParams.set('target', targetName)
+    res.json({
+      ok: true,
+      file: r.file,
+      friendlyFile: r.friendlyFile,
+      filename: r.filename,
+      downloadUrl: `/api/reports/download/${scanId}?${downloadParams.toString()}`,
+      riskScore: r.riskScore,
+      counts: r.counts,
+      reportType: r.reportType
+    })
   } catch (e) { res.status(500).json({ error: e.message }) }
 })
 app.get('/api/reports/download/:scanId', requireAuth, requireScanAccess, (req, res) => {
@@ -1843,9 +1858,25 @@ app.get('/api/reports/download/:scanId', requireAuth, requireScanAccess, (req, r
   const safeId = String(req.params.scanId).replace(/[^a-zA-Z0-9_-]/g, '')
   const reportType = String(req.query.type || 'full').replace(/[^a-zA-Z0-9_-]/g, '')
   const prefix = reportType === 'simple' ? 'simplified-report-' : 'report-'
-  const file = path.join(config.outputDir, `${prefix}${safeId}.pdf`)
-  if (!fs.existsSync(file)) return res.status(404).json({ error: 'report not generated' })
-  res.download(file)
+  const candidates = [
+    path.join(config.outputDir, 'scans', safeId, `${prefix}${safeId}.pdf`),
+    path.join(config.outputDir, 'scans', safeId, reportType === 'simple' ? 'simplified-report.pdf' : 'report.pdf'),
+    path.join(config.outputDir, `${prefix}${safeId}.pdf`),
+  ]
+  const file = candidates.find(f => fs.existsSync(f))
+  if (!file) return res.status(404).json({ error: 'report not generated' })
+
+  const scan = db.get(`SELECT * FROM scans WHERE id = ?`, safeId)
+  const downloadFilename = buildReportFilename({
+    scan,
+    reportType,
+    customScanner: req.query.scanner,
+    customTarget: req.query.target,
+  })
+
+  res.setHeader('Content-Disposition', `attachment; filename="${downloadFilename}"`)
+  res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition')
+  res.download(file, downloadFilename)
 })
 
 app.post('/api/scans/:id/audio-briefing', requireAuth, requireScanAccess, async (req, res) => {

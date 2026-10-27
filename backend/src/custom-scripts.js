@@ -161,13 +161,17 @@ export async function runCustomScript(script, { target, scanId = 'test', depth =
 
   // Persist raw output for audit/debug (best-effort)
   try {
+    const logContent = `# ${new Date().toISOString()} — ${script.name}\n# CMD: ${full}\n# exit=${result.code} success=${result.success}\n\n${result.stdout}\n\n--- stderr ---\n${result.stderr}\n`
+    
+    // 1. Primary: Save inside organized scan folder (output/scans/<scanId>/custom-scripts/)
+    const scanDir = path.join(config.outputDir, 'scans', scanId, 'custom-scripts')
+    fs.mkdirSync(scanDir, { recursive: true })
+    fs.writeFileSync(path.join(scanDir, `${script.id}.log`), logContent, 'utf-8')
+
+    // 2. Legacy fallback storage (output/custom-scripts/)
     const outDir = path.join(config.outputDir, 'custom-scripts')
     fs.mkdirSync(outDir, { recursive: true })
-    fs.writeFileSync(
-      path.join(outDir, `${script.id}_${scanId}.log`),
-      `# ${new Date().toISOString()} — ${script.name}\n# CMD: ${full}\n# exit=${result.code} success=${result.success}\n\n${result.stdout}\n\n--- stderr ---\n${result.stderr}\n`,
-      'utf-8'
-    )
+    fs.writeFileSync(path.join(outDir, `${script.id}_${scanId}.log`), logContent, 'utf-8')
   } catch { /* non-fatal */ }
 
   return { result, findings }
