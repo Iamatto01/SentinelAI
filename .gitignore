@@ -11,12 +11,7 @@ build/
 .nuxt/
 
 # SQLite Databases & runtime output
-output/*.db
-output/*.db-wal
-output/*.db-shm
-output/*.pdf
-output/backups/
-output/reports/
+output/
 *.db
 *.log
 hexstrike.log

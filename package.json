@@ -11,6 +11,7 @@
     "build": "npm run build --prefix frontend",
     "install:all": "npm install --prefix backend && npm install --prefix frontend --legacy-peer-deps",
     "index:payloads": "node backend/scripts/index-payloads.js",
+    "deploy": "python deploy-kali.py",
     "deploy:kali": "python deploy-kali.py"
   },
   "devDependencies": {

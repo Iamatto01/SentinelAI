@@ -1,18 +1,21 @@
 #!/usr/bin/env python3
 """
 SentinelAI 1-Click Deployment Script to Kali Linux Server
-Target: kali@192.168.68.132 (/home/kali/server/SentinelAI)
+Primary Target: Cloudflare Tunnel OpenSSH alias 'kali-n100' (ssh.sentinelai.studio)
+Fallback Target: Direct LAN kali@192.168.68.132 (/home/kali/server/SentinelAI)
 
 Actions:
-1. Compresses local project into lightweight tar.gz (excluding node_modules, .git, .env)
-2. Connects to Kali server via SSH/SFTP
+1. Compresses local project into lightweight tar.gz (excluding node_modules, .git, .env, output)
+2. Connects to Kali server via OpenSSH (Cloudflare Access) or Paramiko (LAN)
 3. Uploads archive to /home/kali/sentinel-deploy.tar.gz
 4. Extracts cleanly into /home/kali/server/SentinelAI
-5. Installs dependencies, builds frontend, and restarts services
+5. Installs dependencies, builds frontend, and reloads PM2 services
 """
 
 import hashlib
 import os
+import shutil
+import subprocess
 import sys
 import tarfile
 import tempfile
@@ -24,14 +27,14 @@ if hasattr(sys.stdout, 'reconfigure'):
 try:
     import paramiko
 except ImportError:
-    print("[Error] 'paramiko' is required. Run: pip install paramiko")
-    sys.exit(1)
+    paramiko = None
 
 # Configuration
 KALI_HOST = os.environ.get("KALI_HOST", "192.168.68.132")
 KALI_PORT = int(os.environ.get("KALI_PORT", 22))
 KALI_USER = os.environ.get("KALI_USER", "kali")
 KALI_PASS = os.environ.get("KALI_PASS", "kali")
+OPENSSH_HOST = os.environ.get("OPENSSH_HOST", "kali-n100")
 REMOTE_DIR = "/home/kali/server/SentinelAI"
 REMOTE_TAR = "/home/kali/sentinel-deploy.tar.gz"
 
@@ -76,17 +79,14 @@ def get_local_env_var(name):
                 return line.split("=", 1)[1].strip()
     return ""
 
-
-# Critical modules whose stale deployed copies have caused silent regressions
-# (e.g. an Oct-2 index.js dropped the reportType argument, making the
-# "simplified" PDF byte-identical to the full one). Verify by hash after deploy.
+# Critical modules whose stale deployed copies have caused silent regressions.
+# Verified by MD5 hash after deploy.
 CRITICAL_MODULES = [
     "backend/src/index.js",
     "backend/src/report.js",
     "backend/src/version-audit.js",
     "backend/src/exploits/registry.js",
 ]
-
 
 def local_module_hashes():
     hashes = {}
@@ -98,11 +98,42 @@ def local_module_hashes():
             hashes[rel] = hashlib.md5(f.read()).hexdigest()
     return hashes
 
+def detect_connection():
+    has_ssh = shutil.which("ssh") is not None
+    if has_ssh:
+        # 1. Try Cloudflare Access alias (kali-n100)
+        try:
+            res = subprocess.run(
+                ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5", OPENSSH_HOST, "echo ping_cf_ok"],
+                capture_output=True, text=True, timeout=8
+            )
+            if res.returncode == 0 and "ping_cf_ok" in res.stdout:
+                return "openssh", OPENSSH_HOST, "Cloudflare Access Tunnel (Global)"
+        except Exception:
+            pass
+
+        # 2. Try direct LAN OpenSSH
+        lan_target = f"{KALI_USER}@{KALI_HOST}"
+        try:
+            res = subprocess.run(
+                ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=4", "-p", str(KALI_PORT), lan_target, "echo ping_lan_ok"],
+                capture_output=True, text=True, timeout=6
+            )
+            if res.returncode == 0 and "ping_lan_ok" in res.stdout:
+                return "openssh", lan_target, "Direct Home LAN (192.168.68.132)"
+        except Exception:
+            pass
+
+    # 3. Paramiko fallback
+    if paramiko is not None:
+        return "paramiko", KALI_HOST, "Paramiko SSH (Direct LAN)"
+
+    return None, None, None
+
 def deploy_to_kali(local_tar):
     stripe_sec = get_local_env_var("STRIPE_SECRET_KEY")
     stripe_pub = get_local_env_var("STRIPE_PUBLISHABLE_KEY")
     stripe_cur = get_local_env_var("STRIPE_CURRENCY") or "MYR"
-    # AI provider keys — sync from local .env so Kali backend can use AI features
     or_key = get_local_env_var("OPENROUTER_API_KEY")
     or_model = get_local_env_var("OPENROUTER_MODEL") or "deepseek/deepseek-r1-distill-qwen-32b:free"
     bb_key = get_local_env_var("BANDELBANGET_API_KEY")
@@ -111,34 +142,20 @@ def deploy_to_kali(local_tar):
     groq_key = get_local_env_var("GROQ_API_KEY")
     groq_model = get_local_env_var("GROQ_MODEL") or "openai/gpt-oss-120b"
 
-    print(f"🚀 [2/4] Connecting via SSH to {KALI_USER}@{KALI_HOST}:{KALI_PORT}...")
-    ssh = paramiko.SSHClient()
-    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    ssh.connect(KALI_HOST, port=KALI_PORT, username=KALI_USER, password=KALI_PASS, timeout=15)
-    print("   ✓ SSH connection established!")
+    print("🔍 [2/4] Detecting connection route to Kali Linux...")
+    mode, target, desc = detect_connection()
+    if not mode:
+        print("[Error] Could not reach Kali server via Cloudflare Access or direct LAN.")
+        print("        Ensure cloudflared is running on the server or connect to the same Wi-Fi.")
+        sys.exit(1)
+    print(f"   ✓ Route selected: {desc} -> {target}")
 
-    print(f"📤 [3/4] Uploading archive to {REMOTE_TAR} via SFTP...")
-    sftp = ssh.open_sftp()
-    
-    last_reported = 0
-    def sftp_progress(transferred, total):
-        nonlocal last_reported
-        pct = int((transferred / total) * 100)
-        if pct >= last_reported + 20 or pct == 100:
-            print(f"   Transferring: {pct}% ({transferred/(1024*1024):.1f}MB / {total/(1024*1024):.1f}MB)")
-            last_reported = pct
-
-    sftp.put(local_tar, REMOTE_TAR, callback=sftp_progress)
-    sftp.close()
-    print("   ✓ Upload complete!")
-
-    print(f"⚙️  [4/4] Extracting & deploying on Kali server ({REMOTE_DIR})...")
     verify_block = "\n".join(
         f'echo "HASHCHECK::{rel}::$(md5sum {rel} 2>/dev/null | cut -d" " -f1)"'
         for rel in local_module_hashes()
     )
-    remote_commands = f"""
-set -e
+
+    remote_commands = f"""set -e
 mkdir -p {REMOTE_DIR}
 tar -xzf {REMOTE_TAR} -C {REMOTE_DIR}
 rm -f {REMOTE_TAR}
@@ -158,7 +175,7 @@ if [ ! -f .env ] && [ -f .env.example ]; then
     cp .env.example .env
 fi
 
-# Ensure Stripe keys and currency are populated in .env on Kali
+# Ensure AI and Stripe keys are populated in .env on Kali
 python3 -c "
 import os, re
 env_file = '{REMOTE_DIR}/.env'
@@ -186,7 +203,7 @@ with open(env_file, 'w') as f:
     f.write(content)
 "
 
-# Install backend dependencies (including stripe)
+# Install backend dependencies
 echo "   📦 Installing backend dependencies..."
 npm install --prefix backend
 
@@ -206,32 +223,90 @@ if [ -d vulnerable-target ]; then
     pm2 describe vulncorp-target >/dev/null 2>&1 && pm2 restart vulncorp-target || pm2 start vulnerable-target/server.js --name "vulncorp-target" --time
 fi
 
-# Reload through PM2. PM2 owns 5000/5173/8080 -- this script must NEVER fuser -k or
-# pkill them. Killing another supervisor's port SIGKILLs the backend
-# mid-transaction and corrupts SQLite backups. See defect N-06 in
-# resources/ARCHIVED-second-supervisor.md and the port-ownership table.
+# Reload through PM2. PM2 owns 5000/5173/8080 -- NEVER fuser -k or pkill them.
 echo "   🔄 Reloading SentinelAI via PM2..."
 pm2 reload sentinel-backend 2>/dev/null || pm2 restart sentinel-backend 2>/dev/null || true
 pm2 reload sentinel-frontend 2>/dev/null || pm2 restart sentinel-frontend 2>/dev/null || true
 pm2 save 2>/dev/null || true
-sleep 3
+sleep 2
 
 echo "   ✓ SentinelAI and VulnCorp target reloaded via PM2"
 pm2 jlist 2>/dev/null | head -c 400 || true
 """
-    
-    stdin, stdout, stderr = ssh.exec_command(remote_commands, get_pty=True)
+
     deployed_hashes = {}
     local_hashes = local_module_hashes()
-    for line in stdout:
-        clean = line.rstrip()
-        print(clean)
-        if "HASHCHECK::" in clean:
-            payload = clean.split("HASHCHECK::", 1)[1].strip()
-            rel, _, digest = payload.partition("::")
-            rel, digest = rel.strip(), digest.strip()
-            if rel in local_hashes:
-                deployed_hashes[rel] = digest
+
+    if mode == "openssh":
+        print(f"📤 [3/4] Uploading archive to {REMOTE_TAR} via SCP...")
+        scp_cmd = ["scp", "-o", "BatchMode=yes"]
+        if target != OPENSSH_HOST and KALI_PORT != 22:
+            scp_cmd.extend(["-P", str(KALI_PORT)])
+        scp_cmd.extend([local_tar, f"{target}:{REMOTE_TAR}"])
+        upload_res = subprocess.run(scp_cmd)
+        if upload_res.returncode != 0:
+            print("[Error] SCP upload failed.")
+            sys.exit(1)
+        print("   ✓ Upload complete!")
+
+        print(f"⚙️  [4/4] Extracting & deploying on Kali server ({REMOTE_DIR})...")
+        ssh_cmd = ["ssh", "-o", "BatchMode=yes"]
+        if target != OPENSSH_HOST and KALI_PORT != 22:
+            ssh_cmd.extend(["-p", str(KALI_PORT)])
+        ssh_cmd.extend([target, "bash"])
+
+        p = subprocess.Popen(ssh_cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        clean_script = remote_commands.replace("\r\n", "\n").encode("utf-8")
+        p.stdin.write(clean_script)
+        p.stdin.close()
+
+        for line in p.stdout:
+            clean = line.decode("utf-8", errors="replace").rstrip()
+            print(clean)
+            if "HASHCHECK::" in clean:
+                payload = clean.split("HASHCHECK::", 1)[1].strip()
+                rel, _, digest = payload.partition("::")
+                rel, digest = rel.strip(), digest.strip()
+                if rel in local_hashes:
+                    deployed_hashes[rel] = digest
+        p.wait()
+        if p.returncode != 0:
+            print(f"[Warning] Remote deploy exited with code {p.returncode}")
+
+    elif mode == "paramiko":
+        print(f"🚀 [2/4] Connecting via Paramiko SSH to {KALI_USER}@{KALI_HOST}:{KALI_PORT}...")
+        ssh = paramiko.SSHClient()
+        ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        ssh.connect(KALI_HOST, port=KALI_PORT, username=KALI_USER, password=KALI_PASS, timeout=15)
+        print("   ✓ SSH connection established!")
+
+        print(f"📤 [3/4] Uploading archive to {REMOTE_TAR} via SFTP...")
+        sftp = ssh.open_sftp()
+        last_reported = 0
+        def sftp_progress(transferred, total):
+            nonlocal last_reported
+            pct = int((transferred / total) * 100)
+            if pct >= last_reported + 20 or pct == 100:
+                print(f"   Transferring: {pct}% ({transferred/(1024*1024):.1f}MB / {total/(1024*1024):.1f}MB)")
+                last_reported = pct
+
+        sftp.put(local_tar, REMOTE_TAR, callback=sftp_progress)
+        sftp.close()
+        print("   ✓ Upload complete!")
+
+        print(f"⚙️  [4/4] Extracting & deploying on Kali server ({REMOTE_DIR})...")
+        clean_script = remote_commands.replace("\r\n", "\n")
+        stdin, stdout, stderr = ssh.exec_command(clean_script, get_pty=True)
+        for line in stdout:
+            clean = line.rstrip()
+            print(clean)
+            if "HASHCHECK::" in clean:
+                payload = clean.split("HASHCHECK::", 1)[1].strip()
+                rel, _, digest = payload.partition("::")
+                rel, digest = rel.strip(), digest.strip()
+                if rel in local_hashes:
+                    deployed_hashes[rel] = digest
+        ssh.close()
 
     print()
     mismatches = []
@@ -248,14 +323,12 @@ pm2 jlist 2>/dev/null | head -c 400 || true
         print("   The running backend is serving stale code. Re-run the deploy or upload manually.")
     elif deployed_hashes:
         print(f"✅ Critical module hashes match local ({len(deployed_hashes)} verified).")
-    
-    ssh.close()
+
     print("\n🎉 ========================================================")
     print(f"✅ SentinelAI successfully deployed & running on Kali!")
-    print(f"� Public Domain: https://sentinelai.studio")
-    print(f"🌐 SentinelAI Web:  http://{KALI_HOST}:5173 (or https://sentinelai.studio)")
-    print(f"🔌 SentinelAI API:  http://{KALI_HOST}:5000")
-    print(f"🎯 VulnCorp Target: http://{KALI_HOST}:8080")
+    print(f"🌐 Cloudflare Production: https://sentinelai.studio")
+    print(f"🎯 Target Application:   https://abuse.sentinelai.studio")
+    print(f"🔌 Backend API Health:   https://sentinelai.studio/api/health")
     print("========================================================\n")
 
 def main():
