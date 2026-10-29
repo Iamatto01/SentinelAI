@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react'
 import { Link } from 'react-router-dom'
+import { motion, AnimatePresence } from 'framer-motion'
 import {
   CheckCircle2, XCircle, Sparkles, ArrowRight, QrCode, CreditCard,
   Zap, Calculator, ChevronDown, ChevronUp, ShieldCheck
@@ -32,7 +33,7 @@ const FEATURE_MATRIX = [
 ]
 
 export default function MonochromePricing() {
-  const [interval, setInterval] = useState('monthly') // 'monthly' | 'yearly'
+  const [interval, setInterval] = useState('monthly')
   const [plans, setPlans] = useState([])
   const [showMatrix, setShowMatrix] = useState(false)
 
@@ -62,7 +63,7 @@ export default function MonochromePricing() {
   }, [auditsPerYear, costPerAudit, interval, entPlan])
 
   return (
-    <section id="pricing" className="relative scroll-mt-20 py-28 sm:py-36 bg-black border-t border-white/10 text-white">
+    <section id="pricing" className="relative scroll-mt-20 py-28 sm:py-36 bg-black border-t border-white/10 text-white overflow-hidden">
       {/* Top Overhead Volumetric Spotlight Beam */}
       <div
         className="pointer-events-none absolute inset-x-0 top-0 h-[480px] -translate-y-1/2 opacity-35 blur-3xl z-0"
@@ -72,8 +73,14 @@ export default function MonochromePricing() {
       />
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
-        {/* Header */}
-        <div className="text-center max-w-3xl mx-auto space-y-4 mb-16 sm:mb-20">
+        {/* Animated Header */}
+        <motion.div
+          initial={{ opacity: 0, y: 30 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true, amount: 0.2 }}
+          transition={{ duration: 0.7, ease: [0.16, 1, 0.3, 1] }}
+          className="text-center max-w-3xl mx-auto space-y-4 mb-16 sm:mb-20"
+        >
           <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full border border-white/15 bg-white/[0.04] text-[11px] font-mono text-neutral-300">
             <Sparkles size={13} className="text-white" />
             <span className="font-bold uppercase tracking-wider">
@@ -130,118 +137,138 @@ export default function MonochromePricing() {
               </span>
             </span>
           </div>
-        </div>
+        </motion.div>
 
-        {/* 4-Column Tiered Pricing Grid */}
+        {/* 4-Column Tiered Pricing Grid with Move & Assemble Animations */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-16 sm:mb-20">
-          {/* TIER 1: Free Trial */}
-          <SpotlightCard className="p-6 sm:p-7 flex flex-col justify-between">
-            <div className="space-y-6">
-              <div>
-                <span className="text-[10px] font-mono font-extrabold uppercase tracking-wider px-2 py-0.5 rounded border border-white/20 bg-white/5 text-neutral-300">
-                  FREE TRIAL
-                </span>
-                <h3 className="text-xl font-extrabold text-white mt-3 font-sans">Explorer</h3>
-                <div className="mt-3 flex items-baseline gap-1 font-mono">
-                  <span className="text-3xl font-black text-white">RM 0</span>
-                  <span className="text-xs text-neutral-400">/ forever</span>
+          {/* TIER 1: Free Trial - Glides from Left */}
+          <motion.div
+            initial={{ opacity: 0, x: -60, scale: 0.95 }}
+            whileInView={{ opacity: 1, x: 0, scale: 1 }}
+            viewport={{ once: true, amount: 0.2 }}
+            transition={{ duration: 0.7, delay: 0.05, ease: [0.16, 1, 0.3, 1] }}
+          >
+            <SpotlightCard className="p-6 sm:p-7 flex flex-col justify-between h-full">
+              <div className="space-y-6">
+                <div>
+                  <span className="text-[10px] font-mono font-extrabold uppercase tracking-wider px-2 py-0.5 rounded border border-white/20 bg-white/5 text-neutral-300">
+                    FREE TRIAL
+                  </span>
+                  <h3 className="text-xl font-extrabold text-white mt-3 font-sans">Explorer</h3>
+                  <div className="mt-3 flex items-baseline gap-1 font-mono">
+                    <span className="text-3xl font-black text-white">RM 0</span>
+                    <span className="text-xs text-neutral-400">/ forever</span>
+                  </div>
+                  <p className="text-xs text-neutral-400 mt-2 font-sans">
+                    Kickstart your security assessment. Test any domain or code repo with 3 full trial scans.
+                  </p>
                 </div>
-                <p className="text-xs text-neutral-400 mt-2 font-sans">
-                  Kickstart your security assessment. Test any domain or code repo with 3 full trial scans.
-                </p>
+
+                <div className="h-px bg-white/10" />
+
+                <ul className="space-y-2.5 text-xs text-neutral-300 font-sans">
+                  <li className="flex items-center gap-2">
+                    <CheckCircle2 size={15} className="text-white shrink-0" />
+                    <span><strong>3 Full Security Scans</strong> included</span>
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <CheckCircle2 size={15} className="text-white shrink-0" />
+                    <span>150+ Toolchain (DAST &amp; SAST)</span>
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <CheckCircle2 size={15} className="text-white shrink-0" />
+                    <span>Live Terminal stdout stream</span>
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <CheckCircle2 size={15} className="text-white shrink-0" />
+                    <span>Executive PDF Report</span>
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <CheckCircle2 size={15} className="text-white shrink-0" />
+                    <span>No credit card required</span>
+                  </li>
+                </ul>
               </div>
 
-              <div className="h-px bg-white/10" />
-
-              <ul className="space-y-2.5 text-xs text-neutral-300 font-sans">
-                <li className="flex items-center gap-2">
-                  <CheckCircle2 size={15} className="text-white shrink-0" />
-                  <span><strong>3 Full Security Scans</strong> included</span>
-                </li>
-                <li className="flex items-center gap-2">
-                  <CheckCircle2 size={15} className="text-white shrink-0" />
-                  <span>150+ Toolchain (DAST &amp; SAST)</span>
-                </li>
-                <li className="flex items-center gap-2">
-                  <CheckCircle2 size={15} className="text-white shrink-0" />
-                  <span>Live Terminal stdout stream</span>
-                </li>
-                <li className="flex items-center gap-2">
-                  <CheckCircle2 size={15} className="text-white shrink-0" />
-                  <span>Executive PDF Report</span>
-                </li>
-                <li className="flex items-center gap-2">
-                  <CheckCircle2 size={15} className="text-white shrink-0" />
-                  <span>No credit card required</span>
-                </li>
-              </ul>
-            </div>
-
-            <div className="pt-8">
-              <Link
-                to="/login?mode=register&plan=trial"
-                className="w-full py-2.5 px-4 rounded-xl border border-white/20 bg-white/5 text-neutral-200 hover:text-white hover:bg-white/10 text-xs font-mono font-bold flex items-center justify-center transition-all"
-              >
-                Start Free Trial
-              </Link>
-            </div>
-          </SpotlightCard>
+              <div className="pt-8">
+                <Link
+                  to="/login?mode=register&plan=trial"
+                  className="w-full py-2.5 px-4 rounded-xl border border-white/20 bg-white/5 text-neutral-200 hover:text-white hover:bg-white/10 text-xs font-mono font-bold flex items-center justify-center transition-all"
+                >
+                  Start Free Trial
+                </Link>
+              </div>
+            </SpotlightCard>
+          </motion.div>
 
           {/* TIER 2: Pay-Per-Scan Credit */}
-          <SpotlightCard className="p-6 sm:p-7 flex flex-col justify-between">
-            <div className="space-y-6">
-              <div>
-                <span className="text-[10px] font-mono font-extrabold uppercase tracking-wider px-2 py-0.5 rounded border border-white/20 bg-white/5 text-neutral-300">
-                  ON-DEMAND TOP-UP
-                </span>
-                <h3 className="text-xl font-extrabold text-white mt-3 font-sans">Pay-Per-Scan</h3>
-                <div className="mt-3 flex items-baseline gap-1 font-mono">
-                  <span className="text-3xl font-black text-white">RM {ppsPlan.priceMonthly}</span>
-                  <span className="text-xs text-neutral-400">/ scan</span>
+          <motion.div
+            initial={{ opacity: 0, x: -30, scale: 0.95 }}
+            whileInView={{ opacity: 1, x: 0, scale: 1 }}
+            viewport={{ once: true, amount: 0.2 }}
+            transition={{ duration: 0.7, delay: 0.12, ease: [0.16, 1, 0.3, 1] }}
+          >
+            <SpotlightCard className="p-6 sm:p-7 flex flex-col justify-between h-full">
+              <div className="space-y-6">
+                <div>
+                  <span className="text-[10px] font-mono font-extrabold uppercase tracking-wider px-2 py-0.5 rounded border border-white/20 bg-white/5 text-neutral-300">
+                    ON-DEMAND TOP-UP
+                  </span>
+                  <h3 className="text-xl font-extrabold text-white mt-3 font-sans">Pay-Per-Scan</h3>
+                  <div className="mt-3 flex items-baseline gap-1 font-mono">
+                    <span className="text-3xl font-black text-white">RM {ppsPlan.priceMonthly}</span>
+                    <span className="text-xs text-neutral-400">/ scan</span>
+                  </div>
+                  <p className="text-xs text-neutral-400 mt-2 font-sans">
+                    Top-up single autonomous scans on demand. No recurring monthly commitment.
+                  </p>
                 </div>
-                <p className="text-xs text-neutral-400 mt-2 font-sans">
-                  Top-up single autonomous scans on demand. No recurring monthly commitment.
-                </p>
+
+                <div className="h-px bg-white/10" />
+
+                <ul className="space-y-2.5 text-xs text-neutral-300 font-sans">
+                  <li className="flex items-center gap-2">
+                    <CheckCircle2 size={15} className="text-white shrink-0" />
+                    <span><strong>1 Full Security Scan</strong> credit</span>
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <CheckCircle2 size={15} className="text-white shrink-0" />
+                    <span>Full 150+ Toolchain access</span>
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <CheckCircle2 size={15} className="text-white shrink-0" />
+                    <span>Live stdout terminal telemetry</span>
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <CheckCircle2 size={15} className="text-white shrink-0" />
+                    <span>Instant downloadable PDF Report</span>
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <CheckCircle2 size={15} className="text-white shrink-0" />
+                    <span>Credits never expire</span>
+                  </li>
+                </ul>
               </div>
 
-              <div className="h-px bg-white/10" />
+              <div className="pt-8">
+                <Link
+                  to="/login?mode=register&plan=pay_per_scan"
+                  className="w-full py-2.5 px-4 rounded-xl border border-white/20 bg-white/5 text-neutral-200 hover:text-white hover:bg-white/10 text-xs font-mono font-bold flex items-center justify-center transition-all"
+                >
+                  Buy Credit (RM {ppsPlan.priceMonthly})
+                </Link>
+              </div>
+            </SpotlightCard>
+          </motion.div>
 
-              <ul className="space-y-2.5 text-xs text-neutral-300 font-sans">
-                <li className="flex items-center gap-2">
-                  <CheckCircle2 size={15} className="text-white shrink-0" />
-                  <span><strong>1 Full Security Scan</strong> credit</span>
-                </li>
-                <li className="flex items-center gap-2">
-                  <CheckCircle2 size={15} className="text-white shrink-0" />
-                  <span>Full 150+ Toolchain access</span>
-                </li>
-                <li className="flex items-center gap-2">
-                  <CheckCircle2 size={15} className="text-white shrink-0" />
-                  <span>Live stdout terminal telemetry</span>
-                </li>
-                <li className="flex items-center gap-2">
-                  <CheckCircle2 size={15} className="text-white shrink-0" />
-                  <span>Instant downloadable PDF Report</span>
-                </li>
-                <li className="flex items-center gap-2">
-                  <CheckCircle2 size={15} className="text-white shrink-0" />
-                  <span>Credits never expire</span>
-                </li>
-              </ul>
-            </div>
-
-            <div className="pt-8">
-              <Link
-                to="/login?mode=register&plan=pay_per_scan"
-                className="w-full py-2.5 px-4 rounded-xl border border-white/20 bg-white/5 text-neutral-200 hover:text-white hover:bg-white/10 text-xs font-mono font-bold flex items-center justify-center transition-all"
-              >
-                Buy Credit (RM {ppsPlan.priceMonthly})
-              </Link>
-            </div>
-          </SpotlightCard>
-
-          {/* TIER 3: SentinelAI Pro (HIGHLIGHTED "MOST POPULAR") */}
-          <div className="relative rounded-2xl border-2 border-white bg-gradient-to-b from-[#141414] via-[#0A0A0A] to-black p-6 sm:p-7 flex flex-col justify-between shadow-[0_0_40px_rgba(255,255,255,0.18)] ring-1 ring-white/50 lg:-translate-y-2">
+          {/* TIER 3: SentinelAI Pro (Drops from Top with Elevated Glow) */}
+          <motion.div
+            initial={{ opacity: 0, y: -45, scale: 0.93 }}
+            whileInView={{ opacity: 1, y: 0, scale: 1 }}
+            viewport={{ once: true, amount: 0.2 }}
+            transition={{ duration: 0.8, delay: 0.18, ease: [0.16, 1, 0.3, 1] }}
+            className="relative rounded-2xl border-2 border-white bg-gradient-to-b from-[#141414] via-[#0A0A0A] to-black p-6 sm:p-7 flex flex-col justify-between shadow-[0_0_40px_rgba(255,255,255,0.18)] ring-1 ring-white/50 lg:-translate-y-2"
+          >
             {/* Top Glowing Tag */}
             <div className="absolute -top-3.5 left-1/2 -translate-x-1/2 px-3 py-0.5 rounded-full bg-white text-black font-mono font-black text-[10px] tracking-widest uppercase shadow-[0_0_15px_rgba(255,255,255,0.6)] flex items-center gap-1">
               <Sparkles size={11} className="fill-black stroke-black" />
@@ -302,68 +329,81 @@ export default function MonochromePricing() {
                 <ArrowRight size={14} />
               </Link>
             </div>
-          </div>
+          </motion.div>
 
-          {/* TIER 4: SentinelAI Enterprise */}
-          <SpotlightCard className="p-6 sm:p-7 flex flex-col justify-between">
-            <div className="space-y-6">
-              <div>
-                <span className="text-[10px] font-mono font-extrabold uppercase tracking-wider px-2 py-0.5 rounded border border-white/20 bg-white/5 text-neutral-300">
-                  RED TEAM VIP
-                </span>
-                <h3 className="text-xl font-extrabold text-white mt-3 font-sans">Enterprise</h3>
-                <div className="mt-3 flex items-baseline gap-1 font-mono">
-                  <span className="text-4xl font-black text-white">
-                    RM {interval === 'yearly' ? entPlan.priceYearly : entPlan.priceMonthly}
+          {/* TIER 4: SentinelAI Enterprise - Glides from Right */}
+          <motion.div
+            initial={{ opacity: 0, x: 60, scale: 0.95 }}
+            whileInView={{ opacity: 1, x: 0, scale: 1 }}
+            viewport={{ once: true, amount: 0.2 }}
+            transition={{ duration: 0.7, delay: 0.22, ease: [0.16, 1, 0.3, 1] }}
+          >
+            <SpotlightCard className="p-6 sm:p-7 flex flex-col justify-between h-full">
+              <div className="space-y-6">
+                <div>
+                  <span className="text-[10px] font-mono font-extrabold uppercase tracking-wider px-2 py-0.5 rounded border border-white/20 bg-white/5 text-neutral-300">
+                    RED TEAM VIP
                   </span>
-                  <span className="text-xs text-neutral-400">
-                    {interval === 'yearly' ? '/ year' : '/ month'}
-                  </span>
+                  <h3 className="text-xl font-extrabold text-white mt-3 font-sans">Enterprise</h3>
+                  <div className="mt-3 flex items-baseline gap-1 font-mono">
+                    <span className="text-4xl font-black text-white">
+                      RM {interval === 'yearly' ? entPlan.priceYearly : entPlan.priceMonthly}
+                    </span>
+                    <span className="text-xs text-neutral-400">
+                      {interval === 'yearly' ? '/ year' : '/ month'}
+                    </span>
+                  </div>
+                  <p className="text-xs text-neutral-400 mt-2 font-sans">
+                    Full continuous DevSecOps pipeline for organizations requiring unlimited audits &amp; vCISO.
+                  </p>
                 </div>
-                <p className="text-xs text-neutral-400 mt-2 font-sans">
-                  Full continuous DevSecOps pipeline for organizations requiring unlimited audits &amp; vCISO.
-                </p>
+
+                <div className="h-px bg-white/10" />
+
+                <ul className="space-y-2.5 text-xs text-neutral-300 font-sans">
+                  <li className="flex items-center gap-2">
+                    <CheckCircle2 size={15} className="text-white shrink-0" />
+                    <span><strong>Unlimited AI Code Audits</strong></span>
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <CheckCircle2 size={15} className="text-white shrink-0" />
+                    <span><strong>Unlimited GitHub Repos</strong></span>
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <CheckCircle2 size={15} className="text-white shrink-0" />
+                    <span>1-on-1 Certified Consultant Advisory</span>
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <CheckCircle2 size={15} className="text-white shrink-0" />
+                    <span>Slack / Discord / Telegram Relays</span>
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <CheckCircle2 size={15} className="text-white shrink-0" />
+                    <span>Dedicated 4h SLA &amp; White-label PDF</span>
+                  </li>
+                </ul>
               </div>
 
-              <div className="h-px bg-white/10" />
-
-              <ul className="space-y-2.5 text-xs text-neutral-300 font-sans">
-                <li className="flex items-center gap-2">
-                  <CheckCircle2 size={15} className="text-white shrink-0" />
-                  <span><strong>Unlimited AI Code Audits</strong></span>
-                </li>
-                <li className="flex items-center gap-2">
-                  <CheckCircle2 size={15} className="text-white shrink-0" />
-                  <span><strong>Unlimited GitHub Repos</strong></span>
-                </li>
-                <li className="flex items-center gap-2">
-                  <CheckCircle2 size={15} className="text-white shrink-0" />
-                  <span>1-on-1 Certified Consultant Advisory</span>
-                </li>
-                <li className="flex items-center gap-2">
-                  <CheckCircle2 size={15} className="text-white shrink-0" />
-                  <span>Slack / Discord / Telegram Relays</span>
-                </li>
-                <li className="flex items-center gap-2">
-                  <CheckCircle2 size={15} className="text-white shrink-0" />
-                  <span>Dedicated 4h SLA &amp; White-label PDF</span>
-                </li>
-              </ul>
-            </div>
-
-            <div className="pt-8">
-              <Link
-                to={`/login?mode=register&plan=enterprise&interval=${interval}`}
-                className="w-full py-2.5 px-4 rounded-xl border border-white/20 bg-white/5 text-neutral-200 hover:text-white hover:bg-white/10 text-xs font-mono font-bold flex items-center justify-center transition-all"
-              >
-                Subscribe to Enterprise
-              </Link>
-            </div>
-          </SpotlightCard>
+              <div className="pt-8">
+                <Link
+                  to={`/login?mode=register&plan=enterprise&interval=${interval}`}
+                  className="w-full py-2.5 px-4 rounded-xl border border-white/20 bg-white/5 text-neutral-200 hover:text-white hover:bg-white/10 text-xs font-mono font-bold flex items-center justify-center transition-all"
+                >
+                  Subscribe to Enterprise
+                </Link>
+              </div>
+            </SpotlightCard>
+          </motion.div>
         </div>
 
         {/* ── Interactive ROI Savings Calculator ── */}
-        <div className="mb-16 rounded-2xl border border-white/15 bg-[#080808]/90 p-6 sm:p-8 font-mono">
+        <motion.div
+          initial={{ opacity: 0, y: 30 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true, amount: 0.2 }}
+          transition={{ duration: 0.7, ease: [0.16, 1, 0.3, 1] }}
+          className="mb-16 rounded-2xl border border-white/15 bg-[#080808]/90 p-6 sm:p-8 font-mono"
+        >
           <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-6 border-b border-white/10 gap-2">
             <div className="flex items-center gap-2">
               <Calculator size={18} className="text-white" />
@@ -439,7 +479,7 @@ export default function MonochromePricing() {
               </div>
             </div>
           </div>
-        </div>
+        </motion.div>
 
         {/* ── Expandable Feature Comparison Table ── */}
         <div className="text-center">
@@ -452,58 +492,66 @@ export default function MonochromePricing() {
             {showMatrix ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
           </button>
 
-          {showMatrix && (
-            <div className="mt-8 rounded-2xl border border-white/15 bg-[#080808] overflow-hidden text-left font-mono text-xs">
-              <div className="overflow-x-auto">
-                <table className="w-full border-collapse">
-                  <thead>
-                    <tr className="border-b border-white/15 bg-neutral-950 text-neutral-400 uppercase text-[10px]">
-                      <th className="p-4 text-left">Platform Capabilities</th>
-                      <th className="p-4 text-center">Free Trial</th>
-                      <th className="p-4 text-center">Pay-Per-Scan</th>
-                      <th className="p-4 text-center text-white bg-white/5">Pro Plan</th>
-                      <th className="p-4 text-center">Enterprise</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-white/5 text-neutral-300">
-                    {FEATURE_MATRIX.map(([name, trial, pps, pro, ent], idx) => (
-                      <tr key={idx} className="hover:bg-white/[0.02] transition-colors">
-                        <td className="p-3.5 font-sans font-medium text-white">{name}</td>
-                        <td className="p-3.5 text-center">
-                          {typeof trial === 'boolean' ? (
-                            trial ? <CheckCircle2 size={14} className="text-white mx-auto" /> : <XCircle size={14} className="text-neutral-700 mx-auto" />
-                          ) : (
-                            <span className="text-[11px] text-neutral-400">{trial}</span>
-                          )}
-                        </td>
-                        <td className="p-3.5 text-center">
-                          {typeof pps === 'boolean' ? (
-                            pps ? <CheckCircle2 size={14} className="text-white mx-auto" /> : <XCircle size={14} className="text-neutral-700 mx-auto" />
-                          ) : (
-                            <span className="text-[11px] text-neutral-400">{pps}</span>
-                          )}
-                        </td>
-                        <td className="p-3.5 text-center bg-white/[0.03]">
-                          {typeof pro === 'boolean' ? (
-                            pro ? <CheckCircle2 size={14} className="text-white mx-auto" /> : <XCircle size={14} className="text-neutral-700 mx-auto" />
-                          ) : (
-                            <span className="text-[11px] text-white font-bold">{pro}</span>
-                          )}
-                        </td>
-                        <td className="p-3.5 text-center">
-                          {typeof ent === 'boolean' ? (
-                            ent ? <CheckCircle2 size={14} className="text-white mx-auto" /> : <XCircle size={14} className="text-neutral-700 mx-auto" />
-                          ) : (
-                            <span className="text-[11px] text-neutral-300 font-bold">{ent}</span>
-                          )}
-                        </td>
+          <AnimatePresence>
+            {showMatrix && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+                className="mt-8 rounded-2xl border border-white/15 bg-[#080808] overflow-hidden text-left font-mono text-xs"
+              >
+                <div className="overflow-x-auto">
+                  <table className="w-full border-collapse">
+                    <thead>
+                      <tr className="border-b border-white/15 bg-neutral-950 text-neutral-400 uppercase text-[10px]">
+                        <th className="p-4 text-left">Platform Capabilities</th>
+                        <th className="p-4 text-center">Free Trial</th>
+                        <th className="p-4 text-center">Pay-Per-Scan</th>
+                        <th className="p-4 text-center text-white bg-white/5">Pro Plan</th>
+                        <th className="p-4 text-center">Enterprise</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
+                    </thead>
+                    <tbody className="divide-y divide-white/5 text-neutral-300">
+                      {FEATURE_MATRIX.map(([name, trial, pps, pro, ent], idx) => (
+                        <tr key={idx} className="hover:bg-white/[0.02] transition-colors">
+                          <td className="p-3.5 font-sans font-medium text-white">{name}</td>
+                          <td className="p-3.5 text-center">
+                            {typeof trial === 'boolean' ? (
+                              trial ? <CheckCircle2 size={14} className="text-white mx-auto" /> : <XCircle size={14} className="text-neutral-700 mx-auto" />
+                            ) : (
+                              <span className="text-[11px] text-neutral-400">{trial}</span>
+                            )}
+                          </td>
+                          <td className="p-3.5 text-center">
+                            {typeof pps === 'boolean' ? (
+                              pps ? <CheckCircle2 size={14} className="text-white mx-auto" /> : <XCircle size={14} className="text-neutral-700 mx-auto" />
+                            ) : (
+                              <span className="text-[11px] text-neutral-400">{pps}</span>
+                            )}
+                          </td>
+                          <td className="p-3.5 text-center bg-white/[0.03]">
+                            {typeof pro === 'boolean' ? (
+                              pro ? <CheckCircle2 size={14} className="text-white mx-auto" /> : <XCircle size={14} className="text-neutral-700 mx-auto" />
+                            ) : (
+                              <span className="text-[11px] text-white font-bold">{pro}</span>
+                            )}
+                          </td>
+                          <td className="p-3.5 text-center">
+                            {typeof ent === 'boolean' ? (
+                              ent ? <CheckCircle2 size={14} className="text-white mx-auto" /> : <XCircle size={14} className="text-neutral-700 mx-auto" />
+                            ) : (
+                              <span className="text-[11px] text-neutral-300 font-bold">{ent}</span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
       </div>
     </section>

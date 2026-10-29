@@ -1,5 +1,6 @@
 import React, { useState } from 'react'
 import { Link } from 'react-router-dom'
+import { motion } from 'framer-motion'
 import {
   ChevronDown, ChevronUp, ArrowRight, ArrowUpRight, ShieldCheck,
   Github, Send, MessageCircle, Mail, Terminal, Database, Cpu,
@@ -42,7 +43,7 @@ export default function MonochromeFaqFooter() {
   }
 
   return (
-    <section id="faq" className="relative scroll-mt-20 py-24 sm:py-32 bg-black border-t border-white/10 text-white">
+    <section id="faq" className="relative scroll-mt-20 py-24 sm:py-32 bg-black border-t border-white/10 text-white overflow-hidden">
       {/* Top Overhead Volumetric Beam */}
       <div
         className="pointer-events-none absolute inset-x-0 top-0 h-96 -translate-y-1/2 opacity-25 blur-3xl z-0"
@@ -53,7 +54,13 @@ export default function MonochromeFaqFooter() {
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
         {/* Section Header */}
-        <div className="text-center max-w-3xl mx-auto space-y-4 mb-16 sm:mb-20">
+        <motion.div
+          initial={{ opacity: 0, y: 35 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true, amount: 0.2 }}
+          transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
+          className="text-center max-w-3xl mx-auto space-y-4 mb-16 sm:mb-20"
+        >
           <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full border border-white/15 bg-white/[0.04] text-[11px] font-mono text-neutral-300">
             <Lock size={13} className="text-white" />
             <span className="font-bold uppercase tracking-wider">
@@ -69,10 +76,16 @@ export default function MonochromeFaqFooter() {
             Everything you need to know about autonomous penetration testing, local-first zero-cloud data
             isolation, billing quotas, and safe proof-of-concept execution.
           </p>
-        </div>
+        </motion.div>
 
-        {/* Clean Minimalist Bottom-Bordered Accordion */}
-        <div className="max-w-3xl mx-auto divide-y divide-white/10 border-y border-white/10 mb-24 sm:mb-32">
+        {/* Clean Minimalist Bottom-Bordered Accordion with Scroll Entrance */}
+        <motion.div
+          initial={{ opacity: 0, y: 30 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true, amount: 0.15 }}
+          transition={{ duration: 0.8, delay: 0.1, ease: [0.16, 1, 0.3, 1] }}
+          className="max-w-3xl mx-auto divide-y divide-white/10 border-y border-white/10 mb-24 sm:mb-32"
+        >
           {FAQS.map((faq, idx) => {
             const isOpen = openFaq === idx
 
@@ -92,17 +105,29 @@ export default function MonochromeFaqFooter() {
                 </button>
 
                 {isOpen && (
-                  <div className="mt-3 text-xs sm:text-sm text-neutral-400 font-sans leading-relaxed pr-6 animate-fadeIn">
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    exit={{ opacity: 0, height: 0 }}
+                    transition={{ duration: 0.3 }}
+                    className="mt-3 text-xs sm:text-sm text-neutral-400 font-sans leading-relaxed pr-6"
+                  >
                     {faq.a}
-                  </div>
+                  </motion.div>
                 )}
               </div>
             )
           })}
-        </div>
+        </motion.div>
 
         {/* ── FINAL CTA BANNER (High-Contrast Spotlight Box) ── */}
-        <div className="relative rounded-3xl border border-white/20 bg-gradient-to-b from-[#141414] via-[#090909] to-black p-8 sm:p-14 text-center overflow-hidden shadow-[0_0_60px_rgba(255,255,255,0.12)] mb-24 sm:mb-32">
+        <motion.div
+          initial={{ opacity: 0, y: 40, scale: 0.96 }}
+          whileInView={{ opacity: 1, y: 0, scale: 1 }}
+          viewport={{ once: true, amount: 0.2 }}
+          transition={{ duration: 0.85, ease: [0.16, 1, 0.3, 1] }}
+          className="relative rounded-3xl border border-white/20 bg-gradient-to-b from-[#141414] via-[#090909] to-black p-8 sm:p-14 text-center overflow-hidden shadow-[0_0_60px_rgba(255,255,255,0.12)] mb-24 sm:mb-32"
+        >
           <div
             className="pointer-events-none absolute inset-x-0 top-0 h-48 opacity-40 blur-2xl"
             style={{
@@ -141,10 +166,16 @@ export default function MonochromeFaqFooter() {
               </Link>
             </div>
           </div>
-        </div>
+        </motion.div>
 
         {/* ── FOOTER: COMPLETE SITEMAP, STATUS & ATTRIBUTION ── */}
-        <footer className="pt-16 border-t border-white/10">
+        <motion.footer
+          initial={{ opacity: 0 }}
+          whileInView={{ opacity: 1 }}
+          viewport={{ once: true, amount: 0.1 }}
+          transition={{ duration: 0.8 }}
+          className="pt-16 border-t border-white/10"
+        >
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-10 pb-12">
             {/* Col 1: Brand & Status */}
             <div className="lg:col-span-2 space-y-4">
@@ -163,7 +194,7 @@ export default function MonochromeFaqFooter() {
               </p>
 
               {/* Status Indicator */}
-              <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-white/15 bg-white/[0.03] text-[11px] font-mono text-neutral-300">
+              <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-lg border border-white/15 bg-white/[0.03] text-[11px] font-mono text-neutral-300">
                 <span className="relative flex h-2 w-2">
                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75" />
                   <span className="relative inline-flex rounded-full h-2 w-2 bg-white" />
@@ -280,7 +311,7 @@ export default function MonochromeFaqFooter() {
               <span>Academic Pentest Platform &mdash; IIUM KICT Final Year Project 2</span>
             </span>
           </div>
-        </footer>
+        </motion.footer>
       </div>
     </section>
   )

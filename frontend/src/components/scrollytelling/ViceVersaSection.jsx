@@ -1,4 +1,5 @@
 import React, { useState } from 'react'
+import { motion } from 'framer-motion'
 import {
   Workflow, Network, Binary, Globe2, Server, Terminal,
   Bot, DatabaseZap, FileText, ChevronRight, CheckCircle2,
@@ -11,6 +12,7 @@ const PIPELINE_STEPS = [
     title: 'Target Intake & Triggers',
     tech: 'REST API & Webhooks',
     short: 'Blackbox domain/IP scan submission or automated GitHub Webhook trigger on commit push and pull request.',
+    initialPos: { x: -60, y: -40 },
     details: [
       { label: 'Blackbox Trigger', val: 'Target URL or IP CIDR range entered via web dashboard' },
       { label: 'Whitebox Webhook', val: 'GitHub Push & Pull Request event listener via Octokit Bot' },
@@ -22,6 +24,7 @@ const PIPELINE_STEPS = [
     title: 'Express API Gateway & Quota',
     tech: 'Node.js & SQLite WAL',
     short: 'JWT 12h authentication, RBAC multi-tenant isolation, 3 free trial scans & subscription quota enforcement.',
+    initialPos: { x: 0, y: -60 },
     details: [
       { label: 'Role-Based Auth', val: 'Strict Admin, Security Analyst, and Client portal permission isolation' },
       { label: 'Quota Gatekeeper', val: 'Enforces scan limits (Free Trial: 3, Pro: 50, Enterprise: Unlimited)' },
@@ -33,6 +36,7 @@ const PIPELINE_STEPS = [
     title: 'Native Kali Engine',
     tech: '150+ Subprocess Tools',
     short: 'Chains 150+ real Kali Linux pentest tools via direct subprocess execution and runs AST static code analysis.',
+    initialPos: { x: 60, y: -40 },
     details: [
       { label: 'Recon & Discovery', val: 'Nmap port scan, Subfinder subdomain recon, Masscan, WhatWeb' },
       { label: 'Vuln Probing', val: 'Nuclei template scans, Nikto, SQLMap injection, FFUF fuzzing' },
@@ -44,6 +48,7 @@ const PIPELINE_STEPS = [
     title: 'Multi-LLM AI Consensus',
     tech: '53 Specialist Personas',
     short: 'Staged verification across DeepSeek V4 Pro, Groq Llama 3.3 70B, and Ling Flash to eliminate false positives.',
+    initialPos: { x: -60, y: 40 },
     details: [
       { label: 'Noise Filter', val: 'Context-aware verification suppresses raw tool false alarms (0% noise)' },
       { label: 'Risk Categorization', val: 'Auto-calculates CVSS v3.1 base score (Critical, High, Medium, Low)' },
@@ -55,6 +60,7 @@ const PIPELINE_STEPS = [
     title: 'Local RAG Knowledge Base',
     tech: 'PayloadsAllTheThings FTS5',
     short: 'Searches 10,000+ curated exploit techniques in SQLite full-text index and synthesizes context-aware git diff patches.',
+    initialPos: { x: 0, y: 60 },
     details: [
       { label: 'FTS5 Vector Search', val: '10,000+ curated security payloads indexed locally for rapid retrieval' },
       { label: 'Patch Generation', val: 'Synthesizes clean git diff patches ready to commit to GitHub repos' },
@@ -66,6 +72,7 @@ const PIPELINE_STEPS = [
     title: 'CI/CD & Executive Delivery',
     tech: 'PDFKit + Octokit Bot',
     short: 'Renders executive PDF reports, emails attachments, and posts line-by-line GitHub PR review comments.',
+    initialPos: { x: 60, y: 40 },
     details: [
       { label: 'Executive PDF Report', val: 'Comprehensive audit reports with risk matrices, CVSS, and charts' },
       { label: 'GitHub PR Inline Bot', val: 'Directly comments on vulnerable lines in GitHub Pull Requests' },
@@ -76,16 +83,22 @@ const PIPELINE_STEPS = [
 
 export default function ViceVersaSection() {
   const [activeStep, setActiveStep] = useState(1)
-  const [viewMode, setViewMode] = useState('pipeline') // 'pipeline' | 'wireframe'
+  const [viewMode, setViewMode] = useState('pipeline')
 
   return (
     <section
       id="architecture"
-      className="relative scroll-mt-16 py-28 sm:py-36 bg-white text-black transition-colors duration-700 selection:bg-black selection:text-white"
+      className="relative scroll-mt-16 py-28 sm:py-36 bg-white text-black transition-colors duration-700 selection:bg-black selection:text-white overflow-hidden"
     >
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        {/* Section Header */}
-        <div className="text-center max-w-3xl mx-auto space-y-4 mb-16 sm:mb-20">
+        {/* Animated Section Header */}
+        <motion.div
+          initial={{ opacity: 0, y: 30 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true, amount: 0.2 }}
+          transition={{ duration: 0.7, ease: [0.16, 1, 0.3, 1] }}
+          className="text-center max-w-3xl mx-auto space-y-4 mb-16 sm:mb-20"
+        >
           <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full border border-black/20 bg-neutral-100 text-[11px] font-mono text-black">
             <Workflow size={13} className="text-black" />
             <span className="font-bold uppercase tracking-wider">
@@ -101,8 +114,8 @@ export default function ViceVersaSection() {
           </h2>
 
           <p className="text-sm sm:text-base text-neutral-600 font-sans leading-relaxed">
-            Stark black architectural wireframes on a stark white canvas. Hover any card to invert into
-            pure obsidian mode and inspect the subsystem's technical specifications.
+            Stark black architectural wireframes on a stark white canvas. Watch the subsystem cards
+            glide inward and assemble together into the architecture matrix.
           </p>
 
           {/* Mode Switcher */}
@@ -130,17 +143,35 @@ export default function ViceVersaSection() {
               Architectural Topology Map
             </button>
           </div>
-        </div>
+        </motion.div>
 
-        {/* VIEW 1: SEQUENTIAL PIPELINE WITH INVERTED HOVER CARDS */}
+        {/* VIEW 1: SEQUENTIAL PIPELINE WITH MOVE & ASSEMBLE ANIMATIONS */}
         {viewMode === 'pipeline' && (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {PIPELINE_STEPS.map((step, idx) => {
               const isSelected = activeStep === idx + 1
 
               return (
-                <div
+                <motion.div
                   key={step.num}
+                  initial={{
+                    opacity: 0,
+                    x: step.initialPos.x,
+                    y: step.initialPos.y,
+                    scale: 0.92,
+                  }}
+                  whileInView={{
+                    opacity: 1,
+                    x: 0,
+                    y: 0,
+                    scale: 1,
+                  }}
+                  viewport={{ once: true, amount: 0.2 }}
+                  transition={{
+                    duration: 0.75,
+                    delay: idx * 0.08,
+                    ease: [0.16, 1, 0.3, 1],
+                  }}
                   onMouseEnter={() => setActiveStep(idx + 1)}
                   onClick={() => setActiveStep(idx + 1)}
                   className={`p-6 sm:p-7 rounded-2xl border transition-all duration-300 flex flex-col justify-between cursor-pointer group ${
@@ -188,7 +219,7 @@ export default function ViceVersaSection() {
                       {isSelected ? 'ACTIVE INSPECTION' : 'HOVER TO INVERT'}
                     </span>
                   </div>
-                </div>
+                </motion.div>
               )
             })}
           </div>
@@ -196,7 +227,13 @@ export default function ViceVersaSection() {
 
         {/* VIEW 2: ARCHITECTURAL WIREFRAME BLUEPRINT */}
         {viewMode === 'wireframe' && (
-          <div className="rounded-3xl border-2 border-black bg-neutral-50 p-6 sm:p-10 font-mono">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            whileInView={{ opacity: 1, scale: 1 }}
+            viewport={{ once: true, amount: 0.2 }}
+            transition={{ duration: 0.7, ease: [0.16, 1, 0.3, 1] }}
+            className="rounded-3xl border-2 border-black bg-neutral-50 p-6 sm:p-10 font-mono"
+          >
             <div className="flex items-center justify-between pb-6 border-b border-black text-xs">
               <span className="font-bold tracking-wider">
                 SENTINELAI // HIGH-CONTRAST WIREFRAME BLUEPRINT
@@ -276,7 +313,7 @@ export default function ViceVersaSection() {
               <span>All operations execute on local infrastructure with zero cloud exfiltration.</span>
               <span className="font-bold text-black">[ VERIFIED AIR-GAP COMPATIBLE ]</span>
             </div>
-          </div>
+          </motion.div>
         )}
       </div>
     </section>

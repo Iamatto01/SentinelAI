@@ -1,4 +1,5 @@
 import React, { useState } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
 import {
   Bot, Cpu, Zap, Activity, ShieldCheck, DatabaseZap, Terminal,
   Code2, CheckCircle2, ArrowRight, Layers, Sparkles
@@ -98,15 +99,15 @@ const AI_MODELS = [
     role: 'Autonomous SQL Injection Chaining & Schema Extraction',
     badge: 'INJECTION PROBE',
     latency: '95ms',
-    latencyRating: 'Fast Heuristic',
+    latencyRating: 'Sub-100ms',
     contextWindow: '64,000 Tokens',
     contextPct: 65,
     accuracy: 99.2,
     environments: ['PostgreSQL', 'MySQL / MariaDB', 'SQLite WAL', 'MSSQL / Oracle'],
     description:
-      'Automates boolean-blind, error-based, time-based, and UNION query injection testing. Uses local SQLite FTS5 RAG index of 10,000+ evasion payloads to bypass WAF heuristics safely.',
-    samplePrompt: 'Test endpoint /api/search?q=1 with SQLite WAL time-delay payload to verify blind extraction.',
-    sampleOutput: '[DB Attacker]: SQLite randomblob(100000000) delay confirmed. Database schema mapped. Safe proof-of-concept validated without data leakage.'
+      'Chains stacked queries, error-based inference, and boolean blind payloads to enumerate schemas without triggering brittle WAF rate limits.',
+    samplePrompt: 'Execute controlled time-based injection against target /api/items?cat=1. Extract DB version fingerprint safely.',
+    sampleOutput: '[DB Attacker]: SQLite 3.45.1 detected with WAL mode active. No data exfiltration permitted per safe-mode bounds.'
   }
 ]
 
@@ -115,8 +116,8 @@ export default function AiModelSelector() {
   const currentModel = AI_MODELS.find((m) => m.id === selectedId) || AI_MODELS[0]
 
   return (
-    <section id="models" className="relative scroll-mt-20 py-24 sm:py-32 bg-black border-t border-white/10">
-      {/* Top Volumetric Overhead Spotlight Beam */}
+    <section id="models" className="relative scroll-mt-20 py-24 sm:py-32 bg-black border-t border-white/10 text-white overflow-hidden">
+      {/* Top Overhead Volumetric Beam */}
       <div
         className="pointer-events-none absolute inset-x-0 top-0 h-96 -translate-y-1/2 opacity-25 blur-3xl z-0"
         style={{
@@ -125,8 +126,14 @@ export default function AiModelSelector() {
       />
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
-        {/* Header */}
-        <div className="text-center max-w-3xl mx-auto space-y-4 mb-14 sm:mb-16">
+        {/* Header with Scroll Reveal */}
+        <motion.div
+          initial={{ opacity: 0, y: 35 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true, amount: 0.2 }}
+          transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
+          className="text-center max-w-3xl mx-auto space-y-4 mb-14 sm:mb-16"
+        >
           <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full border border-white/15 bg-white/[0.04] text-[11px] font-mono text-neutral-300">
             <Bot size={13} className="text-white" />
             <span className="font-bold uppercase tracking-wider">
@@ -145,10 +152,16 @@ export default function AiModelSelector() {
             SentinelAI uses a multi-tier fallback architecture: fast free models for real-time reconnaissance
             and high-parameter reasoning models for complex vulnerability chaining and patch synthesis.
           </p>
-        </div>
+        </motion.div>
 
-        {/* Interactive Model Switcher Pills */}
-        <div className="flex items-center justify-center flex-wrap gap-2 mb-10 sm:mb-12">
+        {/* Interactive Model Switcher Pills (Converge from top/bottom on scroll) */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true, amount: 0.2 }}
+          transition={{ duration: 0.7, delay: 0.1, ease: [0.16, 1, 0.3, 1] }}
+          className="flex items-center justify-center flex-wrap gap-2 mb-10 sm:mb-12"
+        >
           {AI_MODELS.map((model) => {
             const isSelected = selectedId === model.id
 
@@ -173,130 +186,145 @@ export default function AiModelSelector() {
               </button>
             )
           })}
-        </div>
+        </motion.div>
 
-        {/* Model Telemetry Card */}
-        <SpotlightCard className="p-6 sm:p-10 border border-white/15 bg-[#080808]/90">
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-            {/* Left Column: Specifications & Metrics */}
-            <div className="lg:col-span-7 space-y-6">
-              <div className="space-y-1">
-                <div className="flex items-center gap-2">
-                  <span className="px-2.5 py-0.5 rounded text-[10px] font-mono font-extrabold uppercase bg-white/10 text-white border border-white/20">
-                    {currentModel.badge}
-                  </span>
-                  <span className="text-xs font-mono text-neutral-400">{currentModel.provider}</span>
-                </div>
-                <h3 className="text-2xl sm:text-3xl font-extrabold text-white font-sans tracking-tight">
-                  {currentModel.name}
-                </h3>
-                <p className="text-xs font-mono text-neutral-400">{currentModel.role}</p>
-              </div>
-
-              <p className="text-xs sm:text-sm text-neutral-300 leading-relaxed font-sans">
-                {currentModel.description}
-              </p>
-
-              {/* Comparative Specification Grid */}
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 p-4 rounded-xl bg-black/60 border border-white/10">
-                {/* Metric 1: Speed / Latency */}
-                <div className="space-y-1">
-                  <div className="text-[10px] font-mono text-neutral-500 uppercase flex items-center gap-1">
-                    <Zap size={11} className="text-white" />
-                    <span>Inference Latency</span>
+        {/* Model Telemetry Card - Glides in on scroll with animated tab switch */}
+        <motion.div
+          initial={{ opacity: 0, y: 40, scale: 0.97 }}
+          whileInView={{ opacity: 1, y: 0, scale: 1 }}
+          viewport={{ once: true, amount: 0.15 }}
+          transition={{ duration: 0.8, delay: 0.2, ease: [0.16, 1, 0.3, 1] }}
+        >
+          <SpotlightCard className="p-6 sm:p-10 border border-white/15 bg-[#080808]/90">
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={currentModel.id}
+                initial={{ opacity: 0, y: 15 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -15 }}
+                transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
+                className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start"
+              >
+                {/* Left Column: Specifications & Metrics */}
+                <div className="lg:col-span-7 space-y-6">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <span className="px-2.5 py-0.5 rounded text-[10px] font-mono font-extrabold uppercase bg-white/10 text-white border border-white/20">
+                        {currentModel.badge}
+                      </span>
+                      <span className="text-xs font-mono text-neutral-400">{currentModel.provider}</span>
+                    </div>
+                    <h3 className="text-2xl sm:text-3xl font-extrabold text-white font-sans tracking-tight">
+                      {currentModel.name}
+                    </h3>
+                    <p className="text-xs font-mono text-neutral-400">{currentModel.role}</p>
                   </div>
-                  <div className="text-lg font-black text-white font-mono">{currentModel.latency}</div>
-                  <div className="text-[10px] font-mono text-neutral-400">{currentModel.latencyRating}</div>
-                </div>
 
-                {/* Metric 2: Context Window */}
-                <div className="space-y-1">
-                  <div className="text-[10px] font-mono text-neutral-500 uppercase flex items-center gap-1">
-                    <Layers size={11} className="text-white" />
-                    <span>Context Window</span>
-                  </div>
-                  <div className="text-lg font-black text-white font-mono">{currentModel.contextWindow}</div>
-                  <div className="w-full bg-neutral-800 rounded-full h-1 mt-1">
-                    <div
-                      className="bg-white h-1 rounded-full transition-all duration-500"
-                      style={{ width: `${currentModel.contextPct}%` }}
-                    />
-                  </div>
-                </div>
+                  <p className="text-xs sm:text-sm text-neutral-300 leading-relaxed font-sans">
+                    {currentModel.description}
+                  </p>
 
-                {/* Metric 3: Detection Accuracy */}
-                <div className="space-y-1 col-span-2 sm:col-span-1">
-                  <div className="text-[10px] font-mono text-neutral-500 uppercase flex items-center gap-1">
-                    <ShieldCheck size={11} className="text-white" />
-                    <span>Exploit Accuracy</span>
-                  </div>
-                  <div className="text-lg font-black text-white font-mono">{currentModel.accuracy}%</div>
-                  <div className="w-full bg-neutral-800 rounded-full h-1 mt-1">
-                    <div
-                      className="bg-white h-1 rounded-full transition-all duration-500"
-                      style={{ width: `${currentModel.accuracy}%` }}
-                    />
-                  </div>
-                </div>
-              </div>
+                  {/* Comparative Specification Grid */}
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 p-4 rounded-xl bg-black/60 border border-white/10">
+                    {/* Metric 1: Speed / Latency */}
+                    <div className="space-y-1">
+                      <div className="text-[10px] font-mono text-neutral-500 uppercase flex items-center gap-1">
+                        <Zap size={11} className="text-white" />
+                        <span>Inference Latency</span>
+                      </div>
+                      <div className="text-lg font-black text-white font-mono">{currentModel.latency}</div>
+                      <div className="text-[10px] font-mono text-neutral-400">{currentModel.latencyRating}</div>
+                    </div>
 
-              {/* Supported Target Environments */}
-              <div className="space-y-2">
-                <div className="text-[11px] font-mono uppercase tracking-wider text-neutral-400">
-                  Supported Target Environments:
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {currentModel.environments.map((env, i) => (
-                    <span
-                      key={i}
-                      className="px-3 py-1 rounded-lg border border-white/10 bg-white/5 text-neutral-300 text-xs font-mono flex items-center gap-1.5"
-                    >
-                      <CheckCircle2 size={12} className="text-white" />
-                      <span>{env}</span>
+                    {/* Metric 2: Context Window */}
+                    <div className="space-y-1">
+                      <div className="text-[10px] font-mono text-neutral-500 uppercase flex items-center gap-1">
+                        <Layers size={11} className="text-white" />
+                        <span>Context Window</span>
+                      </div>
+                      <div className="text-lg font-black text-white font-mono">{currentModel.contextWindow}</div>
+                      <div className="w-full bg-neutral-800 rounded-full h-1 mt-1">
+                        <motion.div
+                          className="bg-white h-1 rounded-full"
+                          initial={{ width: 0 }}
+                          animate={{ width: `${currentModel.contextPct}%` }}
+                          transition={{ duration: 0.6 }}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Metric 3: Exploit Accuracy */}
+                    <div className="space-y-1">
+                      <div className="text-[10px] font-mono text-neutral-500 uppercase flex items-center gap-1">
+                        <Activity size={11} className="text-white" />
+                        <span>Detection Accuracy</span>
+                      </div>
+                      <div className="text-lg font-black text-white font-mono">{currentModel.accuracy}%</div>
+                      <div className="w-full bg-neutral-800 rounded-full h-1 mt-1">
+                        <motion.div
+                          className="bg-white h-1 rounded-full shadow-[0_0_8px_rgba(255,255,255,0.8)]"
+                          initial={{ width: 0 }}
+                          animate={{ width: `${currentModel.accuracy}%` }}
+                          transition={{ duration: 0.6 }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Supported Environments Badges */}
+                  <div className="space-y-2">
+                    <span className="text-[10px] font-mono text-neutral-400 uppercase tracking-wider block">
+                      SUPPORTED TARGET ENVIRONMENTS &amp; TOOLHOOKS
                     </span>
-                  ))}
+                    <div className="flex flex-wrap gap-1.5">
+                      {currentModel.environments.map((env, i) => (
+                        <span
+                          key={i}
+                          className="px-2.5 py-1 rounded-lg border border-white/10 bg-white/5 text-[11px] font-mono text-neutral-300 flex items-center gap-1"
+                        >
+                          <CheckCircle2 size={11} className="text-white" />
+                          <span>{env}</span>
+                        </span>
+                      ))}
+                    </div>
+                  </div>
                 </div>
-              </div>
-            </div>
 
-            {/* Right Column: Interactive Prompt & Inference Stream */}
-            <div className="lg:col-span-5 rounded-xl border border-white/10 bg-black/80 p-5 space-y-4 font-mono text-xs">
-              <div className="flex items-center justify-between pb-3 border-b border-white/10">
-                <span className="text-[10px] text-neutral-400 uppercase tracking-widest font-bold">
-                  LIVE INFERENCE TELEMETRY
-                </span>
-                <span className="text-[10px] px-2 py-0.5 rounded bg-white/10 text-white border border-white/20">
-                  ACTIVE
-                </span>
-              </div>
+                {/* Right Column: Dynamic Prompt & Output Simulator */}
+                <div className="lg:col-span-5 space-y-3 font-mono text-xs">
+                  <div className="p-3.5 rounded-xl border border-white/10 bg-black/60 space-y-2">
+                    <div className="flex items-center justify-between text-[10px] text-neutral-400 border-b border-white/10 pb-2">
+                      <span className="flex items-center gap-1 text-white font-bold">
+                        <Terminal size={11} />
+                        <span>INFERENCE DISPATCH PROMPT</span>
+                      </span>
+                      <span className="text-[9px] px-1.5 py-0.2 rounded border border-white/20 bg-white/10 text-white">
+                        LIVE
+                      </span>
+                    </div>
+                    <p className="text-neutral-300 leading-relaxed text-[11px]">
+                      {currentModel.samplePrompt}
+                    </p>
+                  </div>
 
-              <div className="space-y-2">
-                <div className="text-[10px] text-neutral-500 uppercase">Input Payload / Staged Prompt:</div>
-                <div className="p-3 rounded-lg bg-neutral-950 border border-white/5 text-neutral-300 text-[11px] leading-relaxed">
-                  {currentModel.samplePrompt}
+                  <div className="p-3.5 rounded-xl border border-white/20 bg-white/[0.04] space-y-2 relative overflow-hidden">
+                    <div className="absolute top-0 right-0 w-24 h-24 bg-white/5 rounded-full blur-2xl pointer-events-none" />
+                    <div className="flex items-center justify-between text-[10px] text-neutral-400 border-b border-white/10 pb-2">
+                      <span className="flex items-center gap-1 text-white font-bold">
+                        <Sparkles size={11} />
+                        <span>SYNTHESIZED REASONING OUTPUT</span>
+                      </span>
+                      <span className="text-[9px] text-neutral-400">0% False Positives</span>
+                    </div>
+                    <p className="text-neutral-200 leading-relaxed text-[11px] font-mono">
+                      {currentModel.sampleOutput}
+                    </p>
+                  </div>
                 </div>
-              </div>
-
-              <div className="space-y-2">
-                <div className="text-[10px] text-neutral-500 uppercase flex items-center justify-between">
-                  <span>Verified Agent Response:</span>
-                  <span className="text-white flex items-center gap-1">
-                    <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
-                    Consensus 100%
-                  </span>
-                </div>
-                <div className="p-3 rounded-lg bg-neutral-950 border border-white/10 text-white text-[11px] leading-relaxed">
-                  {currentModel.sampleOutput}
-                </div>
-              </div>
-
-              <div className="pt-2 border-t border-white/10 flex items-center justify-between text-[10px] text-neutral-500">
-                <span>Multi-LLM Arbiter: ENABLED</span>
-                <span className="text-neutral-400">0.00% False Positive Rate</span>
-              </div>
-            </div>
-          </div>
-        </SpotlightCard>
+              </motion.div>
+            </AnimatePresence>
+          </SpotlightCard>
+        </motion.div>
       </div>
     </section>
   )

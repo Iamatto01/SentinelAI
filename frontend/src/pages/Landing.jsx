@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
+import { motion } from 'framer-motion'
 import {
   ArrowRight, ArrowUpRight, ShieldCheck, Terminal, Bot, Radar,
   DatabaseZap, Sparkles, Cpu, CheckCircle2, ChevronRight, Activity,
@@ -7,6 +8,7 @@ import {
 } from 'lucide-react'
 import InspectorLogo from '../components/InspectorLogo.jsx'
 import ScrollyNavbar from '../components/scrollytelling/ScrollyNavbar.jsx'
+import ScrollProgressHUD from '../components/scrollytelling/ScrollProgressHUD.jsx'
 import HeroNodeGraph from '../components/scrollytelling/HeroNodeGraph.jsx'
 import LiveScanTerminal from '../components/scrollytelling/LiveScanTerminal.jsx'
 import AiModelSelector from '../components/scrollytelling/AiModelSelector.jsx'
@@ -31,7 +33,10 @@ export default function Landing() {
   }, [])
 
   return (
-    <div className="min-h-screen bg-black text-white font-sans antialiased selection:bg-white selection:text-black overflow-x-hidden">
+    <div className="min-h-screen bg-black text-white font-sans antialiased selection:bg-white selection:text-black overflow-x-hidden relative">
+      {/* ── Minimalist Scrollytelling Progress Scrubber ─────────────────── */}
+      <ScrollProgressHUD />
+
       {/* ── SECTION 1: Sticky Glassmorphic Navigation Bar ────────────────── */}
       <ScrollyNavbar />
 
@@ -66,8 +71,13 @@ export default function Landing() {
         {/* Hero Content Container */}
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10 w-full">
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 lg:gap-12 items-center">
-            {/* Left Hero Column: Typography & CTAs */}
-            <div className="lg:col-span-7 space-y-6 text-left">
+            {/* Left Hero Column: Typography & CTAs with Fluid Entrance Physics */}
+            <motion.div
+              initial={{ opacity: 0, y: 35 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.85, ease: [0.16, 1, 0.3, 1] }}
+              className="lg:col-span-7 space-y-6 text-left"
+            >
               {/* Top Status Pill */}
               <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full border border-white/20 bg-white/[0.04] text-[11px] font-mono tracking-wider backdrop-blur-md shadow-[0_0_15px_rgba(255,255,255,0.08)]">
                 <span className="relative flex h-2 w-2">
@@ -112,27 +122,47 @@ export default function Landing() {
                 </a>
               </div>
 
-              {/* Metrics Strip */}
+              {/* Metrics Strip - Move & Combine Inward on Load */}
               <div className="grid grid-cols-3 gap-3 pt-4 max-w-lg font-mono">
-                <div className="p-3 rounded-xl border border-white/10 bg-[#0A0A0A]/80 backdrop-blur-md">
+                <motion.div
+                  initial={{ opacity: 0, x: -25 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ duration: 0.6, delay: 0.2, ease: [0.16, 1, 0.3, 1] }}
+                  className="p-3 rounded-xl border border-white/10 bg-[#0A0A0A]/80 backdrop-blur-md"
+                >
                   <div className="text-xl sm:text-2xl font-black text-white">150+</div>
                   <div className="text-[10px] text-neutral-500 uppercase mt-0.5">Kali Security Tools</div>
-                </div>
+                </motion.div>
 
-                <div className="p-3 rounded-xl border border-white/10 bg-[#0A0A0A]/80 backdrop-blur-md">
+                <motion.div
+                  initial={{ opacity: 0, y: 25 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.6, delay: 0.3, ease: [0.16, 1, 0.3, 1] }}
+                  className="p-3 rounded-xl border border-white/10 bg-[#0A0A0A]/80 backdrop-blur-md"
+                >
                   <div className="text-xl sm:text-2xl font-black text-white">{agentsCount}</div>
                   <div className="text-[10px] text-neutral-500 uppercase mt-0.5">Specialist Personas</div>
-                </div>
+                </motion.div>
 
-                <div className="p-3 rounded-xl border border-white/10 bg-[#0A0A0A]/80 backdrop-blur-md">
+                <motion.div
+                  initial={{ opacity: 0, x: 25 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ duration: 0.6, delay: 0.4, ease: [0.16, 1, 0.3, 1] }}
+                  className="p-3 rounded-xl border border-white/10 bg-[#0A0A0A]/80 backdrop-blur-md"
+                >
                   <div className="text-xl sm:text-2xl font-black text-white">0%</div>
                   <div className="text-[10px] text-neutral-500 uppercase mt-0.5">False Positives</div>
-                </div>
+                </motion.div>
               </div>
-            </div>
+            </motion.div>
 
             {/* Right Hero Column: Interactive Threat Radar & Diagnostic Console */}
-            <div className="lg:col-span-5">
+            <motion.div
+              initial={{ opacity: 0, x: 45, scale: 0.95 }}
+              animate={{ opacity: 1, x: 0, scale: 1 }}
+              transition={{ duration: 0.85, delay: 0.2, ease: [0.16, 1, 0.3, 1] }}
+              className="lg:col-span-5"
+            >
               <SpotlightCard className="p-5 sm:p-6 border border-white/15 bg-[#080808]/90">
                 {/* Header */}
                 <div className="flex items-center justify-between pb-3.5 border-b border-white/10">
@@ -301,13 +331,19 @@ export default function Landing() {
                   <span className="text-white font-bold">[ SUBPROCESS READY ]</span>
                 </div>
               </SpotlightCard>
-            </div>
+            </motion.div>
           </div>
         </div>
       </section>
 
       {/* ── SIGNAL STRIP (High-Contrast Ticker) ──────────────────────────── */}
-      <div className="border-y border-white/10 bg-[#0A0A0A] overflow-hidden py-3">
+      <motion.div
+        initial={{ opacity: 0 }}
+        whileInView={{ opacity: 1 }}
+        viewport={{ once: true }}
+        transition={{ duration: 0.7 }}
+        className="border-y border-white/10 bg-[#0A0A0A] overflow-hidden py-3"
+      >
         <div className="flex animate-marquee whitespace-nowrap text-xs font-mono text-neutral-400 gap-8">
           <span>NMAP PORT RECON</span>
           <span>&bull;</span>
@@ -343,145 +379,182 @@ export default function Landing() {
           <span>&bull;</span>
           <span>NATIVE KALI ENGINE</span>
         </div>
-      </div>
+      </motion.div>
 
-      {/* ── FYP CREATOR & LEAD ARCHITECT SHOWCASE ────────────────────────── */}
-      <section className="py-16 sm:py-20 bg-black border-b border-white/10">
+      {/* ── FYP CREATOR & LEAD ARCHITECT SHOWCASE (Assembly on Scroll) ───── */}
+      <section className="py-16 sm:py-20 bg-black border-b border-white/10 overflow-hidden">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <SpotlightCard className="p-6 sm:p-8 border border-white/15 bg-[#080808]/90">
-            <div className="flex flex-col sm:flex-row items-center sm:items-start gap-6 sm:gap-8">
-              {/* Creator Photo - Strictly constrained 120x120 */}
-              <div className="relative shrink-0 flex flex-col items-center">
-                <div
-                  className="rounded-2xl overflow-hidden border-2 border-white/40 shadow-2xl bg-neutral-900"
-                  style={{ width: '120px', height: '120px', minWidth: '120px', minHeight: '120px', maxWidth: '120px', maxHeight: '120px' }}
-                >
-                  <img
-                    src="/saif.png"
-                    alt="Muhammad Saifudin"
-                    style={{
-                      width: '120px',
-                      height: '120px',
-                      minWidth: '120px',
-                      minHeight: '120px',
-                      maxWidth: '120px',
-                      maxHeight: '120px',
-                      objectFit: 'cover',
-                      objectPosition: '85% 85%',
-                      display: 'block',
-                    }}
-                    onError={(e) => { e.currentTarget.src = '/fyp2_presenter.png' }}
-                  />
-                </div>
-                <span className="mt-2 px-2.5 py-0.5 rounded-full bg-white text-black text-[9px] font-mono font-black uppercase tracking-wider">
-                  Lead Dev
-                </span>
-              </div>
-
-              {/* Creator Bio & Links */}
-              <div className="flex-1 text-center sm:text-left space-y-2 min-w-0">
-                <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2">
-                  <span className="text-[10px] font-mono px-2.5 py-0.5 rounded-full border border-white/20 bg-white/5 text-neutral-300 font-bold uppercase tracking-wide flex items-center gap-1">
-                    <Sparkles size={11} className="text-white" />
-                    Final Year Project 2 Showcase
-                  </span>
-                  <span className="text-[10px] font-mono px-2.5 py-0.5 rounded-full border border-white/20 bg-white/5 text-neutral-400">
-                    IIUM &bull; KICT
+          <motion.div
+            initial={{ opacity: 0, y: 40, scale: 0.96 }}
+            whileInView={{ opacity: 1, y: 0, scale: 1 }}
+            viewport={{ once: true, amount: 0.25 }}
+            transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
+          >
+            <SpotlightCard className="p-6 sm:p-8 border border-white/15 bg-[#080808]/90">
+              <div className="flex flex-col sm:flex-row items-center sm:items-start gap-6 sm:gap-8">
+                {/* Creator Photo - Strictly constrained 120x120 */}
+                <div className="relative shrink-0 flex flex-col items-center">
+                  <div
+                    className="rounded-2xl overflow-hidden border-2 border-white/40 shadow-2xl bg-neutral-900"
+                    style={{ width: '120px', height: '120px', minWidth: '120px', minHeight: '120px', maxWidth: '120px', maxHeight: '120px' }}
+                  >
+                    <img
+                      src="/saif.png"
+                      alt="Muhammad Saifudin"
+                      style={{
+                        width: '120px',
+                        height: '120px',
+                        minWidth: '120px',
+                        minHeight: '120px',
+                        maxWidth: '120px',
+                        maxHeight: '120px',
+                        objectFit: 'cover',
+                        objectPosition: '85% 85%',
+                        display: 'block',
+                      }}
+                      onError={(e) => { e.currentTarget.src = '/fyp2_presenter.png' }}
+                    />
+                  </div>
+                  <span className="mt-2 px-2.5 py-0.5 rounded-full bg-white text-black text-[9px] font-mono font-black uppercase tracking-wider">
+                    Lead Dev
                   </span>
                 </div>
 
-                <div>
-                  <h2 className="text-xl sm:text-2xl font-bold text-white tracking-tight font-sans">
-                    Muhammad Saifudin
-                  </h2>
-                  <p className="text-xs font-mono text-neutral-400">
-                    Lead AI Security Architect &amp; FYP 2 Creator
+                {/* Creator Bio & Links */}
+                <div className="flex-1 text-center sm:text-left space-y-2 min-w-0">
+                  <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2">
+                    <span className="text-[10px] font-mono px-2.5 py-0.5 rounded-full border border-white/20 bg-white/5 text-neutral-300 font-bold uppercase tracking-wide flex items-center gap-1">
+                      <Sparkles size={11} className="text-white" />
+                      Final Year Project 2 Showcase
+                    </span>
+                    <span className="text-[10px] font-mono px-2.5 py-0.5 rounded-full border border-white/20 bg-white/5 text-neutral-400">
+                      IIUM &bull; KICT
+                    </span>
+                  </div>
+
+                  <div>
+                    <h2 className="text-xl sm:text-2xl font-bold text-white tracking-tight font-sans">
+                      Muhammad Saifudin
+                    </h2>
+                    <p className="text-xs font-mono text-neutral-400">
+                      Lead AI Security Architect &amp; FYP 2 Creator
+                    </p>
+                  </div>
+
+                  <p className="text-xs text-neutral-300 leading-relaxed font-sans max-w-3xl">
+                    Researched and built SentinelAI — an autonomous multi-agent pentest orchestration platform
+                    combining 150+ Kali Linux tools, {agentsCount} LLM specialist personas, and PayloadsAllTheThings
+                    RAG intelligence. Eliminates human fatigue while cutting testing costs by up to 90%.
                   </p>
-                </div>
 
-                <p className="text-xs text-neutral-300 leading-relaxed font-sans max-w-3xl">
-                  Researched and built SentinelAI — an autonomous multi-agent pentest orchestration platform
-                  combining 150+ Kali Linux tools, {agentsCount} LLM specialist personas, and PayloadsAllTheThings
-                  RAG intelligence. Eliminates human fatigue while cutting testing costs by up to 90%.
-                </p>
+                  {/* Professional Links */}
+                  <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 pt-2">
+                    <a
+                      href="https://github.com/Iamatto01"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="px-3 py-1.5 rounded-lg border border-white/20 bg-white/5 hover:bg-white/10 text-neutral-200 hover:text-white text-xs font-mono font-bold transition-all flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <GitBranch size={13} className="text-white" />
+                      <span>GitHub: @Iamatto01</span>
+                    </a>
 
-                {/* Professional Links */}
-                <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 pt-2">
-                  <a
-                    href="https://github.com/Iamatto01"
-                    target="_blank"
-                    rel="noreferrer"
-                    className="px-3 py-1.5 rounded-lg border border-white/20 bg-white/5 hover:bg-white/10 text-neutral-200 hover:text-white text-xs font-mono font-bold transition-all flex items-center gap-1.5 cursor-pointer"
-                  >
-                    <GitBranch size={13} className="text-white" />
-                    <span>GitHub: @Iamatto01</span>
-                  </a>
+                    <a
+                      href="https://www.linkedin.com/in/saifudinjamal/"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="px-3 py-1.5 rounded-lg border border-white/20 bg-white/5 hover:bg-white/10 text-neutral-200 hover:text-white text-xs font-mono font-bold transition-all flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <svg className="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24">
+                        <path d="M19 3a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h14m-.5 15.5v-5.3a3.26 3.26 0 0 0-3.26-3.26c-.85 0-1.84.52-2.28 1.3v-1.11h-2.79v8.37h2.79v-4.93c0-.77.62-1.4 1.39-1.4a1.4 1.4 0 0 1 1.4 1.4v4.93h2.75M6.46 10.9v8.37H9.2V10.9H6.46M7.83 6.67a1.66 1.66 0 0 0-1.66 1.66c0 .92.74 1.66 1.66 1.66a1.66 1.66 0 0 0 1.66-1.66c0-.92-.74-1.66-1.66-1.66Z" />
+                      </svg>
+                      <span>LinkedIn</span>
+                    </a>
 
-                  <a
-                    href="https://www.linkedin.com/in/saifudinjamal/"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="px-3 py-1.5 rounded-lg border border-white/20 bg-white/5 hover:bg-white/10 text-neutral-200 hover:text-white text-xs font-mono font-bold transition-all flex items-center gap-1.5 cursor-pointer"
-                  >
-                    <svg className="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24">
-                      <path d="M19 3a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h14m-.5 15.5v-5.3a3.26 3.26 0 0 0-3.26-3.26c-.85 0-1.84.52-2.28 1.3v-1.11h-2.79v8.37h2.79v-4.93c0-.77.62-1.4 1.39-1.4a1.4 1.4 0 0 1 1.4 1.4v4.93h2.75M6.46 10.9v8.37H9.2V10.9H6.46M7.83 6.67a1.66 1.66 0 0 0-1.66 1.66c0 .92.74 1.66 1.66 1.66a1.66 1.66 0 0 0 1.66-1.66c0-.92-.74-1.66-1.66-1.66Z" />
-                    </svg>
-                    <span>LinkedIn</span>
-                  </a>
-
-                  <span className="text-[11px] text-neutral-500 font-mono flex items-center gap-1 pl-2">
-                    <ShieldCheck size={13} className="text-white" />
-                    <span>Academic Pentest Platform</span>
-                  </span>
+                    <span className="text-[11px] text-neutral-500 font-mono flex items-center gap-1 pl-2">
+                      <ShieldCheck size={13} className="text-white" />
+                      <span>Academic Pentest Platform</span>
+                    </span>
+                  </div>
                 </div>
               </div>
-            </div>
-          </SpotlightCard>
+            </SpotlightCard>
+          </motion.div>
         </div>
       </section>
 
-      {/* ── CORE CAPABILITIES HIGHLIGHT CARDS ───────────────────────────── */}
-      <section className="py-20 sm:py-24 bg-black border-b border-white/10">
+      {/* ── CORE CAPABILITIES HIGHLIGHT CARDS (Converge & Assemble on Scroll) ─ */}
+      <section className="py-20 sm:py-24 bg-black border-b border-white/10 overflow-hidden">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-12">
-          <div className="text-center space-y-3 max-w-2xl mx-auto">
+          <motion.div
+            initial={{ opacity: 0, y: 30 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true, amount: 0.2 }}
+            transition={{ duration: 0.7 }}
+            className="text-center space-y-3 max-w-2xl mx-auto"
+          >
             <h2 className="text-2xl sm:text-4xl font-extrabold text-white tracking-tight font-sans">
               Unified Security Capabilities
             </h2>
             <p className="text-xs sm:text-sm text-neutral-400 font-sans leading-relaxed">
               Engineered to eliminate manual testing friction while giving red teams full control over exploit campaigns.
             </p>
-          </div>
+          </motion.div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <SpotlightCard className="p-6 sm:p-7 space-y-4">
-              <div className="p-2.5 rounded-xl border border-white/20 bg-white/5 w-fit text-white">
-                <Bot size={24} />
-              </div>
-              <h3 className="text-lg font-bold text-white font-sans">{agentsCount} Specialist AI Agents</h3>
-              <p className="text-xs sm:text-sm text-neutral-400 font-sans leading-relaxed">
-                Automated routing of findings to specialized AI personas (Web Hunter, Database Attacker, Code Auditor) to filter out noise and false positives.
-              </p>
-            </SpotlightCard>
+            {/* Card 1 glides from left */}
+            <motion.div
+              initial={{ opacity: 0, x: -50, scale: 0.95 }}
+              whileInView={{ opacity: 1, x: 0, scale: 1 }}
+              viewport={{ once: true, amount: 0.25 }}
+              transition={{ duration: 0.75, ease: [0.16, 1, 0.3, 1] }}
+            >
+              <SpotlightCard className="p-6 sm:p-7 space-y-4 h-full">
+                <div className="p-2.5 rounded-xl border border-white/20 bg-white/5 w-fit text-white">
+                  <Bot size={24} />
+                </div>
+                <h3 className="text-lg font-bold text-white font-sans">{agentsCount} Specialist AI Agents</h3>
+                <p className="text-xs sm:text-sm text-neutral-400 font-sans leading-relaxed">
+                  Automated routing of findings to specialized AI personas (Web Hunter, Database Attacker, Code Auditor) to filter out noise and false positives.
+                </p>
+              </SpotlightCard>
+            </motion.div>
 
-            <SpotlightCard className="p-6 sm:p-7 space-y-4">
-              <div className="p-2.5 rounded-xl border border-white/20 bg-white/5 w-fit text-white">
-                <Radar size={24} />
-              </div>
-              <h3 className="text-lg font-bold text-white font-sans">150+ Kali Security Tools</h3>
-              <p className="text-xs sm:text-sm text-neutral-400 font-sans leading-relaxed">
-                The native engine dynamically chains nmap, nuclei, sqlmap, ffuf, nikto, subfinder, and more based on real-time attack surface discovery.
-              </p>
-            </SpotlightCard>
+            {/* Card 2 drops in from center */}
+            <motion.div
+              initial={{ opacity: 0, y: 40, scale: 0.95 }}
+              whileInView={{ opacity: 1, y: 0, scale: 1 }}
+              viewport={{ once: true, amount: 0.25 }}
+              transition={{ duration: 0.75, delay: 0.1, ease: [0.16, 1, 0.3, 1] }}
+            >
+              <SpotlightCard className="p-6 sm:p-7 space-y-4 h-full">
+                <div className="p-2.5 rounded-xl border border-white/20 bg-white/5 w-fit text-white">
+                  <Radar size={24} />
+                </div>
+                <h3 className="text-lg font-bold text-white font-sans">150+ Kali Security Tools</h3>
+                <p className="text-xs sm:text-sm text-neutral-400 font-sans leading-relaxed">
+                  The native engine dynamically chains nmap, nuclei, sqlmap, ffuf, nikto, subfinder, and more based on real-time attack surface discovery.
+                </p>
+              </SpotlightCard>
+            </motion.div>
 
-            <SpotlightCard className="p-6 sm:p-7 space-y-4">
-              <div className="p-2.5 rounded-xl border border-white/20 bg-white/5 w-fit text-white">
-                <ShieldCheck size={24} />
-              </div>
-              <h3 className="text-lg font-bold text-white font-sans">Blackbox &amp; Whitebox Unified</h3>
-              <p className="text-xs sm:text-sm text-neutral-400 font-sans leading-relaxed">
-                Scan live website URLs or upload source code (JavaScript, Python, PHP, Java, Go) for automated static code review in one unified platform.
-              </p>
-            </SpotlightCard>
+            {/* Card 3 glides from right */}
+            <motion.div
+              initial={{ opacity: 0, x: 50, scale: 0.95 }}
+              whileInView={{ opacity: 1, x: 0, scale: 1 }}
+              viewport={{ once: true, amount: 0.25 }}
+              transition={{ duration: 0.75, delay: 0.2, ease: [0.16, 1, 0.3, 1] }}
+            >
+              <SpotlightCard className="p-6 sm:p-7 space-y-4 h-full">
+                <div className="p-2.5 rounded-xl border border-white/20 bg-white/5 w-fit text-white">
+                  <ShieldCheck size={24} />
+                </div>
+                <h3 className="text-lg font-bold text-white font-sans">Blackbox &amp; Whitebox Unified</h3>
+                <p className="text-xs sm:text-sm text-neutral-400 font-sans leading-relaxed">
+                  Scan live website URLs or upload source code (JavaScript, Python, PHP, Java, Go) for automated static code review in one unified platform.
+                </p>
+              </SpotlightCard>
+            </motion.div>
           </div>
         </div>
       </section>
@@ -492,13 +565,13 @@ export default function Landing() {
       {/* ── SECTION 4: AI Model & Agent Layout Section ────────────────────── */}
       <AiModelSelector />
 
-      {/* ── SECTION 5: Vulnerability Mapping Bento Grid ──────────────────── */}
+      {/* ── SECTION 5: Vulnerability Mapping Bento Grid (Converging Grid) ── */}
       <VulnerabilityBento />
 
       {/* ── SECTION 6: "Vice Versa" Scroll Inversion (White Background #FFFFFF) ── */}
       <ViceVersaSection />
 
-      {/* ── SECTION 7: Subscription & Pricing Tiers (Return to Obsidian #000000) ── */}
+      {/* ── SECTION 7: Subscription & Pricing Tiers (Assemble on Scroll) ─── */}
       <MonochromePricing />
 
       {/* ── SECTION 8: Trust, FAQ & Footer Section ───────────────────────── */}

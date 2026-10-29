@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
+import { motion, useScroll, useSpring, AnimatePresence } from 'framer-motion'
 import {
   Terminal, ShieldAlert, Cpu, Sparkles, CheckCircle2, ChevronRight,
   Code2, Bug, FileJson, Copy, Check, Play, RefreshCw, Zap
@@ -27,9 +28,9 @@ const STAGES = [
       { type: 'stdout', text: '    -> staging.demo.sentinelai.studio [192.168.68.133]' },
       { type: 'stdout', text: '    -> vault-internal.sentinelai.studio:8443 [PROTECTED]' },
       { type: 'stdout', text: '[+] Nmap SYN Stealth Scan: 4 open TCP ports identified (0.84s)' },
-      { type: 'stdout', text: '    -> 80/tcp  OPEN  nginx/1.24.0 (Ubuntu)' },
-      { type: 'stdout', text: '    -> 443/tcp OPEN  OpenSSL 3.0.2 / TLS 1.3' },
-      { type: 'stdout', text: '    -> 8080/tcp OPEN Node.js Express Gateway v4.19' },
+      { type: 'stdout', text: '    -> 80/tcp   OPEN  nginx/1.24.0 (Ubuntu)' },
+      { type: 'stdout', text: '    -> 443/tcp  OPEN  OpenSSL 3.0.2 / TLS 1.3' },
+      { type: 'stdout', text: '    -> 8080/tcp OPEN  Node.js Express Gateway v4.19' },
       { type: 'success', text: '[✓] Recon Stage 01 complete: Attack graph topology generated' },
     ],
     payloadView: `// [RECON CONFIGURATION & TARGET SPECIFICATION]
@@ -145,13 +146,13 @@ X-Requested-With: XMLHttpRequest
 -  req.user = decoded;
 -  return next();
 +  // AUTO-PATCHED BY SENTINELAI: Strict RS256 algorithm enforcement & secret validation
-+  try {
-+    const verified = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ['RS256', 'HS256'] });
-+    req.user = verified;
-+    return next();
-+  } catch (err) {
-+    return res.status(401).json({ error: 'UNAUTHORIZED_OR_MALFORMED_JWT' });
-+  }`,
+   try {
+     const verified = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ['RS256', 'HS256'] });
+     req.user = verified;
+     return next();
+   } catch (err) {
+     return res.status(401).json({ error: 'UNAUTHORIZED_OR_MALFORMED_JWT' });
+   }`,
     jsonTelemetry: {
       stage: '03_AUTO_PATCH_AND_DELIVERY',
       status: 'REMEDIATION_READY',
@@ -170,11 +171,23 @@ X-Requested-With: XMLHttpRequest
 
 export default function LiveScanTerminal() {
   const [activeStage, setActiveStage] = useState(1)
-  const [activeTab, setActiveTab] = useState('cli') // 'cli' | 'payload' | 'json'
+  const [activeTab, setActiveTab] = useState('cli')
   const [copied, setCopied] = useState(false)
+  const [visibleLinesCount, setVisibleLinesCount] = useState(2)
+
+  const sectionRef = useRef(null)
   const stageRefs = [useRef(null), useRef(null), useRef(null)]
 
-  // Intersection Observer for scroll-driven stage activation
+  const currentStageData = STAGES.find((s) => s.id === activeStage) || STAGES[0]
+
+  // Track scroll progress along the stage section
+  const { scrollYProgress } = useScroll({
+    target: sectionRef,
+    offset: ['start center', 'end center'],
+  })
+  const scaleY = useSpring(scrollYProgress, { stiffness: 100, damping: 20 })
+
+  // Intersection observer to track active stage
   useEffect(() => {
     const observers = stageRefs.map((ref, idx) => {
       if (!ref.current) return null
@@ -186,7 +199,7 @@ export default function LiveScanTerminal() {
             }
           })
         },
-        { threshold: 0.5 }
+        { threshold: 0.55 }
       )
       obs.observe(ref.current)
       return obs
@@ -197,7 +210,23 @@ export default function LiveScanTerminal() {
     }
   }, [])
 
-  const currentStageData = STAGES.find((s) => s.id === activeStage) || STAGES[0]
+  // Real Typewriter animation that streams CLI lines sequentially
+  useEffect(() => {
+    setVisibleLinesCount(1)
+    const totalLines = currentStageData.cliLines.length
+
+    const interval = setInterval(() => {
+      setVisibleLinesCount((prev) => {
+        if (prev < totalLines) {
+          return prev + 1
+        }
+        clearInterval(interval)
+        return prev
+      })
+    }, 180)
+
+    return () => clearInterval(interval)
+  }, [activeStage])
 
   const handleCopy = (text) => {
     navigator.clipboard.writeText(typeof text === 'string' ? text : JSON.stringify(text, null, 2))
@@ -206,22 +235,32 @@ export default function LiveScanTerminal() {
   }
 
   return (
-    <section id="terminal" className="relative scroll-mt-20 py-24 sm:py-32 bg-black border-t border-white/10">
-      {/* Top Volumetric Overhead Spotlight Beam */}
+    <section
+      id="terminal"
+      ref={sectionRef}
+      className="relative scroll-mt-20 py-28 sm:py-36 bg-black border-t border-white/10"
+    >
+      {/* Volumetric Overhead Spotlight Beam */}
       <div
-        className="pointer-events-none absolute inset-x-0 top-0 h-96 -translate-y-1/2 opacity-30 blur-3xl z-0"
+        className="pointer-events-none absolute inset-x-0 top-0 h-[500px] -translate-y-1/2 opacity-30 blur-3xl z-0"
         style={{
           background: 'radial-gradient(ellipse 80% 50% at 50% -20%, rgba(255,255,255,0.25), transparent)',
         }}
       />
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
-        {/* Section Header */}
-        <div className="text-center max-w-3xl mx-auto space-y-4 mb-16 sm:mb-20">
+        {/* Animated Section Header */}
+        <motion.div
+          initial={{ opacity: 0, y: 30 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true, amount: 0.2 }}
+          transition={{ duration: 0.7, ease: [0.16, 1, 0.3, 1] }}
+          className="text-center max-w-3xl mx-auto space-y-4 mb-20 sm:mb-24"
+        >
           <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full border border-white/15 bg-white/[0.04] text-[11px] font-mono text-neutral-300">
             <Terminal size={13} className="text-white" />
             <span className="font-bold uppercase tracking-wider">
-              REAL-TIME EXECUTION PIPELINE // STICKY TERMINAL
+              REAL-TIME EXECUTION PIPELINE // STICKY SCROLL TERMINAL
             </span>
           </div>
 
@@ -233,29 +272,52 @@ export default function LiveScanTerminal() {
           </h2>
 
           <p className="text-sm sm:text-base text-neutral-400 font-sans leading-relaxed">
-            Scroll through our 3-stage autonomous offensive pipeline. The right-hand terminal renders
-            live subprocess stdout, PoC attack vectors, and machine-readable risk telemetry in real time.
+            Scroll through our 3-stage autonomous offensive pipeline. Watch the terminal dynamically type
+            subprocess stdout, craft exploit payloads, and synthesize git diff patches in real-time.
           </p>
-        </div>
+        </motion.div>
 
         {/* 2-Column Split Screen Container */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-start relative min-h-[140vh]">
-          {/* Left Column: Scroll-Driven Narrative Stages */}
-          <div className="lg:col-span-6 space-y-16 sm:space-y-24 py-4">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-14 items-start relative min-h-[160vh]">
+          {/* Left Column: Scroll-Driven Narrative Stages with Laser Connector Line */}
+          <div className="lg:col-span-6 relative space-y-20 sm:space-y-28 py-4">
+            {/* Vertical Laser Progress Line Connecting Stages */}
+            <div className="absolute left-8 top-12 bottom-12 w-[1px] bg-white/10 hidden sm:block">
+              <motion.div
+                className="w-[2px] bg-white origin-top shadow-[0_0_12px_rgba(255,255,255,1)]"
+                style={{ scaleY, height: '100%' }}
+              />
+            </div>
+
             {STAGES.map((stage, idx) => {
               const isActive = activeStage === stage.id
 
               return (
-                <div
+                <motion.div
                   key={stage.id}
                   ref={stageRefs[idx]}
                   onClick={() => setActiveStage(stage.id)}
-                  className={`p-6 sm:p-8 rounded-3xl border transition-all duration-500 cursor-pointer ${
+                  initial={{ opacity: 0, x: -40, scale: 0.96 }}
+                  whileInView={{ opacity: 1, x: 0, scale: 1 }}
+                  viewport={{ once: false, amount: 0.3 }}
+                  transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
+                  className={`p-6 sm:p-8 rounded-3xl border transition-all duration-500 cursor-pointer relative ${
                     isActive
-                      ? 'border-white/40 bg-neutral-900/80 shadow-[0_0_35px_rgba(255,255,255,0.08)] ring-1 ring-white/20'
-                      : 'border-white/10 bg-[#080808]/60 opacity-60 hover:opacity-100 hover:border-white/20'
+                      ? 'border-white/50 bg-[#0E0E0E] shadow-[0_0_40px_rgba(255,255,255,0.12)] scale-[1.02] ring-1 ring-white/30'
+                      : 'border-white/10 bg-[#060606]/70 opacity-60 hover:opacity-95 hover:border-white/20'
                   }`}
                 >
+                  {/* Glowing Node Pip connecting to laser line */}
+                  <div
+                    className={`absolute -left-[37px] top-8 hidden sm:flex items-center justify-center rounded-full transition-all duration-300 ${
+                      isActive
+                        ? 'w-5 h-5 bg-white shadow-[0_0_16px_rgba(255,255,255,1)] ring-4 ring-white/20'
+                        : 'w-3.5 h-3.5 bg-neutral-700'
+                    }`}
+                  >
+                    {isActive && <div className="w-1.5 h-1.5 rounded-full bg-black" />}
+                  </div>
+
                   <div className="flex items-center justify-between mb-4">
                     <span className="px-3 py-1 rounded-full text-xs font-mono font-bold bg-white text-black">
                       STAGE {stage.num}
@@ -285,24 +347,33 @@ export default function LiveScanTerminal() {
 
                   <div className="flex items-center justify-between pt-2 text-[11px] font-mono text-neutral-400">
                     <span className="flex items-center gap-1.5">
-                      <span className={`w-2 h-2 rounded-full ${isActive ? 'bg-white animate-pulse' : 'bg-neutral-600'}`} />
+                      <span
+                        className={`w-2 h-2 rounded-full ${
+                          isActive ? 'bg-white animate-pulse shadow-[0_0_8px_rgba(255,255,255,0.9)]' : 'bg-neutral-600'
+                        }`}
+                      />
                       {isActive ? 'Active Telemetry Stream' : 'Click to Focus Stage'}
                     </span>
-                    <ChevronRight size={14} className={isActive ? 'translate-x-1 transition-transform' : ''} />
+                    <ChevronRight size={14} className={isActive ? 'translate-x-1 transition-transform text-white' : ''} />
                   </div>
-                </div>
+                </motion.div>
               )
             })}
           </div>
 
-          {/* Right Column: Sticky Interactive Terminal & Telemetry */}
+          {/* Right Column: Sticky Interactive Terminal & Telemetry with Typewriter stdout */}
           <div className="lg:col-span-6 sticky top-24 self-start">
-            <div className="rounded-2xl border border-white/15 bg-[#080808]/95 backdrop-blur-2xl shadow-[0_20px_60px_rgba(0,0,0,0.9),0_0_30px_rgba(255,255,255,0.06)] overflow-hidden font-mono">
+            <motion.div
+              initial={{ opacity: 0, x: 50, scale: 0.95 }}
+              whileInView={{ opacity: 1, x: 0, scale: 1 }}
+              viewport={{ once: true, amount: 0.15 }}
+              transition={{ duration: 0.7, ease: [0.16, 1, 0.3, 1] }}
+              className="rounded-2xl border border-white/20 bg-[#080808]/95 backdrop-blur-2xl shadow-[0_25px_60px_rgba(0,0,0,0.95),0_0_35px_rgba(255,255,255,0.08)] overflow-hidden font-mono"
+            >
               {/* Terminal Window Header */}
               <div className="px-4 py-3 bg-neutral-950 border-b border-white/10 flex items-center justify-between">
-                {/* Monochrome macOS dots */}
                 <div className="flex items-center gap-2">
-                  <span className="w-3 h-3 rounded-full bg-white/80 inline-block shadow-[0_0_8px_rgba(255,255,255,0.5)]" />
+                  <span className="w-3 h-3 rounded-full bg-white/90 inline-block shadow-[0_0_8px_rgba(255,255,255,0.6)]" />
                   <span className="w-3 h-3 rounded-full bg-neutral-400 inline-block" />
                   <span className="w-3 h-3 rounded-full bg-neutral-700 inline-block" />
                   <span className="ml-2 text-xs font-semibold text-neutral-300 hidden sm:inline">
@@ -316,9 +387,7 @@ export default function LiveScanTerminal() {
                     type="button"
                     onClick={() => setActiveTab('cli')}
                     className={`px-2.5 py-1 rounded text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-                      activeTab === 'cli'
-                        ? 'bg-white text-black shadow'
-                        : 'text-neutral-400 hover:text-white'
+                      activeTab === 'cli' ? 'bg-white text-black shadow' : 'text-neutral-400 hover:text-white'
                     }`}
                   >
                     <Terminal size={11} />
@@ -329,9 +398,7 @@ export default function LiveScanTerminal() {
                     type="button"
                     onClick={() => setActiveTab('payload')}
                     className={`px-2.5 py-1 rounded text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-                      activeTab === 'payload'
-                        ? 'bg-white text-black shadow'
-                        : 'text-neutral-400 hover:text-white'
+                      activeTab === 'payload' ? 'bg-white text-black shadow' : 'text-neutral-400 hover:text-white'
                     }`}
                   >
                     <Code2 size={11} />
@@ -342,9 +409,7 @@ export default function LiveScanTerminal() {
                     type="button"
                     onClick={() => setActiveTab('json')}
                     className={`px-2.5 py-1 rounded text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-                      activeTab === 'json'
-                        ? 'bg-white text-black shadow'
-                        : 'text-neutral-400 hover:text-white'
+                      activeTab === 'json' ? 'bg-white text-black shadow' : 'text-neutral-400 hover:text-white'
                     }`}
                   >
                     <FileJson size={11} />
@@ -353,20 +418,19 @@ export default function LiveScanTerminal() {
                 </div>
               </div>
 
-              {/* Terminal Screen Body */}
-              <div className="p-5 h-[420px] overflow-y-auto text-xs leading-relaxed space-y-2 bg-black/90">
-                {/* TAB 1: LIVE CLI OUTPUT */}
+              {/* Terminal Screen Body with Sequential Typewriter Streaming */}
+              <div className="p-5 h-[430px] overflow-y-auto text-xs leading-relaxed space-y-2 bg-black/90">
                 {activeTab === 'cli' && (
                   <div className="space-y-2">
                     <div className="text-[11px] text-neutral-500 pb-2 border-b border-white/10 flex items-center justify-between">
                       <span>SESSION: DAEMON_STREAM_PID_{3400 + activeStage * 12}</span>
                       <span className="flex items-center gap-1.5 text-white">
                         <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
-                        LIVE EXECUTION
+                        STREAMING ACTIVE
                       </span>
                     </div>
 
-                    {currentStageData.cliLines.map((line, i) => {
+                    {currentStageData.cliLines.slice(0, visibleLinesCount).map((line, i) => {
                       if (line.type === 'cmd') {
                         return (
                           <div key={i} className="text-white font-bold pt-1 flex items-center gap-2">
@@ -377,12 +441,15 @@ export default function LiveScanTerminal() {
                       }
                       if (line.type === 'alert') {
                         return (
-                          <div
+                          <motion.div
                             key={i}
-                            className="p-2.5 rounded-lg border border-white/30 bg-white/10 text-white font-extrabold shadow-[0_0_15px_rgba(255,255,255,0.15)]"
+                            initial={{ scale: 0.95, opacity: 0 }}
+                            animate={{ scale: 1, opacity: 1 }}
+                            transition={{ type: 'spring', stiffness: 200, damping: 15 }}
+                            className="p-2.5 rounded-lg border-2 border-white bg-white/15 text-white font-black shadow-[0_0_20px_rgba(255,255,255,0.25)]"
                           >
                             {line.text}
-                          </div>
+                          </motion.div>
                         )
                       }
                       if (line.type === 'success') {
@@ -402,12 +469,11 @@ export default function LiveScanTerminal() {
 
                     <div className="pt-3 text-neutral-500 flex items-center gap-2">
                       <span className="inline-block w-2 h-4 bg-white animate-pulse" />
-                      <span>Awaiting next command block...</span>
+                      <span>{visibleLinesCount < currentStageData.cliLines.length ? 'Synthesizing output...' : 'Awaiting next instruction...'}</span>
                     </div>
                   </div>
                 )}
 
-                {/* TAB 2: EXPLOIT PAYLOAD VIEW */}
                 {activeTab === 'payload' && (
                   <div className="relative">
                     <button
@@ -425,7 +491,6 @@ export default function LiveScanTerminal() {
                   </div>
                 )}
 
-                {/* TAB 3: JSON RISK TELEMETRY */}
                 {activeTab === 'json' && (
                   <div className="relative">
                     <button
@@ -452,7 +517,7 @@ export default function LiveScanTerminal() {
                 </span>
                 <span className="text-white font-mono">Stage 0{activeStage} / 03</span>
               </div>
-            </div>
+            </motion.div>
           </div>
         </div>
       </div>
