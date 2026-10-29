@@ -1781,7 +1781,7 @@ function renderMethodology(doc, { vulnerabilities, isWhitebox }) {
     ['OSINT / Reconnaissance Expert', 'DNS enumeration, email harvesting, Shodan/Censys, GitHub dorking'],
     ['Compliance / STIG Analyst', 'PCI DSS, HIPAA, NIST 800-53, ISO 27001, CIS controls, STIG hardening'],
     ['Vulnerable Components Scanner', 'CVE identification, dependency scanning, outdated library detection'],
-    ['Exploit Developer', 'Exploit chaining, vulnerability validation, PoC generation, Metasploit integration'],
+    ['Exploit Developer', 'Exploit chaining, vulnerability validation, and safe PoC generation'],
     ['Payload Crafter', 'Shellcode generation, reverse shell payloads, msfvenom, encoding/obfuscation'],
     ['Privilege Escalation Expert', 'Linux/Windows privesc, SUID, scheduled tasks, service misconfig, token abuse'],
     ['Lateral Movement Expert', 'Pass-the-hash/ticket, PsExec, WMI, WinRM, DCOM, SSH tunneling'],

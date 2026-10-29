@@ -68,14 +68,6 @@ export const config = {
     scanTimeout: Number(process.env.AI_SCAN_TIMEOUT || 300),
   },
 
-  // Metasploit RPC configuration (for autonomous exploitation)
-  msf: {
-    url: (process.env.MSF_RPC_URL || 'http://127.0.0.1:55553/api/').replace(/\/$/, '') + '/',
-    username: process.env.MSF_USER || 'msf',
-    password: process.env.MSF_PASS || 'msf',
-    timeoutMs: Number(process.env.MSF_TIMEOUT_MS || 120000),
-  },
-
   github: {
     // When set, the /api/github/webhook endpoint requires a valid
     // X-Hub-Signature-256 HMAC. When unset, only loopback/LAN requests pass.

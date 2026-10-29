@@ -28,7 +28,6 @@ import swaggerUi from 'swagger-ui-express'
 import { openapiSpec } from './openapi.js'
 import { walkProjects } from './folder-walker.js'
 import { ExploitOrchestrator } from './exploits/orchestrator.js'
-import * as msf from './exploits/msf-client.js'
 import { matchExploits, classifyRisk } from './exploits/registry.js'
 import { sendScanRequestNotification, sendAnonymousFeedbackNotification, sendConsultationBookingNotification } from './email.js'
 import { GitHubClient, parseGitHubWebhook } from './integrations/github.js'
@@ -275,12 +274,10 @@ app.get('/api/status', requireAuth, async (req, res) => {
     tools,
   }
   const rag = payloadsRag.payloadsIndexStatus()
-  let msfStatus = { available: false, error: 'not checked' }
-  try { msfStatus = await msf.status() } catch (e) { msfStatus = { available: false, error: e.message } }
   res.json({
     engine,
     rag,
-    msf: msfStatus,
+    exploitation: { engine: 'native', metasploit: 'removed' },
     agents: { count: agentRegistry.list().length, dir: config.agentsDir },
     ai: { configured: aiEngine.llm.isConfigured(), provider: config.ai.provider },
   })
@@ -1942,45 +1939,6 @@ app.post('/api/scans/:id/audio-briefing', requireAuth, requireScanAccess, async 
 })
 
 // ── Exploitation Engine ──────────────────────────────────────────────────────
-
-// MSF RPC status
-// ── Exploitation (MSF + campaigns) — staff only; MSF session commands are
-// remote shell execution and must never be reachable by client-portal users.
-app.get('/api/exploits/msf/status', requireAuth, requireStaff, async (req, res) => {
-  try { res.json(await msf.status()) }
-  catch (e) { console.error('[msf:status]', e.message); res.status(502).json({ error: e.message || 'MSF RPC unavailable' }) }
-})
-
-// List active MSF sessions
-app.get('/api/exploits/msf/sessions', requireAuth, requireStaff, async (req, res) => {
-  try { res.json(await msf.listSessions()) }
-  catch (e) { console.error('[msf:sessions]', e.message); res.status(502).json({ error: e.message || 'MSF RPC unavailable' }) }
-})
-
-// Get a specific MSF session
-app.get('/api/exploits/msf/sessions/:id', requireAuth, requireStaff, async (req, res) => {
-  try {
-    const s = await msf.sessionInfo(req.params.id)
-    if (!s) return res.status(404).json({ error: 'session not found' })
-    res.json(s)
-  } catch (e) { console.error('[msf:sessionInfo]', e.message); res.status(502).json({ error: e.message || 'MSF RPC unavailable' }) }
-})
-
-// Run a command in an MSF session
-app.post('/api/exploits/msf/sessions/:id/command', requireAuth, requireStaff, async (req, res) => {
-  const { command } = req.body || {}
-  if (!command) return res.status(400).json({ error: 'command required' })
-  try {
-    const result = await msf.shellCommand(req.params.id, command)
-    res.json(result)
-  } catch (e) { console.error('[msf:shellCommand]', e.message); res.status(502).json({ error: e.message || 'MSF RPC unavailable' }) }
-})
-
-// Kill an MSF session
-app.delete('/api/exploits/msf/sessions/:id', requireAuth, requireStaff, async (req, res) => {
-  try { res.json(await msf.stopSession(req.params.id)) }
-  catch (e) { console.error('[msf:stopSession]', e.message); res.status(502).json({ error: e.message || 'MSF RPC unavailable' }) }
-})
 
 // List all exploit campaigns
 app.get('/api/exploits/campaigns', requireAuth, requireStaff, (req, res) => {

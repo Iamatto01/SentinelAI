@@ -371,8 +371,6 @@ export async function auditTools() {
     { name: 'arjun', category: 'Vulnerability Scanner', desc: 'HTTP parameter discovery suite' },
     { name: 'dalfox', category: 'Vulnerability Scanner', desc: 'Parameter analysis & XSS scanner' },
     { name: 'hydra', category: 'Exploitation & Cracking', desc: 'Fast network logon cracker' },
-    { name: 'msfconsole', category: 'Exploitation & Cracking', desc: 'Metasploit penetration framework' },
-    { name: 'msfrpcd', category: 'Exploitation & Cracking', desc: 'Metasploit RPC daemon' },
   ]
 
   const audited = []
@@ -400,7 +398,7 @@ export function triggerToolsInstall() {
   const sudo = config.kaliSudoPassword ? `echo ${config.kaliSudoPassword} | sudo -S` : 'sudo'
   const installCmd = `
     ${sudo} apt update -y && \
-    ${sudo} apt install -y nmap nikto nuclei gobuster feroxbuster sqlmap ffuf dirsearch wafw00f subfinder amass masscan sslscan whatweb wpscan hydra metasploit-framework avahi-daemon avahi-utils libnss-mdns python3-pip httpx-toolkit && \
+    ${sudo} apt install -y nmap nikto nuclei gobuster feroxbuster sqlmap ffuf dirsearch wafw00f subfinder amass masscan sslscan whatweb wpscan hydra avahi-daemon avahi-utils libnss-mdns python3-pip httpx-toolkit && \
     (pip3 install arjun --break-system-packages 2>/dev/null || true) && \
     (go install github.com/projectdiscovery/katana/cmd/katana@latest 2>/dev/null || true) && \
     (go install github.com/hahwul/dalfox/v2@latest 2>/dev/null || true) && \
