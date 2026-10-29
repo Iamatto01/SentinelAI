@@ -12,6 +12,7 @@ const TTL_MS = 24 * 60 * 60 * 1000
 function parseNvd(cve) {
   const metrics = cve.metrics || {}
   const m =
+    metrics.cvssMetricV40?.[0]?.cvssData ||
     metrics.cvssMetricV31?.[0]?.cvssData ||
     metrics.cvssMetricV30?.[0]?.cvssData ||
     metrics.cvssMetricV2?.[0]?.cvssData || null
@@ -23,7 +24,12 @@ function parseNvd(cve) {
     published: cve.published,
     lastModified: cve.lastModified,
     description: desc,
-    cvss: m ? { score: m.baseScore, severity: m.baseSeverity || m.baseSeverity === undefined ? m.baseSeverity : null, vector: m.vectorString, version: m.version } : null,
+    cvss: m ? {
+      score: m.baseScore,
+      severity: m.baseSeverity || null,
+      vector: m.vectorString,
+      version: m.version || (metrics.cvssMetricV40?.length ? '4.0' : null),
+    } : null,
     severity: m?.baseSeverity || null,
     weaknesses,
     references: references.slice(0, 12),

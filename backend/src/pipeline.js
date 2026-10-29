@@ -745,21 +745,28 @@ export class UnifiedPipeline {
 
     // ── 1. Live fetch: headers + body ──
     let liveText = ''
-    try {
-      const ctrl = new AbortController()
-      const t = setTimeout(() => ctrl.abort(), 15000)
-      const res = await fetch(baseUrl, {
-        redirect: 'follow',
-        signal: ctrl.signal,
-        headers: { 'User-Agent': 'Mozilla/5.0 (compatible; SentinelAI/2.0; +security-audit)' },
-      })
-      clearTimeout(t)
-      const headerText = [...res.headers.entries()].map(([k, v]) => `${k}: ${v}`).join('\n')
-      const body = await res.text().catch(() => '')
-      liveText = `${headerText}\n${body.slice(0, 200000)}`
-      this.log(scanId, 'info', `🔬 Version audit: fetched ${baseUrl} (${res.status}, ${body.length} bytes body)`)
-    } catch (e) {
-      this.log(scanId, 'warn', `🔬 Version audit: live fetch failed (${e.message}) — falling back to stored findings`)
+    const candidates = [
+      baseUrl,
+      ...(this._urlPool?.get(scanId) ? [...this._urlPool.get(scanId)] : []),
+      ...['/robots.txt', '/.well-known/security.txt', '/manifest.json'].map(p => joinUrl(baseUrl, p)),
+    ].filter((url, i, urls) => /^https?:\/\//i.test(url) && urls.indexOf(url) === i).slice(0, 12)
+    for (const url of candidates) {
+      try {
+        const ctrl = new AbortController()
+        const t = setTimeout(() => ctrl.abort(), 10000)
+        const res = await fetch(url, {
+          redirect: 'follow',
+          signal: ctrl.signal,
+          headers: { 'User-Agent': 'Mozilla/5.0 (compatible; SentinelAI/2.0; +security-audit)' },
+        })
+        clearTimeout(t)
+        const headerText = [...res.headers.entries()].map(([k, v]) => `${k}: ${v}`).join('\n')
+        const body = await res.text().catch(() => '')
+        liveText += `\nURL: ${url}\n${headerText}\n${body.slice(0, 50000)}`
+        this.log(scanId, 'info', `🔬 Version audit: fetched ${url} (${res.status}, ${body.length} bytes body)`)
+      } catch (e) {
+        this.log(scanId, 'warn', `🔬 Version audit: fetch failed for ${url} (${e.message})`)
+      }
     }
 
     // ── 2. Stored findings from earlier tool batches ──
@@ -774,6 +781,15 @@ export class UnifiedPipeline {
 
     if (!detected.length && !unversioned.length) {
       this.log(scanId, 'info', '🔬 Version audit: no software versions could be fingerprinted (WAF/CDN masking likely)')
+      await this.ingestFinding(scanId, {
+        title: 'Technology and architecture fingerprint inconclusive',
+        severity: 'info',
+        owaspCategory: 'A03:2025-Software Supply Chain Failures',
+        description: `No reliable product/version signature was exposed across ${candidates.length} HTTP endpoint${candidates.length === 1 ? '' : 's'} and stored scanner evidence. This is not proof that the stack is secure; a WAF, CDN, custom error pages, or banner suppression may be hiding the architecture.`,
+        remediation: 'Confirm the operating system, reverse proxy, application server, framework, runtime, database, dependency lockfiles, and patch levels from an authenticated asset inventory or host-side scan. Re-run with authorized service/version detection where permitted.',
+        module: 'version-audit',
+        evidence: { scannedUrls: candidates, detection: 'no-versioned-signature', validationTier: 'needs-validation' },
+      }, { verify: false })
       return
     }
 

@@ -336,6 +336,7 @@ export function buildVersionFinding(detected, correlation) {
     severity: c.cvss?.severity || c.severity,
     description: (c.description || '').slice(0, 300),
     cwe: (c.weaknesses || []).filter(w => /^CWE-/.test(w)).slice(0, 3),
+    references: (c.references || []).slice(0, 5),
   }))
 
   const sevBreakdown = [
@@ -376,6 +377,7 @@ export function buildVersionFinding(detected, correlation) {
       mediumCount: medium,
       knownCves: cveList,
       nvdQuery: `${product} ${version}`,
+      references: cveList.flatMap(c => c.references || []),
     },
   }
 }

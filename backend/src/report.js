@@ -1146,6 +1146,58 @@ function cveReference(cveId) {
     ? `https://nvd.nist.gov/vuln/detail/${String(cveId).toUpperCase()}` : null
 }
 
+function confidencePercent(v) {
+  const tier = String(v.validationTier || v.evidence?.validationTier || '').toLowerCase()
+  if (tier === 'exploited') return 98
+  if (tier === 'validated') return 95
+  if (v.aiConfidence > 0) return Math.round(v.aiConfidence * 100)
+  if (v.evidence?.knownCves?.length || v.cveId) return 85
+  if (tier === 'needs-validation') return 45
+  if (v.evidence?.url || v.evidence?.output || v.evidence?.status) return 75
+  return 60
+}
+
+function findingEvidenceContext(v) {
+  const evidence = v.evidence || {}
+  const endpoint = evidence.url || v.asset || null
+  const status = evidence.status ?? evidence.statusCode ?? evidence.httpStatus
+  const parameter = evidence.parameter || evidence.param || evidence.field
+  const observed = evidence.matched || evidence.detectedFrom || evidence.header || evidence.output || evidence.raw
+  const location = evidence.file ? `${evidence.file}${evidence.line ? `:${evidence.line}` : ''}` : null
+  return {
+    evidence,
+    endpoint: typeof endpoint === 'string' ? endpoint : null,
+    status: status != null ? String(status) : null,
+    parameter: parameter ? String(parameter) : null,
+    observed: observed ? String(observed).replace(/\s+/g, ' ').slice(0, 260) : null,
+    location,
+  }
+}
+
+function concreteVerification(v, endpoint) {
+  const url = endpoint || 'https://target.example'
+  const safeUrl = /^https?:\/\//i.test(url) ? url : `https://${url}`
+  const title = String(v.title || '').toLowerCase()
+  if (/header|hsts|csp|frame|content-type|cors/i.test(title)) {
+    return `curl -sS -D - -o /dev/null "${safeUrl}" | grep -iE "^(server|x-powered-by|strict-transport-security|content-security-policy|x-frame-options|x-content-type-options|access-control-allow-origin):"`
+  }
+  if (/version|cve|outdated|eol|software|technology/i.test(title)) {
+    return `curl -sS -D - -o /dev/null "${safeUrl}" && nmap -Pn -sV --version-light "${safeUrl.replace(/^https?:\/\//i, '').split('/')[0]}"`
+  }
+  return `curl -sS -o /dev/null -w "HTTP %{http_code}\\n" "${safeUrl}" && re-run the targeted SentinelAI check`
+}
+
+function makeEvidenceDrivenProblem(v, fallback, context) {
+  const parts = []
+  if (context.endpoint) parts.push(`Observed at ${context.endpoint}.`)
+  if (context.status) parts.push(`The endpoint returned HTTP ${context.status}.`)
+  if (context.parameter) parts.push(`Affected input: ${context.parameter}.`)
+  if (context.location) parts.push(`Source location: ${context.location}.`)
+  if (context.observed) parts.push(`Observed evidence: ${context.observed}.`)
+  parts.push(fallback)
+  return parts.join(' ')
+}
+
 /**
  * Beautify ugly scanner finding titles into clean, human-readable names.
  * Examples:
@@ -1257,6 +1309,14 @@ function toView(f, scanTarget) {
   try { evidence = typeof evidence === 'string' ? JSON.parse(evidence) : evidence } catch { /* keep */ }
   try { poc = typeof poc === 'string' ? JSON.parse(poc) : poc } catch { /* keep */ }
   try { verdict = typeof verdict === 'string' ? JSON.parse(verdict) : verdict } catch { /* keep */ }
+  const context = findingEvidenceContext({ ...f, evidence })
+  const baseDescription = cleanPdfText(f.description) || 'Scanner-reported indicator. See the technical evidence below for the verified tool output.'
+  const evidencePrefix = [
+    context.endpoint && `Observed URL: ${context.endpoint}.`,
+    context.status && `HTTP status: ${context.status}.`,
+    context.parameter && `Affected parameter: ${context.parameter}.`,
+    context.location && `Source location: ${context.location}.`,
+  ].filter(Boolean).join(' ')
   const view = {
     title: beautifyFindingTitle(cleanPdfText(f.title)),
     severity: (f.severity || 'info').toLowerCase(),
@@ -1264,8 +1324,8 @@ function toView(f, scanTarget) {
     cweId: f.cwe_id,
     cveId: f.cve_id,
     owaspCategory: f.owasp_category,
-    description: cleanPdfText(f.description) || 'Scanner-reported indicator. See the technical evidence below for the verified tool output.',
-    remediation: cleanPdfText(f.remediation),
+    description: evidencePrefix ? `${evidencePrefix} ${baseDescription}` : baseDescription,
+    remediation: cleanPdfText(f.remediation) || `Investigate the evidence at ${context.endpoint || context.location || scanTarget}, apply the vendor or framework fix, and verify the same test returns a secure result.`,
     module: f.module,
     status: f.status,
     asset: cleanPdfText(f.target || scanTarget),
@@ -1277,6 +1337,13 @@ function toView(f, scanTarget) {
     aiConfidence: verdict?.confidence != null ? verdict.confidence / 100 : 0,
     aiReasoning: cleanPdfText(verdict?.reasoning || null),
   }
+  view.confidence = confidencePercent(view)
+  view.references = [
+    cveReference(view.cveId),
+    cweReference(view.cweId),
+    ...(Array.isArray(evidence?.references) ? evidence.references : []),
+    ...(Array.isArray(evidence?.knownCves) ? evidence.knownCves.flatMap(c => c.references || []) : []),
+  ].filter((url, i, urls) => /^https?:\/\//i.test(url) && urls.indexOf(url) === i).slice(0, 12)
   view.category = categorizeFinding(view)
   view.pocPayload = evidence?.file ? generateWhiteboxPoc(view) : generateRealPoc(view)
   // Prefer the concrete exploit playbooks matched during ingestion — they carry
@@ -1925,6 +1992,11 @@ function renderDetailedFindings(doc, { vulnerabilities, isWhitebox }) {
         const idStr = [v.cweId, v.cveId].filter(Boolean).join(' | ')
         doc.fontSize(8.5).font('Helvetica-Bold').fillColor(BRAND.textMuted).text('References: ', col2X, metaY + metaH - 18, { continued: true })
         doc.font('Helvetica').fillColor(BRAND.textDark).text(idStr, { width: colW - 10, ellipsis: true })
+      }
+
+      if (v.references?.length) {
+        doc.fontSize(7.5).font('Helvetica').fillColor('#475569')
+          .text(v.references.slice(0, 3).join('\n'), col2X, metaY + 18, { width: colW - 10, height: 32, ellipsis: true })
       }
 
       doc.y = metaY + metaH + 8
@@ -2616,19 +2688,20 @@ function buildSimplifiedActionItem(v, index, detectedTech = []) {
   let urgency = sev === 'critical' ? 'fix-today' : sev === 'high' ? 'this-week' : 'optional'
   let difficulty = 'medium'
   let estimatedMinutes = 30
+  const context = findingEvidenceContext(v)
   let symptom = sanitizePdfText(v.description || '')
-  let risk = 'Presents security risk to web assets if left unmitigated.'
+  let risk = `An attacker can use this condition against ${context.endpoint || 'the tested asset'}; impact depends on the access and data reachable from the affected component.`
   let prescription = sanitizePdfText(v.remediation || '')
-  let verification = 'Re-scan with SentinelAI after applying the remediation.'
+  let verification = concreteVerification(v, context.endpoint)
 
   // Context-aware enrichment for common web and configuration findings
   if (lowerTitle.includes('content-security-policy') || lowerTitle.includes('csp')) {
     difficulty = 'medium'
     estimatedMinutes = 25
-    symptom = 'The web application does not send a Content-Security-Policy (CSP) HTTP response header.'
+    symptom = makeEvidenceDrivenProblem(v, 'The web application does not send a Content-Security-Policy (CSP) HTTP response header.', context)
     risk = 'Without CSP, malicious injected scripts can execute in visitors\' browsers, increasing XSS and data-theft risks.'
     prescription = "Configure your web server (Nginx/Apache/Cloudflare) to send: Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline'; object-src 'none';"
-    verification = 'Run `curl -I https://<target>` and check that the Content-Security-Policy header is present in the response.'
+    verification = `curl -sSI "${context.endpoint || 'https://target.example'}" | grep -i content-security-policy`
   } else if (lowerTitle.includes('x-frame-options') || lowerTitle.includes('clickjacking')) {
     difficulty = 'easy'
     estimatedMinutes = 15
@@ -2653,35 +2726,42 @@ function buildSimplifiedActionItem(v, index, detectedTech = []) {
   } else if (lowerTitle.includes('server header') || lowerTitle.includes('banner') || lowerTitle.includes('disclosure')) {
     difficulty = 'easy'
     estimatedMinutes = 15
-    symptom = 'The web server reveals its exact software version or underlying operating system in response headers.'
+    symptom = makeEvidenceDrivenProblem(v, 'The web server reveals its exact software version or underlying operating system in response headers.', context)
     risk = 'Attackers can use version information to pinpoint targeted CVE exploits without active brute-forcing.'
     prescription = 'Disable server signature tokens (e.g. Nginx: `server_tokens off;`, Apache: `ServerSignature Off` and `ServerTokens Prod`).'
-    verification = 'Send a test HTTP request and confirm the Server header omits detailed version numbers.'
+    verification = `curl -sSI "${context.endpoint || 'https://target.example'}" | grep -iE "^(server|x-powered-by):"`
   } else if (lowerTitle.includes('sql') || lowerTitle.includes('injection')) {
     difficulty = 'hard'
     estimatedMinutes = 60
     urgency = sev === 'critical' ? 'fix-today' : 'this-week'
-    symptom = 'User-supplied parameters are concatenated directly into database queries.'
+    symptom = makeEvidenceDrivenProblem(v, 'The scanner identified a database query path that accepts attacker-controlled input without sufficient parameterization.', context)
     risk = 'Attackers can bypass authentication controls, extract confidential data, or alter database contents.'
     prescription = 'Rewrite dynamic queries using parameterized prepared statements or an established ORM. Never concatenate raw user input.'
-    verification = 'Re-run SentinelAI targeted SQL injection probe to confirm parameterized query safety.'
+    verification = `Use the same affected parameter (${context.parameter || '<parameter>'}) with a non-destructive test value, then re-run the targeted SQL injection check; confirm no SQL error or timing change is produced.`
   } else if (lowerTitle.includes('cross-site scripting') || lowerTitle.includes('xss')) {
     difficulty = 'medium'
     estimatedMinutes = 45
     urgency = sev === 'critical' ? 'fix-today' : 'this-week'
-    symptom = 'Unsanitized user input is reflected or stored and rendered in HTML output.'
+    symptom = makeEvidenceDrivenProblem(v, 'The scanner identified input that is returned or rendered without context-appropriate output encoding.', context)
     risk = 'Enables session hijacking, keystroke logging, and unauthorized actions performed on behalf of authenticated users.'
     prescription = 'Apply contextual output encoding (HTML, JavaScript, URL encoding) before rendering data and enforce a strong CSP.'
-    verification = 'Submit special character test strings (`<script>`, `"><img`) and ensure they are properly escaped.'
+    verification = `Submit a harmless marker such as "<sentinel-test>" to ${context.endpoint || '<affected endpoint>'} and confirm the response encodes it as text rather than HTML.`
   } else if (lowerTitle.includes('open port') || lowerTitle.includes('service')) {
     difficulty = 'medium'
     estimatedMinutes = 20
-    symptom = 'A network port is open and publicly accessible from the Internet.'
+    symptom = makeEvidenceDrivenProblem(v, 'A network service is reachable from the assessment network on an externally exposed port.', context)
     risk = 'Exposes administrative services or internal daemons to external scanning and unauthorized brute-force attacks.'
     prescription = 'Apply firewall rules (UFW, iptables, AWS Security Groups) to restrict access to trusted IP ranges or VPN only.'
-    verification = 'Run nmap or nc against the port from an external IP to confirm it is closed or filtered.'
+    verification = `Run nmap -Pn -sV -p <port> ${context.endpoint || '<host>'} from an untrusted network and confirm the port is closed or filtered.`
   } else if (!prescription) {
-    prescription = 'Review application configuration and apply the recommended vendor security patch or hardening directives.'
+    prescription = sanitizePdfText(v.remediation || `Investigate the observed condition at ${context.endpoint || context.location || 'the reported asset'}, apply the vendor or framework fix, restrict exposure if it is not required, and verify the exact evidence disappears on a follow-up scan.`)
+  }
+
+  if (!symptom || symptom.length < 20) {
+    symptom = makeEvidenceDrivenProblem(v, `The scanner reported "${title}" but the original result did not contain enough detail to reproduce it. Treat this as unverified until the evidence below is confirmed.`, context)
+  }
+  if (!prescription || prescription.length < 20) {
+    prescription = `Fix the reported condition on ${context.endpoint || context.location || 'the affected asset'}; do not close the finding until the same test returns the expected secure response.`
   }
 
   return {
@@ -2694,6 +2774,12 @@ function buildSimplifiedActionItem(v, index, detectedTech = []) {
     difficulty,
     estimatedMinutes,
     verification: sanitizePdfText(verification),
+    confidence: confidencePercent(v),
+    references: [
+      cveReference(v.cveId),
+      cweReference(v.cweId),
+      ...(Array.isArray(v.references) ? v.references : []),
+    ].filter((url, i, urls) => /^https?:\/\//i.test(url) && urls.indexOf(url) === i).slice(0, 4),
   }
 }
 
@@ -2750,6 +2836,8 @@ async function renderSimplifiedPdf({ file, reportTitle, scans = [], project = nu
         difficulty: item.difficulty === 'easy' ? 'easy' : item.difficulty === 'hard' ? 'hard' : 'medium',
         estimatedMinutes: parseInt(item.estimatedMinutes, 10) || 25,
         verification: sanitizePdfText(item.verification || 'Re-scan with SentinelAI after applying changes.'),
+        confidence: Math.max(0, Math.min(100, Number(item.confidence ?? 60))),
+        references: Array.isArray(item.references) ? item.references.filter(Boolean).slice(0, 4) : [],
       }))
     } else {
       // Intelligently select actionable findings, or fall back to low/info hardening items if 0 critical/high/medium
@@ -2881,6 +2969,10 @@ async function renderSimplifiedPdf({ file, reportTitle, scans = [], project = nu
     doc.fontSize(8.5).font('Helvetica').fillColor(BRAND.textDark).text(
       sanitizePdfText(custom.customSummary || 'This guide is designed for IT administrators, webmasters, and operations engineers. Rather than listing raw scanner vulnerabilities with academic CVSS ratings, it categorizes findings into plain-language tasks with clear business risks, step-by-step click-paths or configuration directives, and quick verification checks.'),
       leftX + 16, guideY + 28, { width: w - 32, lineGap: 2 },
+    )
+    doc.fontSize(7.5).font('Helvetica').fillColor(BRAND.textMuted).text(
+      'Severity uses CVSS v4.0 when available. Confidence is evidence certainty, not impact: validated exploit 98%, confirmed code or AI review up to 95%, direct observation 75%, and unverified indicators 45-60%.',
+      leftX + 16, guideY + 61, { width: w - 32, lineGap: 1 },
     )
 
     // Cover Page Footer Note (zero bottom margin prevents auto-addPage)
@@ -3102,7 +3194,7 @@ async function renderSimplifiedPdf({ file, reportTitle, scans = [], project = nu
         
         // Measure Courier font for code/prescription accurately
         const prescH = Math.max(14, doc.fontSize(8.5).font('Courier').heightOfString(item.prescription || 'N/A', { width: w - 48 }))
-        const prescBoxH = prescH + 28
+        const prescBoxH = prescH + 40
 
         // Total card height with 16pt clean bottom padding (kotak tutup elok2)
         const totalCardH = headerH + symptomH + 8 + riskH + 10 + prescBoxH + 16
@@ -3150,6 +3242,9 @@ async function renderSimplifiedPdf({ file, reportTitle, scans = [], project = nu
         doc.rect(leftX + 14, contentY, 3, prescBoxH).fill('#16A34A')
         doc.fontSize(8).font('Helvetica-Bold').fillColor('#16A34A').text('HOW TO FIX (RECOMMENDED REMEDIATION):', leftX + 24, contentY + 7)
         doc.fontSize(8.5).font('Courier').fillColor(BRAND.primary).text(item.prescription || 'N/A', leftX + 24, contentY + 20, { width: w - 48 })
+        doc.fontSize(7.5).font('Helvetica').fillColor(BRAND.textMuted)
+          .text(`Severity: ${String(item.severity || 'info').toUpperCase()}  |  Confidence: ${item.confidence ?? 60}% (evidence certainty, separate from CVSS impact)`,
+            leftX + 24, contentY + prescBoxH - 12, { width: w - 48 })
 
         // Final Y position below the card with breathing space
         doc.y = cardY + totalCardH + 14
