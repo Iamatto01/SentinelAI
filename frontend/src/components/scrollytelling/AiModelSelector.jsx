@@ -5,6 +5,7 @@ import {
   Code2, CheckCircle2, ArrowRight, Layers, Sparkles
 } from 'lucide-react'
 import SpotlightCard from './SpotlightCard.jsx'
+import { useTheme } from '../../lib/ThemeContext.jsx'
 
 const AI_MODELS = [
   {
@@ -112,16 +113,21 @@ const AI_MODELS = [
 ]
 
 export default function AiModelSelector() {
+  const { isNight } = useTheme()
   const [selectedId, setSelectedId] = useState('deepseek-v4')
   const currentModel = AI_MODELS.find((m) => m.id === selectedId) || AI_MODELS[0]
 
   return (
-    <section id="models" className="relative scroll-mt-20 py-24 sm:py-32 bg-black border-t border-white/10 text-white overflow-hidden">
+    <section id="models" className={`relative scroll-mt-20 py-24 sm:py-32 border-t overflow-hidden transition-colors duration-500 ${
+      isNight ? 'bg-black border-white/10 text-white' : 'bg-[#FAFAFA] border-zinc-200 text-zinc-950'
+    }`}>
       {/* Top Overhead Volumetric Beam */}
       <div
         className="pointer-events-none absolute inset-x-0 top-0 h-96 -translate-y-1/2 opacity-25 blur-3xl z-0"
         style={{
-          background: 'radial-gradient(ellipse 80% 50% at 50% -20%, rgba(255,255,255,0.2), transparent)',
+          background: isNight
+            ? 'radial-gradient(ellipse 80% 50% at 50% -20%, rgba(255,255,255,0.2), transparent)'
+            : 'radial-gradient(ellipse 80% 50% at 50% -20%, rgba(0,0,0,0.06), transparent)',
         }}
       />
 
@@ -134,27 +140,37 @@ export default function AiModelSelector() {
           transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
           className="text-center max-w-3xl mx-auto space-y-4 mb-14 sm:mb-16"
         >
-          <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full border border-white/15 bg-white/[0.04] text-[11px] font-mono text-neutral-300">
-            <Bot size={13} className="text-white" />
+          <div className={`inline-flex items-center gap-2 px-3.5 py-1 rounded-full border text-[11px] font-mono ${
+            isNight ? 'border-white/15 bg-white/[0.04] text-neutral-300' : 'border-zinc-300 bg-black/5 text-zinc-800'
+          }`}>
+            <Bot size={13} className={isNight ? 'text-white' : 'text-black'} />
             <span className="font-bold uppercase tracking-wider">
               AI MODEL &amp; AGENT MESH // ORCHESTRATION ARCHITECTURE
             </span>
           </div>
 
-          <h2 className="text-3xl sm:text-5xl font-extrabold text-white tracking-tight font-sans">
+          <h2 className={`text-3xl sm:text-5xl font-extrabold tracking-tight font-sans ${
+            isNight ? 'text-white' : 'text-zinc-950'
+          }`}>
             Specialized Neural Engines <br />
-            <span className="bg-gradient-to-b from-white via-neutral-200 to-neutral-500 bg-clip-text text-transparent">
+            <span className={`bg-clip-text text-transparent ${
+              isNight
+                ? 'bg-gradient-to-b from-white via-neutral-200 to-neutral-500'
+                : 'bg-gradient-to-b from-zinc-950 via-zinc-900 to-zinc-600'
+            }`}>
               Tuned for Autonomous Offensive Security
             </span>
           </h2>
 
-          <p className="text-sm sm:text-base text-neutral-400 font-sans leading-relaxed">
+          <p className={`text-sm sm:text-base font-sans leading-relaxed ${
+            isNight ? 'text-neutral-400' : 'text-zinc-600'
+          }`}>
             SentinelAI uses a multi-tier fallback architecture: fast free models for real-time reconnaissance
             and high-parameter reasoning models for complex vulnerability chaining and patch synthesis.
           </p>
         </motion.div>
 
-        {/* Interactive Model Switcher Pills (Converge from top/bottom on scroll) */}
+        {/* Interactive Model Switcher Pills */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           whileInView={{ opacity: 1, y: 0 }}
@@ -172,14 +188,24 @@ export default function AiModelSelector() {
                 onClick={() => setSelectedId(model.id)}
                 className={`px-4 py-2.5 rounded-xl text-xs font-mono font-bold transition-all duration-300 cursor-pointer flex items-center gap-2 border ${
                   isSelected
-                    ? 'bg-white text-black border-white shadow-[0_0_20px_rgba(255,255,255,0.3)] scale-[1.02]'
-                    : 'bg-[#0A0A0A] text-neutral-400 border-white/10 hover:border-white/30 hover:text-white'
+                    ? isNight
+                      ? 'bg-white text-black border-white shadow-[0_0_20px_rgba(255,255,255,0.3)] scale-[1.02]'
+                      : 'bg-black text-white border-black shadow-md scale-[1.02]'
+                    : isNight
+                      ? 'bg-[#0A0A0A] text-neutral-400 border-white/10 hover:border-white/30 hover:text-white'
+                      : 'bg-white text-zinc-600 border-zinc-200 hover:border-zinc-400 hover:text-black shadow-sm'
                 }`}
               >
-                <span className={`w-2 h-2 rounded-full ${isSelected ? 'bg-black' : 'bg-neutral-600'}`} />
+                <span className={`w-2 h-2 rounded-full ${
+                  isSelected
+                    ? isNight ? 'bg-black' : 'bg-white'
+                    : isNight ? 'bg-neutral-600' : 'bg-zinc-400'
+                }`} />
                 <span>{model.name}</span>
                 <span className={`text-[10px] px-1.5 py-0.5 rounded ${
-                  isSelected ? 'bg-black/10 text-black' : 'bg-white/5 text-neutral-400'
+                  isSelected
+                    ? isNight ? 'bg-black/10 text-black' : 'bg-white/15 text-white'
+                    : isNight ? 'bg-white/5 text-neutral-400' : 'bg-zinc-100 text-zinc-600'
                 }`}>
                   {model.badge}
                 </span>
@@ -188,14 +214,14 @@ export default function AiModelSelector() {
           })}
         </motion.div>
 
-        {/* Model Telemetry Card - Glides in on scroll with animated tab switch */}
+        {/* Model Telemetry Card */}
         <motion.div
           initial={{ opacity: 0, y: 40, scale: 0.97 }}
           whileInView={{ opacity: 1, y: 0, scale: 1 }}
           viewport={{ once: true, amount: 0.15 }}
           transition={{ duration: 0.8, delay: 0.2, ease: [0.16, 1, 0.3, 1] }}
         >
-          <SpotlightCard className="p-6 sm:p-10 border border-white/15 bg-[#080808]/90">
+          <SpotlightCard className="p-6 sm:p-10">
             <AnimatePresence mode="wait">
               <motion.div
                 key={currentModel.id}
@@ -209,43 +235,57 @@ export default function AiModelSelector() {
                 <div className="lg:col-span-7 space-y-6">
                   <div className="space-y-1">
                     <div className="flex items-center gap-2">
-                      <span className="px-2.5 py-0.5 rounded text-[10px] font-mono font-extrabold uppercase bg-white/10 text-white border border-white/20">
+                      <span className={`px-2.5 py-0.5 rounded text-[10px] font-mono font-extrabold uppercase border ${
+                        isNight ? 'bg-white/10 text-white border-white/20' : 'bg-black/5 text-black border-zinc-300'
+                      }`}>
                         {currentModel.badge}
                       </span>
-                      <span className="text-xs font-mono text-neutral-400">{currentModel.provider}</span>
+                      <span className={`text-xs font-mono ${isNight ? 'text-neutral-400' : 'text-zinc-500'}`}>
+                        {currentModel.provider}
+                      </span>
                     </div>
-                    <h3 className="text-2xl sm:text-3xl font-extrabold text-white font-sans tracking-tight">
+                    <h3 className={`text-2xl sm:text-3xl font-extrabold font-sans tracking-tight ${
+                      isNight ? 'text-white' : 'text-zinc-950'
+                    }`}>
                       {currentModel.name}
                     </h3>
-                    <p className="text-xs font-mono text-neutral-400">{currentModel.role}</p>
+                    <p className={`text-xs font-mono ${isNight ? 'text-neutral-400' : 'text-zinc-500'}`}>{currentModel.role}</p>
                   </div>
 
-                  <p className="text-xs sm:text-sm text-neutral-300 leading-relaxed font-sans">
+                  <p className={`text-xs sm:text-sm leading-relaxed font-sans ${
+                    isNight ? 'text-neutral-300' : 'text-zinc-600'
+                  }`}>
                     {currentModel.description}
                   </p>
 
                   {/* Comparative Specification Grid */}
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 p-4 rounded-xl bg-black/60 border border-white/10">
+                  <div className={`grid grid-cols-2 sm:grid-cols-3 gap-3 p-4 rounded-xl border ${
+                    isNight ? 'bg-black/60 border-white/10' : 'bg-zinc-50 border-zinc-200'
+                  }`}>
                     {/* Metric 1: Speed / Latency */}
                     <div className="space-y-1">
-                      <div className="text-[10px] font-mono text-neutral-500 uppercase flex items-center gap-1">
-                        <Zap size={11} className="text-white" />
+                      <div className={`text-[10px] font-mono uppercase flex items-center gap-1 ${
+                        isNight ? 'text-neutral-500' : 'text-zinc-500'
+                      }`}>
+                        <Zap size={11} className={isNight ? 'text-white' : 'text-black'} />
                         <span>Inference Latency</span>
                       </div>
-                      <div className="text-lg font-black text-white font-mono">{currentModel.latency}</div>
-                      <div className="text-[10px] font-mono text-neutral-400">{currentModel.latencyRating}</div>
+                      <div className={`text-lg font-black font-mono ${isNight ? 'text-white' : 'text-zinc-950'}`}>{currentModel.latency}</div>
+                      <div className={`text-[10px] font-mono ${isNight ? 'text-neutral-400' : 'text-zinc-500'}`}>{currentModel.latencyRating}</div>
                     </div>
 
                     {/* Metric 2: Context Window */}
                     <div className="space-y-1">
-                      <div className="text-[10px] font-mono text-neutral-500 uppercase flex items-center gap-1">
-                        <Layers size={11} className="text-white" />
+                      <div className={`text-[10px] font-mono uppercase flex items-center gap-1 ${
+                        isNight ? 'text-neutral-500' : 'text-zinc-500'
+                      }`}>
+                        <Layers size={11} className={isNight ? 'text-white' : 'text-black'} />
                         <span>Context Window</span>
                       </div>
-                      <div className="text-lg font-black text-white font-mono">{currentModel.contextWindow}</div>
-                      <div className="w-full bg-neutral-800 rounded-full h-1 mt-1">
+                      <div className={`text-lg font-black font-mono ${isNight ? 'text-white' : 'text-zinc-950'}`}>{currentModel.contextWindow}</div>
+                      <div className={`w-full rounded-full h-1 mt-1 ${isNight ? 'bg-neutral-800' : 'bg-zinc-200'}`}>
                         <motion.div
-                          className="bg-white h-1 rounded-full"
+                          className={`h-1 rounded-full ${isNight ? 'bg-white' : 'bg-black'}`}
                           initial={{ width: 0 }}
                           animate={{ width: `${currentModel.contextPct}%` }}
                           transition={{ duration: 0.6 }}
@@ -255,14 +295,20 @@ export default function AiModelSelector() {
 
                     {/* Metric 3: Exploit Accuracy */}
                     <div className="space-y-1">
-                      <div className="text-[10px] font-mono text-neutral-500 uppercase flex items-center gap-1">
-                        <Activity size={11} className="text-white" />
+                      <div className={`text-[10px] font-mono uppercase flex items-center gap-1 ${
+                        isNight ? 'text-neutral-500' : 'text-zinc-500'
+                      }`}>
+                        <Activity size={11} className={isNight ? 'text-white' : 'text-black'} />
                         <span>Detection Accuracy</span>
                       </div>
-                      <div className="text-lg font-black text-white font-mono">{currentModel.accuracy}%</div>
-                      <div className="w-full bg-neutral-800 rounded-full h-1 mt-1">
+                      <div className={`text-lg font-black font-mono ${isNight ? 'text-white' : 'text-zinc-950'}`}>{currentModel.accuracy}%</div>
+                      <div className={`w-full rounded-full h-1 mt-1 ${isNight ? 'bg-neutral-800' : 'bg-zinc-200'}`}>
                         <motion.div
-                          className="bg-white h-1 rounded-full shadow-[0_0_8px_rgba(255,255,255,0.8)]"
+                          className={`h-1 rounded-full ${
+                            isNight
+                              ? 'bg-white shadow-[0_0_8px_rgba(255,255,255,0.8)]'
+                              : 'bg-black shadow-[0_0_8px_rgba(0,0,0,0.5)]'
+                          }`}
                           initial={{ width: 0 }}
                           animate={{ width: `${currentModel.accuracy}%` }}
                           transition={{ duration: 0.6 }}
@@ -273,16 +319,22 @@ export default function AiModelSelector() {
 
                   {/* Supported Environments Badges */}
                   <div className="space-y-2">
-                    <span className="text-[10px] font-mono text-neutral-400 uppercase tracking-wider block">
+                    <span className={`text-[10px] font-mono uppercase tracking-wider block ${
+                      isNight ? 'text-neutral-400' : 'text-zinc-500'
+                    }`}>
                       SUPPORTED TARGET ENVIRONMENTS &amp; TOOLHOOKS
                     </span>
                     <div className="flex flex-wrap gap-1.5">
                       {currentModel.environments.map((env, i) => (
                         <span
                           key={i}
-                          className="px-2.5 py-1 rounded-lg border border-white/10 bg-white/5 text-[11px] font-mono text-neutral-300 flex items-center gap-1"
+                          className={`px-2.5 py-1 rounded-lg border text-[11px] font-mono flex items-center gap-1 ${
+                            isNight
+                              ? 'border-white/10 bg-white/5 text-neutral-300'
+                              : 'border-zinc-200 bg-zinc-100 text-zinc-800'
+                          }`}
                         >
-                          <CheckCircle2 size={11} className="text-white" />
+                          <CheckCircle2 size={11} className={isNight ? 'text-white' : 'text-black'} />
                           <span>{env}</span>
                         </span>
                       ))}
@@ -292,31 +344,43 @@ export default function AiModelSelector() {
 
                 {/* Right Column: Dynamic Prompt & Output Simulator */}
                 <div className="lg:col-span-5 space-y-3 font-mono text-xs">
-                  <div className="p-3.5 rounded-xl border border-white/10 bg-black/60 space-y-2">
-                    <div className="flex items-center justify-between text-[10px] text-neutral-400 border-b border-white/10 pb-2">
-                      <span className="flex items-center gap-1 text-white font-bold">
+                  <div className={`p-3.5 rounded-xl border space-y-2 ${
+                    isNight ? 'border-white/10 bg-black/60' : 'border-zinc-200 bg-zinc-50'
+                  }`}>
+                    <div className={`flex items-center justify-between text-[10px] border-b pb-2 ${
+                      isNight ? 'text-neutral-400 border-white/10' : 'text-zinc-500 border-zinc-200'
+                    }`}>
+                      <span className={`flex items-center gap-1 font-bold ${isNight ? 'text-white' : 'text-black'}`}>
                         <Terminal size={11} />
                         <span>INFERENCE DISPATCH PROMPT</span>
                       </span>
-                      <span className="text-[9px] px-1.5 py-0.2 rounded border border-white/20 bg-white/10 text-white">
+                      <span className={`text-[9px] px-1.5 py-0.2 rounded border ${
+                        isNight ? 'border-white/20 bg-white/10 text-white' : 'border-zinc-300 bg-zinc-200 text-black'
+                      }`}>
                         LIVE
                       </span>
                     </div>
-                    <p className="text-neutral-300 leading-relaxed text-[11px]">
+                    <p className={`leading-relaxed text-[11px] ${isNight ? 'text-neutral-300' : 'text-zinc-700'}`}>
                       {currentModel.samplePrompt}
                     </p>
                   </div>
 
-                  <div className="p-3.5 rounded-xl border border-white/20 bg-white/[0.04] space-y-2 relative overflow-hidden">
-                    <div className="absolute top-0 right-0 w-24 h-24 bg-white/5 rounded-full blur-2xl pointer-events-none" />
-                    <div className="flex items-center justify-between text-[10px] text-neutral-400 border-b border-white/10 pb-2">
-                      <span className="flex items-center gap-1 text-white font-bold">
+                  <div className={`p-3.5 rounded-xl border space-y-2 relative overflow-hidden ${
+                    isNight ? 'border-white/20 bg-white/[0.04]' : 'border-zinc-300 bg-white shadow-sm'
+                  }`}>
+                    <div className={`absolute top-0 right-0 w-24 h-24 rounded-full blur-2xl pointer-events-none ${
+                      isNight ? 'bg-white/5' : 'bg-black/5'
+                    }`} />
+                    <div className={`flex items-center justify-between text-[10px] border-b pb-2 ${
+                      isNight ? 'text-neutral-400 border-white/10' : 'text-zinc-500 border-zinc-200'
+                    }`}>
+                      <span className={`flex items-center gap-1 font-bold ${isNight ? 'text-white' : 'text-black'}`}>
                         <Sparkles size={11} />
                         <span>SYNTHESIZED REASONING OUTPUT</span>
                       </span>
-                      <span className="text-[9px] text-neutral-400">0% False Positives</span>
+                      <span className={`text-[9px] ${isNight ? 'text-neutral-400' : 'text-zinc-500'}`}>0% False Positives</span>
                     </div>
-                    <p className="text-neutral-200 leading-relaxed text-[11px] font-mono">
+                    <p className={`leading-relaxed text-[11px] font-mono ${isNight ? 'text-neutral-200' : 'text-zinc-800'}`}>
                       {currentModel.sampleOutput}
                     </p>
                   </div>

@@ -5,6 +5,7 @@ import {
   Bot, DatabaseZap, FileText, ChevronRight, CheckCircle2,
   ArrowRight, Sparkles, Layers, ShieldCheck
 } from 'lucide-react'
+import { useTheme } from '../../lib/ThemeContext.jsx'
 
 const PIPELINE_STEPS = [
   {
@@ -59,36 +60,44 @@ const PIPELINE_STEPS = [
     num: '05',
     title: 'Local RAG Knowledge Base',
     tech: 'PayloadsAllTheThings FTS5',
-    short: 'Searches 10,000+ curated exploit techniques in SQLite full-text index and synthesizes context-aware git diff patches.',
+    short: 'Searches 10,000+ curated payloads in embedded SQLite full-text index and synthesizes unified git diff patches.',
     initialPos: { x: 0, y: 60 },
     details: [
-      { label: 'FTS5 Vector Search', val: '10,000+ curated security payloads indexed locally for rapid retrieval' },
-      { label: 'Patch Generation', val: 'Synthesizes clean git diff patches ready to commit to GitHub repos' },
-      { label: 'Attack Graph Link', val: 'Maps vulnerable endpoints into topological lateral movement paths' }
+      { label: 'FTS5 Payload Search', val: 'Sub-millisecond retrieval of verified PoC exploit vectors' },
+      { label: 'Patch Generation', val: 'Context-aware automated git diff code patch synthesis' },
+      { label: 'Attack Graph Link', val: 'Generates topological attack paths in force-directed node map' }
     ]
   },
   {
     num: '06',
     title: 'CI/CD & Executive Delivery',
-    tech: 'PDFKit + Octokit Bot',
-    short: 'Renders executive PDF reports, emails attachments, and posts line-by-line GitHub PR review comments.',
+    tech: 'Octokit Bot + PDFKit',
+    short: 'Pushes verified code reviews to GitHub PRs, sends email attachments, and dispatches real-time webhooks.',
     initialPos: { x: 60, y: 40 },
     details: [
-      { label: 'Executive PDF Report', val: 'Comprehensive audit reports with risk matrices, CVSS, and charts' },
-      { label: 'GitHub PR Inline Bot', val: 'Directly comments on vulnerable lines in GitHub Pull Requests' },
-      { label: 'Real-Time Webhooks', val: 'Instant alerts dispatched to Slack, Discord, Telegram, and Email' }
+      { label: 'GitHub Octokit Bot', val: 'Posts inline code review comments directly on vulnerable PR lines' },
+      { label: 'Executive PDF Report', val: 'Compiles 40+ page ISO 27001 / OWASP compliance audit report' },
+      { label: 'Instant Relays', val: 'Sends alert notifications to Telegram, Discord, and Slack channels' }
     ]
   }
 ]
 
 export default function ViceVersaSection() {
+  const { isNight } = useTheme()
   const [activeStep, setActiveStep] = useState(1)
   const [viewMode, setViewMode] = useState('pipeline')
+
+  // In dark mode: inverts to White. In light mode: inverts to Dark!
+  const isInvertedWhite = isNight
 
   return (
     <section
       id="architecture"
-      className="relative scroll-mt-16 py-28 sm:py-36 bg-white text-black transition-colors duration-700 selection:bg-black selection:text-white overflow-hidden"
+      className={`relative scroll-mt-16 py-28 sm:py-36 transition-colors duration-700 overflow-hidden ${
+        isInvertedWhite
+          ? 'bg-white text-black selection:bg-black selection:text-white'
+          : 'bg-black text-white selection:bg-white selection:text-black'
+      }`}
     >
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* Animated Section Header */}
@@ -99,22 +108,30 @@ export default function ViceVersaSection() {
           transition={{ duration: 0.7, ease: [0.16, 1, 0.3, 1] }}
           className="text-center max-w-3xl mx-auto space-y-4 mb-16 sm:mb-20"
         >
-          <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full border border-black/20 bg-neutral-100 text-[11px] font-mono text-black">
-            <Workflow size={13} className="text-black" />
+          <div className={`inline-flex items-center gap-2 px-3.5 py-1 rounded-full border text-[11px] font-mono ${
+            isInvertedWhite
+              ? 'border-black/20 bg-neutral-100 text-black'
+              : 'border-white/20 bg-white/5 text-white'
+          }`}>
+            <Workflow size={13} className={isInvertedWhite ? 'text-black' : 'text-white'} />
             <span className="font-bold uppercase tracking-wider">
-              SYSTEM ARCHITECTURE // "VICE VERSA" WHITE INVERSION
+              SYSTEM ARCHITECTURE // {isInvertedWhite ? 'VICE VERSA INVERSION' : 'OBSIDIAN REVERSE INVERSION'}
             </span>
           </div>
 
-          <h2 className="text-3xl sm:text-5xl font-black text-black tracking-tight font-sans">
+          <h2 className={`text-3xl sm:text-5xl font-black tracking-tight font-sans ${
+            isInvertedWhite ? 'text-black' : 'text-white'
+          }`}>
             Security Blueprint &amp; <br />
             <span className="underline decoration-1 underline-offset-8">
               End-to-End Execution Pipeline
             </span>
           </h2>
 
-          <p className="text-sm sm:text-base text-neutral-600 font-sans leading-relaxed">
-            Stark black architectural wireframes on a stark white canvas. Watch the subsystem cards
+          <p className={`text-sm sm:text-base font-sans leading-relaxed ${
+            isInvertedWhite ? 'text-neutral-600' : 'text-neutral-400'
+          }`}>
+            {isInvertedWhite ? 'Stark black architectural wireframes on a stark white canvas.' : 'Obsidian wireframes on a pitch-black canvas.'} Watch the subsystem cards
             glide inward and assemble together into the architecture matrix.
           </p>
 
@@ -125,8 +142,8 @@ export default function ViceVersaSection() {
               onClick={() => setViewMode('pipeline')}
               className={`px-4 py-2 rounded-xl text-xs font-mono font-bold transition-all cursor-pointer border ${
                 viewMode === 'pipeline'
-                  ? 'bg-black text-white border-black shadow'
-                  : 'bg-neutral-100 text-neutral-700 border-neutral-300 hover:border-black'
+                  ? isInvertedWhite ? 'bg-black text-white border-black shadow' : 'bg-white text-black border-white shadow'
+                  : isInvertedWhite ? 'bg-neutral-100 text-neutral-700 border-neutral-300 hover:border-black' : 'bg-white/5 text-neutral-300 border-white/20 hover:border-white'
               }`}
             >
               Sequential Pipeline (6 Stages)
@@ -136,88 +153,101 @@ export default function ViceVersaSection() {
               onClick={() => setViewMode('wireframe')}
               className={`px-4 py-2 rounded-xl text-xs font-mono font-bold transition-all cursor-pointer border ${
                 viewMode === 'wireframe'
-                  ? 'bg-black text-white border-black shadow'
-                  : 'bg-neutral-100 text-neutral-700 border-neutral-300 hover:border-black'
+                  ? isInvertedWhite ? 'bg-black text-white border-black shadow' : 'bg-white text-black border-white shadow'
+                  : isInvertedWhite ? 'bg-neutral-100 text-neutral-700 border-neutral-300 hover:border-black' : 'bg-white/5 text-neutral-300 border-white/20 hover:border-white'
               }`}
             >
-              Architectural Topology Map
+              Wireframe Flowchart
             </button>
           </div>
         </motion.div>
 
-        {/* VIEW 1: SEQUENTIAL PIPELINE WITH MOVE & ASSEMBLE ANIMATIONS */}
+        {/* ── VIEW 1: SEQUENTIAL PIPELINE WITH CONVERGING GRID CARDS ── */}
         {viewMode === 'pipeline' && (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {PIPELINE_STEPS.map((step, idx) => {
-              const isSelected = activeStep === idx + 1
+              const isActive = activeStep === idx + 1
 
               return (
                 <motion.div
                   key={step.num}
-                  initial={{
-                    opacity: 0,
-                    x: step.initialPos.x,
-                    y: step.initialPos.y,
-                    scale: 0.92,
-                  }}
-                  whileInView={{
-                    opacity: 1,
-                    x: 0,
-                    y: 0,
-                    scale: 1,
-                  }}
+                  initial={{ opacity: 0, x: step.initialPos.x, y: step.initialPos.y, scale: 0.94 }}
+                  whileInView={{ opacity: 1, x: 0, y: 0, scale: 1 }}
                   viewport={{ once: true, amount: 0.2 }}
-                  transition={{
-                    duration: 0.75,
-                    delay: idx * 0.08,
-                    ease: [0.16, 1, 0.3, 1],
-                  }}
-                  onMouseEnter={() => setActiveStep(idx + 1)}
+                  transition={{ duration: 0.75, delay: idx * 0.1, ease: [0.16, 1, 0.3, 1] }}
                   onClick={() => setActiveStep(idx + 1)}
-                  className={`p-6 sm:p-7 rounded-2xl border transition-all duration-300 flex flex-col justify-between cursor-pointer group ${
-                    isSelected
-                      ? 'bg-black text-white border-black shadow-2xl scale-[1.02]'
-                      : 'bg-neutral-50 text-black border-neutral-300 hover:bg-black hover:text-white hover:border-black hover:scale-[1.02]'
+                  className={`group relative p-6 sm:p-7 rounded-2xl border transition-all duration-300 cursor-pointer flex flex-col justify-between ${
+                    isInvertedWhite
+                      ? isActive
+                        ? 'border-black bg-white shadow-[0_15px_35px_rgba(0,0,0,0.15)] ring-2 ring-black scale-[1.02]'
+                        : 'border-neutral-300 bg-[#F4F4F5] hover:border-black hover:bg-black hover:text-white hover:shadow-2xl'
+                      : isActive
+                        ? 'border-white bg-[#141414] shadow-[0_15px_35px_rgba(255,255,255,0.15)] ring-2 ring-white scale-[1.02]'
+                        : 'border-white/15 bg-[#0D0D0D] hover:border-white hover:bg-white hover:text-black hover:shadow-2xl'
                   }`}
                 >
                   <div className="space-y-4">
-                    <div className="flex items-center justify-between pb-3 border-b border-current/15">
-                      <span className="text-xs font-mono font-extrabold px-2.5 py-1 rounded border border-current">
-                        STEP {step.num}
+                    {/* Header Row */}
+                    <div className={`flex items-center justify-between pb-3 border-b ${
+                      isInvertedWhite
+                        ? 'border-neutral-300 group-hover:border-neutral-700'
+                        : 'border-white/10 group-hover:border-neutral-300'
+                    }`}>
+                      <span className={`text-2xl font-black font-mono ${
+                        isInvertedWhite ? 'text-black group-hover:text-white' : 'text-white group-hover:text-black'
+                      }`}>
+                        {step.num}
                       </span>
-                      <span className="text-[11px] font-mono opacity-70">
+                      <span className={`text-[10px] font-mono px-2 py-0.5 rounded border uppercase tracking-wider ${
+                        isInvertedWhite
+                          ? 'border-neutral-300 bg-white text-neutral-700 group-hover:bg-neutral-800 group-hover:text-neutral-200 group-hover:border-neutral-700'
+                          : 'border-white/20 bg-white/5 text-neutral-300 group-hover:bg-neutral-200 group-hover:text-black group-hover:border-neutral-400'
+                      }`}>
                         {step.tech}
                       </span>
                     </div>
 
-                    <div>
-                      <h3 className="text-lg font-bold font-sans tracking-tight mb-1">
-                        {step.title}
-                      </h3>
-                      <p className="text-xs leading-relaxed opacity-80 font-sans">
-                        {step.short}
-                      </p>
-                    </div>
+                    <h3 className={`text-lg font-bold font-sans tracking-tight ${
+                      isInvertedWhite ? 'text-black group-hover:text-white' : 'text-white group-hover:text-black'
+                    }`}>
+                      {step.title}
+                    </h3>
 
-                    {/* Sub-module details */}
-                    <div className="space-y-1.5 pt-2">
+                    <p className={`text-xs leading-relaxed font-sans ${
+                      isInvertedWhite ? 'text-neutral-600 group-hover:text-neutral-300' : 'text-neutral-400 group-hover:text-neutral-700'
+                    }`}>
+                      {step.short}
+                    </p>
+
+                    {/* Expandable Breakdown Pill */}
+                    <div className={`pt-2 space-y-2 border-t text-[11px] font-mono ${
+                      isInvertedWhite
+                        ? 'border-neutral-200 group-hover:border-neutral-800'
+                        : 'border-white/10 group-hover:border-neutral-200'
+                    }`}>
                       {step.details.map((d, i) => (
-                        <div
-                          key={i}
-                          className="p-2 rounded border border-current/10 bg-current/5 text-[11px] font-mono flex items-start gap-1.5"
-                        >
-                          <span className="font-bold shrink-0">{d.label}:</span>
-                          <span className="opacity-80">{d.val}</span>
+                        <div key={i} className="flex items-start gap-1.5">
+                          <CheckCircle2 size={12} className={`shrink-0 mt-0.5 ${
+                            isInvertedWhite ? 'text-black group-hover:text-white' : 'text-white group-hover:text-black'
+                          }`} />
+                          <div>
+                            <span className={`font-bold ${
+                              isInvertedWhite ? 'text-black group-hover:text-white' : 'text-white group-hover:text-black'
+                            }`}>{d.label}: </span>
+                            <span className={isInvertedWhite ? 'text-neutral-600 group-hover:text-neutral-300' : 'text-neutral-400 group-hover:text-neutral-700'}>{d.val}</span>
+                          </div>
                         </div>
                       ))}
                     </div>
                   </div>
 
-                  <div className="pt-4 border-t border-current/15 flex items-center justify-between text-[10px] font-mono opacity-60 mt-4">
-                    <span>Subsystem 0{idx + 1} of 06</span>
-                    <span className="font-bold uppercase">
-                      {isSelected ? 'ACTIVE INSPECTION' : 'HOVER TO INVERT'}
-                    </span>
+                  <div className={`pt-4 mt-4 border-t flex items-center justify-between text-[10px] font-mono ${
+                    isInvertedWhite
+                      ? 'border-neutral-200 group-hover:border-neutral-800 text-neutral-500 group-hover:text-neutral-400'
+                      : 'border-white/10 group-hover:border-neutral-200 text-neutral-400 group-hover:text-neutral-600'
+                  }`}>
+                    <span>SentinelAI Architecture</span>
+                    <ArrowRight size={12} className="group-hover:translate-x-1 transition-transform" />
                   </div>
                 </motion.div>
               )
@@ -225,93 +255,69 @@ export default function ViceVersaSection() {
           </div>
         )}
 
-        {/* VIEW 2: ARCHITECTURAL WIREFRAME BLUEPRINT */}
+        {/* ── VIEW 2: TECHNICAL WIREFRAME DIAGRAM ── */}
         {viewMode === 'wireframe' && (
           <motion.div
-            initial={{ opacity: 0, scale: 0.95 }}
-            whileInView={{ opacity: 1, scale: 1 }}
-            viewport={{ once: true, amount: 0.2 }}
-            transition={{ duration: 0.7, ease: [0.16, 1, 0.3, 1] }}
-            className="rounded-3xl border-2 border-black bg-neutral-50 p-6 sm:p-10 font-mono"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className={`p-6 sm:p-10 rounded-3xl border ${
+              isInvertedWhite
+                ? 'border-black bg-[#F4F4F5] text-black shadow-xl'
+                : 'border-white bg-[#0D0D0D] text-white shadow-xl'
+            }`}
           >
-            <div className="flex items-center justify-between pb-6 border-b border-black text-xs">
-              <span className="font-bold tracking-wider">
-                SENTINELAI // HIGH-CONTRAST WIREFRAME BLUEPRINT
+            <div className={`flex items-center justify-between pb-6 border-b ${
+              isInvertedWhite ? 'border-neutral-300' : 'border-white/10'
+            }`}>
+              <div>
+                <h3 className="text-xl font-black font-sans">Topological End-to-End Blueprint</h3>
+                <p className={`text-xs font-mono mt-0.5 ${isInvertedWhite ? 'text-neutral-600' : 'text-neutral-400'}`}>
+                  Target Intake &rarr; Subprocess Kali Daemon &rarr; Consensus RAG &rarr; Git Auto-Patch
+                </p>
+              </div>
+              <span className={`text-xs font-mono px-3 py-1 rounded-full font-bold ${
+                isInvertedWhite ? 'bg-black text-white' : 'bg-white text-black'
+              }`}>
+                SPEC v2.4
               </span>
-              <span className="px-2 py-0.5 rounded bg-black text-white text-[10px] font-bold">
-                SYSTEM SPEC V2.4
-              </span>
             </div>
 
-            <div className="my-8 grid grid-cols-1 md:grid-cols-5 gap-4 items-center">
-              {/* Box 1 */}
-              <div className="p-4 rounded-xl border border-black bg-white text-center space-y-1">
-                <div className="text-[10px] text-neutral-500 uppercase">Input Layer</div>
-                <div className="font-bold text-sm text-black">Target Intake</div>
-                <div className="text-[10px] text-neutral-600">URL / IP / GitHub Webhooks</div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-8 font-mono text-xs">
+              <div className={`p-4 rounded-xl border space-y-2 ${
+                isInvertedWhite ? 'bg-white border-black/20' : 'bg-black border-white/20'
+              }`}>
+                <div className={`text-[10px] uppercase font-bold ${
+                  isInvertedWhite ? 'text-neutral-500' : 'text-neutral-400'
+                }`}>TIER 1 // INTAKE</div>
+                <div className="font-bold text-sm">Target Scope &amp; API Gateway</div>
+                <p className={isInvertedWhite ? 'text-neutral-600 text-[11px]' : 'text-neutral-400 text-[11px]'}>
+                  Ingests URLs, verifies authorization boundaries, checks monthly subscription scan quotas, and allocates local SQLite WAL storage.
+                </p>
               </div>
 
-              {/* Arrow */}
-              <div className="hidden md:flex justify-center text-black font-black text-lg">
-                →
+              <div className={`p-4 rounded-xl border space-y-2 ${
+                isInvertedWhite ? 'bg-white border-black/20' : 'bg-black border-white/20'
+              }`}>
+                <div className={`text-[10px] uppercase font-bold ${
+                  isInvertedWhite ? 'text-neutral-500' : 'text-neutral-400'
+                }`}>TIER 2 // ENGINE</div>
+                <div className="font-bold text-sm">Native Kali 150+ Tools</div>
+                <p className={isInvertedWhite ? 'text-neutral-600 text-[11px]' : 'text-neutral-400 text-[11px]'}>
+                  Spawns local subprocess daemons executing Nmap, Nuclei, SQLMap, FFUF, and AST code audits without intermediate network hops.
+                </p>
               </div>
 
-              {/* Box 2 */}
-              <div className="p-4 rounded-xl border border-black bg-white text-center space-y-1">
-                <div className="text-[10px] text-neutral-500 uppercase">Gateway</div>
-                <div className="font-bold text-sm text-black">API &amp; Quota Guard</div>
-                <div className="text-[10px] text-neutral-600">JWT 12h &bull; SQLite WAL</div>
+              <div className={`p-4 rounded-xl border space-y-2 ${
+                isInvertedWhite ? 'bg-white border-black/20' : 'bg-black border-white/20'
+              }`}>
+                <div className={`text-[10px] uppercase font-bold ${
+                  isInvertedWhite ? 'text-neutral-500' : 'text-neutral-400'
+                }`}>TIER 3 // SYNTHESIS</div>
+                <div className="font-bold text-sm">AI Consensus &amp; Patch PR</div>
+                <p className={isInvertedWhite ? 'text-neutral-600 text-[11px]' : 'text-neutral-400 text-[11px]'}>
+                  Validates proof-of-concepts, ensures 0% false positives, writes unified git diffs, and compiles 40+ page executive PDFs.
+                </p>
               </div>
-
-              {/* Arrow */}
-              <div className="hidden md:flex justify-center text-black font-black text-lg">
-                →
-              </div>
-
-              {/* Box 3 */}
-              <div className="p-4 rounded-xl border border-black bg-black text-white text-center space-y-1 shadow-lg">
-                <div className="text-[10px] text-neutral-400 uppercase">Execution Core</div>
-                <div className="font-bold text-sm text-white">Native Kali Engine</div>
-                <div className="text-[10px] text-neutral-300">150+ Subprocess Tools</div>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-5 gap-4 items-center my-4">
-              {/* Box 4 */}
-              <div className="p-4 rounded-xl border border-black bg-black text-white text-center space-y-1 shadow-lg">
-                <div className="text-[10px] text-neutral-400 uppercase">AI Arbiter</div>
-                <div className="font-bold text-sm text-white">Multi-LLM Consensus</div>
-                <div className="text-[10px] text-neutral-300">53 Specialist Personas</div>
-              </div>
-
-              {/* Arrow */}
-              <div className="hidden md:flex justify-center text-black font-black text-lg">
-                ←
-              </div>
-
-              {/* Box 5 */}
-              <div className="p-4 rounded-xl border border-black bg-white text-center space-y-1">
-                <div className="text-[10px] text-neutral-500 uppercase">Intelligence RAG</div>
-                <div className="font-bold text-sm text-black">Payloads FTS5</div>
-                <div className="text-[10px] text-neutral-600">10,000+ Exploit Index</div>
-              </div>
-
-              {/* Arrow */}
-              <div className="hidden md:flex justify-center text-black font-black text-lg">
-                ←
-              </div>
-
-              {/* Box 6 */}
-              <div className="p-4 rounded-xl border border-black bg-white text-center space-y-1">
-                <div className="text-[10px] text-neutral-500 uppercase">Delivery</div>
-                <div className="font-bold text-sm text-black">Audit Reports &amp; PR</div>
-                <div className="text-[10px] text-neutral-600">Executive PDF &bull; Bot</div>
-              </div>
-            </div>
-
-            <div className="pt-6 border-t border-black text-xs text-neutral-600 flex flex-col sm:flex-row items-center justify-between gap-2">
-              <span>All operations execute on local infrastructure with zero cloud exfiltration.</span>
-              <span className="font-bold text-black">[ VERIFIED AIR-GAP COMPATIBLE ]</span>
             </div>
           </motion.div>
         )}

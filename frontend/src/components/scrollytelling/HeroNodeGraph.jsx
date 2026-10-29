@@ -1,13 +1,21 @@
 import React, { useEffect, useRef } from 'react'
+import { useTheme } from '../../lib/ThemeContext.jsx'
 
 /**
  * HeroNodeGraph
  * High-performance 60fps monochrome interactive node-graph representing
  * real-time attack surface discovery and endpoint mapping.
  * Reacts subtly to cursor movement with physics spring damping.
+ * Automatically adapts palette based on Light/Dark Mode.
  */
 export default function HeroNodeGraph() {
+  const { isNight } = useTheme()
   const canvasRef = useRef(null)
+  const isNightRef = useRef(isNight)
+
+  useEffect(() => {
+    isNightRef.current = isNight
+  }, [isNight])
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -115,6 +123,7 @@ export default function HeroNodeGraph() {
 
     const render = () => {
       ctx.clearRect(0, 0, width, height)
+      const isDark = isNightRef.current
 
       // Smooth mouse damping
       mouse.x += (mouse.targetX - mouse.x) * 0.15
@@ -129,11 +138,13 @@ export default function HeroNodeGraph() {
           const dist = Math.sqrt(dx * dx + dy * dy)
 
           if (dist < maxDistance) {
-            const alpha = (1 - dist / maxDistance) * 0.22
+            const alpha = (1 - dist / maxDistance) * (isDark ? 0.22 : 0.26)
             ctx.beginPath()
             ctx.moveTo(nodes[i].x, nodes[i].y)
             ctx.lineTo(nodes[j].x, nodes[j].y)
-            ctx.strokeStyle = `rgba(255, 255, 255, ${alpha})`
+            ctx.strokeStyle = isDark
+              ? `rgba(255, 255, 255, ${alpha})`
+              : `rgba(0, 0, 0, ${alpha})`
             ctx.lineWidth = nodes[i].isCore || nodes[j].isCore ? 1.2 : 0.7
             ctx.stroke()
           }
@@ -158,8 +169,8 @@ export default function HeroNodeGraph() {
 
           ctx.beginPath()
           ctx.arc(px, py, 1.8, 0, Math.PI * 2)
-          ctx.fillStyle = '#ffffff'
-          ctx.shadowColor = 'rgba(255, 255, 255, 0.9)'
+          ctx.fillStyle = isDark ? '#ffffff' : '#000000'
+          ctx.shadowColor = isDark ? 'rgba(255, 255, 255, 0.9)' : 'rgba(0, 0, 0, 0.5)'
           ctx.shadowBlur = 6
           ctx.fill()
           ctx.shadowBlur = 0
@@ -192,9 +203,9 @@ export default function HeroNodeGraph() {
           const ringRadius = n.radius + Math.sin(n.pulse) * 4 + 4
           ctx.beginPath()
           ctx.arc(n.x, n.y, Math.max(0.5, ringRadius), 0, Math.PI * 2)
-          ctx.strokeStyle = n.isVuln
-            ? 'rgba(255, 255, 255, 0.55)'
-            : 'rgba(255, 255, 255, 0.25)'
+          ctx.strokeStyle = isDark
+            ? n.isVuln ? 'rgba(255, 255, 255, 0.55)' : 'rgba(255, 255, 255, 0.25)'
+            : n.isVuln ? 'rgba(0, 0, 0, 0.55)' : 'rgba(0, 0, 0, 0.25)'
           ctx.lineWidth = 1
           ctx.stroke()
         }
@@ -202,20 +213,20 @@ export default function HeroNodeGraph() {
         // Draw node center
         ctx.beginPath()
         ctx.arc(n.x, n.y, n.radius, 0, Math.PI * 2)
-        ctx.fillStyle = n.isCore
-          ? '#ffffff'
-          : n.isVuln
-          ? '#ffffff'
-          : n.isAgent
-          ? '#e5e5e5'
-          : '#888888'
+        if (isDark) {
+          ctx.fillStyle = n.isCore ? '#ffffff' : n.isVuln ? '#ffffff' : n.isAgent ? '#e5e5e5' : '#888888'
+        } else {
+          ctx.fillStyle = n.isCore ? '#000000' : n.isVuln ? '#18181b' : n.isAgent ? '#27272a' : '#71717a'
+        }
         ctx.fill()
 
         // Monospace label on hover or key nodes
         const isHovered = mdist < 60
         if (isHovered || n.isCore || (n.isVuln && Math.sin(n.pulse) > 0.4)) {
           ctx.font = '10px "JetBrains Mono", monospace'
-          ctx.fillStyle = isHovered ? '#ffffff' : 'rgba(255, 255, 255, 0.7)'
+          ctx.fillStyle = isDark
+            ? (isHovered ? '#ffffff' : 'rgba(255, 255, 255, 0.7)')
+            : (isHovered ? '#000000' : 'rgba(0, 0, 0, 0.75)')
           ctx.fillText(n.label, n.x + n.radius + 6, n.y + 3)
         }
       }
@@ -237,8 +248,8 @@ export default function HeroNodeGraph() {
     <div className="absolute inset-0 pointer-events-none overflow-hidden z-0">
       <canvas
         ref={canvasRef}
-        className="w-full h-full block opacity-75"
-        style={{ mixBlendMode: 'screen' }}
+        className={`w-full h-full block transition-opacity duration-500 ${isNight ? 'opacity-75' : 'opacity-85'}`}
+        style={{ mixBlendMode: isNight ? 'screen' : 'multiply' }}
       />
     </div>
   )

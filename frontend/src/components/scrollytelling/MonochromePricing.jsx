@@ -1,45 +1,35 @@
-import React, { useState, useEffect, useMemo } from 'react'
+import React, { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
-import { motion, AnimatePresence } from 'framer-motion'
+import { motion } from 'framer-motion'
 import {
-  CheckCircle2, XCircle, Sparkles, ArrowRight, QrCode, CreditCard,
-  Zap, Calculator, ChevronDown, ChevronUp, ShieldCheck
+  CheckCircle2, Sparkles, ArrowRight, ArrowUpRight, Zap,
+  ShieldCheck, HelpCircle, ChevronDown, ChevronUp, Layers, Check
 } from 'lucide-react'
 import SpotlightCard from './SpotlightCard.jsx'
+import { useTheme } from '../../lib/ThemeContext.jsx'
 
-const FEATURE_MATRIX = [
-  ['AI Code Audits', '3 (Trial)', '1 / credit', '50 / month', 'Unlimited'],
-  ['GitHub Repositories', '1 repo', '1 repo', '5 linked repos', 'Unlimited'],
-  ['Blackbox URL / IP Scans', true, true, true, true],
-  ['Continuous Push & PR Webhooks', false, false, true, true],
-  ['Automated Email PDF Reports', true, true, true, true],
-  ['AI Auto-Fix Remediation Diffs', false, false, true, true],
-  ['GitHub PR Inline Bot Review', false, false, false, true],
-  ['Slack / Discord Webhook Alerts', false, false, false, true],
-  ['Telegram Bot Alerting', false, false, false, true],
-  ['Metasploit AEE Exploit Campaigns', false, false, false, true],
-  ['Manual Approval Safety Gates', true, true, true, true],
-  ['Executive White-label PDF Reports', false, false, false, true],
-  ['PayloadsAllTheThings RAG Index', 'Basic', 'Standard', 'Standard', 'Full 10k+ Index'],
-  ['53 AI Specialist Personas', '3 personas', 'Core personas', 'Core personas', 'All 53 personas'],
-  ['Multi-LLM Consensus Verification', true, true, true, true],
-  ['24/7 Surface Monitoring', false, false, false, true],
-  ['Scan History & Audit Logs', '7 days', '14 days', '30 days', 'Unlimited'],
-  ['Expert Consultation Hours', '—', '—', '—', '4 hours / month'],
-  ['Virtual CISO Advisory', false, false, false, true],
-  ['OWASP Top 10 2025 Compliance', false, false, true, true],
-  ['Priority Support SLA', 'Community', 'Standard', 'Email (48h)', 'Dedicated (4h)'],
-  ['Local-First Zero-Cloud Storage', true, true, true, true],
+const COMPARISON_ROWS = [
+  { feature: 'Autonomous Blackbox URL Assessment', trial: '3 scans', pps: '1 scan / credit', pro: '50 scans / mo', ent: 'Unlimited' },
+  { feature: 'Whitebox SAST Code Audit (JS/Py/PHP/Java)', trial: 'Basic', pps: 'Full AST', pro: 'Full AST + Taint', ent: 'Full AST + Custom' },
+  { feature: '150+ Native Kali Toolchain Execution', trial: '✓', pps: '✓', pro: '✓', ent: '✓' },
+  { feature: '53 Specialist AI Personas Consensus', trial: 'Standard', pps: 'Standard', pro: 'DeepSeek-V4 Pro', ent: 'Dedicated Finetune' },
+  { feature: 'PayloadsAllTheThings RAG (FTS5 SQLite)', trial: '✓', pps: '✓', pro: '✓', ent: '✓' },
+  { feature: 'Automated Git Diff Code Patch Synthesis', trial: 'Preview', pps: '✓', pro: '✓', ent: '✓' },
+  { feature: 'GitHub Octokit PR Review Bot Integration', trial: '—', pps: '—', pro: '✓', ent: '✓' },
+  { feature: 'Executive Audit PDF Report (ISO/OWASP)', trial: '✓', pps: '✓', pro: '✓ (Custom logo)', ent: '✓ (White-label)' },
+  { feature: 'SARIF 2.1 & CycloneDX 1.5 JSON Exports', trial: '—', pps: '✓', pro: '✓', ent: '✓' },
+  { feature: 'Telegram & Discord Real-time Alert Relays', trial: '—', pps: '—', pro: '✓', ent: '✓' },
+  { feature: 'Local-First SQLite WAL Zero-Cloud Isolation', trial: '✓', pps: '✓', pro: '✓', ent: '✓' },
+  { feature: 'Concurrent Autonomous Scans', trial: '1', pps: '1', pro: '3 concurrent', ent: '10 concurrent' },
+  { feature: 'Vulnerability SLA Verification Engine', trial: '—', pps: '—', pro: '✓', ent: '✓' },
+  { feature: 'Dedicated Pentest Architect Advisory', trial: '—', pps: '—', pro: 'Community', ent: 'Direct WhatsApp/SLA' },
 ]
 
 export default function MonochromePricing() {
-  const [interval, setInterval] = useState('monthly')
-  const [plans, setPlans] = useState([])
+  const { isNight } = useTheme()
+  const [interval, setInterval] = useState('monthly') // 'monthly' | 'yearly'
   const [showMatrix, setShowMatrix] = useState(false)
-
-  // ROI Calculator
-  const [auditsPerYear, setAuditsPerYear] = useState(4)
-  const [costPerAudit, setCostPerAudit] = useState(15000)
+  const [plans, setPlans] = useState([])
 
   useEffect(() => {
     fetch('/api/billing/plans')
@@ -50,25 +40,30 @@ export default function MonochromePricing() {
       .catch(() => {})
   }, [])
 
-  const proPlan = plans.find((p) => p.id === 'pro') || { priceMonthly: 20, priceYearly: 200 }
-  const entPlan = plans.find((p) => p.id === 'enterprise') || { priceMonthly: 80, priceYearly: 800 }
-  const ppsPlan = plans.find((p) => p.id === 'pay_per_scan') || { priceMonthly: 3 }
+  const findPlan = (id, fallback) => {
+    return plans.find((p) => p.id === id) || fallback
+  }
 
-  const roi = useMemo(() => {
-    const traditionalCost = auditsPerYear * costPerAudit
-    const entCost = interval === 'yearly' ? entPlan.priceYearly : entPlan.priceMonthly * 12
-    const savings = Math.max(0, traditionalCost - entCost)
-    const pct = traditionalCost > 0 ? Math.round((savings / traditionalCost) * 100) : 0
-    return { traditionalCost, sentinelCost: entCost, savings, pct }
-  }, [auditsPerYear, costPerAudit, interval, entPlan])
+  const trialPlan = findPlan('trial', { id: 'trial', name: 'Free Assessment', priceMonthly: 0, priceYearly: 0 })
+  const ppsPlan = findPlan('pay_per_scan', { id: 'pay_per_scan', name: 'Pay-Per-Scan', priceMonthly: 3, priceYearly: 3 })
+  const proPlan = findPlan('pro', { id: 'pro', name: 'Pro Pentester', priceMonthly: 20, priceYearly: 200 })
+  const entPlan = findPlan('enterprise', { id: 'enterprise', name: 'Enterprise Fleet', priceMonthly: 80, priceYearly: 800 })
+
+  const isYearly = interval === 'yearly'
+  const proPrice = isYearly ? Math.round(proPlan.priceYearly / 12) : proPlan.priceMonthly
+  const entPrice = isYearly ? Math.round(entPlan.priceYearly / 12) : entPlan.priceMonthly
 
   return (
-    <section id="pricing" className="relative scroll-mt-20 py-28 sm:py-36 bg-black border-t border-white/10 text-white overflow-hidden">
-      {/* Top Overhead Volumetric Spotlight Beam */}
+    <section id="pricing" className={`relative scroll-mt-20 py-28 sm:py-36 border-t overflow-hidden transition-colors duration-500 ${
+      isNight ? 'bg-black border-white/10 text-white' : 'bg-[#FAFAFA] border-zinc-200 text-zinc-950'
+    }`}>
+      {/* Top Volumetric Overhead Spotlight Beam */}
       <div
-        className="pointer-events-none absolute inset-x-0 top-0 h-[480px] -translate-y-1/2 opacity-35 blur-3xl z-0"
+        className="pointer-events-none absolute inset-x-0 top-0 h-[500px] -translate-y-1/2 opacity-30 blur-3xl z-0"
         style={{
-          background: 'radial-gradient(ellipse 80% 50% at 50% -20%, rgba(255,255,255,0.22), transparent)',
+          background: isNight
+            ? 'radial-gradient(ellipse 80% 50% at 50% -20%, rgba(255,255,255,0.25), transparent)'
+            : 'radial-gradient(ellipse 80% 50% at 50% -20%, rgba(0,0,0,0.06), transparent)',
         }}
       />
 
@@ -81,110 +76,123 @@ export default function MonochromePricing() {
           transition={{ duration: 0.7, ease: [0.16, 1, 0.3, 1] }}
           className="text-center max-w-3xl mx-auto space-y-4 mb-16 sm:mb-20"
         >
-          <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full border border-white/15 bg-white/[0.04] text-[11px] font-mono text-neutral-300">
-            <Sparkles size={13} className="text-white" />
+          <div className={`inline-flex items-center gap-2 px-3.5 py-1 rounded-full border text-[11px] font-mono ${
+            isNight ? 'border-white/15 bg-white/[0.04] text-neutral-300' : 'border-zinc-300 bg-black/5 text-zinc-800'
+          }`}>
+            <Sparkles size={13} className={isNight ? 'text-white' : 'text-black'} />
             <span className="font-bold uppercase tracking-wider">
-              SUBSCRIPTION &amp; QUOTA TIERS // ZERO COMMISSIONS
+              PRICING TIERS // ZERO CLOUD RISK &bull; BILLING IN MYR
             </span>
           </div>
 
-          <h2 className="text-3xl sm:text-5xl font-extrabold text-white tracking-tight font-sans">
-            Transparent Pricing <br />
-            <span className="bg-gradient-to-b from-white via-neutral-200 to-neutral-500 bg-clip-text text-transparent">
-              Engineered for Developers &amp; Red Teams
+          <h2 className={`text-3xl sm:text-5xl font-extrabold tracking-tight font-sans ${
+            isNight ? 'text-white' : 'text-zinc-950'
+          }`}>
+            Transparent Autonomous Security <br />
+            <span className={`bg-clip-text text-transparent ${
+              isNight
+                ? 'bg-gradient-to-b from-white via-neutral-200 to-neutral-500'
+                : 'bg-gradient-to-b from-zinc-950 via-zinc-900 to-zinc-600'
+            }`}>
+              Predictable Credits, No Human Markup
             </span>
           </h2>
 
-          <p className="text-sm sm:text-base text-neutral-400 font-sans leading-relaxed">
-            Subscribe to unlock autonomous AI code audits, Kali Linux vulnerability scans, continuous
-            GitHub webhooks, and executive PDF reports. Every new account starts with 3 free trial audits.
+          <p className={`text-sm sm:text-base font-sans leading-relaxed ${
+            isNight ? 'text-neutral-400' : 'text-zinc-600'
+          }`}>
+            Traditional blackbox engagements cost RM 15,000+ per engagement. SentinelAI gives you continuous,
+            automated offensive coverage starting at RM 0 for trials, RM 3 per single credit, or RM 20/month for unlimited pipelines.
           </p>
 
-          {/* Payment Gateways Badges */}
-          <div className="flex flex-wrap items-center justify-center gap-2 pt-2 text-xs font-mono">
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full border border-white/10 bg-white/[0.03] text-neutral-300">
-              <QrCode size={13} className="text-white" /> DuitNow QR (All Banks &amp; eWallets)
-            </span>
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full border border-white/10 bg-white/[0.03] text-neutral-300">
-              <CreditCard size={13} className="text-white" /> Stripe (Cards / Apple Pay / Google Pay)
-            </span>
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full border border-white/10 bg-white/[0.03] text-neutral-300">
-              <Zap size={13} className="text-white" /> FPX Online Banking
-            </span>
-          </div>
-
-          {/* Monthly / Yearly Switch */}
+          {/* Billing Interval Switcher */}
           <div className="flex items-center justify-center gap-3 pt-4">
-            <span className={`text-xs font-mono font-semibold ${interval === 'monthly' ? 'text-white' : 'text-neutral-500'}`}>
-              Monthly Billing
-            </span>
-            <button
-              type="button"
-              onClick={() => setInterval(interval === 'monthly' ? 'yearly' : 'monthly')}
-              className="w-12 h-6 rounded-full bg-neutral-900 border border-white/20 p-0.5 relative transition-colors cursor-pointer"
-              aria-label="Toggle billing interval"
-            >
-              <div
-                className={`w-5 h-5 rounded-full bg-white transition-transform duration-200 ${
-                  interval === 'yearly' ? 'translate-x-6' : 'translate-x-0'
+            <div className={`flex items-center p-1 rounded-xl border font-mono text-xs ${
+              isNight ? 'border-white/10 bg-black/60' : 'border-zinc-300 bg-zinc-100'
+            }`}>
+              <button
+                type="button"
+                onClick={() => setInterval('monthly')}
+                className={`px-4 py-2 rounded-lg font-bold transition-all cursor-pointer ${
+                  interval === 'monthly'
+                    ? isNight ? 'bg-white text-black shadow' : 'bg-black text-white shadow'
+                    : isNight ? 'text-neutral-400 hover:text-white' : 'text-zinc-600 hover:text-black'
                 }`}
-              />
-            </button>
-            <span className={`text-xs font-mono font-semibold flex items-center gap-1.5 ${interval === 'yearly' ? 'text-white' : 'text-neutral-500'}`}>
-              <span>Yearly Billing</span>
-              <span className="text-[10px] px-1.5 py-0.5 rounded bg-white text-black font-bold uppercase">
-                Save 17%
-              </span>
-            </span>
+              >
+                Monthly Billing
+              </button>
+              <button
+                type="button"
+                onClick={() => setInterval('yearly')}
+                className={`px-4 py-2 rounded-lg font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                  interval === 'yearly'
+                    ? isNight ? 'bg-white text-black shadow' : 'bg-black text-white shadow'
+                    : isNight ? 'text-neutral-400 hover:text-white' : 'text-zinc-600 hover:text-black'
+                }`}
+              >
+                <span>Annual Billing</span>
+                <span className={`text-[10px] px-1.5 py-0.2 rounded font-black ${
+                  interval === 'yearly'
+                    ? isNight ? 'bg-black text-white' : 'bg-white text-black'
+                    : isNight ? 'bg-white/10 text-white' : 'bg-zinc-200 text-zinc-900'
+                }`}>
+                  SAVE 17%
+                </span>
+              </button>
+            </div>
           </div>
         </motion.div>
 
-        {/* 4-Column Tiered Pricing Grid with Move & Assemble Animations */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-16 sm:mb-20">
-          {/* TIER 1: Free Trial - Glides from Left */}
+        {/* 4-Column Tier Deck with Move & Combine Scroll Physics */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 items-stretch">
+          {/* TIER 1: Free Assessment */}
           <motion.div
             initial={{ opacity: 0, x: -60, scale: 0.95 }}
             whileInView={{ opacity: 1, x: 0, scale: 1 }}
             viewport={{ once: true, amount: 0.2 }}
-            transition={{ duration: 0.7, delay: 0.05, ease: [0.16, 1, 0.3, 1] }}
+            transition={{ duration: 0.7, ease: [0.16, 1, 0.3, 1] }}
           >
             <SpotlightCard className="p-6 sm:p-7 flex flex-col justify-between h-full">
               <div className="space-y-6">
                 <div>
-                  <span className="text-[10px] font-mono font-extrabold uppercase tracking-wider px-2 py-0.5 rounded border border-white/20 bg-white/5 text-neutral-300">
-                    FREE TRIAL
+                  <span className={`text-[10px] font-mono font-extrabold uppercase tracking-wider px-2 py-0.5 rounded border ${
+                    isNight ? 'border-white/20 bg-white/5 text-neutral-300' : 'border-zinc-300 bg-zinc-100 text-zinc-700'
+                  }`}>
+                    FREE TIER
                   </span>
-                  <h3 className="text-xl font-extrabold text-white mt-3 font-sans">Explorer</h3>
+                  <h3 className={`text-xl font-extrabold mt-3 font-sans ${isNight ? 'text-white' : 'text-zinc-950'}`}>
+                    Free Trial
+                  </h3>
                   <div className="mt-3 flex items-baseline gap-1 font-mono">
-                    <span className="text-3xl font-black text-white">RM 0</span>
-                    <span className="text-xs text-neutral-400">/ forever</span>
+                    <span className={`text-3xl font-black ${isNight ? 'text-white' : 'text-zinc-950'}`}>RM 0</span>
+                    <span className={`text-xs ${isNight ? 'text-neutral-400' : 'text-zinc-500'}`}>/ forever</span>
                   </div>
-                  <p className="text-xs text-neutral-400 mt-2 font-sans">
+                  <p className={`text-xs mt-2 font-sans ${isNight ? 'text-neutral-400' : 'text-zinc-600'}`}>
                     Kickstart your security assessment. Test any domain or code repo with 3 full trial scans.
                   </p>
                 </div>
 
-                <div className="h-px bg-white/10" />
+                <div className={`h-px ${isNight ? 'bg-white/10' : 'bg-zinc-200'}`} />
 
-                <ul className="space-y-2.5 text-xs text-neutral-300 font-sans">
+                <ul className={`space-y-2.5 text-xs font-sans ${isNight ? 'text-neutral-300' : 'text-zinc-700'}`}>
                   <li className="flex items-center gap-2">
-                    <CheckCircle2 size={15} className="text-white shrink-0" />
+                    <CheckCircle2 size={15} className={`shrink-0 ${isNight ? 'text-white' : 'text-black'}`} />
                     <span><strong>3 Full Security Scans</strong> included</span>
                   </li>
                   <li className="flex items-center gap-2">
-                    <CheckCircle2 size={15} className="text-white shrink-0" />
+                    <CheckCircle2 size={15} className={`shrink-0 ${isNight ? 'text-white' : 'text-black'}`} />
                     <span>150+ Toolchain (DAST &amp; SAST)</span>
                   </li>
                   <li className="flex items-center gap-2">
-                    <CheckCircle2 size={15} className="text-white shrink-0" />
+                    <CheckCircle2 size={15} className={`shrink-0 ${isNight ? 'text-white' : 'text-black'}`} />
                     <span>Live Terminal stdout stream</span>
                   </li>
                   <li className="flex items-center gap-2">
-                    <CheckCircle2 size={15} className="text-white shrink-0" />
+                    <CheckCircle2 size={15} className={`shrink-0 ${isNight ? 'text-white' : 'text-black'}`} />
                     <span>Executive PDF Report</span>
                   </li>
                   <li className="flex items-center gap-2">
-                    <CheckCircle2 size={15} className="text-white shrink-0" />
+                    <CheckCircle2 size={15} className={`shrink-0 ${isNight ? 'text-white' : 'text-black'}`} />
                     <span>No credit card required</span>
                   </li>
                 </ul>
@@ -193,7 +201,11 @@ export default function MonochromePricing() {
               <div className="pt-8">
                 <Link
                   to="/login?mode=register&plan=trial"
-                  className="w-full py-2.5 px-4 rounded-xl border border-white/20 bg-white/5 text-neutral-200 hover:text-white hover:bg-white/10 text-xs font-mono font-bold flex items-center justify-center transition-all"
+                  className={`w-full py-2.5 px-4 rounded-xl border text-xs font-mono font-bold flex items-center justify-center transition-all ${
+                    isNight
+                      ? 'border-white/20 bg-white/5 text-neutral-200 hover:text-white hover:bg-white/10'
+                      : 'border-zinc-300 bg-zinc-100 text-zinc-800 hover:text-black hover:bg-zinc-200'
+                  }`}
                 >
                   Start Free Trial
                 </Link>
@@ -211,41 +223,45 @@ export default function MonochromePricing() {
             <SpotlightCard className="p-6 sm:p-7 flex flex-col justify-between h-full">
               <div className="space-y-6">
                 <div>
-                  <span className="text-[10px] font-mono font-extrabold uppercase tracking-wider px-2 py-0.5 rounded border border-white/20 bg-white/5 text-neutral-300">
+                  <span className={`text-[10px] font-mono font-extrabold uppercase tracking-wider px-2 py-0.5 rounded border ${
+                    isNight ? 'border-white/20 bg-white/5 text-neutral-300' : 'border-zinc-300 bg-zinc-100 text-zinc-700'
+                  }`}>
                     ON-DEMAND TOP-UP
                   </span>
-                  <h3 className="text-xl font-extrabold text-white mt-3 font-sans">Pay-Per-Scan</h3>
+                  <h3 className={`text-xl font-extrabold mt-3 font-sans ${isNight ? 'text-white' : 'text-zinc-950'}`}>
+                    Pay-Per-Scan
+                  </h3>
                   <div className="mt-3 flex items-baseline gap-1 font-mono">
-                    <span className="text-3xl font-black text-white">RM {ppsPlan.priceMonthly}</span>
-                    <span className="text-xs text-neutral-400">/ scan</span>
+                    <span className={`text-3xl font-black ${isNight ? 'text-white' : 'text-zinc-950'}`}>RM {ppsPlan.priceMonthly}</span>
+                    <span className={`text-xs ${isNight ? 'text-neutral-400' : 'text-zinc-500'}`}>/ scan</span>
                   </div>
-                  <p className="text-xs text-neutral-400 mt-2 font-sans">
+                  <p className={`text-xs mt-2 font-sans ${isNight ? 'text-neutral-400' : 'text-zinc-600'}`}>
                     Top-up single autonomous scans on demand. No recurring monthly commitment.
                   </p>
                 </div>
 
-                <div className="h-px bg-white/10" />
+                <div className={`h-px ${isNight ? 'bg-white/10' : 'bg-zinc-200'}`} />
 
-                <ul className="space-y-2.5 text-xs text-neutral-300 font-sans">
+                <ul className={`space-y-2.5 text-xs font-sans ${isNight ? 'text-neutral-300' : 'text-zinc-700'}`}>
                   <li className="flex items-center gap-2">
-                    <CheckCircle2 size={15} className="text-white shrink-0" />
+                    <CheckCircle2 size={15} className={`shrink-0 ${isNight ? 'text-white' : 'text-black'}`} />
                     <span><strong>1 Full Security Scan</strong> credit</span>
                   </li>
                   <li className="flex items-center gap-2">
-                    <CheckCircle2 size={15} className="text-white shrink-0" />
+                    <CheckCircle2 size={15} className={`shrink-0 ${isNight ? 'text-white' : 'text-black'}`} />
                     <span>Full 150+ Toolchain access</span>
                   </li>
                   <li className="flex items-center gap-2">
-                    <CheckCircle2 size={15} className="text-white shrink-0" />
+                    <CheckCircle2 size={15} className={`shrink-0 ${isNight ? 'text-white' : 'text-black'}`} />
                     <span>Live stdout terminal telemetry</span>
                   </li>
                   <li className="flex items-center gap-2">
-                    <CheckCircle2 size={15} className="text-white shrink-0" />
-                    <span>Instant downloadable PDF Report</span>
+                    <CheckCircle2 size={15} className={`shrink-0 ${isNight ? 'text-white' : 'text-black'}`} />
+                    <span>Full Executive PDF Audit Report</span>
                   </li>
                   <li className="flex items-center gap-2">
-                    <CheckCircle2 size={15} className="text-white shrink-0" />
-                    <span>Credits never expire</span>
+                    <CheckCircle2 size={15} className={`shrink-0 ${isNight ? 'text-white' : 'text-black'}`} />
+                    <span>Instant FPX / DuitNow activation</span>
                   </li>
                 </ul>
               </div>
@@ -253,133 +269,159 @@ export default function MonochromePricing() {
               <div className="pt-8">
                 <Link
                   to="/login?mode=register&plan=pay_per_scan"
-                  className="w-full py-2.5 px-4 rounded-xl border border-white/20 bg-white/5 text-neutral-200 hover:text-white hover:bg-white/10 text-xs font-mono font-bold flex items-center justify-center transition-all"
+                  className={`w-full py-2.5 px-4 rounded-xl border text-xs font-mono font-bold flex items-center justify-center transition-all ${
+                    isNight
+                      ? 'border-white/20 bg-white/5 text-neutral-200 hover:text-white hover:bg-white/10'
+                      : 'border-zinc-300 bg-zinc-100 text-zinc-800 hover:text-black hover:bg-zinc-200'
+                  }`}
                 >
-                  Buy Credit (RM {ppsPlan.priceMonthly})
+                  Buy Single Credit
                 </Link>
               </div>
             </SpotlightCard>
           </motion.div>
 
-          {/* TIER 3: SentinelAI Pro (Drops from Top with Elevated Glow) */}
+          {/* TIER 3: PRO PENTESTER (HIGHLIGHTED // ELEVATED) */}
           <motion.div
-            initial={{ opacity: 0, y: -45, scale: 0.93 }}
+            initial={{ opacity: 0, y: -40, scale: 0.95 }}
             whileInView={{ opacity: 1, y: 0, scale: 1 }}
             viewport={{ once: true, amount: 0.2 }}
-            transition={{ duration: 0.8, delay: 0.18, ease: [0.16, 1, 0.3, 1] }}
-            className="relative rounded-2xl border-2 border-white bg-gradient-to-b from-[#141414] via-[#0A0A0A] to-black p-6 sm:p-7 flex flex-col justify-between shadow-[0_0_40px_rgba(255,255,255,0.18)] ring-1 ring-white/50 lg:-translate-y-2"
+            transition={{ duration: 0.75, delay: 0.2, ease: [0.16, 1, 0.3, 1] }}
+            className="relative -translate-y-2"
           >
-            {/* Top Glowing Tag */}
-            <div className="absolute -top-3.5 left-1/2 -translate-x-1/2 px-3 py-0.5 rounded-full bg-white text-black font-mono font-black text-[10px] tracking-widest uppercase shadow-[0_0_15px_rgba(255,255,255,0.6)] flex items-center gap-1">
-              <Sparkles size={11} className="fill-black stroke-black" />
-              <span>MOST POPULAR</span>
-            </div>
+            <div className={`h-full rounded-2xl border-2 p-6 sm:p-7 flex flex-col justify-between relative overflow-hidden transition-all duration-300 ${
+              isNight
+                ? 'border-white bg-[#0E0E0E] shadow-[0_0_50px_rgba(255,255,255,0.18)]'
+                : 'border-black bg-white shadow-2xl'
+            }`}>
+              {/* Top Accent Beam */}
+              <div
+                className="pointer-events-none absolute inset-x-0 top-0 h-32 opacity-40 blur-xl"
+                style={{
+                  background: isNight
+                    ? 'radial-gradient(ellipse 80% 50% at 50% -20%, rgba(255,255,255,0.4), transparent)'
+                    : 'radial-gradient(ellipse 80% 50% at 50% -20%, rgba(0,0,0,0.15), transparent)',
+                }}
+              />
 
-            <div className="space-y-6 pt-1">
-              <div>
-                <span className="text-[10px] font-mono font-extrabold uppercase tracking-wider px-2 py-0.5 rounded border border-white/40 bg-white/10 text-white">
-                  AUTONOMOUS PENTESTER
-                </span>
-                <h3 className="text-xl font-extrabold text-white mt-3 font-sans">SentinelAI Pro</h3>
-                <div className="mt-3 flex items-baseline gap-1 font-mono">
-                  <span className="text-4xl font-black text-white">
-                    RM {interval === 'yearly' ? proPlan.priceYearly : proPlan.priceMonthly}
+              <div className="space-y-6 relative z-10">
+                <div className="flex items-center justify-between">
+                  <span className={`text-[10px] font-mono font-black uppercase tracking-wider px-2.5 py-0.5 rounded ${
+                    isNight ? 'bg-white text-black' : 'bg-black text-white'
+                  }`}>
+                    MOST POPULAR // PRO
                   </span>
-                  <span className="text-xs text-neutral-400">
-                    {interval === 'yearly' ? '/ year' : '/ month'}
-                  </span>
+                  <span className={`text-[10px] font-mono ${isNight ? 'text-neutral-400' : 'text-zinc-500'}`}>50 AUDITS / MO</span>
                 </div>
-                <p className="text-xs text-neutral-300 mt-2 font-sans">
-                  Ideal for active developers and software teams needing continuous audit automation.
-                </p>
+
+                <div>
+                  <h3 className={`text-xl font-black mt-2 font-sans ${isNight ? 'text-white' : 'text-zinc-950'}`}>
+                    Pro Pentester
+                  </h3>
+                  <div className="mt-3 flex items-baseline gap-1 font-mono">
+                    <span className={`text-4xl font-black ${isNight ? 'text-white' : 'text-zinc-950'}`}>RM {proPrice}</span>
+                    <span className={`text-xs ${isNight ? 'text-neutral-400' : 'text-zinc-500'}`}>/ mo</span>
+                  </div>
+                  <p className={`text-xs mt-2 font-sans ${isNight ? 'text-neutral-300' : 'text-zinc-600'}`}>
+                    Continuous autonomous security for security teams, researchers, and SaaS companies.
+                  </p>
+                </div>
+
+                <div className={`h-px ${isNight ? 'bg-white/20' : 'bg-zinc-200'}`} />
+
+                <ul className={`space-y-2.5 text-xs font-sans ${isNight ? 'text-neutral-200' : 'text-zinc-800'}`}>
+                  <li className="flex items-center gap-2">
+                    <CheckCircle2 size={15} className={`shrink-0 ${isNight ? 'text-white' : 'text-black'}`} />
+                    <span><strong>50 Autonomous Scans</strong> every month</span>
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <CheckCircle2 size={15} className={`shrink-0 ${isNight ? 'text-white' : 'text-black'}`} />
+                    <span><strong>DeepSeek-V4 Pro</strong> reasoning engine</span>
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <CheckCircle2 size={15} className={`shrink-0 ${isNight ? 'text-white' : 'text-black'}`} />
+                    <span>Automated Git Diff patch PR comments</span>
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <CheckCircle2 size={15} className={`shrink-0 ${isNight ? 'text-white' : 'text-black'}`} />
+                    <span>GitHub Octokit CI/CD bot integration</span>
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <CheckCircle2 size={15} className={`shrink-0 ${isNight ? 'text-white' : 'text-black'}`} />
+                    <span>Priority Discord &amp; Telegram relays</span>
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <CheckCircle2 size={15} className={`shrink-0 ${isNight ? 'text-white' : 'text-black'}`} />
+                    <span>Cancel anytime &bull; Instant activation</span>
+                  </li>
+                </ul>
               </div>
 
-              <div className="h-px bg-white/20" />
-
-              <ul className="space-y-2.5 text-xs text-neutral-200 font-sans">
-                <li className="flex items-center gap-2">
-                  <CheckCircle2 size={15} className="text-white shrink-0" />
-                  <span><strong>50 AI Code Audits</strong> / month</span>
-                </li>
-                <li className="flex items-center gap-2">
-                  <CheckCircle2 size={15} className="text-white shrink-0" />
-                  <span><strong>5 Linked Repositories</strong></span>
-                </li>
-                <li className="flex items-center gap-2">
-                  <CheckCircle2 size={15} className="text-white shrink-0" />
-                  <span>Continuous GitHub Push/PR Webhooks</span>
-                </li>
-                <li className="flex items-center gap-2">
-                  <CheckCircle2 size={15} className="text-white shrink-0" />
-                  <span>Automated Email PDF Delivery</span>
-                </li>
-                <li className="flex items-center gap-2">
-                  <CheckCircle2 size={15} className="text-white shrink-0" />
-                  <span>AI Auto-Fix &amp; Remediation Diffs</span>
-                </li>
-              </ul>
-            </div>
-
-            <div className="pt-8">
-              <Link
-                to={`/login?mode=register&plan=pro&interval=${interval}`}
-                className="w-full py-3 px-4 rounded-xl bg-white text-black hover:bg-neutral-200 text-xs font-mono font-black uppercase tracking-wider flex items-center justify-center gap-1.5 shadow-[0_0_20px_rgba(255,255,255,0.4)] transition-all hover:scale-[1.02]"
-              >
-                <span>Subscribe to Pro</span>
-                <ArrowRight size={14} />
-              </Link>
+              <div className="pt-8 relative z-10">
+                <Link
+                  to={`/login?mode=register&plan=pro&interval=${interval}`}
+                  className={`w-full py-3 px-4 rounded-xl text-xs font-mono font-black uppercase tracking-wider flex items-center justify-center gap-2 transition-all hover:scale-[1.02] active:scale-[0.98] ${
+                    isNight
+                      ? 'bg-white text-black hover:bg-neutral-200 shadow-[0_0_25px_rgba(255,255,255,0.3)]'
+                      : 'bg-black text-white hover:bg-zinc-800 shadow-[0_0_20px_rgba(0,0,0,0.25)]'
+                  }`}
+                >
+                  <span>Deploy Pro Engine</span>
+                  <ArrowRight size={14} className="stroke-[2.5]" />
+                </Link>
+              </div>
             </div>
           </motion.div>
 
-          {/* TIER 4: SentinelAI Enterprise - Glides from Right */}
+          {/* TIER 4: Enterprise Fleet */}
           <motion.div
             initial={{ opacity: 0, x: 60, scale: 0.95 }}
             whileInView={{ opacity: 1, x: 0, scale: 1 }}
             viewport={{ once: true, amount: 0.2 }}
-            transition={{ duration: 0.7, delay: 0.22, ease: [0.16, 1, 0.3, 1] }}
+            transition={{ duration: 0.7, delay: 0.28, ease: [0.16, 1, 0.3, 1] }}
           >
             <SpotlightCard className="p-6 sm:p-7 flex flex-col justify-between h-full">
               <div className="space-y-6">
                 <div>
-                  <span className="text-[10px] font-mono font-extrabold uppercase tracking-wider px-2 py-0.5 rounded border border-white/20 bg-white/5 text-neutral-300">
-                    RED TEAM VIP
+                  <span className={`text-[10px] font-mono font-extrabold uppercase tracking-wider px-2 py-0.5 rounded border ${
+                    isNight ? 'border-white/20 bg-white/5 text-neutral-300' : 'border-zinc-300 bg-zinc-100 text-zinc-700'
+                  }`}>
+                    UNLIMITED FLEET
                   </span>
-                  <h3 className="text-xl font-extrabold text-white mt-3 font-sans">Enterprise</h3>
+                  <h3 className={`text-xl font-extrabold mt-3 font-sans ${isNight ? 'text-white' : 'text-zinc-950'}`}>
+                    Enterprise Fleet
+                  </h3>
                   <div className="mt-3 flex items-baseline gap-1 font-mono">
-                    <span className="text-4xl font-black text-white">
-                      RM {interval === 'yearly' ? entPlan.priceYearly : entPlan.priceMonthly}
-                    </span>
-                    <span className="text-xs text-neutral-400">
-                      {interval === 'yearly' ? '/ year' : '/ month'}
-                    </span>
+                    <span className={`text-3xl font-black ${isNight ? 'text-white' : 'text-zinc-950'}`}>RM {entPrice}</span>
+                    <span className={`text-xs ${isNight ? 'text-neutral-400' : 'text-zinc-500'}`}>/ mo</span>
                   </div>
-                  <p className="text-xs text-neutral-400 mt-2 font-sans">
-                    Full continuous DevSecOps pipeline for organizations requiring unlimited audits &amp; vCISO.
+                  <p className={`text-xs mt-2 font-sans ${isNight ? 'text-neutral-400' : 'text-zinc-600'}`}>
+                    Dedicated multi-node infrastructure for red teams, SOCs, and enterprises.
                   </p>
                 </div>
 
-                <div className="h-px bg-white/10" />
+                <div className={`h-px ${isNight ? 'bg-white/10' : 'bg-zinc-200'}`} />
 
-                <ul className="space-y-2.5 text-xs text-neutral-300 font-sans">
+                <ul className={`space-y-2.5 text-xs font-sans ${isNight ? 'text-neutral-300' : 'text-zinc-700'}`}>
                   <li className="flex items-center gap-2">
-                    <CheckCircle2 size={15} className="text-white shrink-0" />
-                    <span><strong>Unlimited AI Code Audits</strong></span>
+                    <CheckCircle2 size={15} className={`shrink-0 ${isNight ? 'text-white' : 'text-black'}`} />
+                    <span><strong>Unlimited Autonomous Scans</strong></span>
                   </li>
                   <li className="flex items-center gap-2">
-                    <CheckCircle2 size={15} className="text-white shrink-0" />
-                    <span><strong>Unlimited GitHub Repos</strong></span>
+                    <CheckCircle2 size={15} className={`shrink-0 ${isNight ? 'text-white' : 'text-black'}`} />
+                    <span>10 Concurrent pipeline executions</span>
                   </li>
                   <li className="flex items-center gap-2">
-                    <CheckCircle2 size={15} className="text-white shrink-0" />
-                    <span>1-on-1 Certified Consultant Advisory</span>
+                    <CheckCircle2 size={15} className={`shrink-0 ${isNight ? 'text-white' : 'text-black'}`} />
+                    <span>White-label executive PDF reports</span>
                   </li>
                   <li className="flex items-center gap-2">
-                    <CheckCircle2 size={15} className="text-white shrink-0" />
-                    <span>Slack / Discord / Telegram Relays</span>
+                    <CheckCircle2 size={15} className={`shrink-0 ${isNight ? 'text-white' : 'text-black'}`} />
+                    <span>Self-hosted on-premise SQLite option</span>
                   </li>
                   <li className="flex items-center gap-2">
-                    <CheckCircle2 size={15} className="text-white shrink-0" />
-                    <span>Dedicated 4h SLA &amp; White-label PDF</span>
+                    <CheckCircle2 size={15} className={`shrink-0 ${isNight ? 'text-white' : 'text-black'}`} />
+                    <span>Direct Lead Dev SLA support</span>
                   </li>
                 </ul>
               </div>
@@ -387,171 +429,79 @@ export default function MonochromePricing() {
               <div className="pt-8">
                 <Link
                   to={`/login?mode=register&plan=enterprise&interval=${interval}`}
-                  className="w-full py-2.5 px-4 rounded-xl border border-white/20 bg-white/5 text-neutral-200 hover:text-white hover:bg-white/10 text-xs font-mono font-bold flex items-center justify-center transition-all"
+                  className={`w-full py-2.5 px-4 rounded-xl border text-xs font-mono font-bold flex items-center justify-center transition-all ${
+                    isNight
+                      ? 'border-white/20 bg-white/5 text-neutral-200 hover:text-white hover:bg-white/10'
+                      : 'border-zinc-300 bg-zinc-100 text-zinc-800 hover:text-black hover:bg-zinc-200'
+                  }`}
                 >
-                  Subscribe to Enterprise
+                  Deploy Enterprise
                 </Link>
               </div>
             </SpotlightCard>
           </motion.div>
         </div>
 
-        {/* ── Interactive ROI Savings Calculator ── */}
-        <motion.div
-          initial={{ opacity: 0, y: 30 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true, amount: 0.2 }}
-          transition={{ duration: 0.7, ease: [0.16, 1, 0.3, 1] }}
-          className="mb-16 rounded-2xl border border-white/15 bg-[#080808]/90 p-6 sm:p-8 font-mono"
-        >
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-6 border-b border-white/10 gap-2">
-            <div className="flex items-center gap-2">
-              <Calculator size={18} className="text-white" />
-              <h3 className="text-base font-bold text-white font-sans">
-                Interactive Enterprise ROI Calculator
-              </h3>
-            </div>
-            <span className="text-xs text-neutral-400">
-              Traditional Pentest Firm vs. SentinelAI Enterprise
-            </span>
+        {/* ── EXPANDABLE DETAILED COMPARISON TABLE ── */}
+        <div className="mt-16 sm:mt-20">
+          <div className="text-center mb-6">
+            <button
+              type="button"
+              onClick={() => setShowMatrix(!showMatrix)}
+              className={`inline-flex items-center gap-2 px-5 py-2.5 rounded-xl border text-xs font-mono font-bold transition-all cursor-pointer ${
+                isNight
+                  ? 'border-white/20 bg-white/5 hover:bg-white/10 text-neutral-200 hover:text-white'
+                  : 'border-zinc-300 bg-zinc-100 hover:bg-zinc-200 text-zinc-800 hover:text-black'
+              }`}
+            >
+              <Layers size={14} className={isNight ? 'text-white' : 'text-black'} />
+              <span>{showMatrix ? 'Hide Technical Specification Matrix' : 'Compare All 14 Platform Specifications'}</span>
+              {showMatrix ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+            </button>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 my-6">
-            <div className="space-y-5">
-              <div>
-                <div className="flex justify-between text-xs text-neutral-300 mb-2">
-                  <span>Traditional Audits per Year:</span>
-                  <span className="font-bold text-white">{auditsPerYear} audits</span>
-                </div>
-                <input
-                  type="range"
-                  min="1"
-                  max="12"
-                  value={auditsPerYear}
-                  onChange={(e) => setAuditsPerYear(Number(e.target.value))}
-                  className="w-full accent-white cursor-pointer"
-                />
-              </div>
-
-              <div>
-                <div className="flex justify-between text-xs text-neutral-300 mb-2">
-                  <span>Average Cost per Pentest Engagement:</span>
-                  <span className="font-bold text-white">RM {costPerAudit.toLocaleString()}</span>
-                </div>
-                <input
-                  type="range"
-                  min="5000"
-                  max="50000"
-                  step="2500"
-                  value={costPerAudit}
-                  onChange={(e) => setCostPerAudit(Number(e.target.value))}
-                  className="w-full accent-white cursor-pointer"
-                />
-              </div>
-            </div>
-
-            <div className="p-5 rounded-xl bg-black/60 border border-white/10 flex flex-col justify-between space-y-4">
-              <div className="grid grid-cols-2 gap-4 text-xs">
-                <div>
-                  <div className="text-neutral-500 uppercase text-[10px]">Traditional Firm Cost</div>
-                  <div className="text-lg font-bold text-neutral-400 mt-1 line-through">
-                    RM {roi.traditionalCost.toLocaleString()}
-                  </div>
-                </div>
-                <div>
-                  <div className="text-neutral-500 uppercase text-[10px]">SentinelAI Enterprise</div>
-                  <div className="text-lg font-bold text-white mt-1">
-                    RM {roi.sentinelCost.toLocaleString()}
-                  </div>
-                </div>
-              </div>
-
-              <div className="pt-3 border-t border-white/10 flex items-baseline justify-between">
-                <div>
-                  <span className="text-xs text-neutral-400">Estimated Annual Savings:</span>
-                  <div className="text-2xl font-black text-white mt-0.5">
-                    RM {roi.savings.toLocaleString()}
-                  </div>
-                </div>
-                <span className="px-2.5 py-1 rounded bg-white text-black font-extrabold text-xs">
-                  {roi.pct}% SAVED
-                </span>
-              </div>
-            </div>
-          </div>
-        </motion.div>
-
-        {/* ── Expandable Feature Comparison Table ── */}
-        <div className="text-center">
-          <button
-            type="button"
-            onClick={() => setShowMatrix(!showMatrix)}
-            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl border border-white/20 bg-white/5 text-xs font-mono font-bold text-white hover:bg-white/10 transition-colors cursor-pointer"
-          >
-            <span>{showMatrix ? 'Collapse Feature Matrix' : 'View Full Technical Feature Matrix (22 Rows)'}</span>
-            {showMatrix ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-          </button>
-
-          <AnimatePresence>
-            {showMatrix && (
-              <motion.div
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: 'auto' }}
-                exit={{ opacity: 0, height: 0 }}
-                transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
-                className="mt-8 rounded-2xl border border-white/15 bg-[#080808] overflow-hidden text-left font-mono text-xs"
-              >
-                <div className="overflow-x-auto">
-                  <table className="w-full border-collapse">
-                    <thead>
-                      <tr className="border-b border-white/15 bg-neutral-950 text-neutral-400 uppercase text-[10px]">
-                        <th className="p-4 text-left">Platform Capabilities</th>
-                        <th className="p-4 text-center">Free Trial</th>
-                        <th className="p-4 text-center">Pay-Per-Scan</th>
-                        <th className="p-4 text-center text-white bg-white/5">Pro Plan</th>
-                        <th className="p-4 text-center">Enterprise</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-white/5 text-neutral-300">
-                      {FEATURE_MATRIX.map(([name, trial, pps, pro, ent], idx) => (
-                        <tr key={idx} className="hover:bg-white/[0.02] transition-colors">
-                          <td className="p-3.5 font-sans font-medium text-white">{name}</td>
-                          <td className="p-3.5 text-center">
-                            {typeof trial === 'boolean' ? (
-                              trial ? <CheckCircle2 size={14} className="text-white mx-auto" /> : <XCircle size={14} className="text-neutral-700 mx-auto" />
-                            ) : (
-                              <span className="text-[11px] text-neutral-400">{trial}</span>
-                            )}
-                          </td>
-                          <td className="p-3.5 text-center">
-                            {typeof pps === 'boolean' ? (
-                              pps ? <CheckCircle2 size={14} className="text-white mx-auto" /> : <XCircle size={14} className="text-neutral-700 mx-auto" />
-                            ) : (
-                              <span className="text-[11px] text-neutral-400">{pps}</span>
-                            )}
-                          </td>
-                          <td className="p-3.5 text-center bg-white/[0.03]">
-                            {typeof pro === 'boolean' ? (
-                              pro ? <CheckCircle2 size={14} className="text-white mx-auto" /> : <XCircle size={14} className="text-neutral-700 mx-auto" />
-                            ) : (
-                              <span className="text-[11px] text-white font-bold">{pro}</span>
-                            )}
-                          </td>
-                          <td className="p-3.5 text-center">
-                            {typeof ent === 'boolean' ? (
-                              ent ? <CheckCircle2 size={14} className="text-white mx-auto" /> : <XCircle size={14} className="text-neutral-700 mx-auto" />
-                            ) : (
-                              <span className="text-[11px] text-neutral-300 font-bold">{ent}</span>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
+          {showMatrix && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              transition={{ duration: 0.4 }}
+              className={`rounded-2xl border overflow-x-auto ${
+                isNight ? 'border-white/15 bg-[#080808]' : 'border-zinc-200 bg-white shadow-sm'
+              }`}
+            >
+              <table className="w-full text-left font-mono text-xs border-collapse min-w-[650px]">
+                <thead>
+                  <tr className={`border-b text-[11px] ${
+                    isNight ? 'border-white/10 bg-black/80 text-neutral-400' : 'border-zinc-200 bg-zinc-50 text-zinc-600'
+                  }`}>
+                    <th className="p-4 uppercase font-extrabold">Capability &amp; Architecture</th>
+                    <th className="p-4 text-center">Trial</th>
+                    <th className="p-4 text-center">Pay-Per-Scan</th>
+                    <th className={`p-4 text-center ${isNight ? 'text-white bg-white/5 font-extrabold' : 'text-black bg-zinc-100 font-extrabold'}`}>
+                      Pro
+                    </th>
+                    <th className="p-4 text-center">Enterprise</th>
+                  </tr>
+                </thead>
+                <tbody className={`divide-y ${isNight ? 'divide-white/5 text-neutral-300' : 'divide-zinc-200 text-zinc-700'}`}>
+                  {COMPARISON_ROWS.map((row, idx) => (
+                    <tr key={idx} className={isNight ? 'hover:bg-white/[0.02]' : 'hover:bg-zinc-50'}>
+                      <td className={`p-4 font-sans font-medium text-xs ${isNight ? 'text-neutral-200' : 'text-zinc-900'}`}>{row.feature}</td>
+                      <td className="p-4 text-center">{row.trial}</td>
+                      <td className="p-4 text-center">{row.pps}</td>
+                      <td className={`p-4 text-center font-bold ${
+                        isNight ? 'text-white bg-white/5' : 'text-black bg-zinc-100'
+                      }`}>
+                        {row.pro}
+                      </td>
+                      <td className="p-4 text-center">{row.ent}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </motion.div>
+          )}
         </div>
       </div>
     </section>

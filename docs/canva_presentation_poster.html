@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=1920, height=1080, initial-scale=1.0">
+  <title>Canva Presentation Poster - SentinelAI</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700;800;900&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 0;
+      width: 1920px;
+      height: 1080px;
+      overflow: hidden;
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      background: radial-gradient(circle at 50% 15%, #1e1b4b 0%, #0f172a 45%, #020617 100%);
+    }
+    .mono { font-family: 'JetBrains Mono', monospace; }
+    .glow-cyan {
+      box-shadow: 0 0 50px rgba(56, 189, 248, 0.12), inset 0 1px 1px rgba(255, 255, 255, 0.1);
+    }
+    .glow-amber {
+      box-shadow: 0 0 50px rgba(245, 158, 11, 0.15), inset 0 1px 1px rgba(255, 255, 255, 0.1);
+    }
+  </style>
+</head>
+<body class="text-white flex flex-col justify-between p-12">
+
+  <!-- TOP HEADER -->
+  <header class="flex items-center justify-between pb-6 border-b border-slate-800/80">
+    <div>
+      <div class="flex items-center gap-3 mb-2">
+        <span class="inline-flex items-center gap-2 bg-gradient-to-r from-sky-500/20 to-indigo-500/20 text-sky-300 border border-sky-400/30 text-xs font-black tracking-widest uppercase px-3.5 py-1 rounded-full">
+          <span class="w-2 h-2 rounded-full bg-sky-400 animate-pulse"></span>
+          SentinelAI • Final Year Project (FYP2)
+        </span>
+        <span class="text-slate-400 text-xs font-bold uppercase tracking-wider">Presentation Blueprint</span>
+      </div>
+      <h1 class="text-4xl font-black tracking-tight text-white flex items-center gap-4">
+        <span>Full Report <span class="text-sky-400">(No. 6)</span></span>
+        <span class="text-slate-500 font-bold text-2xl">VS</span>
+        <span>Simplified Report <span class="text-amber-400">(No. 2)</span></span>
+      </h1>
+      <p class="text-slate-400 text-sm mt-1">
+        Direct Comparison: Exhaustive Forensic Audit Dossier vs. Fast-Turnaround IT Action Card
+      </p>
+    </div>
+
+    <!-- Right Header Badges -->
+    <div class="flex items-center gap-4">
+      <div class="bg-slate-900/90 border border-slate-800 p-3.5 rounded-2xl text-center min-w-[170px] shadow-lg">
+        <div class="text-[11px] text-sky-400 font-bold uppercase tracking-widest">Full Report</div>
+        <div class="text-2xl font-black text-white mt-0.5">9 Fields</div>
+        <div class="text-[11px] text-slate-400">Technical Proof</div>
+      </div>
+      <div class="bg-slate-900/90 border border-slate-800 p-3.5 rounded-2xl text-center min-w-[170px] shadow-lg">
+        <div class="text-[11px] text-amber-400 font-bold uppercase tracking-widest">Simplified Report</div>
+        <div class="text-2xl font-black text-amber-300 mt-0.5">3 Things</div>
+        <div class="text-[11px] text-slate-400">Immediate Fix</div>
+      </div>
+    </div>
+  </header>
+
+  <!-- MAIN POSTER CONTENT: 2 BIG CANVA-STYLE CARDS -->
+  <main class="grid grid-cols-2 gap-8 my-6 flex-1">
+
+    <!-- LEFT CARD: FULL REPORT (NO. 6) -->
+    <div class="bg-slate-900/80 backdrop-blur-md rounded-3xl border-2 border-sky-500/30 glow-cyan p-7 flex flex-col justify-between relative overflow-hidden">
+      <div class="absolute top-0 right-0 w-64 h-64 bg-sky-500/10 rounded-full blur-3xl pointer-events-none"></div>
+
+      <div>
+        <!-- Card Header -->
+        <div class="flex items-center justify-between pb-4 border-b border-slate-800">
+          <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-xl bg-sky-500 text-slate-950 font-black text-lg flex items-center justify-center shadow-lg shadow-sky-500/20">
+              6
+            </div>
+            <div>
+              <div class="text-xs font-black uppercase tracking-wider text-sky-400">Full Report Finding Format</div>
+              <h2 class="text-xl font-black text-white">Detailed Technical Finding Dossier</h2>
+            </div>
+          </div>
+          <span class="bg-sky-500/20 text-sky-300 border border-sky-500/40 text-xs font-bold px-3 py-1 rounded-full">
+            Audience: Pentesters & Auditors
+          </span>
+        </div>
+
+        <!-- Finding Dossier Content -->
+        <div class="mt-4 space-y-3">
+          
+          <!-- Finding Header Bar -->
+          <div class="bg-slate-950/80 p-3.5 rounded-xl border border-slate-800/80 flex items-center justify-between">
+            <div>
+              <div class="text-[11px] mono text-sky-400 font-bold">1. SEC-FIND-042 • Vulnerability Title</div>
+              <div class="text-sm font-bold text-white">SQL Injection in Search Query Endpoint</div>
+            </div>
+            <div class="flex items-center gap-2">
+              <span class="bg-red-500/20 text-red-400 border border-red-500/40 text-xs font-black px-2.5 py-1 rounded-lg">
+                2. CVSS 9.4 CRITICAL
+              </span>
+            </div>
+          </div>
+
+          <!-- Taxonomies & Location -->
+          <div class="grid grid-cols-2 gap-3 text-xs">
+            <div class="bg-slate-950/70 p-3 rounded-xl border border-slate-800">
+              <div class="text-slate-400 text-[10px] uppercase font-bold tracking-wider">3 & 4. Academic Classification</div>
+              <div class="text-slate-200 font-bold mt-1">
+                <span class="text-sky-300 mono">CWE-89</span> • <span class="text-slate-300">OWASP A03:2021-Injection</span>
+              </div>
+            </div>
+            <div class="bg-slate-950/70 p-3 rounded-xl border border-slate-800">
+              <div class="text-slate-400 text-[10px] uppercase font-bold tracking-wider">5. Vulnerable Source & Endpoint</div>
+              <div class="text-slate-200 mono text-[11px] font-bold mt-1 truncate">
+                /api/v1/search?q= (backend/db.js:142)
+              </div>
+            </div>
+          </div>
+
+          <!-- Technical Mechanism -->
+          <div class="bg-slate-950/70 p-3 rounded-xl border border-slate-800">
+            <div class="text-slate-400 text-[10px] uppercase font-bold tracking-wider">6. Technical Mechanism & Threat Theory</div>
+            <p class="text-xs text-slate-300 mt-1 leading-relaxed">
+              Dynamic SQL statement concatenation without parameterization enables subquery execution and authentication bypass.
+            </p>
+          </div>
+
+          <!-- Exploit PoC Payload -->
+          <div class="bg-slate-950/90 p-3 rounded-xl border border-sky-500/20">
+            <div class="text-sky-400 text-[10px] uppercase font-bold tracking-wider mb-1">7. Exploitation PoC & Attack Command</div>
+            <div class="mono text-[11px] text-sky-200 bg-slate-900/90 p-2.5 rounded-lg border border-slate-800 overflow-x-auto truncate">
+              curl -i -X GET "https://target/search?q=' UNION SELECT null,username,password_hash FROM users--"
+            </div>
+          </div>
+
+          <!-- Raw Evidence & Remediation -->
+          <div class="grid grid-cols-2 gap-3 text-xs">
+            <div class="bg-slate-950/70 p-2.5 rounded-xl border border-slate-800">
+              <div class="text-slate-400 text-[10px] uppercase font-bold tracking-wider">8. Raw HTTP Evidence</div>
+              <div class="mono text-[10px] text-slate-400 mt-1 truncate">HTTP/1.1 200 OK • JSON [{"admin":"hash"}]</div>
+            </div>
+            <div class="bg-slate-950/70 p-2.5 rounded-xl border border-slate-800">
+              <div class="text-slate-400 text-[10px] uppercase font-bold tracking-wider">9. Defense Blueprint</div>
+              <div class="text-slate-300 text-[11px] mt-1 truncate">Parameterized statements + RFC/CVE links</div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- Left Card Bottom Banner -->
+      <div class="bg-sky-950/40 border border-sky-500/20 rounded-xl px-4 py-2.5 mt-4 flex items-center justify-between text-xs">
+        <span class="text-slate-300">Philosophy: <strong>Exhaustive Proof & Replication</strong></span>
+        <span class="text-sky-400 font-bold mono">1 of 7 Full Chapters</span>
+      </div>
+
+    </div>
+
+    <!-- RIGHT CARD: SIMPLIFIED REPORT (NO. 2) -->
+    <div class="bg-slate-900/80 backdrop-blur-md rounded-3xl border-2 border-amber-500/40 glow-amber p-7 flex flex-col justify-between relative overflow-hidden">
+      <div class="absolute top-0 right-0 w-64 h-64 bg-amber-500/10 rounded-full blur-3xl pointer-events-none"></div>
+
+      <div>
+        <!-- Card Header -->
+        <div class="flex items-center justify-between pb-4 border-b border-slate-800">
+          <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-xl bg-amber-500 text-slate-950 font-black text-lg flex items-center justify-center shadow-lg shadow-amber-500/20">
+              2
+            </div>
+            <div>
+              <div class="text-xs font-black uppercase tracking-wider text-amber-400">Simplified Report Format</div>
+              <h2 class="text-xl font-black text-white">"Your Fix Cards" (Action Playbook)</h2>
+            </div>
+          </div>
+          <span class="bg-amber-500/20 text-amber-300 border border-amber-500/40 text-xs font-bold px-3 py-1 rounded-full">
+            Audience: Sysadmins & IT Ops
+          </span>
+        </div>
+
+        <!-- Finding Action Card Content (The 3 Things) -->
+        <div class="mt-4 space-y-4">
+          
+          <!-- Card Title Row -->
+          <div class="bg-slate-950/80 p-3.5 rounded-xl border border-slate-800/80 flex items-center justify-between">
+            <div>
+              <div class="text-[11px] text-amber-400 font-bold uppercase tracking-wider">Action Item #1 • Plain Title</div>
+              <div class="text-sm font-black text-white">Database Query Input Concatenation Flaw</div>
+            </div>
+            <div class="flex items-center gap-2">
+              <span class="bg-red-500 text-white text-xs font-black px-2.5 py-1 rounded-lg shadow-sm">
+                FIX TODAY
+              </span>
+              <span class="bg-slate-800 text-slate-300 text-xs font-bold px-2 py-1 rounded-lg">
+                ~30 MIN
+              </span>
+            </div>
+          </div>
+
+          <!-- THING 1: SYMPTOM -->
+          <div class="bg-slate-950/90 rounded-2xl p-4 border-l-4 border-slate-400 border-r border-t border-b border-slate-800 shadow-sm">
+            <div class="flex items-center gap-2 mb-1.5">
+              <span class="w-5 h-5 rounded-full bg-slate-400 text-slate-950 font-black text-xs flex items-center justify-center">1</span>
+              <span class="text-xs font-black text-slate-200 uppercase tracking-wider">SYMPTOM (What Was Found)</span>
+            </div>
+            <p class="text-sm text-slate-300 font-semibold leading-relaxed pl-7">
+              "User search queries are inserted directly into database commands without input validation."
+            </p>
+          </div>
+
+          <!-- THING 2: RISK -->
+          <div class="bg-red-950/30 rounded-2xl p-4 border-l-4 border-red-500 border-r border-t border-b border-red-900/40 shadow-sm">
+            <div class="flex items-center gap-2 mb-1.5">
+              <span class="w-5 h-5 rounded-full bg-red-500 text-white font-black text-xs flex items-center justify-center">2</span>
+              <span class="text-xs font-black text-red-400 uppercase tracking-wider">RISK (Why It Matters)</span>
+            </div>
+            <p class="text-sm text-red-200 font-semibold leading-relaxed pl-7">
+              "Attackers can bypass the login screen, steal the full customer database, or delete stored records."
+            </p>
+          </div>
+
+          <!-- THING 3: PRESCRIPTION -->
+          <div class="bg-emerald-950/30 rounded-2xl p-4 border-l-4 border-emerald-500 border-r border-t border-b border-emerald-900/40 shadow-sm">
+            <div class="flex items-center gap-2 mb-1.5">
+              <span class="w-5 h-5 rounded-full bg-emerald-500 text-slate-950 font-black text-xs flex items-center justify-center">3</span>
+              <span class="text-xs font-black text-emerald-400 uppercase tracking-wider">PRESCRIPTION (How To Fix)</span>
+            </div>
+            <div class="pl-7">
+              <div class="mono text-xs text-emerald-200 bg-slate-950 p-2.5 rounded-xl border border-emerald-900/60 font-bold mb-2">
+                db.query("SELECT * FROM users WHERE name = $1", [userInput])
+              </div>
+              <div class="text-[11px] text-slate-300 flex items-center gap-2">
+                <span class="text-emerald-400 font-bold">&#10003; 1-Step Verification:</span>
+                <span>Test search with quote <code class="text-amber-300 mono bg-slate-950 px-1 py-0.5 rounded">'</code> &amp; confirm HTTP 200 without SQL error.</span>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- Right Card Bottom Banner -->
+      <div class="bg-amber-950/40 border border-amber-500/20 rounded-xl px-4 py-2.5 mt-4 flex items-center justify-between text-xs">
+        <span class="text-slate-300">Philosophy: <strong>Instant MTTR &amp; Zero Jargon</strong></span>
+        <span class="text-amber-400 font-bold mono">1 of 3 Simple Stages</span>
+      </div>
+
+    </div>
+
+  </main>
+
+  <!-- BOTTOM FOOTER STRIP -->
+  <footer class="bg-slate-950/80 px-6 py-3.5 rounded-2xl border border-slate-800/80 flex items-center justify-between text-xs">
+    <div class="flex items-center gap-3">
+      <span class="font-black text-sky-400 uppercase tracking-wider text-[11px]">Context in Document:</span>
+      <span class="text-slate-400">
+        <strong>Full Report:</strong> 7 Total Chapters (Cover, TOC, Exec Summary, Methodology, OWASP, <strong class="text-sky-300">No. 6 Findings</strong>, Appendix)
+      </span>
+    </div>
+    <div class="text-slate-400">
+      <strong>Simplified Report:</strong> Only 3 Stages (1. SLA Posture, <strong class="text-amber-300">No. 2 Fix Cards</strong>, 3. Sign-off Checklist)
+    </div>
+  </footer>
+
+</body>
+</html>

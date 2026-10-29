@@ -5,6 +5,7 @@ import {
   Code2, Bug, FileJson, Copy, Check, Play, RefreshCw, Zap
 } from 'lucide-react'
 import SpotlightCard from './SpotlightCard.jsx'
+import { useTheme } from '../../lib/ThemeContext.jsx'
 
 const STAGES = [
   {
@@ -98,8 +99,7 @@ X-Requested-With: XMLHttpRequest
     "role": "cluster-admin",
     "verified_poc": "SENTINEL-AI-AUTOMATED-VERIFICATION"
   },
-  "auth_token": "bearer_bypass_cve_2024_27198",
-  "sqli_vector": "1' UNION SELECT 1, @@version, user(), database() -- -"
+  "bypass_token": "0x98FF24A"
 }`,
     jsonTelemetry: {
       stage: '02_EXPLOIT_SIMULATION',
@@ -107,52 +107,48 @@ X-Requested-With: XMLHttpRequest
       cve_id: 'CVE-2024-27198',
       cvss_score: 9.8,
       severity: 'CRITICAL',
-      cwe_code: 'CWE-287 / CWE-89',
-      exploit_verified_by: 'Persona #01 (Web Hunter) + DeepSeek-V4',
-      false_positive_probability: '0.001%',
-      rag_payload_origin: 'PayloadsAllTheThings/AuthenticationBypass.md',
-      safety_approval_gate: 'PASSED_SAFE_READONLY'
+      vector: 'CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H',
+      exploitability: 'HIGH',
+      verified_by: ['Persona #01 Web Hunter', 'Nuclei RPC Engine', 'Groq-Llama-70B Consensus']
     }
   },
   {
     id: 3,
     num: '03',
-    name: 'Vulnerability Mapping & Auto-Patching',
-    headline: 'CVSS Scoring, Dependency Topology & Auto-Remediation',
+    name: 'Continuous Mapping & Auto-Patch',
+    headline: 'CVSS Risk Scoring & Automated Code Patch Synthesis',
     description:
-      'Multi-LLM consensus (Groq, DeepSeek, OpenRouter) filters all scan noise, evaluates exact CVSS risk exposure, and generates instantaneous git diff code patches ready for pull request merge.',
-    kaliTools: ['AST Static Parser', 'PDFKit Report', 'Octokit PR Bot', 'Discord/Telegram'],
+      'Eliminates the remediation bottleneck by synthesizing context-aware unified git diffs. Pushes RFC-standard PR reviews via GitHub Octokit bot and generates executive audit PDFs.',
+    kaliTools: ['AST Engine', 'Octokit Bot', 'PDFKit Report', 'SQLite WAL', 'Git Diff'],
     metrics: [
-      { label: 'False Positives', val: '0 (100% Filtered)' },
-      { label: 'Auto-Fix Patch', val: 'Git Diff Ready' },
-      { label: 'Executive Report', val: 'PDF Generated' },
+      { label: 'Patch Synthesized', val: 'Unified Git Diff' },
+      { label: 'False Positive Rate', val: '0.00%' },
+      { label: 'Compliance Status', val: 'OWASP / SOC2' },
     ],
     cliLines: [
-      { type: 'cmd', text: '$ sentinel-remediate --generate-patch --report=executive' },
-      { type: 'stdout', text: '[*] Staging Multi-LLM Consensus Engine (Groq 70B + DeepSeek V4)...' },
-      { type: 'stdout', text: '[+] Noise suppression: 18 raw tool alerts pruned as non-exploitable' },
-      { type: 'stdout', text: '[+] AST Parser evaluated /src/middleware/auth.js: line 42 vulnerable' },
-      { type: 'success', text: '[✓] Context-aware Git Diff synthesized (secure JWT verification)' },
-      { type: 'stdout', text: '[*] Compiling Executive Audit PDF with CVSS 3.1 vector matrix...' },
-      { type: 'stdout', text: '[+] Dispatching real-time notifications to Telegram & Discord' },
-      { type: 'stdout', text: '[+] Octokit PR Bot: Security review comment posted on GitHub PR #14' },
-      { type: 'success', text: '[✓] Pipeline complete in 3.42s total execution time' },
+      { type: 'cmd', text: '$ sentinel-remediate --cve CVE-2024-27198 --patch --format git-diff' },
+      { type: 'stdout', text: '[*] Persona #04 "Code Auditor" parsing AST taint graph...' },
+      { type: 'stdout', text: '[*] Synthesizing context-aware drop-in patch for auth middleware...' },
+      { type: 'stdout', text: '    + const safeAlgorithms = [\"RS256\"];' },
+      { type: 'stdout', text: '    + if (!safeAlgorithms.includes(decoded.header.alg)) throw new Error(\"INVALID_ALG\");' },
+      { type: 'stdout', text: '[+] Automated Octokit bot dispatched inline review to PR #14' },
+      { type: 'stdout', text: '[*] Generating Executive Audit PDF (40+ pages, ISO 27001 compliant)...' },
+      { type: 'success', text: '[✓] Stage 03 complete: Patch ready, executive report published' },
     ],
-    payloadView: `--- a/src/middleware/auth.js
-+++ b/src/middleware/auth.js
-@@ -39,7 +39,11 @@ export function verifyToken(req, res, next) {
--  // VULNERABLE: Insecure algorithm confusion & missing signature check
--  const decoded = jwt.decode(token);
--  req.user = decoded;
--  return next();
-+  // AUTO-PATCHED BY SENTINELAI: Strict RS256 algorithm enforcement & secret validation
+    payloadView: `--- a/backend/src/middleware/auth.js
++++ b/backend/src/middleware/auth.js
+@@ -38,7 +38,11 @@ export function verifyToken(req, res, next) {
+   if (!token) return res.status(401).json({ error: 'TOKEN_REQUIRED' });
+
    try {
-     const verified = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ['RS256', 'HS256'] });
-     req.user = verified;
-     return next();
-   } catch (err) {
-     return res.status(401).json({ error: 'UNAUTHORIZED_OR_MALFORMED_JWT' });
-   }`,
+-    const decoded = jwt.decode(token); // VULNERABLE: missing alg check
++    // Remediated by SentinelAI Autonomous Engine
++    const verified = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ['RS256', 'HS256'] });
++    req.user = verified;
++    return next();
++  } catch (err) {
++    return res.status(401).json({ error: 'UNAUTHORIZED_OR_MALFORMED_JWT' });
++  }`,
     jsonTelemetry: {
       stage: '03_AUTO_PATCH_AND_DELIVERY',
       status: 'REMEDIATION_READY',
@@ -170,6 +166,7 @@ X-Requested-With: XMLHttpRequest
 ]
 
 export default function LiveScanTerminal() {
+  const { isNight } = useTheme()
   const [activeStage, setActiveStage] = useState(1)
   const [activeTab, setActiveTab] = useState('cli')
   const [copied, setCopied] = useState(false)
@@ -238,13 +235,17 @@ export default function LiveScanTerminal() {
     <section
       id="terminal"
       ref={sectionRef}
-      className="relative scroll-mt-20 py-28 sm:py-36 bg-black border-t border-white/10"
+      className={`relative scroll-mt-20 py-28 sm:py-36 border-t transition-colors duration-500 ${
+        isNight ? 'bg-black border-white/10' : 'bg-[#FAFAFA] border-zinc-200'
+      }`}
     >
       {/* Volumetric Overhead Spotlight Beam */}
       <div
         className="pointer-events-none absolute inset-x-0 top-0 h-[500px] -translate-y-1/2 opacity-30 blur-3xl z-0"
         style={{
-          background: 'radial-gradient(ellipse 80% 50% at 50% -20%, rgba(255,255,255,0.25), transparent)',
+          background: isNight
+            ? 'radial-gradient(ellipse 80% 50% at 50% -20%, rgba(255,255,255,0.25), transparent)'
+            : 'radial-gradient(ellipse 80% 50% at 50% -20%, rgba(0,0,0,0.06), transparent)',
         }}
       />
 
@@ -257,21 +258,31 @@ export default function LiveScanTerminal() {
           transition={{ duration: 0.7, ease: [0.16, 1, 0.3, 1] }}
           className="text-center max-w-3xl mx-auto space-y-4 mb-20 sm:mb-24"
         >
-          <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full border border-white/15 bg-white/[0.04] text-[11px] font-mono text-neutral-300">
-            <Terminal size={13} className="text-white" />
+          <div className={`inline-flex items-center gap-2 px-3.5 py-1 rounded-full border text-[11px] font-mono ${
+            isNight ? 'border-white/15 bg-white/[0.04] text-neutral-300' : 'border-zinc-300 bg-black/5 text-zinc-800'
+          }`}>
+            <Terminal size={13} className={isNight ? 'text-white' : 'text-black'} />
             <span className="font-bold uppercase tracking-wider">
               REAL-TIME EXECUTION PIPELINE // STICKY SCROLL TERMINAL
             </span>
           </div>
 
-          <h2 className="text-3xl sm:text-5xl font-extrabold text-white tracking-tight font-sans">
+          <h2 className={`text-3xl sm:text-5xl font-extrabold tracking-tight font-sans ${
+            isNight ? 'text-white' : 'text-zinc-950'
+          }`}>
             From Blackbox URL to <br />
-            <span className="bg-gradient-to-b from-white via-neutral-200 to-neutral-500 bg-clip-text text-transparent">
+            <span className={`bg-clip-text text-transparent ${
+              isNight
+                ? 'bg-gradient-to-b from-white via-neutral-200 to-neutral-500'
+                : 'bg-gradient-to-b from-zinc-950 via-zinc-900 to-zinc-600'
+            }`}>
               Verified Exploit &amp; Auto-Fix Patch
             </span>
           </h2>
 
-          <p className="text-sm sm:text-base text-neutral-400 font-sans leading-relaxed">
+          <p className={`text-sm sm:text-base font-sans leading-relaxed ${
+            isNight ? 'text-neutral-400' : 'text-zinc-600'
+          }`}>
             Scroll through our 3-stage autonomous offensive pipeline. Watch the terminal dynamically type
             subprocess stdout, craft exploit payloads, and synthesize git diff patches in real-time.
           </p>
@@ -282,9 +293,15 @@ export default function LiveScanTerminal() {
           {/* Left Column: Scroll-Driven Narrative Stages with Laser Connector Line */}
           <div className="lg:col-span-6 relative space-y-20 sm:space-y-28 py-4">
             {/* Vertical Laser Progress Line Connecting Stages */}
-            <div className="absolute left-8 top-12 bottom-12 w-[1px] bg-white/10 hidden sm:block">
+            <div className={`absolute left-8 top-12 bottom-12 w-[1px] hidden sm:block ${
+              isNight ? 'bg-white/10' : 'bg-black/10'
+            }`}>
               <motion.div
-                className="w-[2px] bg-white origin-top shadow-[0_0_12px_rgba(255,255,255,1)]"
+                className={`w-[2px] origin-top ${
+                  isNight
+                    ? 'bg-white shadow-[0_0_12px_rgba(255,255,255,1)]'
+                    : 'bg-black shadow-[0_0_12px_rgba(0,0,0,0.5)]'
+                }`}
                 style={{ scaleY, height: '100%' }}
               />
             </div>
@@ -302,59 +319,81 @@ export default function LiveScanTerminal() {
                   viewport={{ once: false, amount: 0.3 }}
                   transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
                   className={`p-6 sm:p-8 rounded-3xl border transition-all duration-500 cursor-pointer relative ${
-                    isActive
-                      ? 'border-white/50 bg-[#0E0E0E] shadow-[0_0_40px_rgba(255,255,255,0.12)] scale-[1.02] ring-1 ring-white/30'
-                      : 'border-white/10 bg-[#060606]/70 opacity-60 hover:opacity-95 hover:border-white/20'
+                    isNight
+                      ? isActive
+                        ? 'border-white/50 bg-[#0E0E0E] shadow-[0_0_40px_rgba(255,255,255,0.12)] scale-[1.02] ring-1 ring-white/30 text-white'
+                        : 'border-white/10 bg-[#060606]/70 opacity-60 hover:opacity-95 hover:border-white/20 text-neutral-300'
+                      : isActive
+                        ? 'border-black bg-white shadow-xl scale-[1.02] ring-1 ring-black/20 text-zinc-950'
+                        : 'border-zinc-200 bg-white/70 opacity-70 hover:opacity-100 hover:border-zinc-400 text-zinc-700'
                   }`}
                 >
                   {/* Glowing Node Pip connecting to laser line */}
                   <div
                     className={`absolute -left-[37px] top-8 hidden sm:flex items-center justify-center rounded-full transition-all duration-300 ${
                       isActive
-                        ? 'w-5 h-5 bg-white shadow-[0_0_16px_rgba(255,255,255,1)] ring-4 ring-white/20'
-                        : 'w-3.5 h-3.5 bg-neutral-700'
+                        ? isNight
+                          ? 'w-5 h-5 bg-white shadow-[0_0_16px_rgba(255,255,255,1)] ring-4 ring-white/20'
+                          : 'w-5 h-5 bg-black shadow-[0_0_16px_rgba(0,0,0,0.5)] ring-4 ring-black/10'
+                        : isNight
+                          ? 'w-3.5 h-3.5 bg-neutral-700'
+                          : 'w-3.5 h-3.5 bg-zinc-300'
                     }`}
                   >
-                    {isActive && <div className="w-1.5 h-1.5 rounded-full bg-black" />}
+                    {isActive && <div className={`w-1.5 h-1.5 rounded-full ${isNight ? 'bg-black' : 'bg-white'}`} />}
                   </div>
 
                   <div className="flex items-center justify-between mb-4">
-                    <span className="px-3 py-1 rounded-full text-xs font-mono font-bold bg-white text-black">
+                    <span className={`px-3 py-1 rounded-full text-xs font-mono font-bold ${
+                      isNight ? 'bg-white text-black' : 'bg-black text-white'
+                    }`}>
                       STAGE {stage.num}
                     </span>
-                    <span className="text-xs font-mono text-neutral-400">
+                    <span className={`text-xs font-mono ${isNight ? 'text-neutral-400' : 'text-zinc-500'}`}>
                       {stage.kaliTools.join(' • ')}
                     </span>
                   </div>
 
-                  <h3 className="text-xl sm:text-2xl font-bold text-white mb-2 font-sans tracking-tight">
+                  <h3 className={`text-xl sm:text-2xl font-bold mb-2 font-sans tracking-tight ${
+                    isNight ? 'text-white' : 'text-zinc-950'
+                  }`}>
                     {stage.headline}
                   </h3>
 
-                  <p className="text-xs sm:text-sm text-neutral-400 leading-relaxed font-sans mb-6">
+                  <p className={`text-xs sm:text-sm leading-relaxed font-sans mb-6 ${
+                    isNight ? 'text-neutral-400' : 'text-zinc-600'
+                  }`}>
                     {stage.description}
                   </p>
 
                   {/* Stage Metrics Grid */}
-                  <div className="grid grid-cols-3 gap-2 p-3 rounded-xl bg-black/60 border border-white/10 mb-4">
+                  <div className={`grid grid-cols-3 gap-2 p-3 rounded-xl border mb-4 ${
+                    isNight ? 'bg-black/60 border-white/10' : 'bg-zinc-50 border-zinc-200'
+                  }`}>
                     {stage.metrics.map((m, i) => (
                       <div key={i} className="text-center font-mono">
-                        <div className="text-[10px] text-neutral-500 uppercase">{m.label}</div>
-                        <div className="text-xs sm:text-sm font-bold text-white mt-0.5">{m.val}</div>
+                        <div className={`text-[10px] uppercase ${isNight ? 'text-neutral-500' : 'text-zinc-500'}`}>{m.label}</div>
+                        <div className={`text-xs sm:text-sm font-bold mt-0.5 ${isNight ? 'text-white' : 'text-zinc-950'}`}>{m.val}</div>
                       </div>
                     ))}
                   </div>
 
-                  <div className="flex items-center justify-between pt-2 text-[11px] font-mono text-neutral-400">
+                  <div className={`flex items-center justify-between pt-2 text-[11px] font-mono ${
+                    isNight ? 'text-neutral-400' : 'text-zinc-500'
+                  }`}>
                     <span className="flex items-center gap-1.5">
                       <span
                         className={`w-2 h-2 rounded-full ${
-                          isActive ? 'bg-white animate-pulse shadow-[0_0_8px_rgba(255,255,255,0.9)]' : 'bg-neutral-600'
+                          isActive
+                            ? isNight
+                              ? 'bg-white animate-pulse shadow-[0_0_8px_rgba(255,255,255,0.9)]'
+                              : 'bg-black animate-pulse shadow-[0_0_8px_rgba(0,0,0,0.5)]'
+                            : isNight ? 'bg-neutral-600' : 'bg-zinc-400'
                         }`}
                       />
                       {isActive ? 'Active Telemetry Stream' : 'Click to Focus Stage'}
                     </span>
-                    <ChevronRight size={14} className={isActive ? 'translate-x-1 transition-transform text-white' : ''} />
+                    <ChevronRight size={14} className={isActive ? `translate-x-1 transition-transform ${isNight ? 'text-white' : 'text-black'}` : ''} />
                   </div>
                 </motion.div>
               )
@@ -368,7 +407,7 @@ export default function LiveScanTerminal() {
               whileInView={{ opacity: 1, x: 0, scale: 1 }}
               viewport={{ once: true, amount: 0.15 }}
               transition={{ duration: 0.7, ease: [0.16, 1, 0.3, 1] }}
-              className="rounded-2xl border border-white/20 bg-[#080808]/95 backdrop-blur-2xl shadow-[0_25px_60px_rgba(0,0,0,0.95),0_0_35px_rgba(255,255,255,0.08)] overflow-hidden font-mono"
+              className="rounded-2xl border border-white/20 bg-[#080808]/95 backdrop-blur-2xl shadow-[0_25px_60px_rgba(0,0,0,0.95),0_0_35px_rgba(255,255,255,0.08)] overflow-hidden font-mono text-white"
             >
               {/* Terminal Window Header */}
               <div className="px-4 py-3 bg-neutral-950 border-b border-white/10 flex items-center justify-between">

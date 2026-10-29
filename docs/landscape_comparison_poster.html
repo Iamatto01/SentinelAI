@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Landscape Poster: Full Report (No. 6) vs Simplified Report (No. 2)</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    @page { size: A3 landscape; margin: 0; }
+    @media print {
+      body { background-color: #0f172a !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      .no-print { display: none !important; }
+      .poster-canvas { width: 100vw !important; height: 100vh !important; box-shadow: none !important; border: none !important; }
+    }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 font-sans antialiased p-4 md:p-6 min-h-screen flex flex-col justify-center items-center">
+
+  <!-- Top Print Toolbar -->
+  <div class="w-full max-w-[1750px] mb-3 flex items-center justify-between no-print px-2">
+    <div class="flex items-center gap-2">
+      <span class="w-6 h-6 rounded bg-sky-500 text-slate-950 font-black text-xs flex items-center justify-center">SAI</span>
+      <span class="text-xs font-semibold text-slate-400">SentinelAI FYP2 • Landscape Architectural Poster</span>
+    </div>
+    <button onclick="window.print()" class="bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold text-xs px-4 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 shadow-lg shadow-sky-500/20">
+      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"></path></svg>
+      Print / Save Landscape PDF
+    </button>
+  </div>
+
+  <!-- MAIN POSTER CANVAS (16:9 Landscape Aspect Ratio) -->
+  <div class="poster-canvas w-full max-w-[1750px] bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl overflow-hidden flex flex-col justify-between">
+
+    <!-- HEADER STRIP -->
+    <header class="bg-slate-950 px-8 py-5 border-b border-slate-800 flex items-center justify-between">
+      <div>
+        <div class="flex items-center gap-2.5 mb-1">
+          <span class="bg-sky-500/20 text-sky-400 border border-sky-500/30 text-[10px] font-black uppercase tracking-widest px-2.5 py-0.5 rounded-full">
+            SentinelAI • Final Year Project 2
+          </span>
+          <span class="text-slate-500 text-xs font-medium">Core Finding Architecture Comparison</span>
+        </div>
+        <h1 class="text-2xl font-black text-white tracking-tight flex items-center gap-3">
+          <span>Full Report <span class="text-sky-400 font-extrabold">(No. 6)</span></span>
+          <span class="text-slate-500 font-normal text-lg">vs</span>
+          <span>Simplified Report <span class="text-amber-400 font-extrabold">(No. 2)</span></span>
+        </h1>
+      </div>
+
+      <div class="flex items-center gap-6 text-right">
+        <div>
+          <div class="text-[10px] text-slate-400 uppercase font-bold tracking-wider">Full Report (No. 6)</div>
+          <div class="text-sm font-extrabold text-sky-400">9 Heavy Technical Fields</div>
+        </div>
+        <div class="h-8 w-px bg-slate-800"></div>
+        <div>
+          <div class="text-[10px] text-slate-400 uppercase font-bold tracking-wider">Simplified Report (No. 2)</div>
+          <div class="text-sm font-extrabold text-amber-400">Only 3 Things (Symptom · Risk · Fix)</div>
+        </div>
+      </div>
+    </header>
+
+    <!-- POSTER BODY: SIDE-BY-SIDE CARDS -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 divide-y lg:divide-y-0 lg:divide-x divide-slate-800 p-6 gap-6 lg:gap-0">
+
+      <!-- LEFT COLUMN: FULL REPORT NO. 6 -->
+      <div class="lg:pr-6 flex flex-col justify-between">
+        
+        <div>
+          <!-- Title & Badges -->
+          <div class="flex items-center justify-between mb-3">
+            <div class="flex items-center gap-2.5">
+              <span class="w-7 h-7 rounded-lg bg-sky-500/20 text-sky-400 border border-sky-500/30 font-black text-xs flex items-center justify-center">
+                6
+              </span>
+              <div>
+                <h2 class="text-base font-bold text-white leading-tight">Detailed Technical Finding Dossier</h2>
+                <p class="text-[11px] text-slate-400">Audience: Security Engineers, Pentesters, Auditors</p>
+              </div>
+            </div>
+            <span class="text-[10px] font-bold bg-sky-950 text-sky-300 border border-sky-800 px-2 py-0.5 rounded">
+              9 Heavy Fields
+            </span>
+          </div>
+
+          <!-- The Mockup Card for No. 6 -->
+          <div class="bg-slate-950 rounded-xl border border-slate-800 p-4 space-y-2.5 text-xs">
+            
+            <!-- Row 1: Title, ID, CVSS, Severity -->
+            <div class="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800/80 pb-2">
+              <div>
+                <span class="text-[10px] font-mono text-sky-400 font-bold">[1. ID] SEC-FIND-042</span>
+                <div class="text-sm font-bold text-slate-100">SQL Injection in Search Query Parameter</div>
+              </div>
+              <div class="flex items-center gap-1.5">
+                <span class="bg-red-500/20 text-red-400 border border-red-500/30 text-[10px] font-extrabold px-2 py-0.5 rounded">
+                  [2. CVSS] 9.4 CRITICAL
+                </span>
+                <span class="bg-slate-800 text-slate-300 text-[10px] font-mono px-2 py-0.5 rounded">
+                  CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H
+                </span>
+              </div>
+            </div>
+
+            <!-- Row 2: Taxonomies & Affected Location -->
+            <div class="grid grid-cols-2 gap-2 text-[11px]">
+              <div class="bg-slate-900 p-2 rounded border border-slate-800">
+                <span class="text-slate-400 text-[10px] block font-bold uppercase">[3. & 4. Taxonomies]</span>
+                <span class="text-sky-300 font-mono">CWE-89</span> · <span class="text-slate-300">OWASP A03:2021-Injection</span>
+              </div>
+              <div class="bg-slate-900 p-2 rounded border border-slate-800">
+                <span class="text-slate-400 text-[10px] block font-bold uppercase">[5. Target Location]</span>
+                <span class="text-slate-300 font-mono">/api/v1/search?q=</span> <span class="text-slate-400">(db.js:142)</span>
+              </div>
+            </div>
+
+            <!-- Row 3: Vulnerability Mechanism -->
+            <div class="bg-slate-900 p-2.5 rounded border border-slate-800">
+              <span class="text-slate-400 text-[10px] font-bold block uppercase mb-0.5">[6. Technical Mechanism & Description]</span>
+              <p class="text-[11px] text-slate-300 leading-snug">
+                Unsanitized query string concatenated into dynamic PostgreSQL statement, allowing SQL subquery execution and table exfiltration.
+              </p>
+            </div>
+
+            <!-- Row 4: Exploitation PoC (Attack Command & Payload) -->
+            <div class="bg-slate-900 p-2.5 rounded border border-slate-800">
+              <span class="text-amber-400 text-[10px] font-bold block uppercase mb-1">[7. Exploitation PoC & Attack Payload]</span>
+              <div class="font-mono text-[10px] text-amber-200 bg-slate-950 p-2 rounded border border-slate-800/80 leading-relaxed overflow-x-auto">
+                curl -i -s -k -X $'GET' 'https://target.com/search?q=\'%20UNION%20SELECT%20null,username,password_hash%20FROM%20users--'
+              </div>
+            </div>
+
+            <!-- Row 5: Raw HTTP Request & Response Evidence -->
+            <div class="bg-slate-900 p-2.5 rounded border border-slate-800">
+              <span class="text-slate-400 text-[10px] font-bold block uppercase mb-1">[8. Raw HTTP Evidence & Scanner Log]</span>
+              <pre class="font-mono text-[9px] text-slate-400 bg-slate-950 p-2 rounded border border-slate-800/80 overflow-x-auto leading-tight">HTTP/1.1 200 OK
+Content-Type: application/json
+[{"username":"admin","password_hash":"$2b$12$e8YxPqZ..."}]</pre>
+            </div>
+
+            <!-- Row 6: Architectural Remediation & CVE References -->
+            <div class="bg-slate-900 p-2 rounded border border-slate-800 text-[10px] flex items-center justify-between text-slate-400">
+              <span><strong>[9. Deep Remediation]:</strong> Use parameterized prepared statements (`$1`).</span>
+              <span class="font-mono text-sky-400">Ref: CVE-2023-34034</span>
+            </div>
+
+          </div>
+        </div>
+
+        <div class="mt-3 text-[11px] text-slate-400 bg-slate-950/60 p-2.5 rounded-lg border border-slate-800/60 flex items-center justify-between">
+          <span>Focus: <strong>Exhaustive Exploit Proof & Forensic Verification</strong></span>
+          <span class="text-sky-400 font-semibold font-mono">Auditor & CISO Ready</span>
+        </div>
+
+      </div>
+
+      <!-- RIGHT COLUMN: SIMPLIFIED REPORT NO. 2 -->
+      <div class="lg:pl-6 flex flex-col justify-between">
+        
+        <div>
+          <!-- Title & Badges -->
+          <div class="flex items-center justify-between mb-3">
+            <div class="flex items-center gap-2.5">
+              <span class="w-7 h-7 rounded-lg bg-amber-500/20 text-amber-400 border border-amber-500/30 font-black text-xs flex items-center justify-center">
+                2
+              </span>
+              <div>
+                <h2 class="text-base font-bold text-white leading-tight">"Your Fix Cards" (Actionable Playbook)</h2>
+                <p class="text-[11px] text-slate-400">Audience: Sysadmins, IT Admins, Webmasters, Ops</p>
+              </div>
+            </div>
+            <span class="text-[10px] font-black bg-amber-500 text-slate-950 px-2 py-0.5 rounded uppercase">
+              Only 3 Things
+            </span>
+          </div>
+
+          <!-- The Mockup Card for No. 2 -->
+          <div class="bg-slate-950 rounded-xl border-2 border-amber-500/50 p-4 space-y-3.5 text-xs shadow-lg shadow-amber-500/5">
+            
+            <!-- Card Header: Title + SLA & Difficulty Badges -->
+            <div class="flex items-center justify-between border-b border-slate-800 pb-2.5">
+              <div>
+                <span class="text-[10px] font-bold text-amber-400 uppercase tracking-wider">Action Item #1</span>
+                <div class="text-sm font-black text-white">Database Query Input Concatenation Flaw</div>
+              </div>
+              <div class="flex items-center gap-1.5">
+                <span class="bg-red-500 text-white text-[10px] font-black px-2 py-0.5 rounded">
+                  FIX TODAY
+                </span>
+                <span class="bg-amber-500/20 text-amber-300 border border-amber-500/30 text-[10px] font-bold px-2 py-0.5 rounded">
+                  MODERATE
+                </span>
+                <span class="bg-slate-800 text-slate-300 text-[10px] font-bold px-2 py-0.5 rounded">
+                  ~30 MIN
+                </span>
+              </div>
+            </div>
+
+            <!-- THING 1: SYMPTOM -->
+            <div class="bg-slate-900/90 p-3 rounded-lg border-l-4 border-slate-400">
+              <div class="text-[10px] font-black text-slate-300 uppercase tracking-widest mb-1 flex items-center gap-1.5">
+                <span class="w-2 h-2 rounded-full bg-slate-400"></span>
+                Thing 1: SYMPTOM (What Was Found)
+              </div>
+              <p class="text-xs text-slate-200 font-medium leading-relaxed">
+                User search queries are directly inserted into database commands without input validation.
+              </p>
+            </div>
+
+            <!-- THING 2: RISK -->
+            <div class="bg-red-950/30 p-3 rounded-lg border-l-4 border-red-500 border-r border-t border-b border-red-900/40">
+              <div class="text-[10px] font-black text-red-400 uppercase tracking-widest mb-1 flex items-center gap-1.5">
+                <span class="w-2 h-2 rounded-full bg-red-500"></span>
+                Thing 2: RISK (Why It Matters)
+              </div>
+              <p class="text-xs text-red-200 font-medium leading-relaxed">
+                Attackers can bypass login screens, steal customer databases, or modify confidential stored records.
+              </p>
+            </div>
+
+            <!-- THING 3: PRESCRIPTION -->
+            <div class="bg-emerald-950/30 p-3 rounded-lg border-l-4 border-emerald-500 border-r border-t border-b border-emerald-900/40">
+              <div class="text-[10px] font-black text-emerald-400 uppercase tracking-widest mb-1 flex items-center gap-1.5">
+                <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+                Thing 3: PRESCRIPTION (How To Fix)
+              </div>
+              <p class="text-[11px] text-emerald-100 font-mono bg-slate-950 p-2 rounded border border-emerald-900/50 mb-2">
+                Replace raw query with parameterized prepared statement:
+                db.query("SELECT * FROM items WHERE name = $1", [userInput])
+              </p>
+              <div class="text-[10px] text-slate-300 flex items-center gap-1.5">
+                <span class="text-emerald-400 font-bold">&#10003; Verification:</span>
+                <span>Run test query with single-quote <code class="text-amber-300 bg-slate-950 px-1 py-0.5 rounded">'</code> and confirm HTTP 200 without SQL error.</span>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+        <div class="mt-3 text-[11px] text-amber-300 bg-amber-500/10 p-2.5 rounded-lg border border-amber-500/20 flex items-center justify-between">
+          <span>Focus: <strong>Fast Mean Time to Remediate (MTTR) • Zero Jargon</strong></span>
+          <span class="font-bold">Medical Analogy Standard</span>
+        </div>
+
+      </div>
+
+    </div>
+
+    <!-- BOTTOM COMPARISON SUMMARY FOOTER -->
+    <footer class="bg-slate-950 px-8 py-3.5 border-t border-slate-800 flex flex-wrap items-center justify-between gap-4 text-xs">
+      <div class="flex items-center gap-4">
+        <span class="font-black text-sky-400 uppercase tracking-widest text-[10px]">Context in Whole Document:</span>
+        <span class="text-slate-400 text-[11px]">
+          <strong>Full Report:</strong> No. 6 is 1 of 7 Chapters (Cover, TOC, Exec Summary, Methodology, OWASP, <span class="text-sky-300 font-bold">No. 6 Findings</span>, Appendix)
+        </span>
+      </div>
+      <div class="text-slate-400 text-[11px]">
+        <strong>Simplified Report:</strong> No. 2 is 1 of 3 Stages (1. SLA Posture, <span class="text-amber-300 font-bold">No. 2 Fix Cards</span>, 3. Sign-Off)
+      </div>
+    </footer>
+
+  </div>
+
+</body>
+</html>
