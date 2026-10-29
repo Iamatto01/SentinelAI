@@ -104,13 +104,13 @@ def detect_connection():
         # 1. Try Cloudflare Access alias (kali-n100)
         try:
             res = subprocess.run(
-                ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5", OPENSSH_HOST, "echo ping_cf_ok"],
-                capture_output=True, text=True, timeout=8
+                ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", OPENSSH_HOST, "echo ping_cf_ok"],
+                capture_output=True, text=True, timeout=15
             )
             if res.returncode == 0 and "ping_cf_ok" in res.stdout:
                 return "openssh", OPENSSH_HOST, "Cloudflare Access Tunnel (Global)"
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"   [Debug] Cloudflare tunnel check failed: {e}")
 
         # 2. Try direct LAN OpenSSH
         lan_target = f"{KALI_USER}@{KALI_HOST}"

@@ -1,0 +1,12 @@
+User-agent: *
+Allow: /
+Allow: /tools
+Allow: /services
+Allow: /about
+Allow: /pricing
+Allow: /contact
+Allow: /login
+Disallow: /app/
+Disallow: /api/
+
+Sitemap: https://sentinelai.studio/sitemap.xml
