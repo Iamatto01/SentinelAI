@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;500;700;800&family=Syne:wght@600;700;800&display=swap');
+﻿@import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;500;700;800&family=Syne:wght@600;700;800&display=swap');
 
 .at-home {
   --at-bg-a: #08090d;
@@ -1169,11 +1169,11 @@ body.day-mode .bg-black\/50 {
 
 /* Volumetric Studio Top-Down Lighting */
 .spotlight-beam-hero {
-  background: radial-gradient(ellipse 80% 50% at 50% -20%, rgba(255, 255, 255, 0.22), transparent 75%);
+  background: radial-gradient(ellipse 80% 50% at 50% -20%, rgba(168, 85, 247, 0.3), transparent 75%);
 }
 
 .spotlight-beam-card {
-  background: radial-gradient(ellipse 60% 40% at 50% -10%, rgba(255, 255, 255, 0.16), transparent 70%);
+  background: radial-gradient(ellipse 60% 40% at 50% -10%, rgba(168, 85, 247, 0.18), transparent 70%);
 }
 
 /* Crisp Monospace Technical Badge */

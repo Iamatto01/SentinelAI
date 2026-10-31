@@ -22,8 +22,8 @@ export default function SpotlightCard({
   const [isHovered, setIsHovered] = useState(false)
 
   const defaultSpotlight = isNight
-    ? 'rgba(255, 255, 255, 0.14)'
-    : 'rgba(0, 0, 0, 0.08)'
+    ? 'rgba(168, 85, 247, 0.18)'
+    : 'rgba(124, 58, 237, 0.10)'
 
   const effectiveSpotlight = spotlightColor || defaultSpotlight
 

@@ -1,4 +1,4 @@
-@tailwind base;
+﻿@tailwind base;
 @tailwind components;
 @tailwind utilities;
 
@@ -15,15 +15,11 @@
   --text-secondary: #cbd5e1;
   --text-muted:     #94a3b8;
   --text-faint:     #64748b;
-  --accent:         #ffffff;
-  --accent-hover:   #e4e4e7;
+  --accent:         #a855f7;
+  --accent-hover:   #9333ea;
 }
 
-/* Keep the application visually consistent with the monochrome landing page.
-   Severity still exists semantically and remains available to screen readers. */
-html {
-  filter: grayscale(1);
-}
+/* Full-colour mode */
 
 ::selection {
   background: #a855f7;

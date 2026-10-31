@@ -62,8 +62,8 @@ export default function MonochromePricing() {
         className="pointer-events-none absolute inset-x-0 top-0 h-[500px] -translate-y-1/2 opacity-30 blur-3xl z-0"
         style={{
           background: isNight
-            ? 'radial-gradient(ellipse 80% 50% at 50% -20%, rgba(255,255,255,0.25), transparent)'
-            : 'radial-gradient(ellipse 80% 50% at 50% -20%, rgba(0,0,0,0.06), transparent)',
+            ? 'radial-gradient(ellipse 80% 50% at 50% -20%, rgba(168,85,247,0.25), transparent)'
+            : 'radial-gradient(ellipse 80% 50% at 50% -20%, rgba(124,58,237,0.08), transparent)',
         }}
       />
 
