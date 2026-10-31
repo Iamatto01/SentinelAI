@@ -68,7 +68,7 @@ export default function ScrollyNavbar() {
         }`}
       >
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-          {/* Left: Brand + Live Status Badge */}
+          {/* Left: Brand */}
           <div className="flex items-center gap-4">
             <Link to="/" className="flex items-center gap-2.5 group">
               <div className={`p-1 rounded-lg border transition-all ${
@@ -84,30 +84,8 @@ export default function ScrollyNavbar() {
                 }`}>
                   Sentinel<span className={isNight ? 'text-neutral-400' : 'text-zinc-500'}>AI</span>
                 </span>
-                <span className={`text-[10px] font-mono uppercase tracking-widest hidden sm:inline ${
-                  isNight ? 'text-neutral-500' : 'text-zinc-500'
-                }`}>
-                  .studio
-                </span>
               </div>
             </Link>
-
-            {/* Live Status Indicator Dot [ ONLINE ] */}
-            <div className={`hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[11px] font-mono ${
-              isNight
-                ? 'border-white/10 bg-white/[0.03] text-neutral-300'
-                : 'border-zinc-300 bg-zinc-100 text-zinc-700'
-            }`}>
-              <span className="relative flex h-2 w-2">
-                <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${
-                  isNight ? 'bg-white' : 'bg-black'
-                }`} />
-                <span className={`relative inline-flex rounded-full h-2 w-2 ${
-                  isNight ? 'bg-white' : 'bg-black'
-                }`} />
-              </span>
-              <span className="font-bold tracking-wider">[ ONLINE ]</span>
-            </div>
           </div>
 
           {/* Center: Smooth-scroll Anchor Links */}

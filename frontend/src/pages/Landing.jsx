@@ -9,7 +9,6 @@ import {
 import InspectorLogo from '../components/InspectorLogo.jsx'
 import ScrollyNavbar from '../components/scrollytelling/ScrollyNavbar.jsx'
 import ScrollProgressHUD from '../components/scrollytelling/ScrollProgressHUD.jsx'
-import HeroNodeGraph from '../components/scrollytelling/HeroNodeGraph.jsx'
 import LiveScanTerminal from '../components/scrollytelling/LiveScanTerminal.jsx'
 import AiModelSelector from '../components/scrollytelling/AiModelSelector.jsx'
 import VulnerabilityBento from '../components/scrollytelling/VulnerabilityBento.jsx'
@@ -24,7 +23,7 @@ import './Home.css'
 export default function Landing() {
   const { isNight } = useTheme()
   const [agentsCount, setAgentsCount] = useState(53)
-  const [heroTab, setHeroTab] = useState('radar') // 'radar' | 'terminal' | 'mesh'
+  const [heroTab, setHeroTab] = useState('radar')
   const [showThemeIntro, setShowThemeIntro] = useState(false)
 
   // Listen for replay event from navbar or dropdown
@@ -91,38 +90,17 @@ export default function Landing() {
           }}
         />
 
-        {/* Interactive 3D/Canvas Background: Monochrome Node-Graph */}
-        <HeroNodeGraph />
-
         {/* Hero Content Container */}
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10 w-full">
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 lg:gap-12 items-center">
             {/* Left Hero Column: Typography & CTAs with Fluid Entrance Physics */}
             <motion.div
-              initial={{ opacity: 0, y: 35 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.85, ease: [0.16, 1, 0.3, 1] }}
-              className="lg:col-span-7 space-y-6 text-left"
+              initial={{ opacity: 0, y: 24 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true, amount: 0.2 }}
+              transition={{ duration: 0.65, ease: [0.16, 1, 0.3, 1] }}
+              className="lg:col-span-8 space-y-6 text-left"
             >
-              {/* Top Status Pill */}
-              <div className={`inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full border text-[11px] font-mono tracking-wider backdrop-blur-md transition-all ${
-                isNight
-                  ? 'border-white/20 bg-white/[0.04] shadow-[0_0_15px_rgba(255,255,255,0.08)]'
-                  : 'border-zinc-300 bg-black/[0.03] shadow-sm'
-              }`}>
-                <span className="relative flex h-2 w-2">
-                  <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${
-                    isNight ? 'bg-white' : 'bg-black'
-                  }`} />
-                  <span className={`relative inline-flex rounded-full h-2 w-2 ${
-                    isNight ? 'bg-white' : 'bg-black'
-                  }`} />
-                </span>
-                <span className={`font-bold ${isNight ? 'text-neutral-200' : 'text-zinc-800'}`}>
-                  [ SYSTEM ONLINE // AUTONOMOUS AI PENTEST ENGINE ]
-                </span>
-              </div>
-
               {/* Metallic Typographic Reveal Headline */}
               <h1 className="text-4xl sm:text-6xl xl:text-7xl font-black tracking-[-0.03em] leading-[1.05] font-sans">
                 Autonomous AI <br />
@@ -174,7 +152,8 @@ export default function Landing() {
               <div className="grid grid-cols-3 gap-3 pt-4 max-w-lg font-mono">
                 <motion.div
                   initial={{ opacity: 0, x: -25 }}
-                  animate={{ opacity: 1, x: 0 }}
+                  whileInView={{ opacity: 1, x: 0 }}
+                  viewport={{ once: true, amount: 0.25 }}
                   transition={{ duration: 0.6, delay: 0.2, ease: [0.16, 1, 0.3, 1] }}
                   className={`p-3 rounded-xl border backdrop-blur-md ${
                     isNight ? 'border-white/10 bg-[#0A0A0A]/80' : 'border-zinc-200 bg-white/90 shadow-sm'
@@ -186,7 +165,8 @@ export default function Landing() {
 
                 <motion.div
                   initial={{ opacity: 0, y: 25 }}
-                  animate={{ opacity: 1, y: 0 }}
+                  whileInView={{ opacity: 1, y: 0 }}
+                  viewport={{ once: true, amount: 0.25 }}
                   transition={{ duration: 0.6, delay: 0.3, ease: [0.16, 1, 0.3, 1] }}
                   className={`p-3 rounded-xl border backdrop-blur-md ${
                     isNight ? 'border-white/10 bg-[#0A0A0A]/80' : 'border-zinc-200 bg-white/90 shadow-sm'
@@ -198,7 +178,8 @@ export default function Landing() {
 
                 <motion.div
                   initial={{ opacity: 0, x: 25 }}
-                  animate={{ opacity: 1, x: 0 }}
+                  whileInView={{ opacity: 1, x: 0 }}
+                  viewport={{ once: true, amount: 0.25 }}
                   transition={{ duration: 0.6, delay: 0.4, ease: [0.16, 1, 0.3, 1] }}
                   className={`p-3 rounded-xl border backdrop-blur-md ${
                     isNight ? 'border-white/10 bg-[#0A0A0A]/80' : 'border-zinc-200 bg-white/90 shadow-sm'
@@ -210,6 +191,8 @@ export default function Landing() {
               </div>
             </motion.div>
 
+            {false ? (
+            <>
             {/* Right Hero Column: Interactive Threat Radar & Diagnostic Console */}
             <motion.div
               initial={{ opacity: 0, x: 45, scale: 0.95 }}
@@ -319,7 +302,7 @@ export default function Landing() {
                       {/* Telemetry info */}
                       <div className="flex-1 min-w-0 space-y-1.5 text-[11px] w-full">
                         <div className={`text-[10px] uppercase ${isNight ? 'text-neutral-500' : 'text-zinc-500'}`}>ACTIVE TARGET</div>
-                        <div className={`font-bold truncate ${isNight ? 'text-white' : 'text-zinc-950'}`}>https://demo.sentinelai.studio</div>
+                        <div className={`font-bold truncate ${isNight ? 'text-white' : 'text-zinc-950'}`}>https://demo.sentinelai.local</div>
                         <div className={`p-2 rounded border space-y-1 text-[10px] ${
                           isNight ? 'bg-black/80 border-white/10 text-neutral-300' : 'bg-white border-zinc-200 text-zinc-700'
                         }`}>
@@ -363,9 +346,9 @@ export default function Landing() {
                 {/* TAB 2: TERMINAL CLI STDOUT */}
                 {heroTab === 'terminal' && (
                   <div className="my-4 rounded-xl bg-black border border-white/10 p-3 font-mono text-[11px] leading-relaxed space-y-1.5 h-[190px] overflow-y-auto text-white">
-                    <p className="text-white font-bold">$ nmap -sV -sC -p 80,443 demo.sentinelai.studio</p>
+                    <p className="text-white font-bold">$ nmap -sV -sC -p 80,443 demo.sentinelai.local</p>
                     <p className="text-neutral-400">[+] Nmap: 2 open service banners identified in 1.42s</p>
-                    <p className="text-white font-bold">$ nuclei -u https://demo.sentinelai.studio -t cves/</p>
+                    <p className="text-white font-bold">$ nuclei -u https://demo.sentinelai.local -t cves/</p>
                     <p className="text-white bg-white/10 px-1 py-0.5 rounded font-extrabold">
                       [!] [CRITICAL] Matched CVE-2024-27198 auth bypass
                     </p>
@@ -421,6 +404,8 @@ export default function Landing() {
                 </div>
               </SpotlightCard>
             </motion.div>
+            </>
+            ) : null}
           </div>
         </div>
       </section>
@@ -435,7 +420,7 @@ export default function Landing() {
           isNight ? 'border-white/10 bg-[#0A0A0A] text-neutral-400' : 'border-zinc-200 bg-zinc-100 text-zinc-600'
         }`}
       >
-        <div className="flex animate-marquee whitespace-nowrap text-xs font-mono gap-8">
+        <div className="flex flex-wrap justify-center whitespace-normal text-xs font-mono gap-x-8 gap-y-2 px-4">
           <span>NMAP PORT RECON</span>
           <span>&bull;</span>
           <span>SQLMAP INJECTION PROBE</span>
@@ -494,7 +479,7 @@ export default function Landing() {
                     style={{ width: '120px', height: '120px', minWidth: '120px', minHeight: '120px', maxWidth: '120px', maxHeight: '120px' }}
                   >
                     <img
-                      src="/saif.png"
+                      src="/fyp2_presenter.png"
                       alt="Muhammad Saifudin"
                       style={{
                         width: '120px',
@@ -504,10 +489,9 @@ export default function Landing() {
                         maxWidth: '120px',
                         maxHeight: '120px',
                         objectFit: 'cover',
-                        objectPosition: '85% 85%',
+                        objectPosition: '50% 28%',
                         display: 'block',
                       }}
-                      onError={(e) => { e.currentTarget.src = '/fyp2_presenter.png' }}
                     />
                   </div>
                   <span className={`mt-2 px-2.5 py-0.5 rounded-full text-[9px] font-mono font-black uppercase tracking-wider ${
