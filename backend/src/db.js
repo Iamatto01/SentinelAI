@@ -8,6 +8,7 @@ import { config } from './config.js'
 
 import path from 'node:path'
 import fs from 'node:fs'
+import crypto from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 
 const __filename = fileURLToPath(import.meta.url)
@@ -125,6 +126,7 @@ function migrate(d) {
     title TEXT NOT NULL,
     severity TEXT DEFAULT 'info',
     cvss REAL,
+    cvss_vector TEXT,
     cwe_id TEXT,
     cve_id TEXT,
     owasp_category TEXT,
@@ -292,6 +294,20 @@ function migrate(d) {
   );
   CREATE INDEX IF NOT EXISTS idx_loot_campaign ON exploit_loot(campaign_id);
 
+  -- Persisted campaign execution log. The orchestrator emits logs over
+  -- WebSocket, but without a durable copy a reload (or an unattended run the
+  -- operator wasn't watching) loses every command issued and every result.
+  CREATE TABLE IF NOT EXISTS exploit_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    campaign_id TEXT NOT NULL,
+    level TEXT NOT NULL DEFAULT 'info',  -- info|warn|error|success
+    message TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (campaign_id) REFERENCES exploit_campaigns(id) ON DELETE CASCADE
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_exploit_logs_campaign ON exploit_logs(campaign_id, id);
+
   -- Approval queue for gated exploit steps.
   CREATE TABLE IF NOT EXISTS exploit_approvals (
     id TEXT PRIMARY KEY,
@@ -453,6 +469,7 @@ function migrate(d) {
   try { d.exec(`ALTER TABLE findings ADD COLUMN target TEXT`) } catch (e) { if (!/duplicate column name/i.test(String(e))) throw e }
   try { d.exec(`ALTER TABLE findings ADD COLUMN layman_impact TEXT`) } catch (e) { if (!/duplicate column name/i.test(String(e))) throw e }
   try { d.exec(`ALTER TABLE findings ADD COLUMN fingerprint TEXT`) } catch (e) { if (!/duplicate column name/i.test(String(e))) throw e }
+  try { d.exec(`ALTER TABLE findings ADD COLUMN cvss_vector TEXT`) } catch (e) { if (!/duplicate column name/i.test(String(e))) throw e }
   try { d.exec(`CREATE INDEX IF NOT EXISTS idx_findings_fingerprint ON findings(scan_id, fingerprint)`) } catch (e) { if (!/duplicate column name/i.test(String(e))) throw e }
   // Migration: store structured whitebox & blackbox metadata and user/client columns
   try { d.exec(`ALTER TABLE scans ADD COLUMN whitebox_meta TEXT`) } catch (e) { if (!/duplicate column name/i.test(String(e))) throw e }
@@ -539,6 +556,10 @@ function migrate(d) {
   // Operator-defined scanning scripts that run as pipeline stages.
   CREATE: try {
     d.exec(`
+  CREATE TABLE IF NOT EXISTS meta (
+    key TEXT PRIMARY KEY,
+    value TEXT
+  );
   CREATE TABLE IF NOT EXISTS custom_scripts (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
@@ -563,11 +584,76 @@ function migrate(d) {
   }
 }
 
+/**
+ * Built-in script bundle revision. Bump this whenever the contents of
+ * data/default-custom-scripts.json change so existing installations pick the
+ * fixes up on boot (see seedDefaultScripts).
+ */
+const CUSTOM_SCRIPTS_REVISION = 2
+
+/** sha256 of a shipped script body — used to tell "stale bundle" from "operator edit". */
+function bodyHash(text) {
+  return crypto.createHash('sha256').update(String(text ?? ''), 'utf8').digest('hex')
+}
+
 export function seedDefaultScripts(d = getDb()) {
   try {
     const existingCount = d.prepare('SELECT count(*) as c FROM custom_scripts').get()?.c || 0
+    const markSynced = () => {
+      try {
+        d.prepare('INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value')
+          .run('custom_scripts_revision', String(CUSTOM_SCRIPTS_REVISION))
+      } catch { /* meta unavailable — revision tracking is best-effort */ }
+    }
     if (existingCount > 0) {
-      return { seeded: false, count: existingCount, message: 'Custom scripts already present' }
+      // Built-ins already present: only refresh them when the shipped bundle
+      // moved forward, and only where the stored row still matches a body this
+      // product shipped earlier — anything else is an operator edit and is
+      // never overwritten.
+      let syncedRevision = 0
+      try {
+        syncedRevision = Number(d.prepare("SELECT value FROM meta WHERE key = 'custom_scripts_revision'").get()?.value || 0)
+      } catch { syncedRevision = CUSTOM_SCRIPTS_REVISION }
+      if (syncedRevision >= CUSTOM_SCRIPTS_REVISION) {
+        return { seeded: false, count: existingCount, message: 'Custom scripts already present' }
+      }
+      const seedPath = path.join(__dirname, 'data', 'default-custom-scripts.json')
+      const historyPath = path.join(__dirname, 'data', 'default-custom-scripts.history.json')
+      if (!fs.existsSync(seedPath)) {
+        return { seeded: false, count: existingCount, message: 'Seed file not found' }
+      }
+      const bundled = JSON.parse(fs.readFileSync(seedPath, 'utf8'))
+      // Every body shipped by a previous bundle revision, keyed by script id.
+      // A row whose stored body is in this set is unmodified and safe to replace.
+      const shippedBodies = new Map()
+      try {
+        if (fs.existsSync(historyPath)) {
+          for (const h of JSON.parse(fs.readFileSync(historyPath, 'utf8'))) {
+            if (!shippedBodies.has(h.id)) shippedBodies.set(h.id, new Set())
+            shippedBodies.get(h.id).add(bodyHash(h.command))
+          }
+        }
+      } catch (e) {
+        console.warn('[db] custom_scripts history unreadable:', e.message)
+      }
+      const upd = d.prepare('UPDATE custom_scripts SET command = ?, description = ?, updated_at = ? WHERE id = ?')
+      let refreshed = 0
+      const skipped = []
+      const syncTx = d.transaction((scripts) => {
+        for (const s of scripts) {
+          const row = d.prepare('SELECT command FROM custom_scripts WHERE id = ?').get(s.id)
+          if (!row || row.command === s.command) continue
+          const known = shippedBodies.get(s.id)
+          if (!known?.has(bodyHash(row.command))) { skipped.push(s.name); continue }
+          upd.run(s.command, s.description || '', new Date().toISOString(), s.id)
+          refreshed++
+        }
+      })
+      syncTx(bundled)
+      markSynced()
+      if (refreshed > 0) console.log(`[db] Refreshed ${refreshed} built-in custom script(s) to bundle revision ${CUSTOM_SCRIPTS_REVISION}`)
+      if (skipped.length) console.warn(`[db] Left ${skipped.length} operator-modified custom script(s) untouched`)
+      return { seeded: false, refreshed, skipped: skipped.length, count: existingCount, revision: CUSTOM_SCRIPTS_REVISION }
     }
     const seedPath = path.join(__dirname, 'data', 'default-custom-scripts.json')
     if (!fs.existsSync(seedPath)) {
@@ -595,6 +681,7 @@ export function seedDefaultScripts(d = getDb()) {
       }
     })
     tx(defaultScripts)
+    markSynced()
     const newCount = d.prepare('SELECT count(*) as c FROM custom_scripts').get()?.c || 0
     console.log(`[db] Seeded ${newCount} built-in custom security scripts into database`)
     return { seeded: true, count: newCount }

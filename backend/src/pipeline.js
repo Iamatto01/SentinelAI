@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import net from 'node:net'
 import { payloadsRag } from './integrations/index.js'
 import { runNativeTool, previewNativeCommand, nativeToolsStatus, NATIVE_TOOLS } from './integrations/native-tools.js'
 import { aiEngine } from './ai/ai-engine.js'
@@ -13,6 +14,11 @@ import {
   buildVersionFinding,
   buildUnversionedFinding,
 } from './version-audit.js'
+import {
+  calculateCvss4,
+  defaultVectorForFinding,
+  severityFromCvss4Score,
+} from './cvss4.js'
 import * as db from './db.js'
 
 /**
@@ -25,7 +31,7 @@ import * as db from './db.js'
  * Emits live events via the provided emitter (WebSocket broadcast).
  */
 
-const SEVERITY_SCORE = { critical: 9.5, high: 7.5, medium: 5.5, low: 3.0, info: 0.5 }
+const SEVERITY_SCORE = { critical: 9.3, high: 8.7, medium: 5.3, low: 2.1, info: 0.0 }
 const SEVERITY_RANK = { info: 0, low: 1, medium: 2, high: 3, critical: 4 }
 
 function evidenceTier(finding, targetType) {
@@ -55,6 +61,10 @@ function findingFingerprint(finding) {
 export function getRootDomain(hostname) {
   if (!hostname) return ''
   const clean = hostname.replace(/^https?:\/\//i, '').split('/')[0].split(':')[0].toLowerCase().trim()
+  if (!clean) return ''
+  // IP literals and localhost are already roots — never slice them into a fake
+  // registrable domain such as "0.1" or "1" (which yields nonsense playbook labels).
+  if (clean === 'localhost' || net.isIP(clean)) return clean
   const parts = clean.split('.').filter(Boolean)
   if (parts.length <= 2) return parts.join('.')
 
@@ -101,6 +111,29 @@ export class UnifiedPipeline {
     // a scan completed would lazily re-create a `control` entry that nothing
     // ever deletes — one leaked entry per post-finish API call. Bounded below.
     this._finishedScans = new Set()
+    // scanId -> LLM verification budget. A bulk scanner (nuclei, ffuf, gobuster)
+    // can emit hundreds of findings that each legitimately "own" the same domain
+    // (cors/auth/injection word in the template name). Without a budget the scan
+    // fans out one model call per finding, which is slow and expensive. Once the
+    // budget is spent the finding still gets an artifact-backed attribution —
+    // only the paid tier is skipped, so nothing is dropped and nothing is faked.
+    this._llmBudget = new Map()
+  }
+
+  /** Max paid verifications per scan (override with SENTINEL_LLM_BUDGET). */
+  static LLM_BUDGET_DEFAULT = Number(process.env.SENTINEL_LLM_BUDGET || 60)
+
+  /**
+   * Reserve a paid verification slot. Returns false when the scan's budget is
+   * exhausted, so the caller falls back to deterministic attribution.
+   */
+  _takeLlmSlot(scanId) {
+    if (this._finishedScans.has(scanId)) return false
+    const max = UnifiedPipeline.LLM_BUDGET_DEFAULT
+    const used = this._llmBudget.get(scanId) || 0
+    if (used >= max) return false
+    this._llmBudget.set(scanId, used + 1)
+    return true
   }
 
   /** Cap for the finished-scan tombstone set so it can never grow unbounded. */
@@ -125,11 +158,13 @@ export class UnifiedPipeline {
   _beginScan(scanId) {
     this._finishedScans.delete(scanId)
     this.control.delete(scanId)
+    this._llmBudget.delete(scanId)
   }
 
   /** Drop every map entry keyed by this scanId. Safe to call more than once. */
   releaseScanState(scanId) {
     this.control.delete(scanId)
+    this._llmBudget?.delete(scanId)
     this._lastProgressEmit?.delete(scanId)
     this._urlPool?.delete(scanId)
     this._loginForms?.delete(scanId)
@@ -295,9 +330,21 @@ export class UnifiedPipeline {
       (f.severity === 'info' || f.severity === 'low')
     // Missing security headers, server banner, robots.txt, subdomain, open port — always factual
     const factualTitles = /missing.*security.*header|server.*header.*information|robots\.txt|subdomain|open port|httpx:|ffuf:|discovered/i
-    const isFactualFinding = isFactual || factualTitles.test(f.title || '')
+    // Some modules record a fact whose *security impact* still needs adversarial
+    // reasoning (e.g. `cors-audit` can be a benign wildcard or a credentialed
+    // session hijack). Those are the owning agent's domain, so they keep the full
+    // LLM tier; everything else factual gets deterministic attribution below.
+    const ownsDomain = /cors|auth|session|credential|token|injection|upload|traversal|smuggl|deserializ/i.test(`${f.module || ''} ${f.title || ''}`)
+    const isFactualFinding = (!ownsDomain && isFactual) || (!ownsDomain && factualTitles.test(f.title || ''))
 
-    if (verify && !isAiGenerated && !isFactualFinding) {
+    const gate = verify && !isAiGenerated && !isFactualFinding
+    let budgetBlocked = false
+    if (gate && !this._takeLlmSlot(scanId)) {
+      budgetBlocked = true
+      this.log(scanId, 'info', `🤖 [AI] verification budget spent for this scan — attributing "${f.title}" deterministically instead of calling the model`)
+    }
+
+    if (gate && !budgetBlocked) {
       try {
         this.log(scanId, 'info', `🤖 [AI] verifying finding: "${f.title}" (severity=${f.severity}, module=${f.module})\n🤖 [AI] input evidence: ${JSON.stringify(f.evidence || {}).slice(0, 800)}`)
         const v = await aiEngine.verifyFinding(f, targetType)
@@ -323,10 +370,66 @@ export class UnifiedPipeline {
       // AI-generated findings are pre-verified — assign high confidence
       verdict = { agent: f.module, isTruePositive: true, confidence: 85, verdict: 'Verified by AI specialist agent during code audit.' }
       f.evidence = { ...(f.evidence || {}), aiEvidenceTier: 'validated' }
+    } else if (verify) {
+      // Observable findings (an open port, a missing header, a discovered path)
+      // are self-evidencing: no model has to re-confirm the response the scanner
+      // already captured. Attribute them to the owning agent anyway, so the
+      // report always names a specialist and an artifact-backed reason instead
+      // of rendering a blank AI panel.
+      try {
+        const v = aiEngine.attributeObservedFinding(f, targetType)
+        verdict = v
+        if (v.evidenceTier) f.evidence = { ...(f.evidence || {}), aiEvidenceTier: v.evidenceTier }
+        this.log(scanId, 'info', `🔎 [${v.agent}] observational attribution (confidence=${v.confidence}): ${f.title}`)
+      } catch (e) {
+        this.log(scanId, 'warn', `🔎 [AI] attribution error for "${f.title}": ${e.message}`)
+      }
     }
     // 4. (sanitize removed — raw evidence preserved)
+
+    // 5. Record a verification action so the finding's provenance is auditable
+    // even when the pipeline is invoked with `verify: false`.
+    if (verify) {
+      const verifiedAt = new Date().toISOString()
+      try {
+        const action = verdict
+          ? {
+              at: verifiedAt,
+              kind: 'verify',
+              status: 'completed',
+              by: verdict.agent || 'sentinelai',
+              tier: verdict.evidenceTier || null,
+              summary: verdict.verdict || null,
+              target: f.target || null,
+            }
+          : {
+              at: verifiedAt,
+              kind: 'verify',
+              status: 'skipped',
+              by: 'pipeline',
+              tier: null,
+              summary: 'Verification disabled for this call (verify: false).',
+              target: f.target || null,
+            }
+        const priorActions = Array.isArray(f.evidence?.actions) ? f.evidence.actions : []
+        f.evidence = { ...(f.evidence || {}), actions: [...priorActions, action].slice(-25) }
+        if (verdict && !verdict.evidenceTier) {
+          this.log(scanId, 'info', `🔖 [${verdict.agent}] verification recorded for "${f.title}"`)
+        }
+      } catch { /* non-fatal */ }
+    }
+
     const tier = f.evidence?.aiEvidenceTier === 'needs-validation' ? 'needs-validation' : evidenceTier(f, targetType)
     f.evidence = { ...(f.evidence || {}), validationTier: tier }
+
+    // Ensure CVSS v4.0 vector & score are evaluated using FIRST standard
+    if (!f.cvssVector) {
+      f.cvssVector = defaultVectorForFinding(f)
+    }
+    const cvssEval = calculateCvss4(f.cvssVector)
+    if (f.cvss == null || f.cvss === 0) {
+      f.cvss = cvssEval.score
+    }
 
     // Merge repeated detections from pattern scanning and AI audit passes.
     const fingerprint = findingFingerprint(f)
@@ -342,9 +445,10 @@ export class UnifiedPipeline {
       const isExistingPattern = existing.module === 'pattern-scan'
       const isNewAi = (f.module || '').startsWith('code-audit') || (f.module || '') === 'ai-audit'
       if (isExistingPattern && isNewAi) {
-        db.run(`UPDATE findings SET severity = ?, cvss = ?, description = ?, layman_impact = ?, remediation = ?, evidence = ? WHERE id = ?`,
+        db.run(`UPDATE findings SET severity = ?, cvss = ?, cvss_vector = ?, description = ?, layman_impact = ?, remediation = ?, evidence = ? WHERE id = ?`,
           severity,
           Math.max(existing.cvss || 0, f.cvss || SEVERITY_SCORE[f.severity] || 0),
+          f.cvssVector || existing.cvss_vector,
           f.description || existing.description,
           f.laymanImpact || existing.layman_impact,
           f.remediation || existing.remediation,
@@ -352,8 +456,9 @@ export class UnifiedPipeline {
           existing.id)
         this.log(scanId, 'info', `↪ Merged: AI description replaced pattern-scan boilerplate for: ${f.title}`)
       } else {
-        db.run(`UPDATE findings SET severity = ?, cvss = ?, evidence = ? WHERE id = ?`, severity,
+        db.run(`UPDATE findings SET severity = ?, cvss = ?, cvss_vector = ?, evidence = ? WHERE id = ?`, severity,
           Math.max(existing.cvss || 0, f.cvss || SEVERITY_SCORE[f.severity] || 0),
+          f.cvssVector || existing.cvss_vector,
           JSON.stringify({ ...evidence, sources: [...sources] }), existing.id)
         this.log(scanId, 'info', `↪ Deduplicated finding: ${f.title}`)
       }
@@ -403,10 +508,10 @@ export class UnifiedPipeline {
     const now = new Date().toISOString()
     try {
       db.run(
-        `INSERT INTO findings (id, scan_id, title, severity, cvss, cwe_id, cve_id, owasp_category, description, layman_impact, remediation, module, status, evidence, poc, agent_verdict, fingerprint, target, created_at)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        `INSERT INTO findings (id, scan_id, title, severity, cvss, cvss_vector, cwe_id, cve_id, owasp_category, description, layman_impact, remediation, module, status, evidence, poc, agent_verdict, fingerprint, target, created_at)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
         id, scanId, f.title || 'Untitled finding', f.severity || 'info',
-        f.cvss ?? SEVERITY_SCORE[f.severity] ?? 0, f.cweId || f.cwe || null, f.cveId || null,
+        f.cvss ?? SEVERITY_SCORE[f.severity] ?? 0, f.cvssVector || null, f.cweId || f.cwe || null, f.cveId || null,
         f.owaspCategory || null, f.description || '', f.laymanImpact || null, f.remediation || '',
         f.module || 'unknown', 'open',
         JSON.stringify(f.evidence || {}), JSON.stringify(f.poc || {}),
@@ -609,7 +714,7 @@ export class UnifiedPipeline {
           this.log(scanId, 'warn', `Custom script "${script.name}" exited ${result.code}: ${String(result.stderr || '').slice(0, 200)}`)
         }
         for (const f of findings) {
-          await ingestFinding(scanId, {
+          await this.ingestFinding(scanId, {
             ...f,
             module: `custom-script:${script.name}`,
             target,
@@ -789,7 +894,7 @@ export class UnifiedPipeline {
         remediation: 'Confirm the operating system, reverse proxy, application server, framework, runtime, database, dependency lockfiles, and patch levels from an authenticated asset inventory or host-side scan. Re-run with authorized service/version detection where permitted.',
         module: 'version-audit',
         evidence: { scannedUrls: candidates, detection: 'no-versioned-signature', validationTier: 'needs-validation' },
-      }, { verify: false })
+      })
       return
     }
 
@@ -2406,10 +2511,14 @@ export class UnifiedPipeline {
 
   /** Compute final risk score + persist status. */
   finish(scanId, status) {
-    const findings = db.all(`SELECT severity FROM findings WHERE scan_id = ?`, scanId)
+    const findings = db.all(`SELECT severity, cvss FROM findings WHERE scan_id = ?`, scanId)
     const counts = { critical: 0, high: 0, medium: 0, low: 0, info: 0 }
     for (const f of findings) counts[f.severity] = (counts[f.severity] || 0) + 1
-    const score = computeRiskScore(counts)
+    let maxCvss = 0
+    for (const f of findings) {
+      if (f.cvss != null && f.cvss > maxCvss) maxCvss = Number(f.cvss)
+    }
+    const score = computeRiskScore(counts, maxCvss)
     db.run(`UPDATE scans SET status = ?, risk_score = ?, progress = 100, finished_at = ? WHERE id = ?`,
       status, score, new Date().toISOString(), scanId)
     const scan = db.get(`SELECT * FROM scans WHERE id = ?`, scanId)
@@ -2483,8 +2592,40 @@ export class UnifiedPipeline {
   }
 }
 
-export function computeRiskScore(counts) {
-  return Math.min(10, Math.round((counts.critical * 3 + counts.high * 2 + counts.medium * 0.8 + counts.low * 0.2) * 10) / 10)
+export function computeRiskScore(counts, maxCvss = null) {
+  const c = counts || {}
+  const crit = Number(c.critical) || 0
+  const high = Number(c.high) || 0
+  const med = Number(c.medium) || 0
+  const low = Number(c.low) || 0
+
+  let base = 0.0
+  if (maxCvss != null && maxCvss > 0) {
+    base = Number(maxCvss)
+  } else if (crit > 0) {
+    base = 9.0
+  } else if (high > 0) {
+    base = 7.0
+  } else if (med > 0) {
+    base = 4.0
+  } else if (low > 0) {
+    base = 1.0
+  } else {
+    return 0.0
+  }
+
+  let residual = 0.0
+  if (crit > 0) {
+    residual = Math.min(1.0, (crit - 1) * 0.2 + high * 0.05 + med * 0.02)
+  } else if (high > 0) {
+    residual = Math.min(1.9, (high - 1) * 0.2 + med * 0.05 + low * 0.02)
+  } else if (med > 0) {
+    residual = Math.min(2.9, (med - 1) * 0.15 + low * 0.03)
+  } else if (low > 0) {
+    residual = Math.min(2.9, (low - 1) * 0.1)
+  }
+
+  return Math.min(10.0, Math.round((base + residual) * 10) / 10)
 }
 
 /**

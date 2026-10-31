@@ -8,7 +8,7 @@ import {
 import { api } from '../lib/api.js'
 import { useScanContext } from '../lib/ScanContext.jsx'
 import { useTheme } from '../lib/ThemeContext.jsx'
-import { prettifyTitle } from '../lib/formatters.js'
+import { prettifyTitle, readAgentVerdict } from '../lib/formatters.js'
 
 import { subscribeScan } from '../lib/socket.js'
 import SeverityBadge from '../components/SeverityBadge.jsx'
@@ -522,11 +522,19 @@ export default function ScanDetail() {
                                 </p>
                                 <SeverityBadge severity={f.severity} />
                               </div>
-                              {f.agent_verdict && (
-                                <p className={`mt-1.5 text-xs italic line-clamp-2 ${isNight ? 'text-slate-300' : 'text-slate-600'}`}>
-                                  {f.agent_verdict}
-                                </p>
-                              )}
+                              {(() => {
+                                const v = readAgentVerdict(f.agent_verdict)
+                                if (!v) return null
+                                const pct = v.confidence != null ? ` · ${Math.round(v.confidence)}%` : ''
+                                return (
+                                  <p className={`mt-1.5 text-xs italic line-clamp-2 ${isNight ? 'text-slate-300' : 'text-slate-600'}`}>
+                                    <span className={isNight ? 'text-cyan-300/80 not-italic font-medium' : 'text-cyan-700 not-italic font-medium'}>
+                                      {v.agent}{pct}
+                                    </span>
+                                    {v.reasoning ? ` — ${v.reasoning}` : ''}
+                                  </p>
+                                )
+                              })()}
                             </div>
                           ))}
                         </div>

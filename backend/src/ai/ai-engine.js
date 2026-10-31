@@ -1,6 +1,39 @@
 import { llm } from './llm-client.js'
 import { agentRegistry } from './agent-registry.js'
 import { retrieveSkills } from '../integrations/skills-rag.js'
+import { httpRequest, analyzeReflection, makeMarker } from '../exploits/probe-utils.js'
+
+// Network re-verification makes at most 2 requests per finding. Opened once the
+// OCR-free text dictionary proved insufficient for claims (reflection, CORS,
+// traversal) that the wire can settle deterministically.
+const NET_VERIFY_ENABLED = (process.env.AI_HEURISTIC_NETWORK_VERIFY || 'true').trim() !== 'false'
+const NET_VERIFY_TIMEOUT = Number(process.env.AI_HEURISTIC_NETWORK_TIMEOUT_MS || 8000)
+
+/**
+ * Coerce a model's verdict field to a boolean.
+ * Models answer with `true`, `"true"`, `"TRUE"`, `"yes"` or `1` interchangeably —
+ * an `=== true` comparison silently turns three of those into FALSE positive,
+ * which is the worst possible failure mode for a verifier. Returns null when the
+ * reply carries no recognisable verdict so the caller can escalate.
+ */
+const VERDICT_KEYS = ['is_true_positive', 'isTruePositive', 'true_positive', 'truePositive', 'is_truepositive', 'verdict', 'result', 'status'];
+
+function normalizeVerdict(value) {
+  if (value === undefined || value === null) return null;
+  // Callers may pass either a bare value or the whole parsed JSON object.
+  if (typeof value === 'object') {
+    for (const key of VERDICT_KEYS) {
+      if (value[key] !== undefined && value[key] !== null) return normalizeVerdict(value[key]);
+    }
+    return null;
+  }
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'number') return value !== 0;
+  const s = String(value).trim().toLowerCase();
+  if (['true', 'yes', 'y', '1', 'confirmed', 'valid', 'positive'].includes(s)) return true;
+  if (['false', 'no', 'n', '0', 'refuted', 'invalid', 'negative', 'unconfirmed'].includes(s)) return false;
+  return null;
+}
 
 /**
  * AIEngine — the reasoning core. Routes each finding to the right specialist
@@ -39,18 +72,90 @@ export class AIEngine {
     return clean || null
   }
 
-  /** Verify a scanner finding; returns { isTruePositive, confidence, verdict, refined }. */
+  /**
+   * Deterministic attribution for findings whose truth is self-evident from the
+   * captured tool output (an open port, a missing header, a discovered path).
+   *
+   * These findings never reached a verifier before, so reports rendered no
+   * specialist agent at all. Rather than burn an LLM call to re-confirm that a
+   * header is absent, attribute them to the agent that owns the domain, and let
+   * `_heuristicVerify` supply the artifact-backed reasoning. Confidence is
+   * capped below the LLM tier because no reasoning model reviewed the claim.
+   */
+  attributeObservedFinding(finding, targetType = 'url') {
+    const segments = []
+    if (finding.evidence && typeof finding.evidence === 'object') {
+      for (const [k, v] of Object.entries(finding.evidence)) {
+        if (k === 'fingerprint' || k === 'sources' || k === 'exploitPlaybooks' || k === 'actions') continue
+        if (v === undefined || v === null || v === '') continue
+        segments.push(`${k}: ${typeof v === 'object' ? JSON.stringify(v) : String(v)}`)
+      }
+    }
+    const derived = this._heuristicVerify(
+      { ...finding, description: `${finding.description || ''} ${segments.join(' ')}` },
+      targetType
+    )
+    const agent = targetType === 'code' ? 'code-auditor' : this.agents.routeFinding(finding)
+
+    // A heuristic that reached a decision (>=60) already names the artifact that
+    // settles the claim. Cap at 75 so the observed tier stays distinguishable
+    // from a 90–95 model-reasoned verdict.
+    if ((derived.confidence || 0) >= 60) {
+      return {
+        isTruePositive: derived.isTruePositive,
+        confidence: Math.min(derived.confidence, 75),
+        verdict: derived.verdict,
+        evidenceTier: derived.isTruePositive ? 'observed' : 'needs-validation',
+        agent,
+        refined: derived.refined,
+      }
+    }
+
+    // The artifact in the finding does not settle exploitability. Keep the
+    // observation and attribute it, but never dress up an undecided heuristic as
+    // a confirmation: the tier records that a human still has to look.
+    return {
+      isTruePositive: true,
+      confidence: Math.min(derived.confidence || 50, 55),
+      verdict: `${derived.verdict} Attributed to the owning specialist for manual confirmation; no exploitability claim is made.`,
+      evidenceTier: 'needs-validation',
+      agent,
+      refined: derived.refined,
+    }
+  }
+
+  /**
+   * Verify a scanner finding; returns { isTruePositive, confidence, verdict, refined }.
+   *
+   * Three tiers, in order of trust:
+   *   1. LLM specialist verdict (when a provider is configured)
+   *   2. Network re-verification — replay the claim against the live target and
+   *      decide from the observation (`_networkVerify`)
+   *   3. Deterministic text heuristics (`_heuristicVerify`) — only evidence
+   *      already captured in the finding, never an assumption
+   */
   async verifyFinding(finding, targetType = 'url') {
-    // Do not treat an unavailable provider as confirmation. Use the same
-    // deterministic evidence checks as the provider-error fallback.
+    // Do not treat an unavailable provider as confirmation.
     if (!this.llm.isConfigured()) {
+      const net = await this._networkVerify(finding, targetType)
+      if (net) {
+        return {
+          isTruePositive: net.isTruePositive,
+          confidence: net.confidence,
+          verdict: `${net.verdict} AI provider unavailable; verdict is from live re-verification, not model reasoning.`,
+          evidenceTier: net.isTruePositive ? 'validated' : 'needs-validation',
+          agent: 'network-reverify',
+          refined: net.refined,
+        }
+      }
       const heuristicResult = this._heuristicVerify(finding, targetType)
       return {
         isTruePositive: heuristicResult.isTruePositive,
         confidence: heuristicResult.confidence,
         verdict: `${heuristicResult.verdict} AI provider unavailable; manual validation recommended.`,
         evidenceTier: 'needs-validation',
-        agent: 'deterministic-heuristic',
+        agent: 'evidence-heuristic',
+        refined: heuristicResult.refined,
       }
     }
     const agentName = targetType === 'code' ? 'code-auditor' : this.agents.routeFinding(finding)
@@ -100,13 +205,15 @@ Respond with JSON:
 {"is_true_positive": boolean, "confidence": 0-100, "evidence_tier": "observed|validated|needs-validation|exploited", "severity_adjusted": "critical|high|medium|low|info", "reasoning": "one sentence grounded in the evidence", "remediation": "concrete fix"}`
 
     try {
-      const raw = await this.llm.analyze(prompt, { system, context: { operation: 'verify', agent: agentName }, useFast: false, maxTokens: 800 })
+      const raw = await this.llm.analyzeJSON(prompt, { system, context: { operation: 'verify', agent: agentName }, useFast: false, maxTokens: 800 })
       const j = this.llm.parseJSON(raw)
+      const verdict = normalizeVerdict(j)
+      if (verdict === null) throw new Error('AI reply did not contain a verdict field')
       const refined = { ...finding }
       if (j.severity_adjusted) refined.severity = j.severity_adjusted
       if (j.remediation) refined.remediation = j.remediation
       return {
-        isTruePositive: j.is_true_positive === true,
+        isTruePositive: verdict,
         confidence: j.confidence ?? 70,
         verdict: j.reasoning || 'Finding evaluated by AI specialist.',
         agent: agentName,
@@ -115,21 +222,201 @@ Respond with JSON:
       }
     } catch (e) {
       // ⚠️ CRITICAL: When LLM is unavailable or errors, do NOT blindly default to
-      // true positive. Instead, apply deterministic heuristics to decide.
+      // true positive. Re-verify on the wire first, then fall back to the
+      // evidence heuristics.
+      const net = await this._networkVerify(finding, targetType)
+      if (net) {
+        return {
+          isTruePositive: net.isTruePositive,
+          confidence: net.confidence,
+          verdict: `${net.verdict} (AI error: ${e.message || 'provider failure'})`,
+          evidenceTier: net.isTruePositive ? 'validated' : 'needs-validation',
+          agent: 'network-reverify',
+          refined: net.refined,
+        }
+      }
       const heuristicResult = this._heuristicVerify(finding, targetType)
       return {
         isTruePositive: heuristicResult.isTruePositive,
         confidence: heuristicResult.confidence,
         verdict: heuristicResult.verdict,
-        agent: agentName
+        agent: agentName,
+        refined: heuristicResult.refined,
       }
     }
   }
 
   /**
-   * Deterministic fallback verification when LLM is unavailable.
-   * Uses strict heuristics instead of blindly marking everything true positive.
-   * Returns { isTruePositive, confidence, verdict }.
+   * Live re-verification of a finding against its own target.
+   *
+   * Only claims that a single bounded HTTP exchange can settle are handled here
+   * (header absence, CORS reflection, marker reflection/XSS, sensitive-path
+   * exposure, TLS/protocol mismatch). Everything else returns null so the
+   * caller falls through to the text heuristics.
+   *
+   * Returns { isTruePositive, confidence, verdict, refined } or null.
+   */
+  async _networkVerify(finding, targetType) {
+    if (!NET_VERIFY_ENABLED || targetType === 'code') return null
+    const url = this._targetUrlFor(finding)
+    if (!url) return null
+
+    const claim = `${finding.title || ''} ${finding.description || ''}`.toLowerCase()
+    const probe = { timeout: NET_VERIFY_TIMEOUT, redirect: 'follow' }
+
+    try {
+      // ── Security header / banner / TLS claims: compare against the live response.
+      if (/missing.*(?:security.*header|hsts|csp|content-security|x-frame|x-content-type|referrer|permissions-policy)|server.*(?:banner|header).*(?:disclosure|information)|information disclosure.*server|weak.*(?:cipher|protocol)|tls\s*1\.[01]/i.test(claim)) {
+        const res = await httpRequest(url, probe)
+        if (!res.status) return null
+        const h = res.headers
+        const observed = []
+        const expected = [
+          ['strict-transport-security', /hsts|strict-transport|missing.*header/i],
+          ['content-security-policy', /csp|content-security/i],
+          ['x-frame-options', /x-frame|clickjack/i],
+          ['x-content-type-options', /x-content-type|mime/i],
+          ['referrer-policy', /referrer/i],
+          ['permissions-policy', /permissions-policy/i],
+        ]
+        for (const [header, re] of expected) {
+          if (re.test(claim) && !h[header]) observed.push(header)
+        }
+        if (observed.length) {
+          const present = Object.keys(h).filter(k => /^(server|x-powered-by|x-aspnet-version)$/.test(k))
+          return {
+            isTruePositive: true,
+            confidence: 92,
+            verdict: `Live re-check of ${url} returned HTTP ${res.status} without ${observed.join(', ')}.${present.length ? ` Disclosure headers present: ${present.join(', ')}.` : ''}`,
+            refined: { ...finding, evidence: { ...(finding.evidence || {}), reverified: { url, status: res.status, observedHeaders: h, missing: observed, at: new Date().toISOString() } } },
+          }
+        }
+        if (/server.*(?:banner|header)|x-powered-by/i.test(claim) && (h['server'] || h['x-powered-by'])) {
+          return {
+            isTruePositive: true,
+            confidence: 90,
+            verdict: `Live re-check confirms disclosure header: ${h['server'] ? `Server: ${h.server}` : ''}${h['x-powered-by'] ? ` X-Powered-By: ${h['x-powered-by']}` : ''}`,
+            refined: { ...finding, evidence: { ...(finding.evidence || {}), reverified: { url, status: res.status, server: h.server, poweredBy: h['x-powered-by'], at: new Date().toISOString() } } },
+          }
+        }
+        return {
+          isTruePositive: false,
+          confidence: 88,
+          verdict: `Live re-check of ${url} returned HTTP ${res.status} and did not reproduce the claimed header gap.`,
+        }
+      }
+
+      // ── CORS claims: re-send with a hostile Origin and read the reflection.
+      if (/cors|access-control-allow-origin/i.test(claim)) {
+        const evil = 'https://sentinel-reverify.example'
+        const res = await httpRequest(url, { ...probe, headers: { Origin: evil } })
+        if (!res.status) return null
+        const acao = res.headers['access-control-allow-origin']
+        const acac = res.headers['access-control-allow-credentials']
+        const reflected = acao === evil || acao === '*'
+        const exploitable = reflected && String(acac).toLowerCase() === 'true'
+        return {
+          isTruePositive: reflected,
+          confidence: reflected ? (exploitable ? 95 : 88) : 92,
+          verdict: reflected
+            ? `Origin ${evil} reflected in Access-Control-Allow-Origin (${acao})${exploitable ? ' with Access-Control-Allow-Credentials: true — credentialed cross-origin reads are possible.' : '; Access-Control-Allow-Credentials absent, so cookies cannot be read cross-origin.'}`
+            : `Origin ${evil} not reflected (Access-Control-Allow-Origin: ${acao || 'absent'}). CORS claim not reproduced.`,
+          refined: {
+            ...finding,
+            ...(reflected && !exploitable ? { severity: 'low' } : {}),
+            evidence: { ...(finding.evidence || {}), reverified: { url, status: res.status, acao, acac, origin: evil, at: new Date().toISOString() } },
+          },
+        }
+      }
+
+      // ── XSS / reflection claims: inject a unique marker into the reported
+      //    parameter and classify where it lands.
+      if (/xss|cross-site scripting|reflected|html injection/i.test(claim)) {
+        const m = makeMarker('saiver')
+        const injectable = this._injectableUrl(url, m)
+        if (!injectable) return null
+        const res = await httpRequest(injectable, probe)
+        if (!res.status) return null
+        const refl = analyzeReflection(res.body || '', m)
+        const payloadTest = /<[a-z]/i.test(m)
+        return {
+          isTruePositive: refl.reflected && !refl.encoded && (refl.executable || refl.context !== 'html-encoded'),
+          confidence: refl.reflected ? (refl.executable ? 90 : 70) : 88,
+          verdict: refl.reflected
+            ? `Marker ${m} reflected into ${refl.context} context${refl.encoded ? ' (HTML-encoded — not executable)' : ''} by ${injectable}.`
+            : `Marker ${m} was not reflected by ${injectable} — XSS claim not reproduced.`,
+          refined: { ...finding, evidence: { ...(finding.evidence || {}), reverified: { url: injectable, status: res.status, reflection: refl, payloadUsed: m, payloadTest, at: new Date().toISOString() } } },
+        }
+      }
+
+      // ── Sensitive path / file exposure: fetch it and inspect the body.
+      const pathMatch = (finding.evidence && (finding.evidence.path || finding.evidence.url)) || url
+      if (/exposed|sensitive.*(?:path|file)|(?:git|env|backup|config).*disclosure|directory listing|swagger|openapi|robots\.txt/i.test(claim)) {
+        const res = await httpRequest(pathMatch, probe)
+        if (!res.status) return null
+        const body = res.body || ''
+        const listing = /<title>\s*Index of \//i.test(body) || /\[To Parent Directory\]/i.test(body)
+        const gitHead = /ref:\s*refs\/heads\//.test(body)
+        const envLike = /^[A-Z0-9_]{3,}=/m.test(body)
+        const swagger = /"openapi"\s*:|"swagger"\s*:\s*"2\./i.test(body)
+        const robots = /^\s*(User-agent|Disallow)\s*:/im.test(body)
+        const confirmed = res.status === 200 && (listing || gitHead || envLike || swagger || robots)
+        return {
+          isTruePositive: confirmed,
+          confidence: confirmed ? 93 : 85,
+          verdict: confirmed
+            ? `Live fetch of ${pathMatch} returned HTTP 200 with ${[listing && 'directory listing', gitHead && 'git HEAD ref', envLike && 'KEY=VALUE secret pairs', swagger && 'OpenAPI document', robots && 'robots.txt rules'].filter(Boolean).join(', ')}.`
+            : `Live fetch of ${pathMatch} returned HTTP ${res.status} without the claimed content.`,
+          refined: { ...finding, evidence: { ...(finding.evidence || {}), reverified: { url: pathMatch, status: res.status, bytes: body.length, sample: body.slice(0, 400), at: new Date().toISOString() } } },
+        }
+      }
+    } catch {
+      // Network verification is best-effort; never mask the original verdict.
+      return null
+    }
+    return null
+  }
+
+  /** Best-guess absolute URL the finding describes, or '' when none exists. */
+  _targetUrlFor(finding) {
+    const ev = finding.evidence || {}
+    const candidates = [ev.url, ev.requestUrl, ev.endpoint, ev.target, finding.url, finding.target]
+    for (const c of candidates) {
+      if (typeof c === 'string' && /^https?:\/\//i.test(c.trim())) return c.trim()
+    }
+    // Synthesise from host/path pairs captured in evidence.
+    const host = ev.host || ev.hostname || ev.domain
+    if (typeof host === 'string' && host.trim()) {
+      const scheme = ev.scheme === 'http' ? 'http' : 'https'
+      const p = typeof ev.path === 'string' ? ev.path : ''
+      return `${scheme}://${host.trim()}${p.startsWith('/') ? '' : '/'}${p}`
+    }
+    return ''
+  }
+
+  /** Replace a marker into an existing query parameter, or append one. */
+  _injectableUrl(url, marker) {
+    try {
+      const u = new URL(url)
+      const key = [...u.searchParams.keys()][0]
+      if (key) u.searchParams.set(key, marker)
+      else u.searchParams.set('q', marker)
+      return u.toString()
+    } catch {
+      return ''
+    }
+  }
+
+  /**
+   * Deterministic verification derived from the finding's OWN captured evidence.
+   *
+   * The previous implementation matched title/description text only, so a claim
+   * of "CORS wildcard" scored 90% confidence even when the response headers were
+   * never captured. Every rule below now requires the artifact it claims to
+   * justify — headers, status codes, bodies, tool verdict lines, file hits — and
+   * returns "unverified" instead of inventing confidence.
+   *
+   * Returns { isTruePositive, confidence, verdict, refined? }.
    */
   _heuristicVerify(finding, targetType) {
     const title = (finding.title || '').toLowerCase()
@@ -137,90 +424,311 @@ Respond with JSON:
     const text = `${title} ${desc}`
     const evidence = finding.evidence || {}
     const module = (finding.module || '').toLowerCase()
+    const status = Number(evidence.status || evidence.statusCode || 0)
 
-    // ── ALWAYS TRUE POSITIVE (high confidence) ──
-    const truePositivePatterns = [
-      // Exposed sensitive files with verified content
-      { re: /exposed (?:git|\.env|backup|database dump|private key)/i, conf: 95, reason: 'Verified sensitive file exposure confirmed by HTTP response content.' },
-      // Tool-confirmed exploitation
-      { re: /sql injection.*parameter.*vulnerable|confirmed.*injectable/i, conf: 95, reason: 'Tool confirmed exploitable injection point.' },
-      { re: /\[POC\]|vulnerable.*xss|reflected.*xss|stored.*xss/i, conf: 90, reason: 'Tool confirmed XSS with proof-of-concept.' },
-      // Missing headers — always true
-      { re: /missing.*security.*header|missing.*(?:hsts|csp|x-frame|content-type|x-content|referrer|permissions)/i, conf: 90, reason: 'Security headers are factually absent from HTTP response.' },
-      // Server banner disclosure
-      { re: /server.*header.*information.*disclosure/i, conf: 90, reason: 'Server header is factually present in HTTP response.' },
-      // Open ports confirmed by nmap
-      { re: /open port.*(?:ssh|telnet|ftp|smb|rdp|mysql|postgresql|redis|mongodb|vnc)/i, conf: 90, reason: 'Nmap confirmed open service port with version banner.' },
-      // Hardcoded secrets in source
-      { re: /hardcoded.*(?:secret|credential|key|password|token)/i, conf: 85, reason: 'Pattern scan confirmed hardcoded credential in source code.' },
-      // CORS wildcard
-      { re: /cors.*access-control-allow-origin.*\*/i, conf: 90, reason: 'CORS wildcard is factually present in HTTP response headers.' },
-      // robots.txt
-      { re: /robots\.txt/i, conf: 90, reason: 'robots.txt is factually accessible.' },
-      // Subdomain discovery
-      { re: /subdomain.*discovered/i, conf: 85, reason: 'DNS enumeration confirmed subdomain exists.' },
-      // TLS/weak cipher
-      { re: /weak.*cipher|tls.*1\.[01]/i, conf: 85, reason: 'TLS scan confirmed deprecated protocol version or cipher.' },
-      // Exposed Swagger/OpenAPI
-      { re: /exposed.*(?:swagger|openapi|api.?doc)/i, conf: 90, reason: 'API documentation is factually accessible without authentication.' },
+    // Flatten everything the scanner captured so rules can grep real artifacts.
+    const blob = [
+      typeof evidence === 'string' ? evidence : JSON.stringify(evidence || {}),
+      finding.remediation || '',
+      finding.httpResponse || '',
+      finding.responseBody || '',
+    ].join('\n')
+    const headers = evidence.headers || evidence.responseHeaders || {}
+    const headerNames = Object.keys(headers).map(k => k.toLowerCase())
+    const body = String(evidence.body || evidence.responseBody || finding.responseBody || '')
+
+    // Scanners record absence two ways: a live header map, or a `missing`/`present`
+    // name list. Normalise both so the claim can actually be checked.
+    const missingList = (Array.isArray(evidence.missing) ? evidence.missing : []).map(v => String(v).toLowerCase())
+    const presentList = (Array.isArray(evidence.present) ? evidence.present : []).map(v => String(v).toLowerCase())
+    const headerCaptured = headerNames.length > 0 || missingList.length > 0 || presentList.length > 0
+    const missing = (name) => {
+      const n = name.toLowerCase()
+      if (headerNames.length) return !headerNames.includes(n)
+      if (missingList.length) return missingList.some(m => m.includes(n) || n.includes(m.split(' ')[0]))
+      if (presentList.length) return !presentList.includes(n)
+      return false
+    }
+
+    // ── 1. Missing security headers — require recorded header state. ──
+    if (/missing.*(?:security.*header|hsts|csp|content-security|x-frame|x-content-type|referrer-policy|permissions-policy|strict-transport)/i.test(text)) {
+      const wanted = [
+        ['strict-transport-security', /hsts|strict-transport/i],
+        ['content-security-policy', /csp|content-security/i],
+        ['x-frame-options', /x-frame|clickjack/i],
+        ['x-content-type-options', /x-content-type|nosniff|mime/i],
+        ['referrer-policy', /referrer/i],
+        ['permissions-policy', /permissions-policy/i],
+      ].filter(([, re]) => re.test(text))
+      const absent = wanted.filter(([h]) => missing(h)).map(([h]) => h)
+      if (absent.length) {
+        return {
+          isTruePositive: true,
+          confidence: 92,
+          verdict: `Recorded header state for ${evidence.url || 'the target'} omits ${absent.join(', ')}${missingList.length ? ` (scanner reported missing: ${missingList.join(', ')})` : ''}.`,
+        }
+      }
+      return {
+        isTruePositive: false,
+        confidence: headerCaptured ? 85 : 40,
+        verdict: headerCaptured
+          ? 'Recorded header state already contains the headers named in the finding — claim not supported by evidence.'
+          : 'Finding claims a missing header but no header state was captured, so absence cannot be verified.',
+      }
+    }
+
+    // ── 2. Server banner disclosure — require the actual banner value. ──
+    if (/server.*(?:banner|header).*(?:disclosure|information)|x-powered-by|version.*disclosure/i.test(text)) {
+      const banner = evidence.server || headers.server || headers['x-powered-by'] || evidence.banner
+      if (banner) {
+        return {
+          isTruePositive: true,
+          confidence: 92,
+          verdict: `Response disclosed Server: ${banner}.`,
+        }
+      }
+      return {
+        isTruePositive: false,
+        confidence: headerCaptured ? 85 : 40,
+        verdict: headerCaptured
+          ? 'No Server/X-Powered-By value recorded — claim not supported.'
+          : 'Finding asserts a banner disclosure but no header state was captured.',
+      }
+    }
+
+    // ── 2.5 Fingerprint/version observations — the claim is the ABSENCE of a
+    // versioned signature, so the artifact that settles it is the scan coverage
+    // itself, not a response status. ──
+    const fingerprintTopic = /fingerprint|architecture|technology stack|banner grab|product version|tech stack/i.test(text)
+    const absenceClaim = /inconclusive|no (?:reliable |versioned )?(?:signature|version|fingerprint|banner)|unknown (?:stack|architecture)|not (?:disclosed|captured|exposed)|suppressed|unversioned|hidden (?:architecture|stack)/i.test(text)
+    if (fingerprintTopic && absenceClaim && !/outdated|vulnerable version|\bcve-\d/i.test(text)) {
+      const probes = [evidence.scannedUrls, evidence.paths, evidence.probes, evidence.checked, evidence.endpoints]
+        .filter(Array.isArray).flat().map(String)
+      const recorded = [
+        evidence.detectedVersion, evidence.version, evidence.product, evidence.banner,
+        ...(Array.isArray(evidence.frameworks) ? evidence.frameworks
+          : Array.isArray(evidence.detected) ? evidence.detected
+            : evidence.frameworks || evidence.detected ? [evidence.frameworks || evidence.detected] : []),
+      ].filter(Boolean).map(String)
+      if (recorded.length) {
+        return {
+          isTruePositive: false,
+          confidence: 75,
+          verdict: `Scanner evidence records a technology signature (${recorded.slice(0, 4).join(', ')}), so the "inconclusive" claim is contradicted by its own artifacts.`,
+        }
+      }
+      return {
+        isTruePositive: true,
+        confidence: 60,
+        verdict: probes.length
+          ? `Observation of absence, not a vulnerability: ${probes.length} endpoint${probes.length === 1 ? ' was' : 's were'} probed (${probes.slice(0, 3).join(', ')}${probes.length > 3 ? ', …' : ''}) and no product or version signature was recorded. The stored evidence supports the coverage statement only.`
+          : 'Observation of absence, not a vulnerability: no product or version signature was recorded, but the evidence does not list which endpoints were probed.',
+      }
+    }
+
+    // ── 2.6 Outdated component — the artifact is the captured version string.
+    // Capturing the version proves the fingerprint, not that the version is EOL. ──
+    if (/outdated|end.of.life|\beol\b|unsupported version|vulnerable (?:version|component)|known vulnerable/i.test(text)) {
+      const claimed = (text.match(/\b\d+\.\d+(?:\.\d+)?(?:[a-z]\d*)?\b/g) || [])
+      const captured = [...new Set(claimed.filter(v => blob.toLowerCase().includes(v)))]
+      const product = /(apache|nginx|iis|openssh|openssl|tomcat|jquery|php|wordpress|drupal|joomla|struts|spring|log4j|redis|mysql|postgres(?:ql)?|mongo(?:db)?|node(?:\.js)?|express|laravel|rails|django|flask|varnish|haproxy|lighttpd|jetty|wildfly|jboss|weblogic|websphere)\b/i.exec(text)?.[1]
+      const rawLifecycle = evidence.eol || evidence.endOfLife || evidence.outdated || evidence.latestVersion || evidence.fixedIn
+      // A lifecycle signal that merely repeats the version we already captured proves
+      // nothing about obsolescence — it would read as "2.4.49 … fixed in 2.4.49".
+      const lifecycleText = rawLifecycle == null ? ''
+        : (typeof rawLifecycle === 'object' ? JSON.stringify(rawLifecycle) : String(rawLifecycle))
+      const lifecycleVersions = lifecycleText.match(/\b\d+\.\d+(?:\.\d+)?(?:[a-z]\d*)?\b/g) || []
+      const lifecycle = lifecycleText && !(lifecycleVersions.length && lifecycleVersions.every(v => captured.includes(v)))
+        ? rawLifecycle
+        : null
+      if (captured.length && lifecycle) {
+        return {
+          isTruePositive: true,
+          confidence: 88,
+          verdict: `Evidence records ${product ? `${product} ` : ''}${captured.join(', ')} together with a lifecycle signal (${lifecycleText}).`,
+        }
+      }
+      if (captured.length) {
+        return {
+          isTruePositive: false,
+          confidence: 55,
+          verdict: `Evidence records ${product ? `${product} ` : ''}${captured.join(', ')}, matching the version named in the finding, but no end-of-life or fixed-version data was captured to show that version is actually outdated.`,
+        }
+      }
+      return {
+        isTruePositive: false,
+        confidence: 35,
+        verdict: 'No captured version string matches the claim — outdated-component finding unverified.',
+      }
+    }
+
+    // ── 3. CORS — require the observed Access-Control-Allow-Origin value. ──
+    if (/cors|access-control-allow-origin|cross-origin/i.test(text)) {
+      const acao = evidence.reflectedAcao || evidence.acao || headers['access-control-allow-origin'] || evidence.allowOrigin
+      const acacRaw = evidence.acac ?? headers['access-control-allow-credentials'] ?? ''
+      const acac = String(acacRaw).toLowerCase() === 'true'
+      if (acao) {
+        const value = String(acao).trim()
+        // Only discount the finding when the claim actually asserts credentialed
+        // exploitation — a "no credentials" reflection finding is true as written.
+        const claimsHijack = /with credentials|session hijack possible|authenticated cross-origin/i.test(text) &&
+          !/no credentials|not possible|without credentials|hijack is not possible/i.test(text)
+        if (claimsHijack && !acac) {
+          return {
+            isTruePositive: false,
+            confidence: 90,
+            verdict: `Recorded CORS response reflects ${value} but Access-Control-Allow-Credentials is not true — the credentialed session-hijack claim is not supported.`,
+          }
+        }
+        return {
+          isTruePositive: true,
+          confidence: acac ? 95 : 85,
+          verdict: `Recorded Access-Control-Allow-Origin ${value}${(evidence.probedOrigin || evidence.origin) ? ` for probed origin ${evidence.probedOrigin || evidence.origin}` : ''}${acac ? ' with Access-Control-Allow-Credentials: true — credentialed cross-origin reads are possible.' : '; Access-Control-Allow-Credentials absent, so session cookies cannot be read cross-origin.'}`,
+        }
+      }
+      return {
+        isTruePositive: false,
+        confidence: headerCaptured ? 85 : 40,
+        verdict: 'No Access-Control-Allow-Origin value was recorded — CORS claim unverified.',
+      }
+    }
+
+    // ── 4. Exposed sensitive files — require a body or an explicit 200. ──
+    // The trigger demands an exposure-shaped noun ("exposed backup", ".env",
+    // "directory listing"); a bare "exposed"/"exposure" anywhere in descriptive
+    // prose must not select this branch.
+    if (/(?:exposed|sensitive|leaked|disclosed)\s+(?:\w+\s+){0,3}(?:path|file|files|director(?:y|ies)|repositor(?:y|ies)|backup|credential|secret|api key|private key|token|endpoint|document|listing|archive|config)|\b(?:\.git|\.env|\.svn|\.ds_store|\.htpasswd|wp-config\.php)\b|directory listing|swagger|openapi/i.test(text)) {
+      const gitHead = /ref:\s*refs\/heads\//.test(body)
+      const envLike = /^[A-Z0-9_]{3,}=/m.test(body)
+      const listing = /<title>\s*Index of \//i.test(body) || /\[To Parent Directory\]/i.test(body)
+      const swagger = /"openapi"\s*:|"swagger"\s*:\s*"2\./i.test(body)
+      const keyMaterial = /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/.test(body)
+      const signals = [listing && 'directory listing', gitHead && 'git HEAD ref', envLike && 'KEY=VALUE pairs', swagger && 'OpenAPI document', keyMaterial && 'private key material'].filter(Boolean)
+      if (signals.length && (status === 0 || status === 200)) {
+        return {
+          isTruePositive: true,
+          confidence: 93,
+          verdict: `Response body for ${evidence.url || evidence.path || 'the path'} contains ${signals.join(', ')}.`,
+        }
+      }
+      if (status >= 200 && status < 300 && !signals.length) {
+        return {
+          isTruePositive: false,
+          confidence: 70,
+          verdict: `Path returned HTTP ${status} but the captured body contains no sensitive content — exposure unverified.`,
+        }
+      }
+      return {
+        isTruePositive: false,
+        confidence: status >= 400 ? 90 : 45,
+        verdict: status >= 400
+          ? `Request returned HTTP ${status} — the claimed resource is not exposed.`
+          : 'No response body or status captured for the claimed exposure.',
+      }
+    }
+
+    // ── 5. Open ports — require the port/service to appear in evidence. ──
+    if (/open port|exposed service|service.*banner/i.test(text)) {
+      const ports = evidence.ports || evidence.openPorts || evidence.port
+      const proto = /(ssh|telnet|ftp|smb|rdp|mysql|postgresql|redis|mongodb|vnc|ldap|mssql)/i.exec(text)?.[1]
+      const hit = ports
+        ? JSON.stringify(ports).toLowerCase().includes(String(proto || evidence.port || '').toLowerCase())
+        : Boolean(evidence.port || evidence.service)
+      if (hit || evidence.service) {
+        return {
+          isTruePositive: true,
+          confidence: 90,
+          verdict: `Scanner evidence lists the port/service${proto ? ` (${proto})` : ''}: ${evidence.service || JSON.stringify(ports || evidence.port)}.`,
+        }
+      }
+      return { isTruePositive: false, confidence: 40, verdict: 'No port/service data captured — open-port claim unverified.' }
+    }
+
+    // ── 6. Injection verdicts — require the tool's own confirmation line. ──
+    if (/sql injection|injection|sqli/i.test(text)) {
+      const confirmed = /is vulnerable|injectable|parameter.*is vulnerable|payload.*successful/i.test(blob)
+      const negated = /not injectable|do not appear to be injectable|not vulnerable/i.test(blob)
+      if (confirmed && !negated) return { isTruePositive: true, confidence: 94, verdict: 'Tool output in the evidence explicitly confirmed the injection point.' }
+      if (negated) return { isTruePositive: false, confidence: 94, verdict: 'Tool output in the evidence explicitly reported the parameter as not injectable.' }
+      return { isTruePositive: false, confidence: 45, verdict: 'No tool confirmation or negation captured for the injection claim.' }
+    }
+
+    // ── 7. XSS — require a PoC/reflection artifact. ──
+    if (/xss|cross-site scripting/i.test(text)) {
+      const refl = evidence.reflection || evidence.reflected
+      const poc = /\[POC\]|\[V\]|payload executed|alert\(1\)/i.test(blob)
+      if (poc || (refl && (refl.executable || refl.reflected))) {
+        return { isTruePositive: true, confidence: 90, verdict: 'Evidence contains a reflected/executed payload artifact for the reported parameter.' }
+      }
+      return { isTruePositive: false, confidence: 45, verdict: 'No reflection artifact captured in evidence — XSS claim unverified.' }
+    }
+
+    // ── 8. Hardcoded secrets — require a matched secret in the file hit. ──
+    if (/hardcoded.*(?:secret|credential|key|password|token)|api key|private key/i.test(text)) {
+      const line = String(evidence.match || evidence.line || evidence.snippet || body || '')
+      const shaped = /(?:api[_-]?key|secret|token|password|passwd|BEGIN [A-Z ]*PRIVATE KEY)\s*[:=]\s*['"]?[A-Za-z0-9_\-/+.]{8,}/i.test(line)
+      if (shaped) {
+        return {
+          isTruePositive: true,
+          confidence: 88,
+          verdict: `Evidence contains a credential-shaped assignment${evidence.file ? ` in ${evidence.file}` : ''}${evidence.line ? `:${evidence.line}` : ''}.`,
+        }
+      }
+      return { isTruePositive: false, confidence: 40, verdict: 'No credential-shaped assignment in the captured evidence.' }
+    }
+
+    // ── 9. Subdomain / DNS / path discovery — informational, evidence-backed. ──
+    if (/subdomain|dns record|robots\.txt|discovered path|directory.*found/i.test(text)) {
+      const hasTarget = Boolean(evidence.host || evidence.subdomain || evidence.path || evidence.url || evidence.domain)
+      return {
+        isTruePositive: hasTarget,
+        confidence: hasTarget ? 85 : 40,
+        verdict: hasTarget
+          ? `Enumeration evidence records ${evidence.host || evidence.subdomain || evidence.path || evidence.url} — informational asset discovery, not a vulnerability.`
+          : 'No enumerated asset recorded in evidence.',
+      }
+    }
+
+    // ── 10. TLS / protocol weakness — require an observed version or cipher. ──
+    if (/weak.*cipher|tls\s*1\.[01]|sslv|deprecated.*protocol/i.test(text)) {
+      const version = evidence.protocol || evidence.tls || evidence.version
+      const cipher = evidence.cipher
+      if (version || cipher) {
+        return { isTruePositive: true, confidence: 88, verdict: `TLS scan evidence records ${version || ''}${cipher ? ` / ${cipher}` : ''}.` }
+      }
+      return { isTruePositive: false, confidence: 40, verdict: 'No negotiated protocol or cipher captured — TLS weakness unverified.' }
+    }
+
+    // ── 11. Explicit negations and tool chatter → false positive. ──
+    const negations = [
+      { re: /all tested parameters do not appear|do not appear to be injectable|not injectable/i, reason: 'Tool explicitly reported no injection.' },
+      { re: /\bnot vulnerable\b|\bnot exploitable\b|\bnot affected\b/i, reason: 'Tool explicitly negated the vulnerability.' },
+      { re: /testing connection|testing if|content is stable|heuristic.*test/i, reason: 'Tool self-test output, not a finding.' },
+      { re: /^(?:starting|initializing|scanning|enumerating|waiting|fetching|resuming|loaded|parsed)\b/i, reason: 'Tool progress message, not a vulnerability.' },
+      { re: /no (?:vulnerabilit|result|issue|finding)/i, reason: 'Tool reported no results.' },
     ]
+    for (const { re, reason } of negations) {
+      if (re.test(text)) return { isTruePositive: false, confidence: 95, verdict: reason }
+    }
 
-    for (const { re, conf, reason } of truePositivePatterns) {
-      if (re.test(text)) {
-        return { isTruePositive: true, confidence: conf, verdict: reason }
+    // ── 12. Version-only CVE matches → plausible, never confirmed. ──
+    if (/CVE-\d{4}-\d+/i.test(text)) {
+      const cvss = parseFloat(/(?:cvss\s*)?(\d+\.\d+)/i.exec(text)?.[1] || '0')
+      return {
+        isTruePositive: false,
+        confidence: cvss >= 9 ? 35 : 25,
+        verdict: `Version-based CVE reference${cvss ? ` (CVSS ${cvss})` : ''} without exploitation evidence — requires manual confirmation.`,
       }
     }
 
-    // ── ALWAYS FALSE POSITIVE (tool chatter / noise) ──
-    const falsePositivePatterns = [
-      { re: /testing connection|testing if|content is stable|heuristic.*test|no parameter|no (?:vulnerab|result|issue|finding)/i, conf: 95, reason: 'Tool chatter/meta output — no actual vulnerability signal.' },
-      { re: /starting|initializing|scanning|enumerating|waiting|fetching|resuming|loaded|parsed/i, conf: 95, reason: 'Tool progress/status message — not a vulnerability.' },
-      { re: /all tested parameters do not appear|do not appear to be injectable/i, conf: 95, reason: 'Tool explicitly reported no vulnerability found.' },
-      { re: /not vulnerable|not found|not injectable|not exploitable|not affected/i, conf: 90, reason: 'Tool explicitly negated the finding.' },
-    ]
-
-    for (const { re, conf, reason } of falsePositivePatterns) {
-      if (re.test(text)) {
-        return { isTruePositive: false, confidence: conf, verdict: reason }
-      }
-    }
-
-    // ── LOW-CONFIDENCE HEURISTIC for remaining ──
-    // Version-based CVE matches without exploitation evidence
-    if (/nmap vulners|CVE-\d{4}-\d+/i.test(text)) {
-      // Version-only CVE matches are weak unless corroborated
-      const cvssMatch = text.match(/cvss\s*(\d+\.?\d*)/i)
-      const cvss = cvssMatch ? parseFloat(cvssMatch[1]) : 0
-      if (cvss >= 9.0) {
-        return { isTruePositive: true, confidence: 50, verdict: 'Version-based CVE match with critical CVSS. Plausible but unverified — manual confirmation required.' }
-      }
-      return { isTruePositive: false, confidence: 30, verdict: 'Version-only CVE match without exploitation evidence. Likely false positive — requires manual verification.' }
-    }
-
-    // Login surfaces — low severity, don't amplify
-    if (/login|authentication.*surface|auth.*endpoint/i.test(text)) {
-      return { isTruePositive: true, confidence: 60, verdict: 'Login endpoint discovered. Informational — no vulnerability confirmed.' }
-    }
-
-    // HTML forms / injection surfaces
-    if (/html forms?.*discovered|injection.*surfaces?/i.test(text)) {
-      return { isTruePositive: true, confidence: 50, verdict: 'Form discovery is informational. No injection vulnerability confirmed — only attack surface enumeration.' }
-    }
-
-    // Sensitive path discovery
-    if (/sensitive.*(?:path|file).*discovered|exposed.*(?:file|path|config)/i.test(text)) {
-      return { isTruePositive: true, confidence: 60, verdict: 'Sensitive path/file discovered. Informational — requires further investigation.' }
-    }
-
-    // Default fallback: mark as TRUE positive with low confidence when we cannot verify.
-    // Pattern-scan and code-audit findings carry file/line evidence — discarding them
-    // silently (old default=false) caused massive false-negative drops (1200→500→100).
-    // Better to surface low-confidence findings than hide them entirely.
+    // ── 13. Nothing decidable: surface it as unverified, not as confirmed. ──
     const isPatternOrCode = module === 'pattern-scan' || module === 'code-audit' || module === 'ai-audit'
     return {
-      isTruePositive: true,
-      confidence: isPatternOrCode ? 50 : 35,
-      verdict: 'Unable to verify via AI or heuristics. Low-confidence finding surfaced for manual review.'
+      isTruePositive: false,
+      confidence: 30,
+      verdict: isPatternOrCode
+        ? 'Pattern/code-audit finding has no machine-verifiable artifact in scope; kept for manual review at low confidence.'
+        : 'No artifact in the finding evidence settles this claim; kept for manual review at low confidence.',
     }
   }
 

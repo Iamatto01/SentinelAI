@@ -5,6 +5,8 @@ import { api } from '../lib/api.js'
 import { useAi } from '../lib/AiContext.jsx'
 import SeverityBadge from './SeverityBadge.jsx'
 import Tooltip from './Tooltip.jsx'
+import Cvss4Calculator from './Cvss4Calculator.jsx'
+import { ShieldCheck } from 'lucide-react'
 
 function safeParse(j, fallback) {
   if (!j) return fallback
@@ -104,6 +106,9 @@ export default function FindingDetailDrawer({ finding, onClose, onStatusChange, 
   const evidence = safeParse(finding.evidence, {})
   const poc = safeParse(finding.poc, {})
   const verdict = safeParse(finding.agent_verdict, null)
+  const verdictPct = verdict?.confidence != null
+    ? Math.round((verdict.confidence > 1 ? verdict.confidence : verdict.confidence * 100))
+    : null
   const cveId = finding.cve_id || (finding.title.match(/CVE-\d{4}-\d{4,}/i)?.[0])
 
   async function loadCve() {
@@ -288,6 +293,7 @@ export default function FindingDetailDrawer({ finding, onClose, onStatusChange, 
 
   const TABS = [
     { id: 'overview', label: 'Overview', icon: ShieldAlert },
+    { id: 'cvss', label: 'CVSS 4.0', icon: ShieldCheck },
     { id: 'exploit', label: 'Exploit', icon: Crosshair },
     { id: 'ai', label: 'AI Assistant', icon: Bot },
     { id: 'poc', label: 'PoC / Evidence', icon: BookOpen },
@@ -336,7 +342,11 @@ export default function FindingDetailDrawer({ finding, onClose, onStatusChange, 
                 {finding.owasp_category && <span className="chip bg-accent/10 text-accent border border-accent/30">{finding.owasp_category}</span>}
                 {finding.cwe_id && <span className="chip bg-ink-700 text-slate-300 border border-ink-600">{finding.cwe_id}</span>}
                 {cveId && <span className="chip bg-sev-high/10 text-sev-high border border-sev-high/30">{cveId}</span>}
-                {finding.cvss != null && <span className="chip bg-ink-700 text-slate-300 border border-ink-600">CVSS {finding.cvss}</span>}
+                {finding.cvss != null && (
+                  <button onClick={() => setTab('cvss')} className="chip bg-cyan-500/10 text-cyan-300 border border-cyan-500/30 hover:border-cyan-500/60 cursor-pointer transition flex items-center gap-1">
+                    <ShieldCheck size={11} /> CVSS 4.0: {finding.cvss}
+                  </button>
+                )}
               </div>
               {/* Plain-English summary — auto-generated from finding data */}
               {(() => {
@@ -375,8 +385,24 @@ export default function FindingDetailDrawer({ finding, onClose, onStatusChange, 
               )}
               {verdict && (
                 <div className="rounded-lg bg-accent/5 border border-accent/20 p-3">
-                  <p className="text-[11px] uppercase tracking-wider text-accent/80 mb-1">Agent Verdict · {verdict.agent} · {Math.round((verdict.confidence || 0) * 100)}%</p>
+                  <p className="text-[11px] uppercase tracking-wider text-accent/80 mb-1">Agent Verdict · {verdict.agent}{verdictPct != null ? ` · ${verdictPct}%` : ''}</p>
                   <p className="text-xs text-slate-300 whitespace-pre-wrap">{verdict.reasoning}</p>
+                  {Array.isArray(evidence?.actions) && evidence.actions.length > 0 && (
+                    <div className="mt-2 pt-2 border-t border-accent/10">
+                      <p className="text-[10px] uppercase tracking-wider text-slate-500 mb-1">Provenance</p>
+                      <ul className="space-y-0.5">
+                        {evidence.actions.slice(-5).map((a, i) => (
+                          <li key={`${a.at || ''}-${i}`} className="text-[11px] text-slate-400">
+                            <span className="text-slate-500">{a.at ? new Date(a.at).toLocaleTimeString() : '—'}</span>
+                            {' · '}{a.kind || 'action'}{' · '}
+                            <span className={a.status === 'completed' ? 'text-emerald-400/80' : 'text-amber-400/80'}>{a.status || 'unknown'}</span>
+                            {' · '}{a.by || 'unknown'}{a.tier ? ` (${a.tier})` : ''}
+                            {a.summary && <span className="block text-slate-500 italic">{String(a.summary).slice(0, 220)}</span>}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
                 </div>
               )}
               {finding.remediation && (
@@ -868,6 +894,21 @@ export default function FindingDetailDrawer({ finding, onClose, onStatusChange, 
                 )
               )}
             </>
+          )}
+
+          
+          {tab === 'cvss' && (
+            <div className="space-y-4">
+              <Cvss4Calculator
+                initialVector={finding.cvss_vector || finding.evidence?.cvssVector}
+                findingId={finding.id}
+                onUpdate={(updated) => {
+                  if (updated && onSeverityChange) {
+                    onSeverityChange(updated.severity)
+                  }
+                }}
+              />
+            </div>
           )}
 
           {tab === 'notes' && (

@@ -263,7 +263,7 @@ export default function LiveScanTerminal() {
           }`}>
             <Terminal size={13} className={isNight ? 'text-white' : 'text-black'} />
             <span className="font-bold uppercase tracking-wider">
-              REAL-TIME EXECUTION PIPELINE // STICKY SCROLL TERMINAL
+              PRODUCT WALKTHROUGH // SIMULATED OUTPUT
             </span>
           </div>
 
@@ -283,8 +283,10 @@ export default function LiveScanTerminal() {
           <p className={`text-sm sm:text-base font-sans leading-relaxed ${
             isNight ? 'text-neutral-400' : 'text-zinc-600'
           }`}>
-            Scroll through our 3-stage autonomous offensive pipeline. Watch the terminal dynamically type
-            subprocess stdout, craft exploit payloads, and synthesize git diff patches in real-time.
+            Scroll through our 3-stage autonomous offensive pipeline. The recording below is a
+            scripted walkthrough of a sample engagement — replay it to see the terminal stream
+            subprocess stdout, craft exploit payloads, and synthesize git diff patches. Run a real
+            scan from the dashboard to watch the same stages execute against your own target.
           </p>
         </motion.div>
 
@@ -417,6 +419,9 @@ export default function LiveScanTerminal() {
                   <span className="w-3 h-3 rounded-full bg-neutral-700 inline-block" />
                   <span className="ml-2 text-xs font-semibold text-neutral-300 hidden sm:inline">
                     kali@sentinelai: ~/engine/stage-0{activeStage}
+                  </span>
+                  <span className="ml-2 px-1.5 py-0.5 rounded border border-amber-400/40 bg-amber-400/10 text-[9px] font-bold uppercase tracking-wider text-amber-300">
+                    Sample data
                   </span>
                 </div>
 

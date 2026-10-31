@@ -27,6 +27,23 @@ function resolveDir(p, fallback) {
   return path.isAbsolute(v) ? v : path.resolve(PROJECT_ROOT, v)
 }
 
+// Legacy MSF_RPC_URL (http://host:port/api/) → host/port/ssl, used as a fallback
+// for the newer MSF_RPC_HOST/MSF_RPC_PORT/MSF_RPC_SSL trio.
+function parseMsfUrl() {
+  const raw = (process.env.MSF_RPC_URL || '').trim()
+  if (!raw) return { host: '', port: 0, ssl: false }
+  try {
+    const u = new URL(raw)
+    return {
+      host: u.hostname,
+      port: u.port ? Number(u.port) : (u.protocol === 'https:' ? 443 : 80),
+      ssl: u.protocol === 'https:',
+    }
+  } catch {
+    return { host: '', port: 0, ssl: false }
+  }
+}
+
 export const config = {
   port: Number(process.env.PORT || 5000),
   clientOrigin: process.env.CLIENT_ORIGIN || 'http://localhost:5173,https://sentinelai.studio',
@@ -91,6 +108,46 @@ export const config = {
   scan: {
     moduleTimeoutMs: Number(process.env.MODULE_TIMEOUT_MS || 600000),
     maxConcurrency: Number(process.env.MAX_SCAN_CONCURRENCY || 3),
+  },
+
+  // Out-of-band (OOB) interaction listener.
+  // Real SSRF/XXE/log4j/cmdi/RFI confirmation needs a callback host the target
+  // can reach. The embedded listener binds locally; publicBaseUrl tells payload
+  // generators which address a remote target should hit (tunnel/LAN IP/reverse
+  // proxy). Auto-detected from the LAN interface when unset.
+  oob: {
+    enabled: (process.env.OOB_ENABLED || 'true').trim() !== 'false',
+    bindHost: (process.env.OOB_BIND_HOST || '0.0.0.0').trim(),
+    port: Number(process.env.OOB_PORT || 4711),
+    // Public base URL as seen by the TARGET (e.g. https://oob.example.com).
+    publicBaseUrl: (process.env.OOB_PUBLIC_URL || '').trim(),
+    // Optional shared secret so only our tokens are accepted when exposed.
+    ttlMs: Number(process.env.OOB_TTL_MS || 900000),
+  },
+
+  // Metasploit RPC bridge (msfrpcd). Real MessagePack-RPC client, no msf deps.
+  // Accepts both the current MSF_RPC_* names and the legacy MSF_USER/MSF_PASS/
+  // MSF_RPC_URL trio so existing deployments keep working after upgrade.
+  msf: {
+    enabled: (process.env.MSF_ENABLED || 'true').trim() !== 'false',
+    host: (process.env.MSF_RPC_HOST || parseMsfUrl().host || '127.0.0.1').trim(),
+    port: Number(process.env.MSF_RPC_PORT || parseMsfUrl().port || 55553),
+    user: (process.env.MSF_RPC_USER || process.env.MSF_USER || 'msf').trim(),
+    password: process.env.MSF_RPC_PASS || process.env.MSF_PASS || '',
+    ssl: (process.env.MSF_RPC_SSL || String(parseMsfUrl().ssl)).trim() === 'true',
+    // Callback listener handed to exploit modules that need a payload.
+    lhost: (process.env.MSF_LHOST || '').trim(),
+    lport: Number(process.env.MSF_LPORT || 4444),
+    // Auto-run a read-only session survey on new shells.
+    autoEnumerate: (process.env.MSF_AUTO_ENUM || 'true').trim() !== 'false',
+  },
+
+  // BeEF (Browser Exploitation Framework) hook server. Optional: when unset,
+  // browsers-hook steps report "not configured" instead of a dead localhost URL.
+  beef: {
+    hookUrl: (process.env.BEEF_HOOK_URL || '').trim(),
+    user: (process.env.BEEF_USER || 'beef').trim(),
+    password: (process.env.BEEF_PASS || '').trim(),
   },
 
   // Channel gateway (OpenClaw-style): Telegram + Discord bots.

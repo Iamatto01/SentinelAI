@@ -150,18 +150,28 @@ export function parseScriptFindings(stdout, severityFloor = 'info') {
 /**
  * Run one script against a target. Returns { result, findings }.
  * Used by both the pipeline stage and the API test-run endpoint.
+ *
+ * Context variables (TARGET / SCAN_ID / DEPTH) are handed to the child through
+ * its spawn environment, never inlined into the command string. Inlining them
+ * required shell quoting, and the quoting broke every script on shells that
+ * reject adjacent double-quoted assignments (dash, busybox ash, some shims) —
+ * which silently killed the whole stage. Passing env is shell-agnostic.
  */
 export async function runCustomScript(script, { target, scanId = 'test', depth = 'standard' } = {}) {
   const invocation = buildInvocation(script.language, script.command)
-  const envPrefix = `TARGET=${JSON.stringify(target)} SCAN_ID=${JSON.stringify(scanId)} DEPTH=${JSON.stringify(depth)}`
-  const full = `${envPrefix} ${invocation}`
+  const scriptEnv = {
+    TARGET: target ?? '',
+    SCAN_ID: scanId ?? '',
+    DEPTH: depth ?? '',
+  }
 
-  const result = await runNativeCommand(full, { timeout: SCRIPT_TIMEOUT_MS })
+  const result = await runNativeCommand(invocation, { timeout: SCRIPT_TIMEOUT_MS, env: scriptEnv })
   const findings = parseScriptFindings(result.stdout, script.severity_floor || 'info')
 
-  // Persist raw output for audit/debug (best-effort)
+  // Persist raw output for audit/debug (best-effort). The command is logged
+  // without the env prefix because the prefix no longer exists on the wire.
   try {
-    const logContent = `# ${new Date().toISOString()} — ${script.name}\n# CMD: ${full}\n# exit=${result.code} success=${result.success}\n\n${result.stdout}\n\n--- stderr ---\n${result.stderr}\n`
+    const logContent = `# ${new Date().toISOString()} — ${script.name}\n# ENV: TARGET=${scriptEnv.TARGET} SCAN_ID=${scriptEnv.SCAN_ID} DEPTH=${scriptEnv.DEPTH}\n# CMD: ${invocation}\n# exit=${result.code} success=${result.success}\n\n${result.stdout}\n\n--- stderr ---\n${result.stderr}\n`
     
     // 1. Primary: Save inside organized scan folder (output/scans/<scanId>/custom-scripts/)
     const scanDir = path.join(config.outputDir, 'scans', scanId, 'custom-scripts')

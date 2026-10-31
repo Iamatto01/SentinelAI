@@ -403,10 +403,45 @@ GROQ_API_KEY=your_groq_api_key_here
 OPENROUTER_API_KEY=your_openrouter_api_key_here
 OPENROUTER_MODEL=deepseek/deepseek-r1-distill-qwen-32b:free
 
+# AI finding verification — network re-check before the offline heuristic
+AI_HEURISTIC_NETWORK_VERIFY=true
+AI_HEURISTIC_NETWORK_TIMEOUT_MS=8000
+
+# Metasploit RPC bridge (optional — the orchestrator also runs native/custom steps)
+# Accepts either the legacy names (MSF_RPC_URL + MSF_USER/MSF_PASS) or the split form.
+MSF_RPC_URL=http://127.0.0.1:55553/api/
+MSF_USER=msf
+MSF_PASS=msf
+MSF_TIMEOUT_MS=120000
+# MSF_RPC_HOST=127.0.0.1
+# MSF_RPC_PORT=55553
+# MSF_RPC_SSL=false
+# MSF_RPC_USER=msf
+# MSF_RPC_PASS=msf
+
+# Out-of-band callback listener (SSRF / XXE / blind injection verification)
+OOB_ENABLED=true
+OOB_BIND_HOST=0.0.0.0
+OOB_PORT=4711
+# Public URL reachable by the target — defaults to http://<request host>:OOB_PORT
+# OOB_PUBLIC_URL=https://oob.example.com
+OOB_TTL_MS=1800000
+
+# BeEF browser-hook server (optional — XSS executor falls back to headless verification)
+BEEF_HOOK_URL=http://127.0.0.1:3000/hook.js
+BEEF_USER=beef
+BEEF_PASS=beef
+
 # Knowledge Base & Database Paths
 DB_PATH=output/fyp2.db
 PAYLOADS_DIR=knowledge/payloads
 ```
+
+> **Finding verification tiers.** `verifyFinding()` tries the configured LLM first. If no
+> provider answers (or replies with unparseable output) it re-probes the target over the wire
+> (`network-reverify`), and only when the claim cannot be settled on the wire does it fall back
+> to the deterministic, evidence-gated heuristic (`evidence-heuristic`). Every verdict records
+> which tier produced it, so a finding is never marked "AI-validated" on text alone.
 
 ---
 

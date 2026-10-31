@@ -23,12 +23,15 @@ import { agentRegistry } from './ai/agent-registry.js'
 import { aiEngine } from './ai/ai-engine.js'
 import { generateReport, buildReportFilename } from './report.js'
 import { getCve, findVersionVulnerabilities } from './cve.js'
+import { calculateCvss4, severityFromCvss4Score } from './cvss4.js'
 import * as monitors from './monitor-scheduler.js'
 import swaggerUi from 'swagger-ui-express'
 import { openapiSpec } from './openapi.js'
 import { walkProjects } from './folder-walker.js'
 import { ExploitOrchestrator } from './exploits/orchestrator.js'
 import { matchExploits, classifyRisk } from './exploits/registry.js'
+import { msfClient } from './exploits/msf-client.js'
+import * as oob from './exploits/oob.js'
 import { sendScanRequestNotification, sendAnonymousFeedbackNotification, sendConsultationBookingNotification } from './email.js'
 import { GitHubClient, parseGitHubWebhook } from './integrations/github.js'
 import {
@@ -274,10 +277,19 @@ app.get('/api/status', requireAuth, async (req, res) => {
     tools,
   }
   const rag = payloadsRag.payloadsIndexStatus()
+  let msf = { available: false, reason: 'MSF_RPC_PASS is not configured' }
+  try { msf = await msfClient.status() } catch (e) { msf = { available: false, reason: e.message } }
   res.json({
     engine,
     rag,
-    exploitation: { engine: 'native', metasploit: 'removed' },
+    exploitation: {
+      engine: 'native',
+      // Metasploit is optional: the campaign engine runs native/inline probes when
+      // msfrpcd is not reachable, and reports the concrete reason it is offline.
+      metasploit: msf.available ? 'online' : 'offline',
+      msf,
+      oob: oob.getOobStatus(),
+    },
     agents: { count: agentRegistry.list().length, dir: config.agentsDir },
     ai: { configured: aiEngine.llm.isConfigured(), provider: config.ai.provider },
   })
@@ -1408,6 +1420,32 @@ app.put('/api/findings/:id/severity', requireAuth, requireStaff, (req, res) => {
   res.json(db.get(`SELECT * FROM findings WHERE id = ?`, req.params.id))
 })
 
+app.put('/api/findings/:id/cvss', requireAuth, requireStaff, (req, res) => {
+  const { cvssVector } = req.body || {}
+  if (!cvssVector || typeof cvssVector !== 'string') {
+    return res.status(400).json({ error: 'cvssVector string is required (e.g. CVSS:4.0/AV:N/AC:L/...)' })
+  }
+  const existing = db.get(`SELECT id FROM findings WHERE id = ?`, req.params.id)
+  if (!existing) return res.status(404).json({ error: 'Finding not found' })
+
+  const cvssResult = calculateCvss4(cvssVector)
+  if (cvssResult.error) {
+    return res.status(400).json({ error: `Invalid CVSS 4.0 vector: ${cvssResult.error}` })
+  }
+
+  const { score, severity } = cvssResult
+  db.run(`UPDATE findings SET cvss = ?, cvss_vector = ?, severity = ? WHERE id = ?`, score, cvssVector, severity, req.params.id)
+  audit(req.user.username, 'finding:cvss', `${req.params.id} -> ${cvssVector} (score: ${score}, ${severity})`)
+  res.json(db.get(`SELECT * FROM findings WHERE id = ?`, req.params.id))
+})
+
+app.post('/api/cvss/calculate', requireAuth, (req, res) => {
+  const { vector } = req.body || {}
+  if (!vector) return res.status(400).json({ error: 'vector is required' })
+  const result = calculateCvss4(vector)
+  res.json(result)
+})
+
 // ── Findings & Database Backup API — staff only (full DB export)
 app.post('/api/backup/create', requireAuth, requireStaff, async (req, res) => {
   try {
@@ -1940,6 +1978,92 @@ app.post('/api/scans/:id/audio-briefing', requireAuth, requireScanAccess, async 
 
 // ── Exploitation Engine ──────────────────────────────────────────────────────
 
+// ── Metasploit RPC bridge (msfrpcd) — staff only.
+// Session commands are remote shell execution, so they must never be reachable
+// by client-portal users.
+app.get('/api/exploits/msf/status', requireAuth, requireStaff, async (req, res) => {
+  try { res.json(await msfClient.status({ force: req.query.force === '1' })) }
+  catch (e) { res.status(502).json({ available: false, error: e.message || 'MSF RPC unavailable' }) }
+})
+
+app.get('/api/exploits/msf/modules', requireAuth, requireStaff, async (req, res) => {
+  try { res.json(await msfClient.moduleStats()) }
+  catch (e) { res.status(502).json({ error: e.message || 'MSF RPC unavailable' }) }
+})
+
+app.get('/api/exploits/msf/search', requireAuth, requireStaff, async (req, res) => {
+  const q = String(req.query.q || '').trim()
+  if (!q) return res.status(400).json({ error: 'q (search string) is required' })
+  try { res.json(await msfClient.listExploits(q)) }
+  catch (e) { res.status(502).json({ error: e.message || 'MSF RPC unavailable' }) }
+})
+
+app.get('/api/exploits/msf/sessions', requireAuth, requireStaff, async (req, res) => {
+  try { res.json(await msfClient.sessions()) }
+  catch (e) { res.status(502).json({ error: e.message || 'MSF RPC unavailable' }) }
+})
+
+app.get('/api/exploits/msf/sessions/:id', requireAuth, requireStaff, async (req, res) => {
+  try {
+    const s = await msfClient.sessionInfo(req.params.id)
+    if (!s) return res.status(404).json({ error: 'session not found' })
+    res.json(s)
+  } catch (e) { res.status(502).json({ error: e.message || 'MSF RPC unavailable' }) }
+})
+
+app.post('/api/exploits/msf/sessions/:id/command', requireAuth, requireStaff, async (req, res) => {
+  const { command, readMs } = req.body || {}
+  if (!command || !String(command).trim()) return res.status(400).json({ error: 'command required' })
+  try {
+    const result = await msfClient.sessionCommand(req.params.id, String(command), {
+      readMs: Math.min(Number(readMs) || 4000, 60000),
+    })
+    audit(req.user.username, 'exploit:msf-session-command', `session ${req.params.id}: ${String(command).slice(0, 120)}`)
+    res.json(result)
+  } catch (e) { res.status(502).json({ error: e.message || 'MSF RPC unavailable' }) }
+})
+
+app.delete('/api/exploits/msf/sessions/:id', requireAuth, requireStaff, async (req, res) => {
+  try {
+    const result = await msfClient.killSession(req.params.id)
+    audit(req.user.username, 'exploit:msf-session-kill', `session ${req.params.id}`)
+    res.json(result)
+  } catch (e) { res.status(502).json({ error: e.message || 'MSF RPC unavailable' }) }
+})
+
+app.get('/api/exploits/msf/jobs', requireAuth, requireStaff, async (req, res) => {
+  try { res.json(await msfClient.jobs()) }
+  catch (e) { res.status(502).json({ error: e.message || 'MSF RPC unavailable' }) }
+})
+
+app.delete('/api/exploits/msf/jobs/:id', requireAuth, requireStaff, async (req, res) => {
+  try { res.json(await msfClient.stopJob(req.params.id)) }
+  catch (e) { res.status(502).json({ error: e.message || 'MSF RPC unavailable' }) }
+})
+
+// ── Out-of-band interaction listener.
+// Real SSRF/XXE/RCE/blind-injection confirmation needs a callback host the target
+// can actually reach; these routes expose the listener health and hit log.
+app.get('/api/exploits/oob/status', requireAuth, requireStaff, (req, res) => {
+  res.json(oob.getOobStatus())
+})
+
+app.get('/api/exploits/oob/hits', requireAuth, requireStaff, (req, res) => {
+  const limit = Math.min(Number(req.query.limit) || 100, 500)
+  res.json({ status: oob.getOobStatus(), hits: oob.listHits(limit) })
+})
+
+// Manual probe creation — lets an operator hand a callback URL to a target the
+// automated executors cannot reach (file upload, desktop client, out-of-band DNS).
+app.post('/api/exploits/oob/probe', requireAuth, requireStaff, async (req, res) => {
+  const { label, path, ttlMs } = req.body || {}
+  try {
+    const probe = await oob.createOobProbe({ label: label || 'manual', path: path || '', ttlMs })
+    audit(req.user.username, 'exploit:oob-probe', probe.url)
+    res.json(probe)
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
 // List all exploit campaigns
 app.get('/api/exploits/campaigns', requireAuth, requireStaff, (req, res) => {
   const campaigns = db.all(`
@@ -1966,13 +2090,16 @@ app.get('/api/exploits/campaigns/:id', requireAuth, requireStaff, (req, res) => 
   const steps = db.all(`SELECT * FROM exploit_steps WHERE campaign_id = ? ORDER BY step_order ASC`, req.params.id)
   const loot = db.all(`SELECT * FROM exploit_loot WHERE campaign_id = ? ORDER BY created_at DESC`, req.params.id)
   const approvals = db.all(`SELECT * FROM exploit_approvals WHERE campaign_id = ? ORDER BY created_at DESC`, req.params.id)
+  // Persisted execution log — replayable after reload, and the audit trail for
+  // an unattended campaign the operator never watched live.
+  const logs = db.all(`SELECT * FROM exploit_logs WHERE campaign_id = ? ORDER BY id ASC LIMIT 2000`, req.params.id)
 
-  res.json({ campaign, steps, loot, approvals })
+  res.json({ campaign, steps, loot, approvals, logs })
 })
 
 // Launch an exploitation campaign for a finding
 app.post('/api/exploits/campaigns', requireAuth, requireStaff, async (req, res) => {
-  const { scanId, findingId } = req.body || {}
+  const { scanId, findingId, rerun } = req.body || {}
   if (!findingId) return res.status(400).json({ error: 'findingId required' })
 
   const finding = db.get(`SELECT * FROM findings WHERE id = ?`, findingId)
@@ -1995,18 +2122,25 @@ app.post('/api/exploits/campaigns', requireAuth, requireStaff, async (req, res) 
   }
   if (!scan) return res.status(404).json({ error: 'scan not found' })
 
-  // Check if a campaign already exists for this finding
-  const existing = db.get(
-    `SELECT * FROM exploit_campaigns WHERE finding_id = ? AND status NOT IN ('aborted', 'failed') ORDER BY created_at DESC LIMIT 1`,
-    findingId
-  )
+  // Reuse an in-flight campaign for this finding rather than spawning a duplicate.
+  // A finished campaign (completed/awaiting_approval) is NOT reused: the operator
+  // needs to re-verify after a remediation or a fix, and silently returning the
+  // stale run made a retest impossible. Pass { rerun: true } to always restart.
+  const REUSABLE = ['queued', 'running', 'paused']
+  const existing = rerun
+    ? null
+    : db.get(
+      `SELECT * FROM exploit_campaigns WHERE finding_id = ? AND status IN (${REUSABLE.map(() => '?').join(',')}) ORDER BY created_at DESC LIMIT 1`,
+      findingId, ...REUSABLE
+    )
   if (existing) {
     // Return existing campaign
     const steps = db.all(`SELECT * FROM exploit_steps WHERE campaign_id = ? ORDER BY step_order ASC`, existing.id)
     const loot = db.all(`SELECT * FROM exploit_loot WHERE campaign_id = ? ORDER BY created_at DESC`, existing.id)
     const approvals = db.all(`SELECT * FROM exploit_approvals WHERE campaign_id = ? ORDER BY created_at DESC`, existing.id)
+    const logs = db.all(`SELECT * FROM exploit_logs WHERE campaign_id = ? ORDER BY id ASC LIMIT 2000`, existing.id)
     return res.json({
-      campaign: existing, steps, loot, approvals,
+      campaign: existing, steps, loot, approvals, logs,
       alreadyExists: true,
       matchedExploits: matchExploits(finding).length,
       risk: classifyRisk(finding),
@@ -2919,6 +3053,31 @@ server.listen(PORT, async () => {
   console.log(`[FYP2] Native scanner engine: direct subprocess execution (hexstrike removed)`)
   console.log(`[FYP2] Agents: ${agentRegistry.list().length} | RAG docs: ${payloadsRag.payloadsIndexStatus().docs}`)
 
+  // Out-of-band interaction listener — needed by every blind probe
+  // (SSRF/XXE/RCE/log4j/blind injection). Non-fatal when the port is taken.
+  try {
+    const srv = await oob.startOob()
+    const st = oob.getOobStatus()
+    if (srv) {
+      console.log(`[FYP2] OOB listener on ${st.bindHost}:${st.port} — callbacks advertise ${st.baseUrl}`)
+      if (st.localOnly) {
+        console.warn('[FYP2] OOB advertised host is loopback; remote targets cannot call back. Set OOB_PUBLIC_URL (tunnel/LAN IP) for internet-facing targets.')
+      }
+    } else if (st.error) {
+      console.warn(`[FYP2] OOB listener unavailable: ${st.error}`)
+    }
+  } catch (e) {
+    console.warn(`[FYP2] OOB listener failed to start: ${e.message}`)
+  }
+
+  // Metasploit bridge — optional. Native/inline executors cover the gap when offline.
+  const msf = await msfClient.status().catch((e) => ({ available: false, reason: e.message }))
+  if (msf.available) {
+    console.log(`[FYP2] Metasploit RPC online at ${msf.host}:${msf.port} (v${msf.version || '?'}) — ${msf.sessions || 0} session(s)`)
+  } else {
+    console.log(`[FYP2] Metasploit RPC offline — ${msf.reason || 'not configured'} (native executors active)`)
+  }
+
   // Channel gateway (Telegram/Discord bots) — non-fatal if tokens missing.
   try {
     channelGateway.attach({ io, pipeline, orchestrator: exploitEngine, agentRegistry })
@@ -2927,6 +3086,22 @@ server.listen(PORT, async () => {
     console.warn(`[FYP2] Channel gateway failed to start: ${e.message}`)
   }
 })
+
+let shuttingDown = false
+async function shutdown(signal) {
+  if (shuttingDown) return
+  shuttingDown = true
+  console.log(`\n[FYP2] ${signal} received — shutting down`)
+  try { await oob.stopOob() } catch (e) { console.warn(`[FYP2] OOB stop failed: ${e.message}`) }
+  try { await msfClient.logout() } catch { /* best effort */ }
+  try { channelGateway.stop?.() } catch { /* best effort */ }
+  server.close(() => process.exit(0))
+  // Do not hang forever on keep-alive sockets.
+  setTimeout(() => process.exit(0), 5000).unref()
+}
+for (const sig of ['SIGINT', 'SIGTERM']) {
+  process.on(sig, () => { shutdown(sig) })
+}
 
 process.on('uncaughtException', (err) => {
   console.error('[FYP2 Backend uncaughtException]:', err?.message || err)

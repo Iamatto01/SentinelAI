@@ -1115,14 +1115,14 @@ function fmtDateTime(dt) {
 }
 
 function riskRating(findings) {
-  // UNIFIED: derive the qualitative rating from the SAME weighted score the
-  // pipeline persists (scans.risk_score) so cover and appendix always agree.
   const counts = {}
+  let maxCvss = 0
   for (const f of findings) {
     const s = (f.severity || 'info').toLowerCase()
     counts[s] = (counts[s] || 0) + 1
+    if (f.cvss != null && f.cvss > maxCvss) maxCvss = Number(f.cvss)
   }
-  return riskRatingFromScore(computeRiskScore(counts))
+  return riskRatingFromScore(computeRiskScore(counts, maxCvss))
 }
 
 function duration(start, end) {
@@ -1321,6 +1321,7 @@ function toView(f, scanTarget) {
     title: beautifyFindingTitle(cleanPdfText(f.title)),
     severity: (f.severity || 'info').toLowerCase(),
     cvss: f.cvss,
+    cvssVector: f.cvss_vector,
     cweId: f.cwe_id,
     cveId: f.cve_id,
     owaspCategory: f.owasp_category,
@@ -1336,6 +1337,19 @@ function toView(f, scanTarget) {
     aiAgent: verdict?.agent || null,
     aiConfidence: verdict?.confidence != null ? verdict.confidence / 100 : 0,
     aiReasoning: cleanPdfText(verdict?.reasoning || null),
+    // Provenance: every verification action the pipeline recorded for this
+    // finding, so a reader can distinguish a model verdict from a deterministic
+    // attribution and see when each one ran.
+    provenance: Array.isArray(evidence?.actions)
+      ? evidence.actions.slice(-8).map((a) => ({
+          at: a.at || null,
+          kind: a.kind || 'action',
+          status: a.status || 'unknown',
+          by: a.by || 'unknown',
+          tier: a.tier || null,
+          summary: cleanPdfText(a.summary || '') || null,
+        }))
+      : [],
   }
   view.confidence = confidencePercent(view)
   view.references = [
@@ -2001,6 +2015,15 @@ function renderDetailedFindings(doc, { vulnerabilities, isWhitebox }) {
 
       doc.y = metaY + metaH + 8
 
+      // Detection source: which scanner stage produced this finding, so the
+      // reader can trace it back to the tool that ran (built-in module, native
+      // CLI, or a custom script).
+      if (v.module) {
+        doc.fontSize(8).font('Helvetica').fillColor(BRAND.textMuted)
+          .text(`Detected by: ${String(v.module).slice(0, 120)}`, x, doc.y, { width: w })
+        doc.moveDown(0.35)
+      }
+
       // Description Block
       if (v.description) {
         ensureSpace(doc, 50)
@@ -2039,6 +2062,25 @@ function renderDetailedFindings(doc, { vulnerabilities, isWhitebox }) {
         doc.fontSize(8.5).font('Helvetica').fillColor('#0C4A6E')
           .text(aiText, x + 10, aiY + 20, { width: w - 20, height: aiH - 24, ellipsis: true })
         doc.y = aiY + aiH + 8
+      }
+
+      // Provenance Block — which agent/mechanism verified this, and how.
+      if (Array.isArray(v.provenance) && v.provenance.length) {
+        const lines = v.provenance.map((a) => {
+          const when = a.at ? new Date(a.at).toISOString().replace('T', ' ').slice(0, 19) : 'unknown time'
+          const tier = a.tier ? ` [${a.tier}]` : ''
+          return `${when}  ${a.kind}  ${a.status}  ${a.by}${tier}`
+        })
+        const provText = lines.join('\n').slice(0, 700)
+        ensureSpace(doc, 45)
+        const provY = doc.y
+        const provH = Math.min(doc.fontSize(7.5).font('Helvetica').heightOfString(provText, { width: w - 20 }) + 22, 120)
+        doc.rect(x, provY, w, provH).fillAndStroke('#F8FAFC', '#E2E8F0')
+        doc.fontSize(8).font('Helvetica-Bold').fillColor('#334155')
+          .text('Verification Provenance:', x + 10, provY + 6)
+        doc.fontSize(7.5).font('Helvetica').fillColor('#475569')
+          .text(provText, x + 10, provY + 19, { width: w - 20, height: provH - 22, ellipsis: true })
+        doc.y = provY + provH + 8
       }
 
       // == WHITEBOX: Show file location + vulnerable code snippet ==

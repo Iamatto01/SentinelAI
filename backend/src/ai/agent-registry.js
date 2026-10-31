@@ -46,27 +46,41 @@ export class AgentRegistry {
    * Keyword-based deterministic routing (fast, no LLM needed).
    */
   routeFinding(finding = {}) {
-    const text = `${finding.title || ''} ${finding.description || ''} ${finding.cweId || ''} ${finding.module || ''}`.toLowerCase()
+    // Only the finding's own identity drives routing — never the arbitrary text
+    // of an evidence blob, which routinely contains words like "injection" or
+    // "token" and would misfile a missing-header finding to the SQL specialist.
+    const claims = `${finding.title || ''} ${finding.description || ''} ${finding.cweId || ''}`.toLowerCase()
+    const mod = String(finding.module || '').toLowerCase()
     const rules = [
-      [/sql|sqli|injection/, 'database-attacker'],
-      [/xss|cross-site scripting|dom/, 'web-hunter'],
+      // Ordered most-specific first: a description that merely mentions the word
+      // "endpoint" or "port" in passing must not outrank a rule that names the
+      // actual class of weakness (header posture, version fingerprint, SQLi).
+      [/missing.*(?:header|hsts|csp|content-security|x-frame|referrer|permissions|transport)|security header|\bcors\b|access-control|cookie|clickjack/, 'web-hunter'],
+      [/fingerprint|banner grab|technology stack|architecture|product version|outdated|component lifecycle|\bcve-\d/, 'vuln-scanner'],
+      [/\bsql\b|sqli|sql injection|nosql/, 'database-attacker'],
+      [/xss|cross-site scripting|\bdom-based/, 'web-hunter'],
       [/ssrf|request forgery/, 'web-hunter'],
-      [/api|graphql|rest|endpoint/, 'api-security'],
-      [/secret|credential|api key|token|hardcoded/, 'code-auditor'],
-      [/code|sast|static|source|deserializ|logic/, 'code-auditor'],
-      [/business logic|workflow|price|race/, 'bizlogic-hunter'],
-      [/cloud|aws|azure|gcp|s3|iam/, 'cloud-security'],
-      [/container|docker|kubernetes|k8s/, 'container-breakout'],
-      [/crypto|tls|ssl|cipher|certificate|hash/, 'crypto-analyzer'],
-      [/auth|jwt|session|login|password|oauth/, 'credential-tester'],
-      [/network|port|smb|ldap|kerberos|active directory/, 'network-attacker'],
-      [/mobile|android|ios|apk/, 'mobile-pentester'],
-      [/iot|firmware|embedded/, 'iot-pentester'],
-      [/llm|prompt|ai |model/, 'llm-redteam'],
-      [/misconfig|header|cors|cookie/, 'web-hunter'],
-      [/cve|outdated|component|dependenc/, 'vuln-scanner'],
+      [/graphql|\brest api\b|\bapi endpoint|openapi|swagger|mass assignment|bola|bfla/, 'api-security'],
+      [/secret|\bapi key|hardcoded|private key|leaked credential/, 'code-auditor'],
+      [/deserializ|prototype pollution|\bsast\b|static analysis|source code/, 'code-auditor'],
+      [/business logic|workflow bypass|price manipulation|race condition/, 'bizlogic-hunter'],
+      [/cloud|aws|azure|gcp|s3 bucket|\biam\b|metadata service/, 'cloud-security'],
+      [/container|docker|kubernetes|\bk8s\b/, 'container-breakout'],
+      [/crypto|cipher|certificate|\btls\b|\bssl\b|hashing algorithm/, 'crypto-analyzer'],
+      [/authentication|\bjwt\b|session fixation|login|password|oauth|\bsso\b/, 'credential-tester'],
+      [/network|open port|\bsmb\b|\bldap\b|kerberos|active directory|\bnmap\b/, 'network-attacker'],
+      [/mobile client|android|\bios\b|\bapk\b/, 'mobile-pentester'],
+      [/iot|firmware|embedded device/, 'iot-pentester'],
+      [/\bllm\b|prompt injection|jailbreak|ai model/, 'llm-redteam'],
+      [/misconfiguration|hardening/, 'web-hunter'],
     ]
-    for (const [re, agent] of rules) if (re.test(text)) return agent
+    for (const [re, agent] of rules) if (re.test(claims)) return agent
+    // Second pass: the module the finding came from is still a weak but valid
+    // routing signal.
+    if (/version|lifecycle|whatweb|technology/.test(mod)) return 'vuln-scanner'
+    if (/nmap|masscan|portscan|network/.test(mod)) return 'network-attacker'
+    if (/secret|code-audit|sast/.test(mod)) return 'code-auditor'
+    if (/cloud|s3|iam/.test(mod)) return 'cloud-security'
     return 'web-hunter' // default specialist
   }
 

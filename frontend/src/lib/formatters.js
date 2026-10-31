@@ -1,4 +1,21 @@
 /**
+ * Decodes a stored `agent_verdict` column into `{ agent, confidence, reasoning }`.
+ *
+ * The column is a JSON blob, so the scan list previously rendered the raw JSON
+ * text under each finding. Falls back to treating the value as plain reasoning
+ * text if it is not JSON.
+ */
+export function readAgentVerdict(raw) {
+  if (!raw) return null
+  if (typeof raw === 'object') return raw
+  try {
+    const parsed = JSON.parse(raw)
+    if (parsed && typeof parsed === 'object') return parsed
+  } catch { /* not JSON — treat as prose */ }
+  return { agent: 'sentinelai', confidence: null, reasoning: String(raw) }
+}
+
+/**
  * Beautifies raw scanner output into clean, executive-ready finding titles.
  * Turns strings like:
  *   "nikto: [999100] /: Uncommon header(s) 'speculation-rules' found, with contents: ..."

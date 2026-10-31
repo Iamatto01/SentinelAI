@@ -357,7 +357,7 @@ export default function AiModelSelector() {
                       <span className={`text-[9px] px-1.5 py-0.2 rounded border ${
                         isNight ? 'border-white/20 bg-white/10 text-white' : 'border-zinc-300 bg-zinc-200 text-black'
                       }`}>
-                        LIVE
+                        SAMPLE
                       </span>
                     </div>
                     <p className={`leading-relaxed text-[11px] ${isNight ? 'text-neutral-300' : 'text-zinc-700'}`}>
@@ -378,7 +378,7 @@ export default function AiModelSelector() {
                         <Sparkles size={11} />
                         <span>SYNTHESIZED REASONING OUTPUT</span>
                       </span>
-                      <span className={`text-[9px] ${isNight ? 'text-neutral-400' : 'text-zinc-500'}`}>0% False Positives</span>
+                      <span className={`text-[9px] ${isNight ? 'text-neutral-400' : 'text-zinc-500'}`}>Illustrative output</span>
                     </div>
                     <p className={`leading-relaxed text-[11px] font-mono ${isNight ? 'text-neutral-200' : 'text-zinc-800'}`}>
                       {currentModel.sampleOutput}
