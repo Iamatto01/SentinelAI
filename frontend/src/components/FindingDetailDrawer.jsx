@@ -102,6 +102,7 @@ export default function FindingDetailDrawer({ finding, onClose, onStatusChange, 
   const chatBusy = activeTasks[finding?.id]?.busy
 
   const evidence = safeParse(finding.evidence, {})
+  const cvssAssessment = evidence.cvssAssessment
   const poc = safeParse(finding.poc, {})
   const verdict = safeParse(finding.agent_verdict, null)
   const cveId = finding.cve_id || (finding.title.match(/CVE-\d{4}-\d{4,}/i)?.[0])
@@ -336,7 +337,13 @@ export default function FindingDetailDrawer({ finding, onClose, onStatusChange, 
                 {finding.owasp_category && <span className="chip bg-accent/10 text-accent border border-accent/30">{finding.owasp_category}</span>}
                 {finding.cwe_id && <span className="chip bg-ink-700 text-slate-300 border border-ink-600">{finding.cwe_id}</span>}
                 {cveId && <span className="chip bg-sev-high/10 text-sev-high border border-sev-high/30">{cveId}</span>}
-                {finding.cvss != null && <span className="chip bg-ink-700 text-slate-300 border border-ink-600">CVSS {finding.cvss}</span>}
+                {finding.cvss != null && (
+                  <span className="chip bg-ink-700 text-slate-300 border border-ink-600">
+                    {cvssAssessment?.status === 'calculated'
+                      ? `${cvssAssessment.version || 'CVSS'} ${finding.cvss}`
+                      : `Reported score ${finding.cvss} (unverified)`}
+                  </span>
+                )}
               </div>
               {/* Plain-English summary — auto-generated from finding data */}
               {(() => {

@@ -96,7 +96,7 @@ Rules:
 FINDING:
 ${JSON.stringify({ title: finding.title, severity: finding.severity, cweId: finding.cweId, description: finding.description, evidence: finding.evidence }, null, 2)}
 ${skillsBlock}
-Respond with JSON:
+Confidence must be a conservative, evidence-grounded model estimate, not a claim of statistical probability. State "needs-validation" when exploitability is not demonstrated. Respond with JSON:
 {"is_true_positive": boolean, "confidence": 0-100, "evidence_tier": "observed|validated|needs-validation|exploited", "severity_adjusted": "critical|high|medium|low|info", "reasoning": "one sentence grounded in the evidence", "remediation": "concrete fix"}`
 
     try {
@@ -105,9 +105,15 @@ Respond with JSON:
       const refined = { ...finding }
       if (j.severity_adjusted) refined.severity = j.severity_adjusted
       if (j.remediation) refined.remediation = j.remediation
+      const parsedConfidence = j.confidence == null || j.confidence === ''
+        ? Number.NaN
+        : Number(j.confidence)
+      const confidence = Number.isFinite(parsedConfidence)
+        ? Math.max(0, Math.min(100, Math.round(parsedConfidence)))
+        : 50
       return {
         isTruePositive: j.is_true_positive === true,
-        confidence: j.confidence ?? 70,
+        confidence,
         verdict: j.reasoning || 'Finding evaluated by AI specialist.',
         agent: agentName,
         evidenceTier: j.evidence_tier || 'observed',
@@ -535,7 +541,8 @@ Respond ONLY with JSON:
       if (!actionable.length) return null
 
       const findingList = actionable.map((f, i) =>
-        `${i + 1}. [${f.severity.toUpperCase()}] ${f.title}
+        `${i + 1}. Finding ID: ${f.id}
+     [${f.severity.toUpperCase()}] ${f.title}
      Location: ${f.evidence?.url || f.evidence?.file || f.asset || 'N/A'}
      Technical description: ${(f.description || '').slice(0, 200)}
      Suggested remediation: ${(f.remediation || '').slice(0, 200)}`
@@ -548,24 +555,22 @@ Respond ONLY with JSON:
   FINDINGS TO REMEDIATE:
   ${findingList}
 
-  For EACH finding, write a plain-language action item using the "Medical Report" analogy. Avoid ALL jargon — no CWE numbers, no CVSS scores, no OWASP codes. Format as JSON:
+  For EACH finding, write a plain-language action item using the "Medical Report" analogy. Avoid ALL jargon — no CWE numbers, no CVSS scores, no OWASP codes. Do not assign severity, priority, urgency, or an SLA; SentinelAI applies those from the finding's scored CVSS vector or source-reported severity. Format as JSON:
   {
     "actionItems": [
       {
-        "title": "short plain-language title a non-technical person understands",
-        "severity": "critical|high|medium",
+      "findingId": "copy the exact Finding ID from the matching input",
+      "title": "short plain-language title a non-technical person understands",
         "symptom": "1-2 sentences: what we found, in plain language (e.g. 'Anyone can guess passwords on the login page at unlimited speed without getting locked out')",
         "risk": "1-2 sentences: why it matters in business terms (e.g. 'Hackers can use an automated bot to guess thousands of passwords in minutes and hijack accounts')",
         "prescription": "copy-paste fix instructions. If the detected tech stack includes a known product (Cloudflare, Moodle, WordPress, nginx, Apache, IIS, etc.), give the EXACT dashboard click path or config line. Example: 'Cloudflare Dashboard → Security → WAF → Rate limiting rules → Create rule (If URL contains /login and requests > 5 per minute → Block)'",
-        "urgency": "fix-today|this-week|optional",
         "difficulty": "easy|medium|hard",
         "estimatedMinutes": "estimated minutes to fix (integer)",
         "verification": "how to verify the fix worked, in plain language"
       }
     ],
     "topPriority": "the single most important thing to fix first, in 1 plain sentence",
-    "estimatedTimeline": "rough timeline to fix all critical/high items (e.g. '2 hours total')",
-    "taskCountToday": "number of items with urgency=fix-today (integer)"
+    "estimatedTimeline": "rough timeline to fix all high-priority items (e.g. '2 hours total')"
   }`
 
       try {

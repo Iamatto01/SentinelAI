@@ -161,7 +161,7 @@ export default function Dashboard() {
             <div className="flex items-center justify-between mb-6 pb-4 border-b border-white/5 relative z-10">
               <div>
                 <h2 className="text-base font-bold text-white tracking-tight">Vulnerability Threat Distribution</h2>
-                <p className="text-xs text-slate-400 mt-0.5">Classification by CVSS severity impact</p>
+                <p className="text-xs text-slate-400 mt-0.5">Finding severity; CVSS-derived only when a valid vector is available</p>
               </div>
               <Link to="/app/findings" className="text-xs font-bold text-purple-300 hover:text-purple-200 flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/30 transition-all">
                 Audit Findings <ArrowUpRight size={14} />

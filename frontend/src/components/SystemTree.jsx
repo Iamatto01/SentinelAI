@@ -60,7 +60,7 @@ const LAYERS = [
     modules: [
       { name: 'Web Hunter & Exploit Persona', detail: 'Validates XSS, SQLi, SSRF findings and generates proof-of-concept steps.' },
       { name: 'False-Positive Elimination', detail: 'Context-aware verification that discards benign scan noise automatically.' },
-      { name: 'CVSS v3.1 Risk Calculator', detail: 'Automated base, temporal, and environmental severity score evaluation.' }
+      { name: 'CVSS Vector Scoring', detail: 'Calculates score and severity from a supported CVSS vector; otherwise preserves source severity.' }
     ]
   },
   {

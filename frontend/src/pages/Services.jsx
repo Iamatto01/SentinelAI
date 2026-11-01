@@ -22,7 +22,7 @@ const SERVICES = [
     features: [
       'Domain, IP range & web URL scan targets',
       'Automated recon → probing → exploitation pipeline',
-      'CVSS v3.1 risk scoring with AI verification',
+      'CVSS vector scoring when a supported vector is available, with AI verification',
       'Executive PDF report with plain-English summaries',
     ],
   },

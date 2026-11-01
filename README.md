@@ -73,7 +73,7 @@ Contemporary cybersecurity operations encounter three fundamental bottlenecks:
 The overarching goal of this Final Year Project is to design, develop, and benchmark an intelligent, autonomous cyber assessment framework:
 
 1. **Objective 1 — Unified Multi-Tool Orchestration:** To build a robust orchestration layer capable of invoking 150+ native Kali Linux security tools (Nmap, Nuclei, SQLMap, FFUF, Nikto, Subfinder, etc.) via asynchronous subprocesses and REST interfaces.
-2. **Objective 2 — Multi-Agent AI Verification Mesh:** To architect a 53-persona AI reasoning core that analyzes raw outputs, validates exploitability, calculates CVSS v3.1 scores, and filters out false positives.
+2. **Objective 2 — Multi-Agent AI Verification Mesh:** To architect a 53-persona AI reasoning core that analyzes raw outputs, validates exploitability, and filters likely false positives. CVSS scores are calculated from supplied vectors by the scoring layer, not guessed by the AI.
 3. **Objective 3 — Embedded Exploit RAG Knowledge Base:** To construct a local-first SQLite FTS5 full-text search index over curated attack vectors (*PayloadsAllTheThings*), automatically attaching verified Proof-of-Concept (PoC) payloads to discovered vulnerabilities.
 4. **Objective 4 — Real-Time Telemetry & Modern UX:** To implement a responsive web application featuring real-time WebSocket stdout streaming, interactive OWASP threat categorization, and a dual-protocol (Obsidian Dark / Sunlight Light) design system.
 5. **Objective 5 — Automated Reporting & Continuous Monitoring:** To engineer automated PDF generation for executive and technical audiences, alongside background cron-based monitoring for continuous target scanning.
@@ -141,7 +141,7 @@ During an active assessment, SentinelAI streams stdout logs and discovered vulne
 
 - **Subprocess Telemetry:** Instant visibility into running tools (e.g., Nikto, Nuclei, Nmap) with color-coded timestamps.
 - **Interactive OWASP Accordion:** Automatically groups findings according to OWASP Top 10 categories (A02 Security Misconfiguration, A04 Cryptographic Failures, A05 Injection, A07 Authentication Failures, etc.).
-- **Live Progress & Risk Scoring:** Computes risk score dynamically on a 0.0 to 10.0 scale as findings are verified.
+- **Live Progress & Aggregate Risk Index:** Computes a severity-count index on a 0.0 to 10.0 scale as findings are verified; this is separate from per-finding CVSS.
 
 ---
 
@@ -259,10 +259,17 @@ Whenever a tool or code parser produces a potential security issue, it passes th
                                                                                                [ SQLite INSERT & WS Emit ]
 ```
 
-1. **Stage 1 — OWASP Normalization:** Matches finding signatures against standard OWASP Top 10 categories, assigning standard CWE identifiers and base severity scores.
+1. **Stage 1 — OWASP Normalization:** Matches finding signatures against standard OWASP Top 10 categories and assigns CWE identifiers and source severity labels.
 2. **Stage 2 — RAG Exploit Cross-Referencing:** Queries the SQLite FTS5 database against the vulnerability type and technology stack, extracting concrete Proof-of-Concept exploit payloads from *PayloadsAllTheThings*.
 3. **Stage 3 — Specialist Agent Verification:** Routes the finding to the appropriate specialist persona (e.g., `sql-injection-specialist`, `crypto-analyzer`). The persona confirms whether the finding is actionable or a false positive.
 4. **Stage 4 — Privacy & PII Scrubbing:** Redacts internal credentials, session tokens, passwords, and private identifiers before the finding is persisted to SQLite and broadcast via WebSockets.
+
+### 5.2.1. CVSS, Confidence, and Remediation Priority
+
+- **CVSS:** A score is calculated from a supplied CVSS vector using the vector's own version (including CVSS 4.0). Findings without a valid vector keep their scanner/AI severity but do not receive a made-up CVSS number. The report includes the vector so the score can be reproduced.
+- **Confidence:** Both technical and simplified reports show an AI confidence estimate when available, label it as uncalibrated, and display the evidence-validation tier. The simplified report also states how many findings have an estimate; use the evidence tier and underlying evidence when deciding whether a finding is confirmed. Credible probability claims require calibration against a labeled set of past findings.
+- **Urgency:** Both reports show the per-finding priority action and deadline, plus a priority breakdown. SentinelAI applies a deterministic operational SLA separately from CVSS: Critical or explicitly known-exploited findings are immediate (within 24 hours), High within 7 days, Medium within 30 days, and Low in the next planned maintenance release. Findings marked `needs-validation` are assigned the same time window to validate, not represented as confirmed fixes. Informational observations have no remediation SLA. These are SentinelAI policy defaults, not FIRST CVSS rules.
+- **Aggregate scan risk:** The scan-level risk index is a separate severity-count summary; it is not a CVSS score for the scan.
 
 ---
 
@@ -273,7 +280,7 @@ Whenever a tool or code parser produces a potential security issue, it passes th
 | **1. Presentation Layer** | React 18, Vite 6, Tailwind CSS, Lucide Icons, Socket.IO Client | Renders interactive dashboards, real-time terminals, severity charts, and provides seamless Dark/Light protocol transitions. |
 | **2. Orchestration Layer** | Node.js, Express, Socket.IO, Better-SQLite3 (WAL Mode), PDFKit | Manages API endpoints, handles JWT auth & RBAC, coordinates scans, executes the 4-stage pipeline, and generates PDF reports. |
 | **3. Offensive Engine** | Kali Linux, Subprocess Spawner, Metasploit RPC, AST Tokenizer | Direct execution of 150+ native penetration testing binaries and lexical AST parsing of uploaded source files. |
-| **4. AI Reasoning Core** | 53 Markdown Personas, Multi-LLM Client (Afiq, Groq, OpenRouter), FTS5 RAG | Autonomous triage, false-positive elimination, CVSS v3.1 scoring, remediation drafting, and contextual security chat. |
+| **4. AI Reasoning Core** | 53 Markdown Personas, Multi-LLM Client (Afiq, Groq, OpenRouter), FTS5 RAG | Evidence-based finding review, false-positive triage, remediation drafting, and contextual security chat. |
 
 ---
 
@@ -303,7 +310,7 @@ agents/
 | **Source Code Auditing (SAST)** | `code-auditor`, `exploit-dev-whitebox`, `whitebox-fuzzer` | Analyzes uploaded source code syntax trees for unsafe functions, deserialization flaws, and hardcoded secrets. |
 | **Infrastructure & Cloud** | `cloud-security`, `container-breakout`, `network-attacker`, `ad-attacker` | Audits Docker/K8s configurations, Active Directory vectors, and network perimeter weaknesses. |
 | **Exploitation & PoC Crafting** | `exploit-chainer`, `privesc-advisor`, `c2-operator`, `credential-tester` | Correlates multiple low-severity findings into high-impact exploit chains; verifies privilege escalation vectors. |
-| **Threat Intelligence & Risk** | `threat-modeler`, `risk-scorer`, `compliance-mapper`, `report-generator` | Calculates CVSS v3.1 scores, maps compliance to NIST / ISO 27001, and synthesizes executive summaries. |
+| **Threat Intelligence & Risk** | `threat-modeler`, `risk-scorer`, `compliance-mapper`, `report-generator` | Reviews threat context, maps compliance to NIST / ISO 27001, and synthesizes executive summaries. CVSS calculation is vector-based in the backend scoring layer. |
 
 ---
 

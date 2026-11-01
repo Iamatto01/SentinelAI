@@ -5,6 +5,7 @@ import { aiEngine } from './ai/ai-engine.js'
 import { enrichWithOwasp } from './owasp.js'
 import { getScriptsForTrigger, runCustomScript } from './custom-scripts.js'
 import { findVersionVulnerabilities } from './cve.js'
+import { applyCvssAssessment } from './risk-scoring.js'
 import { matchExploits, classifyRisk, needsApproval } from './exploits/registry.js'
 import {
   extractVersions,
@@ -25,7 +26,6 @@ import * as db from './db.js'
  * Emits live events via the provided emitter (WebSocket broadcast).
  */
 
-const SEVERITY_SCORE = { critical: 9.5, high: 7.5, medium: 5.5, low: 3.0, info: 0.5 }
 const SEVERITY_RANK = { info: 0, low: 1, medium: 2, high: 3, critical: 4 }
 
 function evidenceTier(finding, targetType) {
@@ -324,6 +324,10 @@ export class UnifiedPipeline {
       verdict = { agent: f.module, isTruePositive: true, confidence: 85, verdict: 'Verified by AI specialist agent during code audit.' }
       f.evidence = { ...(f.evidence || {}), aiEvidenceTier: 'validated' }
     }
+    f = applyCvssAssessment(f)
+    if (f.evidence.cvssAssessment.status === 'invalid-vector') {
+      this.log(scanId, 'warn', `Invalid CVSS vector for "${f.title}": ${f.evidence.cvssAssessment.error}`)
+    }
     // 4. (sanitize removed — raw evidence preserved)
     const tier = f.evidence?.aiEvidenceTier === 'needs-validation' ? 'needs-validation' : evidenceTier(f, targetType)
     f.evidence = { ...(f.evidence || {}), validationTier: tier }
@@ -344,7 +348,7 @@ export class UnifiedPipeline {
       if (isExistingPattern && isNewAi) {
         db.run(`UPDATE findings SET severity = ?, cvss = ?, description = ?, layman_impact = ?, remediation = ?, evidence = ? WHERE id = ?`,
           severity,
-          Math.max(existing.cvss || 0, f.cvss || SEVERITY_SCORE[f.severity] || 0),
+          Math.max(existing.cvss || 0, f.cvss || 0),
           f.description || existing.description,
           f.laymanImpact || existing.layman_impact,
           f.remediation || existing.remediation,
@@ -353,7 +357,7 @@ export class UnifiedPipeline {
         this.log(scanId, 'info', `↪ Merged: AI description replaced pattern-scan boilerplate for: ${f.title}`)
       } else {
         db.run(`UPDATE findings SET severity = ?, cvss = ?, evidence = ? WHERE id = ?`, severity,
-          Math.max(existing.cvss || 0, f.cvss || SEVERITY_SCORE[f.severity] || 0),
+          Math.max(existing.cvss || 0, f.cvss || 0),
           JSON.stringify({ ...evidence, sources: [...sources] }), existing.id)
         this.log(scanId, 'info', `↪ Deduplicated finding: ${f.title}`)
       }
@@ -406,7 +410,7 @@ export class UnifiedPipeline {
         `INSERT INTO findings (id, scan_id, title, severity, cvss, cwe_id, cve_id, owasp_category, description, layman_impact, remediation, module, status, evidence, poc, agent_verdict, fingerprint, target, created_at)
          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
         id, scanId, f.title || 'Untitled finding', f.severity || 'info',
-        f.cvss ?? SEVERITY_SCORE[f.severity] ?? 0, f.cweId || f.cwe || null, f.cveId || null,
+        f.cvss ?? null, f.cweId || f.cwe || null, f.cveId || null,
         f.owaspCategory || null, f.description || '', f.laymanImpact || null, f.remediation || '',
         f.module || 'unknown', 'open',
         JSON.stringify(f.evidence || {}), JSON.stringify(f.poc || {}),

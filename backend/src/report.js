@@ -6,6 +6,7 @@ import * as db from './db.js'
 import { OWASP } from './owasp.js'
 import { aiEngine } from './ai/ai-engine.js'
 import { computeRiskScore, riskRatingFromScore } from './pipeline.js'
+import { assessUrgency, compareUrgency, countByUrgency, getCvssAssessment } from './risk-scoring.js'
 
 /**
  * FYP2 Report Generator - Modern, High-Visual PDF Pentest Report.
@@ -38,10 +39,10 @@ const BRAND = {
 }
 
 const SEV_EXPLANATIONS = {
-  critical: 'Must fix immediately - validated exploitability and high business impact',
-  high: 'Fix urgently - significant security risk that could lead to data breach or system compromise',
-  medium: 'Fix soon - moderate risk that should be addressed in the next development cycle',
-  low: 'Fix when convenient - minor issue with limited direct security impact',
+  critical: 'Highest severity band; validate the evidence and remediate within 24 hours',
+  high: 'Significant issue; validate the evidence and remediate within 7 days',
+  medium: 'Moderate issue; validate the evidence and remediate within 30 days',
+  low: 'Lower-severity issue; schedule for the next maintenance release',
   info: 'For awareness - informational finding that may assist in security hardening',
 }
 
@@ -1257,10 +1258,22 @@ function toView(f, scanTarget) {
   try { evidence = typeof evidence === 'string' ? JSON.parse(evidence) : evidence } catch { /* keep */ }
   try { poc = typeof poc === 'string' ? JSON.parse(poc) : poc } catch { /* keep */ }
   try { verdict = typeof verdict === 'string' ? JSON.parse(verdict) : verdict } catch { /* keep */ }
+  const cvssAssessment = getCvssAssessment({ ...f, evidence })
+  const findingSeverity = cvssAssessment.status === 'calculated'
+    ? cvssAssessment.severity
+    : (f.severity || 'info').toLowerCase()
+  const confidenceAvailable = verdict?.confidence != null && verdict.confidence !== ''
+    && Number.isFinite(Number(verdict.confidence))
+  const rawConfidence = confidenceAvailable ? Number(verdict.confidence) : Number.NaN
   const view = {
+    id: f.id,
     title: beautifyFindingTitle(cleanPdfText(f.title)),
-    severity: (f.severity || 'info').toLowerCase(),
-    cvss: f.cvss,
+    severity: findingSeverity,
+    cvss: cvssAssessment.score,
+    cvssBaseScore: cvssAssessment.baseScore,
+    cvssVersion: cvssAssessment.version,
+    cvssVector: cvssAssessment.vector,
+    cvssAssessment,
     cweId: f.cwe_id,
     cveId: f.cve_id,
     owaspCategory: f.owasp_category,
@@ -1274,9 +1287,11 @@ function toView(f, scanTarget) {
     sources: evidence?.sources || [f.module],
     poc,
     aiAgent: verdict?.agent || null,
-    aiConfidence: verdict?.confidence != null ? verdict.confidence / 100 : 0,
+    aiConfidenceAvailable: confidenceAvailable,
+    aiConfidence: Number.isFinite(rawConfidence) ? Math.max(0, Math.min(1, rawConfidence / 100)) : 0,
     aiReasoning: cleanPdfText(verdict?.reasoning || null),
   }
+  view.urgency = assessUrgency(view)
   view.category = categorizeFinding(view)
   view.pocPayload = evidence?.file ? generateWhiteboxPoc(view) : generateRealPoc(view)
   // Prefer the concrete exploit playbooks matched during ingestion — they carry
@@ -1469,7 +1484,7 @@ function renderCoverPage(doc, { reportTitle, scans, project, vulnerabilities, is
 
 function renderTableOfContents(doc) {
   drawSectionTitle(doc, 'Table of Contents')
-  doc.moveDown(1)
+  doc.moveDown(0.5)
   const sections = [
     ['1.  Executive Summary', 'Overview of target security posture & vulnerability breakdown'],
     ['2.  Methodology', 'Testing frameworks, scanning tools & verification standards'],
@@ -1620,6 +1635,33 @@ function renderExecutiveSummary(doc, { vulnerabilities, scans, isWhitebox, aiNar
     doc.fontSize(10).font('Helvetica-Bold').fillColor(c.bg).text(String(counts[s]), x + w - 30, curY + 4, { width: 20, align: 'right' })
     doc.y = curY + 24
   }
+
+  doc.moveDown(0.5)
+  doc.fontSize(12).font('Helvetica-Bold').fillColor(BRAND.primary).text('Remediation Priority Triage', x, doc.y)
+  doc.moveDown(0.25)
+  doc.fontSize(8.5).font('Helvetica').fillColor(BRAND.textMuted).text(
+    'Deadlines are SentinelAI policy guidance. Each finding specifies whether to remediate or validate first.',
+    x, doc.y, { width: w },
+  )
+  doc.moveDown(0.4)
+
+  const urgencyCounts = countByUrgency(vulnerabilities)
+  const priorityRows = [
+    ['Immediate', urgencyCounts.immediate, 'Within 24 hours'],
+    ['High', urgencyCounts['this-week'], 'Within 7 days'],
+    ['Medium', urgencyCounts['this-month'], 'Within 30 days'],
+    ['Low', urgencyCounts.planned, 'Next planned maintenance release'],
+    ['Informational', urgencyCounts.informational, 'No remediation SLA'],
+  ]
+  for (const [priority, count, sla] of priorityRows) {
+    ensureSpace(doc, 19)
+    const rowY = doc.y
+    doc.rect(x, rowY, w, 17).fillAndStroke('#F8FAFC', '#E2E8F0')
+    doc.fontSize(8.5).font('Helvetica-Bold').fillColor(BRAND.textDark).text(priority, x + 8, rowY + 4)
+    doc.fontSize(8.5).font('Helvetica').fillColor(BRAND.textDark).text(String(count), x + w * 0.55, rowY + 4)
+    doc.fontSize(8.5).font('Helvetica').fillColor(BRAND.textMuted).text(sla, x + w * 0.65, rowY + 4, { width: w * 0.33 })
+    doc.y = rowY + 19
+  }
 }
 
 function renderMethodology(doc, { vulnerabilities, isWhitebox }) {
@@ -1646,6 +1688,11 @@ function renderMethodology(doc, { vulnerabilities, isWhitebox }) {
       x, doc.y, { width: w },
     )
   }
+  doc.moveDown(0.5)
+  doc.fontSize(8.5).font('Helvetica').fillColor(BRAND.textMuted).text(
+    'CVSS scores are calculated from the supplied vector using the vector\'s stated CVSS version. Findings without a valid vector are not assigned an invented CVSS score; their scanner/AI severity is shown separately. AI confidence is an uncalibrated model estimate, while the evidence-validation tier describes what was actually observed. Remediation SLAs are SentinelAI policy guidance, not part of CVSS.',
+    x, doc.y, { width: w },
+  )
   doc.moveDown(1)
 
   doc.fontSize(12).font('Helvetica-Bold').fillColor(BRAND.primary).text('Scanning Modules Executed', x, doc.y)
@@ -1723,7 +1770,7 @@ function renderMethodology(doc, { vulnerabilities, isWhitebox }) {
     ['Detection Engineer', 'SIEM rules, threat hunting, log analysis, detection signatures'],
     ['Threat Modeler', 'Attack surface analysis, STRIDE/DREAD, trust boundaries, attack trees'],
     ['Traffic Analyst', 'PCAP analysis, protocol dissection, session reconstruction, credential extraction'],
-    ['Risk Scorer', 'CVSS 4.0 scoring, EPSS enrichment, CISA KEV, business impact adjustment'],
+    ['Risk Scorer', 'CVSS vector scoring by version and deterministic remediation-priority policy'],
     ['Report Generator', 'Report compilation, executive summary, finding formatting, remediation guidance'],
     ['Engagement Planner', 'Penetration test planning, scope definition, rules of engagement, MITRE ATT&CK mapping'],
     ['Attack Planner', 'Multi-step attack chains, exploitation path optimization, lateral movement strategy'],
@@ -1883,7 +1930,11 @@ function renderDetailedFindings(doc, { vulnerabilities, isWhitebox }) {
 
       // Badges on header right
       let badgeX = x + w - 10
-      const cvssText = `CVSS ${v.cvss != null ? Number(v.cvss).toFixed(1) : 'N/A'}`
+      const cvssText = v.cvssAssessment.status === 'calculated'
+        ? `${v.cvssVersion.replace('CVSS:', 'CVSS ')} ${Number(v.cvss).toFixed(1)}`
+        : v.cvssAssessment.status === 'reported-without-vector'
+          ? `Unverified ${Number(v.cvss).toFixed(1)}`
+          : 'CVSS N/A'
       const cvssW = Math.round(doc.fontSize(7.5).font('Helvetica-Bold').widthOfString(cvssText) + 10)
       badgeX -= cvssW
       doc.rect(badgeX, headerY + 6, cvssW, 14).fill('#334155')
@@ -1929,6 +1980,28 @@ function renderDetailedFindings(doc, { vulnerabilities, isWhitebox }) {
 
       doc.y = metaY + metaH + 8
 
+      if (v.cvssVector) {
+        ensureSpace(doc, 30)
+        doc.fontSize(7.5).font('Helvetica-Bold').fillColor(BRAND.textMuted)
+          .text(
+            v.cvssAssessment.scoreType === 'adjusted'
+              ? `CVSS base score: ${Number(v.cvssBaseScore).toFixed(1)}; adjusted score: ${Number(v.cvss).toFixed(1)}`
+              : `CVSS vector (${v.cvssVersion || 'version unknown'}):`,
+            x, doc.y,
+          )
+        doc.fontSize(7.5).font('Courier').fillColor(BRAND.textDark)
+          .text(v.cvssVector, x + 5, doc.y + 10, { width: w - 10 })
+        doc.moveDown(0.7)
+      } else if (v.cvssAssessment.status === 'reported-without-vector') {
+        doc.fontSize(7.5).font('Helvetica').fillColor(BRAND.textMuted)
+          .text('Source-reported numeric score; no vector was available to verify its CVSS version or recalculate it.', x, doc.y, { width: w })
+        doc.moveDown(0.5)
+      } else if (v.cvssAssessment.status === 'invalid-vector') {
+        doc.fontSize(7.5).font('Helvetica').fillColor(BRAND.textMuted)
+          .text('A CVSS vector was supplied but could not be validated; no CVSS score is shown.', x, doc.y, { width: w })
+        doc.moveDown(0.5)
+      }
+
       // Description Block
       if (v.description) {
         ensureSpace(doc, 50)
@@ -1953,20 +2026,26 @@ function renderDetailedFindings(doc, { vulnerabilities, isWhitebox }) {
         doc.y = impactY + impactH + 8
       }
 
-      // AI Review Block
-      if (v.aiReasoning && (v.aiConfidence || 0) > 0) {
-        ensureSpace(doc, 55)
-        const aiY = doc.y
-        const pct = Math.round((v.aiConfidence || 0) * 100)
-        const aiText = cleanPdfText(v.aiReasoning).slice(0, 500)
-        const aiH = Math.min(doc.fontSize(8.5).font('Helvetica').heightOfString(aiText, { width: w - 20 }) + 22, 120)
+      // Confidence and urgency appear together for every finding, including when
+      // an AI confidence estimate is unavailable.
+      {
+        const aiText = cleanPdfText(v.aiReasoning || '')
+        const tierText = String(v.validationTier || 'unknown').replace(/-/g, ' ')
+        const confidenceText = v.aiConfidenceAvailable
+          ? `${Math.round((v.aiConfidence || 0) * 100)}% — uncalibrated model estimate`
+          : 'Not available'
+        const triageText = `Priority: ${urgencyBadgeLabel(v.urgency)} — ${v.urgency.sla}. ${v.urgency.basis}.`
+        const assessmentText = `${triageText}\nAI confidence: ${confidenceText}; evidence tier: ${tierText}.${aiText ? `\nAI reasoning: ${aiText.slice(0, 500)}` : ''}`
+        const assessmentH = Math.max(48, doc.fontSize(8.5).font('Helvetica').heightOfString(assessmentText, { width: w - 20 }) + 28)
+        ensureSpace(doc, assessmentH + 8)
+        const assessmentY = doc.y
 
-        doc.rect(x, aiY, w, aiH).fillAndStroke('#F0F9FF', '#BAE6FD')
+        doc.rect(x, assessmentY, w, assessmentH).fillAndStroke('#F0F9FF', '#BAE6FD')
         doc.fontSize(9).font('Helvetica-Bold').fillColor('#0369A1')
-          .text(`AI Review (${v.aiAgent || 'agent'}) - ${pct}% Confidence`, x + 10, aiY + 6)
+          .text(`Assessment confidence and urgency${v.aiAgent ? ` (${v.aiAgent})` : ''}`, x + 10, assessmentY + 7)
         doc.fontSize(8.5).font('Helvetica').fillColor('#0C4A6E')
-          .text(aiText, x + 10, aiY + 20, { width: w - 20, height: aiH - 24, ellipsis: true })
-        doc.y = aiY + aiH + 8
+          .text(assessmentText, x + 10, assessmentY + 21, { width: w - 20, height: assessmentH - 26, ellipsis: true })
+        doc.y = assessmentY + assessmentH + 8
       }
 
       // == WHITEBOX: Show file location + vulnerable code snippet ==
@@ -2181,7 +2260,7 @@ function renderAppendix(doc, { scans, project, isWhitebox }) {
         ['Language', s.language || 'N/A'],
         ['Focus', s.focus || 'N/A'],
         ['Duration', duration(s.started_at, s.finished_at)],
-        ['Risk Score', `${Number(s.risk_score ?? 0).toFixed(1)} / 10`],
+        ['Scan Risk Index', `${Number(s.risk_score ?? 0).toFixed(1)} / 10`],
         ['Total Findings', String(s._findingCount ?? 0)],
       ]
       const colWidth = (w - 24) / 3
@@ -2203,7 +2282,7 @@ function renderAppendix(doc, { scans, project, isWhitebox }) {
         ['Mode', s.mode || 'N/A'],
         ['Status', s.status || 'N/A'],
         ['Duration', duration(s.started_at, s.finished_at)],
-        ['Risk Score', `${Number(s.risk_score ?? 0).toFixed(1)} / 10`],
+        ['Scan Risk Index', `${Number(s.risk_score ?? 0).toFixed(1)} / 10`],
         ['Total Findings', String(s._findingCount ?? 0)],
       ]
       const colWidth = (w - 24) / 3
@@ -2613,7 +2692,6 @@ function buildSimplifiedActionItem(v, index, detectedTech = []) {
   const sev = (v.severity || 'medium').toLowerCase()
   const lowerTitle = title.toLowerCase()
 
-  let urgency = sev === 'critical' ? 'fix-today' : sev === 'high' ? 'this-week' : 'optional'
   let difficulty = 'medium'
   let estimatedMinutes = 30
   let symptom = sanitizePdfText(v.description || '')
@@ -2660,7 +2738,6 @@ function buildSimplifiedActionItem(v, index, detectedTech = []) {
   } else if (lowerTitle.includes('sql') || lowerTitle.includes('injection')) {
     difficulty = 'hard'
     estimatedMinutes = 60
-    urgency = sev === 'critical' ? 'fix-today' : 'this-week'
     symptom = 'User-supplied parameters are concatenated directly into database queries.'
     risk = 'Attackers can bypass authentication controls, extract confidential data, or alter database contents.'
     prescription = 'Rewrite dynamic queries using parameterized prepared statements or an established ORM. Never concatenate raw user input.'
@@ -2668,7 +2745,6 @@ function buildSimplifiedActionItem(v, index, detectedTech = []) {
   } else if (lowerTitle.includes('cross-site scripting') || lowerTitle.includes('xss')) {
     difficulty = 'medium'
     estimatedMinutes = 45
-    urgency = sev === 'critical' ? 'fix-today' : 'this-week'
     symptom = 'Unsanitized user input is reflected or stored and rendered in HTML output.'
     risk = 'Enables session hijacking, keystroke logging, and unauthorized actions performed on behalf of authenticated users.'
     prescription = 'Apply contextual output encoding (HTML, JavaScript, URL encoding) before rendering data and enforce a strong CSP.'
@@ -2687,14 +2763,30 @@ function buildSimplifiedActionItem(v, index, detectedTech = []) {
   return {
     title,
     severity: sev,
+    aiConfidence: v.aiConfidence || 0,
+    aiConfidenceAvailable: Boolean(v.aiConfidenceAvailable),
+    validationTier: v.validationTier || 'unknown',
     symptom: sanitizePdfText(symptom),
     risk: sanitizePdfText(risk),
     prescription: sanitizePdfText(prescription),
-    urgency,
+    urgency: assessUrgency(v),
     difficulty,
     estimatedMinutes,
     verification: sanitizePdfText(verification),
   }
+}
+
+function urgencyBadgeLabel(urgency) {
+  const slaLabels = {
+    immediate: '<24H',
+    'this-week': '7D',
+    'this-month': '30D',
+    planned: 'NEXT RELEASE',
+    informational: 'INFO',
+  }
+  const label = slaLabels[urgency?.key] || 'INFO'
+  if (urgency?.key === 'planned' || urgency?.key === 'informational') return label
+  return `${urgency?.action === 'Validate' ? 'VALIDATE' : 'FIX'} ${label}`
 }
 
 /**
@@ -2723,40 +2815,46 @@ async function renderSimplifiedPdf({ file, reportTitle, scans = [], project = nu
     const leftX = doc.page.margins.left
     const rightX = doc.page.width - doc.page.margins.right
 
-    // Triage counts
-    const criticalFindings = vulnerabilities.filter(v => (v.severity || '').toLowerCase() === 'critical')
-    const highFindings = vulnerabilities.filter(v => (v.severity || '').toLowerCase() === 'high')
-    const mediumFindings = vulnerabilities.filter(v => (v.severity || '').toLowerCase() === 'medium')
-    const lowFindings = vulnerabilities.filter(v => (v.severity || '').toLowerCase() === 'low')
-    const infoFindings = vulnerabilities.filter(v => (v.severity || '').toLowerCase() === 'info')
-
-    const todayCount = simplifiedGuide?.taskCountToday !== undefined 
-      ? Number(simplifiedGuide.taskCountToday) 
-      : criticalFindings.length
-    const weekCount = highFindings.length
-    const laterCount = mediumFindings.length
-    const actionableTotal = todayCount + weekCount + laterCount
-
+    // SLA counts come from SentinelAI's policy, never from AI-generated report prose.
+    const urgencyCounts = countByUrgency(vulnerabilities)
+    const todayCount = urgencyCounts.immediate
+    const weekCount = urgencyCounts['this-week']
+    const monthCount = urgencyCounts['this-month']
+    const plannedCount = urgencyCounts.planned
+    const actionableTotal = todayCount + weekCount + monthCount + plannedCount
+    const confidenceAvailableCount = vulnerabilities.filter(v => v.aiConfidenceAvailable).length
+    const confidenceCoverageText = vulnerabilities.length === 0
+      ? 'No findings were reported, so confidence estimates are not applicable.'
+      : confidenceAvailableCount
+        ? `AI confidence estimates are uncalibrated and available for ${confidenceAvailableCount} of ${vulnerabilities.length} findings; use evidence tiers to judge validation status.`
+        : 'AI confidence estimates are unavailable; use evidence tiers and the underlying findings to judge validation status.'
     // Items list (from AI guide or enriched findings)
     let items = []
     if (simplifiedGuide?.actionItems && Array.isArray(simplifiedGuide.actionItems) && simplifiedGuide.actionItems.length > 0) {
-      items = simplifiedGuide.actionItems.map((item, idx) => ({
+      items = simplifiedGuide.actionItems.map((item, idx) => {
+        const normalizedTitle = String(item.title || '').trim().toLowerCase()
+        const matchedFinding = vulnerabilities.find(v => item.findingId && v.id === item.findingId)
+          || vulnerabilities.find(v => String(v.title || '').trim().toLowerCase() === normalizedTitle)
+        const finding = matchedFinding || vulnerabilities[idx]
+        const urgency = assessUrgency(finding || item)
+        return {
         title: sanitizePdfText(item.title || `Action Item #${idx + 1}`),
-        severity: (item.severity || 'medium').toLowerCase(),
+        severity: urgency.severity,
+        aiConfidence: matchedFinding?.aiConfidence || 0,
+        aiConfidenceAvailable: Boolean(matchedFinding?.aiConfidenceAvailable),
+        validationTier: matchedFinding?.validationTier || 'unknown',
         symptom: sanitizePdfText(item.symptom || 'Anomalous configuration identified on target system.'),
         risk: sanitizePdfText(item.risk || 'Presents security risks if left unaddressed.'),
         prescription: sanitizePdfText(item.prescription || 'Apply recommended vendor configuration hardening.'),
-        urgency: item.urgency === 'fix-today' ? 'fix-today' : item.urgency === 'this-week' ? 'this-week' : 'optional',
+        urgency,
         difficulty: item.difficulty === 'easy' ? 'easy' : item.difficulty === 'hard' ? 'hard' : 'medium',
         estimatedMinutes: parseInt(item.estimatedMinutes, 10) || 25,
         verification: sanitizePdfText(item.verification || 'Re-scan with SentinelAI after applying changes.'),
-      }))
+      }})
     } else {
-      // Intelligently select actionable findings, or fall back to low/info hardening items if 0 critical/high/medium
-      const sourceFindings = (actionableTotal > 0)
-        ? [...criticalFindings, ...highFindings, ...mediumFindings]
-        : [...lowFindings, ...infoFindings]
-
+      const sourceFindings = vulnerabilities
+        .filter(v => assessUrgency(v).key !== 'informational')
+        .sort(compareUrgency)
       items = sourceFindings.slice(0, 15).map((v, idx) => buildSimplifiedActionItem(v, idx, detectedTech))
     }
 
@@ -2790,35 +2888,41 @@ async function renderSimplifiedPdf({ file, reportTitle, scans = [], project = nu
     // Overall Security Health & Posture Box
     const postureY = doc.y
     let postureColor = SEV_COLORS.medium
-    let postureTitle = 'MODERATE RISK - SCHEDULED HARDENING REQUIRED'
-    let postureDesc = 'No emergency critical issues detected today. Scheduled remediation recommended for configuration and defense hardening.'
+    let postureTitle = 'REVIEW FINDINGS AND FOLLOW THE ASSIGNED SLAS'
+    let postureDesc = 'Priorities are based on CVSS vectors when available; otherwise, the scanner-reported severity is used.'
 
     if (todayCount > 0) {
       postureColor = SEV_COLORS.critical
       postureTitle = 'CRITICAL ATTENTION REQUIRED - IMMEDIATE ACTION'
-      postureDesc = `${todayCount} critical issue(s) require immediate same-day remediation to prevent potential compromise or breach.`
+      postureDesc = `${todayCount} finding(s) meet the immediate-priority policy. Verify each evidence tier and remediate or validate within 24 hours.`
     } else if (weekCount > 0) {
       postureColor = SEV_COLORS.high
       postureTitle = 'ELEVATED RISK - ACTION REQUIRED THIS WEEK'
-      postureDesc = `${weekCount} high-priority issue(s) identified. Remediate within 7 days to eliminate high-risk exposure pathways.`
-    } else if (laterCount > 0) {
+      postureDesc = `${weekCount} finding(s) meet the high-priority policy. Verify the evidence and remediate or validate within 7 days.`
+    } else if (monthCount > 0) {
       postureColor = SEV_COLORS.medium
       postureTitle = 'MODERATE RISK - SCHEDULED HARDENING REQUIRED'
-      postureDesc = `Perimeter is stable. ${laterCount} medium-priority hardening item(s) should be scheduled during routine maintenance.`
-    } else if (vulnerabilities.length > 0) {
+      postureDesc = `${monthCount} finding(s) should be remediated or validated within 30 days.`
+    } else if (plannedCount > 0) {
       postureColor = SEV_COLORS.low
-      postureTitle = 'GOOD POSTURE - LOW-PRIORITY HARDENING OPPORTUNITIES'
-      postureDesc = 'No critical, high, or medium threats detected. General security hygiene opportunities identified.'
+      postureTitle = 'LOW-PRIORITY ITEMS - PLAN MAINTENANCE'
+      postureDesc = `${plannedCount} low-severity finding(s) should be scheduled for the next planned maintenance release.`
+    } else if (urgencyCounts.informational > 0) {
+      postureColor = SEV_COLORS.low
+      postureTitle = 'INFORMATIONAL OBSERVATIONS'
+      postureDesc = `${urgencyCounts.informational} informational observation(s) have no remediation SLA under the current policy.`
     } else {
       postureColor = SEV_COLORS.success
-      postureTitle = 'HEALTHY POSTURE - NO ACTIONABLE THREATS IDENTIFIED'
-      postureDesc = 'All automated and AI security test suites passed. No vulnerabilities were detected on tested endpoints.'
+      postureTitle = 'NO FINDINGS REPORTED'
+      postureDesc = 'No findings were reported by the checks included in this assessment; this does not prove the target is vulnerability-free.'
     }
 
-    doc.roundedRect(leftX, postureY, w, 70, 4).fillAndStroke(postureColor.light, postureColor.border)
+    doc.roundedRect(leftX, postureY, w, 74, 4).fillAndStroke(postureColor.light, postureColor.border)
     drawRoundedBadge(doc, 'OVERALL POSTURE', leftX + 16, postureY + 12, postureColor.bg, '#FFFFFF', null, 3)
     doc.fontSize(12).font('Helvetica-Bold').fillColor(postureColor.border).text(postureTitle, leftX + 110, postureY + 12, { width: w - 126 })
     doc.fontSize(9.5).font('Helvetica').fillColor(BRAND.textDark).text(postureDesc, leftX + 16, postureY + 34, { width: w - 32 })
+    doc.fontSize(7.5).font('Helvetica').fillColor(BRAND.textMuted)
+      .text(confidenceCoverageText, leftX + 16, postureY + 60, { width: w - 32, height: 10, ellipsis: true })
 
     // Assessment Scope & Metadata Card
     doc.y = postureY + 85
@@ -2845,7 +2949,7 @@ async function renderSimplifiedPdf({ file, reportTitle, scans = [], project = nu
         { label: 'Prepared By', val: 'SentinelAI Autonomous Security Engine v2.0' },
       ],
       [
-        { label: 'Actionable Tasks', val: `${actionableTotal} Total (${todayCount} Today, ${weekCount} This Week, ${laterCount} Scheduled)` },
+        { label: 'Remediation Tasks', val: `${actionableTotal} Total (${todayCount} <24h, ${weekCount} This Week, ${monthCount} This Month, ${plannedCount} Planned)` },
         { label: 'Project Context', val: projectName },
       ],
     ]
@@ -2904,24 +3008,35 @@ async function renderSimplifiedPdf({ file, reportTitle, scans = [], project = nu
     const alertH = 55
     let alertBg = '#EFF6FF'
     let alertBorder = '#2563EB'
-    let alertTag = 'NO CRITICAL THREATS TODAY'
-    let alertMessage = `Good news: 0 critical and 0 high-severity threats detected. You have ${laterCount} medium-priority hardening item(s) to schedule during upcoming maintenance cycles.`
+    let alertTag = 'FOLLOW THE PRIORITY POLICY'
+    let alertMessage = `${monthCount} item(s) are due within 30 days and ${plannedCount} low-severity item(s) belong in the next maintenance release.`
 
     if (todayCount > 0) {
       alertBg = '#FEF2F2'
       alertBorder = '#DC2626'
       alertTag = 'IMMEDIATE ACTION REQUIRED'
-      alertMessage = `You have ${todayCount} critical issue(s) that require immediate same-day intervention to protect services against active exploitability.`
+      alertMessage = `${todayCount} finding(s) meet the immediate-priority policy. Remediate or validate them within 24 hours; this does not by itself prove active exploitation.`
     } else if (weekCount > 0) {
       alertBg = '#FFF7ED'
       alertBorder = '#EA580C'
       alertTag = 'URGENT ACTION THIS WEEK'
-      alertMessage = `0 critical issues today. However, ${weekCount} high-priority issue(s) should be remediated within 7 days to eliminate high-risk exposure.`
+      alertMessage = `${weekCount} finding(s) meet the high-priority policy. Remediate or validate them within 7 days.`
+    } else if (monthCount > 0) {
+      alertBg = '#FFFBEB'
+      alertBorder = '#D97706'
+      alertTag = 'SCHEDULE WITHIN 30 DAYS'
+      alertMessage = `${monthCount} finding(s) should be remediated or validated within 30 days.`
+    } else if (plannedCount > 0) {
+      alertTag = 'PLAN FOR NEXT RELEASE'
+      alertMessage = `${plannedCount} low-severity finding(s) are scheduled for the next planned maintenance release.`
+    } else if (actionableTotal === 0 && urgencyCounts.informational > 0) {
+      alertTag = 'INFORMATIONAL ONLY'
+      alertMessage = `${urgencyCounts.informational} informational observation(s) have no remediation SLA under the current policy.`
     } else if (actionableTotal === 0) {
       alertBg = '#F0FDF4'
       alertBorder = '#16A34A'
-      alertTag = 'TARGET SYSTEM HEALTHY'
-      alertMessage = 'No critical, high, or medium severity vulnerabilities were detected on tested endpoints. All primary security baselines passed.'
+      alertTag = 'NO FINDINGS REPORTED'
+      alertMessage = 'No findings were reported by the checks included in this assessment; this does not prove the target is vulnerability-free.'
     }
 
     doc.roundedRect(leftX, alertY, w, alertH, 4).fillAndStroke(alertBg, alertBorder)
@@ -2930,38 +3045,45 @@ async function renderSimplifiedPdf({ file, reportTitle, scans = [], project = nu
     drawRoundedBadge(doc, alertTag, leftX + 16, alertY + 10, alertBorder, '#FFFFFF', null, 3)
     doc.fontSize(9.5).font('Helvetica-Bold').fillColor(BRAND.primary).text(alertMessage, leftX + 16, alertY + 28, { width: w - 32 })
 
-    // 3 Side-by-Side KPI Metric Cards
+    // SLA KPI cards
     doc.y = alertY + alertH + 16
     const kpiY = doc.y
-    const cardGap = 12
-    const kpiCardW = (w - cardGap * 2) / 3
+    const cardGap = 8
+    const kpiCardW = (w - cardGap * 3) / 4
     const kpiCardH = 75
 
     const kpiData = [
       {
-        title: 'Fix Today',
+        title: 'Immediate',
         count: todayCount,
         color: SEV_COLORS.critical,
         sla: 'SLA: < 24 Hours',
-        note: todayCount > 0 ? 'Critical Severity' : 'Zero Emergency Items',
+        note: 'Critical / known exploited',
       },
       {
         title: 'This Week',
         count: weekCount,
         color: SEV_COLORS.high,
         sla: 'SLA: Within 7 Days',
-        note: weekCount > 0 ? 'High Severity' : 'Zero High Items',
+        note: 'High severity',
       },
       {
-        title: 'When Convenient',
-        count: laterCount,
+        title: 'This Month',
+        count: monthCount,
         color: SEV_COLORS.medium,
         sla: 'SLA: Next 30 Days',
-        note: laterCount > 0 ? 'Medium / Hardening' : 'Zero Medium Items',
+        note: 'Medium severity',
+      },
+      {
+        title: 'Planned',
+        count: plannedCount,
+        color: SEV_COLORS.low,
+        sla: 'Next release',
+        note: 'Low severity',
       },
     ]
 
-    for (let k = 0; k < 3; k++) {
+    for (let k = 0; k < kpiData.length; k++) {
       const cardX = leftX + k * (kpiCardW + cardGap)
       const data = kpiData[k]
 
@@ -2971,20 +3093,20 @@ async function renderSimplifiedPdf({ file, reportTitle, scans = [], project = nu
       doc.rect(cardX, kpiY, kpiCardW, 4).fill(data.color.bg)
 
       // Header row
-      doc.fontSize(8.5).font('Helvetica-Bold').fillColor(BRAND.textMuted).text(data.title.toUpperCase(), cardX + 12, kpiY + 12)
+      doc.fontSize(7.5).font('Helvetica-Bold').fillColor(BRAND.textMuted).text(data.title.toUpperCase(), cardX + 10, kpiY + 12)
       
       // Giant Number
-      doc.fontSize(24).font('Helvetica-Bold').fillColor(data.color.bg).text(String(data.count), cardX + 12, kpiY + 24)
+      doc.fontSize(21).font('Helvetica-Bold').fillColor(data.color.bg).text(String(data.count), cardX + 10, kpiY + 24)
 
       // Subtitle / SLA
-      doc.fontSize(8).font('Helvetica-Bold').fillColor(BRAND.primary).text(data.sla, cardX + 50, kpiY + 28)
-      doc.fontSize(7.5).font('Helvetica').fillColor(BRAND.textMuted).text(data.note, cardX + 50, kpiY + 40)
+      doc.fontSize(7.5).font('Helvetica-Bold').fillColor(BRAND.primary).text(data.sla, cardX + 42, kpiY + 28, { width: kpiCardW - 48 })
+      doc.fontSize(7).font('Helvetica').fillColor(BRAND.textMuted).text(data.note, cardX + 42, kpiY + 40, { width: kpiCardW - 48 })
     }
 
     // Remediation SLA & Priority Breakdown Table
     doc.y = kpiY + kpiCardH + 18
     const tblY = doc.y
-    const tblH = 105
+    const tblH = 155
     doc.roundedRect(leftX, tblY, w, tblH, 4).fillAndStroke('#FFFFFF', BRAND.cardBorder)
 
     // Table Header
@@ -2999,30 +3121,44 @@ async function renderSimplifiedPdf({ file, reportTitle, scans = [], project = nu
 
     const tableRows = [
       {
-        badge: 'CRITICAL',
+        badge: 'IMMEDIATE',
         color: SEV_COLORS.critical,
         tasks: `${todayCount} task${todayCount === 1 ? '' : 's'}`,
-        sla: 'Immediate (< 24h)',
-        action: 'Emergency hotfix - isolate and patch immediately to block exploit paths.',
+        sla: 'Within 24 Hours',
+        action: 'Remediate now, or validate now if evidence is not yet confirmed.',
       },
       {
         badge: 'HIGH',
         color: SEV_COLORS.high,
         tasks: `${weekCount} task${weekCount === 1 ? '' : 's'}`,
         sla: 'Within 7 Days',
-        action: 'Urgent sprint item - resolve during current cycle to protect data integrity.',
+        action: 'Prioritize in the current sprint; validate first when the evidence tier requires it.',
       },
       {
         badge: 'MEDIUM',
         color: SEV_COLORS.medium,
-        tasks: `${laterCount} task${laterCount === 1 ? '' : 's'}`,
+        tasks: `${monthCount} task${monthCount === 1 ? '' : 's'}`,
         sla: 'Within 30 Days',
-        action: 'Defense-in-depth - apply web server and security header hardening.',
+        action: 'Schedule remediation or evidence validation within the next month.',
+      },
+      {
+        badge: 'LOW',
+        color: SEV_COLORS.low,
+        tasks: `${plannedCount} task${plannedCount === 1 ? '' : 's'}`,
+        sla: 'Next planned release',
+        action: 'Include in the next maintenance release; informational items have no SLA.',
+      },
+      {
+        badge: 'INFO',
+        color: SEV_COLORS.info,
+        tasks: `${urgencyCounts.informational} observation${urgencyCounts.informational === 1 ? '' : 's'}`,
+        sla: 'No remediation SLA',
+        action: 'Review as context; informational observations are not assigned a fix deadline.',
       },
     ]
 
     for (let r = 0; r < tableRows.length; r++) {
-      const rowY = tblY + 23 + r * 27
+      const rowY = tblY + 23 + r * 25
       const tr = tableRows[r]
 
       if (r > 0) {
@@ -3044,18 +3180,15 @@ async function renderSimplifiedPdf({ file, reportTitle, scans = [], project = nu
 
     drawRoundedBadge(doc, 'RECOMMENDED PRIORITY FOCUS', leftX + 14, calloutY + 8, BRAND.accent, '#FFFFFF', null, 3)
     
-    let focusText = simplifiedGuide?.topPriority
-    if (!focusText) {
-      if (todayCount > 0) {
-        focusText = 'Focus immediately on resolving critical findings. Patch vulnerable code paths and restrict external exposure.'
-      } else if (weekCount > 0) {
-        focusText = 'Prioritize high-severity access control and authentication hardening within the next 7 business days.'
-      } else if (laterCount > 0) {
-        focusText = `Schedule remediation for the ${laterCount} medium-priority configuration and security header directives during your next regular deployment window.`
-      } else {
-        focusText = 'No immediate threats detected. Maintain routine automated scanning cadence and follow security baseline best practices.'
-      }
-    }
+    const focusText = todayCount > 0
+      ? 'Start with the immediate-priority items. Confirm each validation tier, then remediate or validate within 24 hours.'
+      : weekCount > 0
+        ? 'Start with the high-priority items and remediate or validate them within 7 days.'
+        : monthCount > 0
+          ? 'Schedule the medium-priority items for remediation or validation within 30 days.'
+          : plannedCount > 0
+            ? 'Put low-severity items into the next planned maintenance release.'
+            : 'No remediation SLA items were generated. Review informational observations and maintain routine scanning.'
     doc.fontSize(9.5).font('Helvetica').fillColor(BRAND.textDark).text(sanitizePdfText(focusText), leftX + 14, calloutY + 27, { width: w - 28 })
 
 
@@ -3065,12 +3198,14 @@ async function renderSimplifiedPdf({ file, reportTitle, scans = [], project = nu
     // =========================================================================
     doc.addPage()
 
-    drawSectionTitle(doc, 'Your Fix Cards', 'Step-by-step remediation instructions with symptoms, business risks, and actionable fix directives')
+    drawSectionTitle(doc, 'Priority Action Cards', 'Remediation or evidence-validation steps, with deadlines set by the SentinelAI priority policy')
 
     const urgencyBadgeColors = {
-      'fix-today': { bg: '#DC2626', label: 'FIX TODAY - IMMEDIATE' },
-      'this-week': { bg: '#EA580C', label: 'THIS WEEK - URGENT' },
-      'optional':  { bg: '#2563EB', label: 'SCHEDULED - SPRINT' },
+      immediate: { bg: '#DC2626', label: 'FIX <24H', validationLabel: 'VALIDATE <24H' },
+      'this-week': { bg: '#EA580C', label: 'THIS WEEK - 7D' },
+      'this-month': { bg: '#D97706', label: 'THIS MONTH - 30D' },
+      planned: { bg: '#2563EB', label: 'PLANNED - NEXT RELEASE' },
+      informational: { bg: '#64748B', label: 'INFORMATIONAL' },
     }
 
     const difficultyBadgeColors = {
@@ -3087,7 +3222,7 @@ async function renderSimplifiedPdf({ file, reportTitle, scans = [], project = nu
       drawRoundedBadge(doc, 'ALL CLEAR', leftX + 16, doc.y + 14, '#16A34A', '#FFFFFF', null, 3)
       doc.fontSize(12).font('Helvetica-Bold').fillColor(BRAND.primary).text('No Actionable Fix Cards Required', leftX + 90, doc.y + 14)
       doc.fontSize(9.5).font('Helvetica').fillColor(BRAND.textDark).text(
-        'The security assessment identified zero critical, high, or medium severity vulnerabilities on the target host. No emergency configurations or code modifications are required at this time.',
+        'No remediation-priority findings were generated for this guide. Review informational observations and remember that an automated assessment cannot prove a target is vulnerability-free.',
         leftX + 16, doc.y + 40, { width: w - 32, lineGap: 3 },
       )
     } else {
@@ -3105,7 +3240,10 @@ async function renderSimplifiedPdf({ file, reportTitle, scans = [], project = nu
         const prescBoxH = prescH + 28
 
         // Total card height with 16pt clean bottom padding (kotak tutup elok2)
-        const totalCardH = headerH + symptomH + 8 + riskH + 10 + prescBoxH + 16
+        const assessmentText = `AI confidence: ${item.aiConfidenceAvailable ? `${Math.round(item.aiConfidence * 100)}% — uncalibrated` : 'Not available'} | Evidence tier: ${String(item.validationTier || 'unknown').replace(/-/g, ' ')}`
+        const assessmentH = Math.max(12, doc.fontSize(7.5).font('Helvetica').heightOfString(assessmentText, { width: w - 28 }))
+        const cardHeaderH = headerH + assessmentH + 8
+        const totalCardH = cardHeaderH + symptomH + 8 + riskH + 10 + prescBoxH + 16
 
         // Page break if needed
         if (doc.y + totalCardH > doc.page.height - 55) {
@@ -3113,7 +3251,8 @@ async function renderSimplifiedPdf({ file, reportTitle, scans = [], project = nu
         }
 
         const cardY = doc.y
-        const uMeta = urgencyBadgeColors[item.urgency] || urgencyBadgeColors.optional
+        const uMeta = urgencyBadgeColors[item.urgency?.key] || urgencyBadgeColors.informational
+        const urgencyLabel = urgencyBadgeLabel(item.urgency)
         const dMeta = difficultyBadgeColors[item.difficulty] || difficultyBadgeColors.medium
 
         // Card container - clean border fully enclosing content
@@ -3131,9 +3270,12 @@ async function renderSimplifiedPdf({ file, reportTitle, scans = [], project = nu
         curBadgeX -= (timeBadgeW + 6)
         const diffBadgeW = drawRoundedBadge(doc, dMeta.label, curBadgeX - 65, cardY + 10, dMeta.bg, '#FFFFFF', null, 2)
         curBadgeX -= (diffBadgeW + 6)
-        drawRoundedBadge(doc, uMeta.label, curBadgeX - 95, cardY + 10, uMeta.bg, '#FFFFFF', null, 2)
+        drawRoundedBadge(doc, urgencyLabel, curBadgeX - 95, cardY + 10, uMeta.bg, '#FFFFFF', null, 2)
 
-        let contentY = cardY + headerH
+        doc.fontSize(7.5).font('Helvetica').fillColor(BRAND.textMuted)
+          .text(assessmentText, leftX + 14, cardY + cardHeaderH - assessmentH - 2, { width: w - 28 })
+
+        let contentY = cardY + cardHeaderH
 
         // Row 1: Symptom
         doc.fontSize(8).font('Helvetica-Bold').fillColor(BRAND.textMuted).text('WHAT WAS FOUND:', leftX + 14, contentY, { width: 110 })

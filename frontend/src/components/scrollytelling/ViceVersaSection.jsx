@@ -52,7 +52,7 @@ const PIPELINE_STEPS = [
     initialPos: { x: -60, y: 40 },
     details: [
       { label: 'Noise Filter', val: 'Context-aware verification suppresses raw tool false alarms (0% noise)' },
-      { label: 'Risk Categorization', val: 'Auto-calculates CVSS v3.1 base score (Critical, High, Medium, Low)' },
+      { label: 'Risk Categorization', val: 'Calculates CVSS score and severity from a supplied, supported vector' },
       { label: 'Plain-English Summary', val: 'Generates layman explanations and non-technical business summaries' }
     ]
   },
