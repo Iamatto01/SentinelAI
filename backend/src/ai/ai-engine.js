@@ -1037,8 +1037,15 @@ Respond ONLY with JSON:
      */
     async generateSimplifiedActionGuide(findings, target, detectedTech = []) {
       if (!this.llm.isConfigured() || !findings.length) return null
-      const actionable = findings
-        .filter(f => ['critical', 'high', 'medium'].includes(f.severity))
+      const SEV_ORDER = ['critical', 'high', 'medium', 'low', 'info']
+      const actionable = [...findings]
+        .filter(f => ['critical', 'high', 'medium'].includes((f.severity || '').toLowerCase()))
+        .sort((a, b) => {
+          const ai = SEV_ORDER.indexOf((a.severity || 'info').toLowerCase())
+          const bi = SEV_ORDER.indexOf((b.severity || 'info').toLowerCase())
+          if (ai !== bi) return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi)
+          return (Number(b.cvss) || 0) - (Number(a.cvss) || 0)
+        })
         .slice(0, 15)
       if (!actionable.length) return null
 

@@ -6,6 +6,7 @@ import * as db from './db.js'
 import { OWASP } from './owasp.js'
 import { aiEngine } from './ai/ai-engine.js'
 import { computeRiskScore, riskRatingFromScore } from './pipeline.js'
+import { calculateCvss4, defaultVectorForFinding } from './cvss4.js'
 
 /**
  * FYP2 Report Generator - Modern, High-Visual PDF Pentest Report.
@@ -1157,6 +1158,36 @@ function confidencePercent(v) {
   return 60
 }
 
+/**
+ * Calculate the exact numerical formula score for a finding or action card.
+ * Priority: explicit cvss -> cvssVector calculation -> CVSS v4 default vector -> FIRST qualitative band.
+ */
+export function getFindingFormulaScore(finding = {}) {
+  if (finding.cvss != null && !isNaN(Number(finding.cvss)) && Number(finding.cvss) > 0) {
+    return Math.round(Number(finding.cvss) * 10) / 10
+  }
+  if (finding.score != null && !isNaN(Number(finding.score)) && Number(finding.score) > 0) {
+    return Math.round(Number(finding.score) * 10) / 10
+  }
+
+  const vector = finding.cvssVector || finding.cvss_vector || defaultVectorForFinding(finding)
+  if (vector) {
+    try {
+      const res = calculateCvss4(vector)
+      if (res && res.score != null && res.score > 0) {
+        return Math.round(res.score * 10) / 10
+      }
+    } catch {}
+  }
+
+  const s = (finding.severity || 'info').toLowerCase()
+  if (s === 'critical') return 9.5
+  if (s === 'high') return 8.2
+  if (s === 'medium') return 5.5
+  if (s === 'low') return 2.5
+  return 0.0
+}
+
 function findingEvidenceContext(v) {
   const evidence = v.evidence || {}
   const endpoint = evidence.url || v.asset || null
@@ -1861,7 +1892,17 @@ function renderFindingsSummary(doc, { vulnerabilities }) {
   doc.moveDown(1)
 
   // Priority Fix List
-  const critAndHigh = vulnerabilities.filter(v => ['critical', 'high'].includes((v.severity || '').toLowerCase()))
+  const critAndHigh = vulnerabilities
+    .filter(v => ['critical', 'high'].includes((v.severity || '').toLowerCase()))
+    .sort((a, b) => {
+      const ai = SEV_ORDER.indexOf((a.severity || 'info').toLowerCase())
+      const bi = SEV_ORDER.indexOf((b.severity || 'info').toLowerCase())
+      if (ai !== bi) return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi)
+      const aScore = getFindingFormulaScore(a)
+      const bScore = getFindingFormulaScore(b)
+      if (bScore !== aScore) return bScore - aScore
+      return (confidencePercent(b) || 0) - (confidencePercent(a) || 0)
+    })
   if (critAndHigh.length) {
     ensureSpace(doc, 80)
     doc.fontSize(12).font('Helvetica-Bold').fillColor('#DC2626').text(`[!] High-Priority Fix Items (${critAndHigh.length} Total)`, x, doc.y)
@@ -1911,21 +1952,45 @@ function renderDetailedFindings(doc, { vulnerabilities, isWhitebox }) {
     if (!grouped[cat]) grouped[cat] = []
     grouped[cat].push(v)
   }
-  // Sort within each category by severity
+  // Sort within each category by severity and formula score (most dangerous first)
   for (const cat of Object.keys(grouped)) {
     grouped[cat].sort((a, b) => {
       const ai = SEV_ORDER.indexOf((a.severity || 'info').toLowerCase())
       const bi = SEV_ORDER.indexOf((b.severity || 'info').toLowerCase())
-      return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi)
+      if (ai !== bi) return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi)
+      const aScore = getFindingFormulaScore(a)
+      const bScore = getFindingFormulaScore(b)
+      if (bScore !== aScore) return bScore - aScore
+      return (confidencePercent(b) || 0) - (confidencePercent(a) || 0)
     })
   }
 
-  // Sort categories by OWASP order (A01-A10, then OTH, then others)
-  const OWASP_SORT_ORDER = ['A01', 'A02', 'A03', 'A04', 'A05', 'A06', 'A07', 'A08', 'A09', 'A10', 'OTH']
-  const sortedCategories = [...new Set([
-    ...OWASP_SORT_ORDER.filter(c => grouped[c]),
-    ...Object.keys(grouped).filter(c => !OWASP_SORT_ORDER.includes(c))
-  ])]
+  // Sort categories strictly by maximum severity & score (most dangerous categories first!)
+  const getCatSeverityRank = (cat) => {
+    const items = grouped[cat] || []
+    let bestSevRank = 99
+    let maxScore = 0
+    for (const item of items) {
+      const sevIdx = SEV_ORDER.indexOf((item.severity || 'info').toLowerCase())
+      const rank = sevIdx === -1 ? 99 : sevIdx
+      if (rank < bestSevRank) bestSevRank = rank
+      const score = getFindingFormulaScore(item)
+      if (score > maxScore) maxScore = score
+    }
+    return { bestSevRank, maxScore }
+  }
+
+  const sortedCategories = Object.keys(grouped).sort((a, b) => {
+    const rankA = getCatSeverityRank(a)
+    const rankB = getCatSeverityRank(b)
+    if (rankA.bestSevRank !== rankB.bestSevRank) {
+      return rankA.bestSevRank - rankB.bestSevRank
+    }
+    if (rankB.maxScore !== rankA.maxScore) {
+      return rankB.maxScore - rankA.maxScore
+    }
+    return a.localeCompare(b)
+  })
 
   // ── Render real findings as full detailed entries ──
   let globalIndex = 0
@@ -1964,7 +2029,8 @@ function renderDetailedFindings(doc, { vulnerabilities, isWhitebox }) {
 
       // Badges on header right
       let badgeX = x + w - 10
-      const cvssText = `CVSS ${v.cvss != null ? Number(v.cvss).toFixed(1) : 'N/A'}`
+      const score = getFindingFormulaScore(v)
+      const cvssText = `CVSS ${score.toFixed(1)}`
       const cvssW = Math.round(doc.fontSize(7.5).font('Helvetica-Bold').widthOfString(cvssText) + 10)
       badgeX -= cvssW
       doc.rect(badgeX, headerY + 6, cvssW, 14).fill('#334155')
@@ -2809,6 +2875,9 @@ function buildSimplifiedActionItem(v, index, detectedTech = []) {
   return {
     title,
     severity: sev,
+    cvss: v.cvss != null ? Number(v.cvss) : null,
+    cvssVector: v.cvss_vector || v.cvssVector || null,
+    finding: v,
     symptom: sanitizePdfText(symptom),
     risk: sanitizePdfText(risk),
     prescription: sanitizePdfText(prescription),
@@ -2868,27 +2937,56 @@ async function renderSimplifiedPdf({ file, reportTitle, scans = [], project = nu
     // Items list (from AI guide or enriched findings)
     let items = []
     if (simplifiedGuide?.actionItems && Array.isArray(simplifiedGuide.actionItems) && simplifiedGuide.actionItems.length > 0) {
-      items = simplifiedGuide.actionItems.map((item, idx) => ({
-        title: sanitizePdfText(item.title || `Action Item #${idx + 1}`),
-        severity: (item.severity || 'medium').toLowerCase(),
-        symptom: sanitizePdfText(item.symptom || 'Anomalous configuration identified on target system.'),
-        risk: sanitizePdfText(item.risk || 'Presents security risks if left unaddressed.'),
-        prescription: sanitizePdfText(item.prescription || 'Apply recommended vendor configuration hardening.'),
-        urgency: item.urgency === 'fix-today' ? 'fix-today' : item.urgency === 'this-week' ? 'this-week' : 'optional',
-        difficulty: item.difficulty === 'easy' ? 'easy' : item.difficulty === 'hard' ? 'hard' : 'medium',
-        estimatedMinutes: parseInt(item.estimatedMinutes, 10) || 25,
-        verification: sanitizePdfText(item.verification || 'Re-scan with SentinelAI after applying changes.'),
-        confidence: Math.max(0, Math.min(100, Number(item.confidence ?? 60))),
-        references: Array.isArray(item.references) ? item.references.filter(Boolean).slice(0, 4) : [],
-      }))
+      items = simplifiedGuide.actionItems.map((item, idx) => {
+        const matched = vulnerabilities.find(v =>
+          (v.title && item.title && (v.title.toLowerCase().includes(item.title.toLowerCase()) || item.title.toLowerCase().includes(v.title.toLowerCase()))) ||
+          ((v.severity || '').toLowerCase() === (item.severity || '').toLowerCase())
+        )
+        const sev = (item.severity || matched?.severity || 'medium').toLowerCase()
+        return {
+          title: sanitizePdfText(item.title || `Action Item #${idx + 1}`),
+          severity: sev,
+          cvss: item.cvss ?? matched?.cvss ?? null,
+          cvssVector: item.cvssVector ?? matched?.cvss_vector ?? null,
+          finding: matched,
+          symptom: sanitizePdfText(item.symptom || 'Anomalous configuration identified on target system.'),
+          risk: sanitizePdfText(item.risk || 'Presents security risks if left unaddressed.'),
+          prescription: sanitizePdfText(item.prescription || 'Apply recommended vendor configuration hardening.'),
+          urgency: item.urgency === 'fix-today' ? 'fix-today' : item.urgency === 'this-week' ? 'this-week' : 'optional',
+          difficulty: item.difficulty === 'easy' ? 'easy' : item.difficulty === 'hard' ? 'hard' : 'medium',
+          estimatedMinutes: parseInt(item.estimatedMinutes, 10) || 25,
+          verification: sanitizePdfText(item.verification || 'Re-scan with SentinelAI after applying changes.'),
+          confidence: item.confidence != null ? Number(item.confidence) : (matched ? confidencePercent(matched) : 75),
+          references: Array.isArray(item.references) ? item.references.filter(Boolean).slice(0, 4) : [],
+        }
+      })
     } else {
-      // Intelligently select actionable findings, or fall back to low/info hardening items if 0 critical/high/medium
-      const sourceFindings = (actionableTotal > 0)
-        ? [...criticalFindings, ...highFindings, ...mediumFindings]
-        : [...lowFindings, ...infoFindings]
+      const sortedVulnerabilities = [...vulnerabilities].sort((a, b) => {
+        const ai = SEV_ORDER.indexOf((a.severity || 'info').toLowerCase())
+        const bi = SEV_ORDER.indexOf((b.severity || 'info').toLowerCase())
+        if (ai !== bi) return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi)
+        const aScore = getFindingFormulaScore(a)
+        const bScore = getFindingFormulaScore(b)
+        if (bScore !== aScore) return bScore - aScore
+        return (confidencePercent(b) || 0) - (confidencePercent(a) || 0)
+      })
+
+      const actionable = sortedVulnerabilities.filter(v => ['critical', 'high', 'medium'].includes((v.severity || '').toLowerCase()))
+      const sourceFindings = actionable.length > 0 ? actionable : sortedVulnerabilities
 
       items = sourceFindings.slice(0, 15).map((v, idx) => buildSimplifiedActionItem(v, idx, detectedTech))
     }
+
+    // STRICTLY SORT ITEMS FROM MOST DANGEROUS TO LEAST DANGEROUS
+    items.sort((a, b) => {
+      const ai = SEV_ORDER.indexOf((a.severity || 'info').toLowerCase())
+      const bi = SEV_ORDER.indexOf((b.severity || 'info').toLowerCase())
+      if (ai !== bi) return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi)
+      const aScore = getFindingFormulaScore(a)
+      const bScore = getFindingFormulaScore(b)
+      if (bScore !== aScore) return bScore - aScore
+      return (b.confidence ?? 60) - (a.confidence ?? 60)
+    })
 
     // Determine target name
     const primaryScan = scans[0] || {}
@@ -3226,20 +3324,23 @@ async function renderSimplifiedPdf({ file, reportTitle, scans = [], project = nu
       )
     } else {
       items.forEach((item, idx) => {
-        const uMeta = urgencyBadgeColors[item.urgency] || urgencyBadgeColors.optional
-        const dMeta = difficultyBadgeColors[item.difficulty] || difficultyBadgeColors.medium
+        const score = getFindingFormulaScore(item)
+        const sevKey = (item.severity || 'info').toLowerCase()
+        const sevColor = SEV_COLORS[sevKey] || SEV_COLORS.info
+
+        const sevBadgeText = `${sevKey.toUpperCase()} ${score.toFixed(1)}`
+        const confVal = Math.max(10, Math.min(100, Math.round(Number(item.confidence ?? (item.finding ? confidencePercent(item.finding) : 75)))))
+        const confBadgeText = `AI CONFIDENCE ${confVal}%`
 
         // Measure badges from right to left to avoid any overlapping
-        const diffText = dMeta.label
-        const diffW = Math.round(doc.fontSize(7.5).font('Helvetica-Bold').widthOfString(diffText) + 12)
-        const diffX = rightX - 14 - diffW
+        const confW = Math.round(doc.fontSize(7.5).font('Helvetica-Bold').widthOfString(confBadgeText) + 12)
+        const confX = rightX - 14 - confW
 
-        const urgText = uMeta.label
-        const urgW = Math.round(doc.fontSize(7.5).font('Helvetica-Bold').widthOfString(urgText) + 12)
-        const urgX = diffX - 8 - urgW
+        const sevW = Math.round(doc.fontSize(7.5).font('Helvetica-Bold').widthOfString(sevBadgeText) + 12)
+        const sevX = confX - 8 - sevW
 
         // Max title width leaves a clear safety margin before the leftmost badge
-        const maxTitleW = Math.max(160, urgX - (leftX + 14) - 12)
+        const maxTitleW = Math.max(160, sevX - (leftX + 14) - 12)
 
         // Precise text measurements matching exact rendering fonts & widths with lineGap
         const titleText = `${idx + 1}. ${item.title}`
@@ -3265,16 +3366,16 @@ async function renderSimplifiedPdf({ file, reportTitle, scans = [], project = nu
 
         // Card container - clean border fully enclosing content
         doc.roundedRect(leftX, cardY, w, totalCardH, 4).fillAndStroke('#FFFFFF', BRAND.cardBorder)
-        // Top colored accent bar
-        doc.rect(leftX, cardY, w, 4).fill(uMeta.bg)
+        // Top colored accent bar matching severity color
+        doc.rect(leftX, cardY, w, 4).fill(sevColor.bg)
 
         // Title row (multiline-safe)
         doc.fontSize(11).font('Helvetica-Bold').fillColor(BRAND.primary)
           .text(titleText, leftX + 14, cardY + 12, { width: maxTitleW })
 
-        // Badges on top right (cleanly separated, no estimated time badge)
-        drawRoundedBadge(doc, urgText, urgX, cardY + 10, uMeta.bg, '#FFFFFF', null, 2)
-        drawRoundedBadge(doc, diffText, diffX, cardY + 10, dMeta.bg, '#FFFFFF', null, 2)
+        // 2 Badges: Severity with formula score & AI Confidence
+        drawRoundedBadge(doc, sevBadgeText, sevX, cardY + 10, sevColor.bg, '#FFFFFF', null, 2)
+        drawRoundedBadge(doc, confBadgeText, confX, cardY + 10, '#1E293B', '#FFFFFF', null, 2)
 
         let contentY = cardY + headerH
 
@@ -3294,7 +3395,7 @@ async function renderSimplifiedPdf({ file, reportTitle, scans = [], project = nu
         doc.fontSize(8).font('Helvetica-Bold').fillColor('#16A34A').text('HOW TO FIX (RECOMMENDED REMEDIATION):', leftX + 24, contentY + 7)
         doc.fontSize(8.5).font('Courier').fillColor(BRAND.primary).text(item.prescription || 'N/A', leftX + 24, contentY + 22, { width: w - 48, lineGap: 2.5 })
         doc.fontSize(7.5).font('Helvetica').fillColor(BRAND.textMuted)
-          .text(`Severity: ${String(item.severity || 'info').toUpperCase()}  |  Confidence: ${item.confidence ?? 60}% (evidence certainty, separate from CVSS impact)`,
+          .text(`Severity: ${sevKey.toUpperCase()} (CVSS ${score.toFixed(1)})  |  AI Confidence: ${confVal}% (evidence certainty, separate from CVSS impact)`,
             leftX + 24, contentY + prescBoxH - 12, { width: w - 48 })
 
         // Final Y position below the card with generous breathing space
