@@ -9,6 +9,7 @@ import {
 import InspectorLogo from '../components/InspectorLogo.jsx'
 import ScrollyNavbar from '../components/scrollytelling/ScrollyNavbar.jsx'
 import ScrollProgressHUD from '../components/scrollytelling/ScrollProgressHUD.jsx'
+import HeroNodeGraph from '../components/scrollytelling/HeroNodeGraph.jsx'
 import LiveScanTerminal from '../components/scrollytelling/LiveScanTerminal.jsx'
 import AiModelSelector from '../components/scrollytelling/AiModelSelector.jsx'
 import VulnerabilityBento from '../components/scrollytelling/VulnerabilityBento.jsx'
@@ -89,6 +90,9 @@ export default function Landing() {
             WebkitMaskImage: 'radial-gradient(ellipse 80% 70% at 50% 40%, black 40%, transparent 90%)',
           }}
         />
+
+        {/* Interactive 3D/Canvas Background: Monochrome Node-Graph */}
+        <HeroNodeGraph />
 
         {/* Hero Content Container */}
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10 w-full">
@@ -191,8 +195,6 @@ export default function Landing() {
               </div>
             </motion.div>
 
-            {false ? (
-            <>
             {/* Right Hero Column: Interactive Threat Radar & Diagnostic Console */}
             <motion.div
               initial={{ opacity: 0, x: 45, scale: 0.95 }}
@@ -404,8 +406,6 @@ export default function Landing() {
                 </div>
               </SpotlightCard>
             </motion.div>
-            </>
-            ) : null}
           </div>
         </div>
       </section>

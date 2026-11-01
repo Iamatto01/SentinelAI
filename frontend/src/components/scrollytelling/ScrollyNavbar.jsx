@@ -86,6 +86,23 @@ export default function ScrollyNavbar() {
                 </span>
               </div>
             </Link>
+
+            {/* Live Status Indicator Dot [ ONLINE ] */}
+            <div className={`hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[11px] font-mono ${
+              isNight
+                ? 'border-white/10 bg-white/[0.03] text-neutral-300'
+                : 'border-zinc-300 bg-zinc-100 text-zinc-700'
+            }`}>
+              <span className="relative flex h-2 w-2">
+                <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${
+                  isNight ? 'bg-white' : 'bg-black'
+                }`} />
+                <span className={`relative inline-flex rounded-full h-2 w-2 ${
+                  isNight ? 'bg-white' : 'bg-black'
+                }`} />
+              </span>
+              <span className="font-bold tracking-wider">[ ONLINE ]</span>
+            </div>
           </div>
 
           {/* Center: Smooth-scroll Anchor Links */}

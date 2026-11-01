@@ -1,4 +1,4 @@
-﻿@tailwind base;
+@tailwind base;
 @tailwind components;
 @tailwind utilities;
 
@@ -15,14 +15,15 @@
   --text-secondary: #cbd5e1;
   --text-muted:     #94a3b8;
   --text-faint:     #64748b;
-  --accent:         #a855f7;
-  --accent-hover:   #9333ea;
+  --accent:         #ffffff;
+  --accent-hover:   #e2e8f0;
 }
 
 /* Full-colour mode */
 
 ::selection {
-  background: #a855f7;
+  background: #ffffff;
+  color: #000000;
   color: #ffffff;
 }
 
@@ -85,7 +86,7 @@ body {
   /* ── Buttons (keep all gradient/colour styles) ─────────────────── */
   .btn { @apply inline-flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500/40 disabled:opacity-40 disabled:cursor-not-allowed active:scale-[0.98]; }
   .btn-primary {
-    @apply btn text-white font-bold;
+    @apply btn text-zinc-950 font-extrabold;
     background: var(--accent);
   }
   .btn-primary:hover {
@@ -166,7 +167,8 @@ body {
     color: #ffffff;
   }
   .icon-box-purple {
-    background: linear-gradient(135deg, #a855f7 0%, #7c3aed 100%);
+    background: linear-gradient(135deg, #27272a 0%, #18181b 100%);
+    border: 1px solid rgba(255, 255, 255, 0.15);
     color: #ffffff;
   }
   .icon-box-emerald {
@@ -245,8 +247,8 @@ body.night {
   --text-secondary: #cbd5e1;
   --text-muted:     #94a3b8;
   --text-faint:     #64748b;
-  --accent:         #a855f7;
-  --accent-hover:   #9333ea;
+  --accent:         #ffffff;
+  --accent-hover:   #e2e8f0;
   background: var(--bg-base);
   color: var(--text-primary);
 }

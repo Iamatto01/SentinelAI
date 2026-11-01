@@ -44,14 +44,14 @@ export default function Dashboard() {
   return (
     <div className="space-y-6 motion-fade-up content-fade">
       {/* Executive SOC Header — Sleek Floating Glass Pod with Clean Layout */}
-      <div className="rounded-3xl p-6 sm:p-7 border border-purple-500/20 bg-gradient-to-r from-slate-950/95 via-slate-900/80 to-slate-950/95 backdrop-blur-2xl shadow-[0_12px_40px_rgba(0,0,0,0.6)] relative overflow-hidden flex flex-col md:flex-row items-start md:items-center justify-between gap-5">
+      <div className="rounded-3xl p-6 sm:p-7 border border-white/10 bg-gradient-to-r from-slate-950/95 via-slate-900/80 to-slate-950/95 backdrop-blur-2xl shadow-[0_12px_40px_rgba(0,0,0,0.6)] relative overflow-hidden flex flex-col md:flex-row items-start md:items-center justify-between gap-5">
         {/* Soft Ambient Aura Glows */}
-        <div className="absolute -top-24 -left-24 w-60 h-60 rounded-full bg-purple-500/10 blur-3xl pointer-events-none" />
-        <div className="absolute -bottom-24 right-10 w-52 h-52 rounded-full bg-indigo-500/10 blur-3xl pointer-events-none" />
+        <div className="absolute -top-24 -left-24 w-60 h-60 rounded-full bg-white/[0.02] blur-3xl pointer-events-none" />
+        <div className="absolute -bottom-24 right-10 w-52 h-52 rounded-full bg-zinc-500/[0.02] blur-3xl pointer-events-none" />
 
         <div className="relative z-10">
           <div className="flex items-center gap-2 mb-1">
-            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold tracking-wider uppercase bg-purple-500/15 text-purple-300 border border-purple-500/30">
+            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold tracking-wider uppercase bg-white/10 text-zinc-300 border border-white/20">
               {isClient ? 'Client Security Portal' : 'Security Operations Center'}
             </span>
             <span className="text-[11px] text-slate-500 font-mono">•</span>
@@ -71,10 +71,10 @@ export default function Dashboard() {
 
         <div className="flex items-center gap-3 shrink-0 relative z-10">
           {data?.runningScans > 0 ? (
-            <span className="px-4 py-2 rounded-full bg-purple-500/20 text-purple-300 border border-purple-400/50 shadow-[0_0_16px_rgba(168,85,247,0.35)] animate-pulse text-xs font-extrabold flex items-center">
+            <span className="px-4 py-2 rounded-full bg-white/15 text-white border border-white/40 shadow-[0_0_16px_rgba(255,255,255,0.2)] animate-pulse text-xs font-extrabold flex items-center">
               <span className="relative flex h-2 w-2 mr-2">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-purple-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-purple-500"></span>
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-white"></span>
               </span>
               {data.runningScans} {data.runningScans === 1 ? 'Scan Active' : 'Scans Active'}
             </span>
@@ -87,7 +87,7 @@ export default function Dashboard() {
 
           <Link
             to="/app/scans"
-            className="px-4 py-2 rounded-full bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-extrabold text-xs shadow-[0_0_20px_rgba(168,85,247,0.35)] transition-all duration-200 flex items-center gap-1.5 active:scale-95"
+            className="px-4 py-2 rounded-full bg-white hover:bg-zinc-200 text-zinc-950 font-black text-xs shadow-[0_0_20px_rgba(255,255,255,0.2)] transition-all duration-200 flex items-center gap-1.5 active:scale-95"
           >
             <Radar size={14} /> Launch Scan
           </Link>
@@ -101,7 +101,7 @@ export default function Dashboard() {
             icon={FolderKanban}
             label="Total Scans Executed"
             value={data?.totals?.scans || 0}
-            tone="purple"
+            tone="slate"
             trend="+12%"
             sub={`${data?.totals?.projects || 0} Project Folders • All-Time`}
           />
@@ -132,7 +132,7 @@ export default function Dashboard() {
               icon={Zap}
               label="Available Scan Quota"
               value={subData?.isUnlimited ? 'Unlimited' : `${subData?.remainingQuota ?? 0}`}
-              tone="purple"
+              tone="slate"
               trend={subData?.remainingQuota !== undefined ? `${subData.remainingQuota} Left` : undefined}
               sub={`Plan: ${subData?.plan_name || 'Free Trial'} • ${subData?.scan_quota_used || 0} Used`}
             />
@@ -154,16 +154,16 @@ export default function Dashboard() {
         {/* Left Column (2/3 width): Main Operational Threat Metrics & Feed */}
         <div className="lg:col-span-2 space-y-6">
           {/* Threat & Severity Distribution Card (Rounded 3xl Glass Pod) */}
-          <div className="rounded-3xl border border-white/10 bg-gradient-to-b from-slate-900/90 via-slate-900/60 to-slate-950/90 backdrop-blur-xl p-6 sm:p-7 relative overflow-hidden hover:border-purple-400/30 transition-all duration-300 shadow-xl">
+          <div className="rounded-3xl border border-white/10 bg-gradient-to-b from-slate-900/90 via-slate-900/60 to-slate-950/90 backdrop-blur-xl p-6 sm:p-7 relative overflow-hidden hover:border-white/30 transition-all duration-300 shadow-xl">
             {/* Soft Ambient Glow */}
-            <div className="absolute top-0 right-1/4 w-40 h-40 rounded-full bg-purple-500/10 blur-3xl pointer-events-none" />
+            <div className="absolute top-0 right-1/4 w-40 h-40 rounded-full bg-white/10 blur-3xl pointer-events-none" />
 
             <div className="flex items-center justify-between mb-6 pb-4 border-b border-white/5 relative z-10">
               <div>
                 <h2 className="text-base font-bold text-white tracking-tight">Vulnerability Threat Distribution</h2>
                 <p className="text-xs text-slate-400 mt-0.5">Classification by CVSS severity impact</p>
               </div>
-              <Link to="/app/findings" className="text-xs font-bold text-purple-300 hover:text-purple-200 flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/30 transition-all">
+              <Link to="/app/findings" className="text-xs font-bold text-white hover:text-zinc-200 flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/10 hover:bg-white/15 border border-white/20 transition-all">
                 Audit Findings <ArrowUpRight size={14} />
               </Link>
             </div>
@@ -228,7 +228,7 @@ export default function Dashboard() {
                     <Link
                       key={cfg.key}
                       to="/app/findings"
-                      className="block group p-3 rounded-2xl bg-white/[0.02] hover:bg-white/[0.06] border border-white/5 hover:border-purple-400/30 transition-all duration-300"
+                      className="block group p-3 rounded-2xl bg-white/[0.02] hover:bg-white/[0.06] border border-white/5 hover:border-white/30 transition-all duration-300"
                     >
                       <div className="flex items-center justify-between text-xs mb-1.5">
                         <span className="flex items-center gap-2 font-bold text-slate-200 group-hover:text-white">
@@ -254,13 +254,13 @@ export default function Dashboard() {
           </div>
 
           {/* Recent Target Assessments Card (Rounded 3xl with Curved Pod Rows) */}
-          <div className="rounded-3xl border border-white/10 bg-gradient-to-b from-slate-900/90 via-slate-900/60 to-slate-950/90 backdrop-blur-xl p-6 sm:p-7 relative overflow-hidden hover:border-purple-400/30 transition-all duration-300 shadow-xl">
+          <div className="rounded-3xl border border-white/10 bg-gradient-to-b from-slate-900/90 via-slate-900/60 to-slate-950/90 backdrop-blur-xl p-6 sm:p-7 relative overflow-hidden hover:border-white/30 transition-all duration-300 shadow-xl">
             <div className="flex items-center justify-between mb-5 pb-4 border-b border-white/5">
               <div>
                 <h2 className="text-base font-bold text-white tracking-tight">Recent Target Assessments</h2>
                 <p className="text-xs text-slate-400 mt-0.5">Execution logs from autonomous security scans</p>
               </div>
-              <Link to="/app/scans" className="text-xs font-bold text-purple-300 hover:text-purple-200 flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/30 transition-all">
+              <Link to="/app/scans" className="text-xs font-bold text-white hover:text-zinc-200 flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/10 hover:bg-white/15 border border-white/20 transition-all">
                 View All ({data?.totals?.scans || 0}) <ArrowUpRight size={14} />
               </Link>
             </div>
@@ -278,18 +278,18 @@ export default function Dashboard() {
                   <Link
                     key={s.id}
                     to={`/app/scans/${s.id}`}
-                    className="flex items-center justify-between rounded-2xl border border-white/10 bg-slate-900/50 hover:bg-purple-500/[0.08] hover:border-purple-400/40 p-4 transition-all duration-300 group hover:shadow-[0_4px_20px_rgba(168,85,247,0.1)]"
+                    className="flex items-center justify-between rounded-2xl border border-white/10 bg-slate-900/50 hover:bg-white/[0.06] hover:border-white/40 p-4 transition-all duration-300 group hover:shadow-[0_4px_20px_rgba(168,85,247,0.1)]"
                   >
                     <div className="flex items-center gap-3.5 min-w-0 pr-2">
-                      <div className="w-11 h-11 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center text-slate-300 group-hover:text-purple-300 group-hover:border-purple-500/30 transition-colors shrink-0">
+                      <div className="w-11 h-11 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center text-slate-300 group-hover:text-white group-hover:border-white/30 transition-colors shrink-0">
                         {s.repo_name ? <GitBranch size={18} /> : <Radar size={18} />}
                       </div>
                       <div className="min-w-0">
-                        <p className="text-xs sm:text-sm font-bold text-white group-hover:text-purple-300 transition-colors truncate">
+                        <p className="text-xs sm:text-sm font-bold text-white group-hover:text-white transition-colors truncate">
                           {s.target}
                         </p>
                         <p className="text-[10px] text-slate-400 uppercase font-semibold flex items-center gap-1.5 mt-0.5">
-                          <span className="text-purple-400 font-bold">{s.mode || 'Blackbox'}</span>
+                          <span className="text-zinc-400 font-bold">{s.mode || 'Blackbox'}</span>
                           <span>•</span>
                           <span>{s.created_at ? new Date(s.created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Recent'}</span>
                         </p>
@@ -299,7 +299,7 @@ export default function Dashboard() {
                     <div className="flex items-center gap-3 shrink-0">
                       <span className={`px-3 py-1 rounded-full text-[10px] font-bold border ${
                         s.status === 'running'
-                          ? 'bg-purple-500/20 text-purple-300 border-purple-400/50 animate-pulse'
+                          ? 'bg-white/20 text-white border-white/40 animate-pulse'
                           : s.status === 'done'
                           ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/50'
                           : s.status === 'failed'
@@ -308,7 +308,7 @@ export default function Dashboard() {
                       }`}>
                         {s.status === 'running' ? 'Running' : s.status === 'done' ? 'Completed' : s.status}
                       </span>
-                      <div className="w-8 h-8 rounded-full flex items-center justify-center text-slate-400 group-hover:text-purple-300 group-hover:bg-purple-500/15 group-hover:translate-x-0.5 transition-all">
+                      <div className="w-8 h-8 rounded-full flex items-center justify-center text-slate-400 group-hover:text-white group-hover:bg-white/10 group-hover:translate-x-0.5 transition-all">
                         <ArrowRight size={15} />
                       </div>
                     </div>
@@ -323,8 +323,8 @@ export default function Dashboard() {
         <div className="lg:col-span-1 space-y-6">
           {/* Role-Aware Right Column Hub (Admin: Infrastructure & Toolchain Telemetry | Client: Subscription & Quota Allocation) */}
           {isClient ? (
-            <div className="rounded-3xl border border-white/10 bg-gradient-to-b from-slate-900/90 via-slate-900/60 to-slate-950/90 backdrop-blur-xl p-6 sm:p-7 relative overflow-hidden hover:border-purple-400/30 transition-all duration-300 shadow-xl flex flex-col justify-between">
-              <div className="absolute top-0 right-0 w-36 h-36 rounded-full bg-purple-500/10 blur-3xl pointer-events-none" />
+            <div className="rounded-3xl border border-white/10 bg-gradient-to-b from-slate-900/90 via-slate-900/60 to-slate-950/90 backdrop-blur-xl p-6 sm:p-7 relative overflow-hidden hover:border-white/30 transition-all duration-300 shadow-xl flex flex-col justify-between">
+              <div className="absolute top-0 right-0 w-36 h-36 rounded-full bg-white/10 blur-3xl pointer-events-none" />
 
               <div className="relative z-10">
                 <div className="flex items-center justify-between mb-4 pb-3 border-b border-white/5">
@@ -332,7 +332,7 @@ export default function Dashboard() {
                     <h2 className="text-base font-bold text-white tracking-tight">Active Plan &amp; Quota</h2>
                     <p className="text-xs text-slate-400 mt-0.5">Enterprise security allocation</p>
                   </div>
-                  <span className="px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider border text-purple-300 bg-purple-500/15 border-purple-500/40 shadow-[0_0_12px_rgba(168,85,247,0.25)]">
+                  <span className="px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider border text-white bg-white/10 border-white/20 shadow-[0_0_12px_rgba(168,85,247,0.25)]">
                     {subData?.plan_name || 'Standard Tier'}
                   </span>
                 </div>
@@ -349,7 +349,7 @@ export default function Dashboard() {
                   </div>
                   <div className="w-full bg-slate-950 rounded-full h-2 overflow-hidden border border-white/10">
                     <div
-                      className="h-full rounded-full bg-gradient-to-r from-purple-500 to-indigo-500 transition-all duration-700 shadow-[0_0_10px_rgba(168,85,247,0.4)]"
+                      className="h-full rounded-full bg-gradient-to-r from-white to-zinc-400 transition-all duration-700 shadow-[0_0_10px_rgba(255,255,255,0.2)]"
                       style={{
                         width: subData?.isUnlimited
                           ? '100%'
@@ -359,7 +359,7 @@ export default function Dashboard() {
                   </div>
                   <div className="flex items-center justify-between text-[11px] text-slate-400 mt-2">
                     <span>Available Balance</span>
-                    <span className="font-bold text-purple-300">
+                    <span className="font-bold text-white">
                       {subData?.isUnlimited ? 'Unlimited Active' : `${subData?.remainingQuota ?? 0} Scans Left`}
                     </span>
                   </div>
@@ -385,9 +385,9 @@ export default function Dashboard() {
                   </div>
                   <div className="flex items-center justify-between p-3 rounded-2xl bg-white/[0.02] border border-white/5">
                     <span className="flex items-center gap-2 text-slate-300 font-medium">
-                      <ShieldCheck size={15} className="text-purple-400 shrink-0" /> Executive PDF Delivery
+                      <ShieldCheck size={15} className="text-zinc-400 shrink-0" /> Executive PDF Delivery
                     </span>
-                    <span className="text-purple-300 font-bold text-[11px] px-2 py-0.5 rounded-full bg-purple-500/15 border border-purple-500/30">
+                    <span className="text-white font-bold text-[11px] px-2 py-0.5 rounded-full bg-white/10 border border-white/20">
                       Instant
                     </span>
                   </div>
@@ -397,21 +397,21 @@ export default function Dashboard() {
               <div className="mt-5 pt-3 border-t border-white/10 relative z-10 flex gap-2">
                 <Link
                   to="/app/billing"
-                  className="flex-1 py-2 px-3 rounded-full bg-purple-600 hover:bg-purple-500 text-white font-extrabold text-xs text-center shadow-[0_0_15px_rgba(168,85,247,0.3)] transition-all"
+                  className="flex-1 py-2 px-3 rounded-full bg-white hover:bg-zinc-200 text-zinc-950 font-black text-white font-extrabold text-xs text-center shadow-[0_0_15px_rgba(168,85,247,0.3)] transition-all"
                 >
                   Top-Up / Upgrade Plan
                 </Link>
                 <Link
                   to="/app/consultants"
-                  className="py-2 px-3 rounded-full border border-white/15 hover:border-purple-400/40 bg-white/[0.03] text-slate-200 hover:text-white text-xs font-bold text-center transition-all"
+                  className="py-2 px-3 rounded-full border border-white/15 hover:border-white/40 bg-white/[0.03] text-slate-200 hover:text-white text-xs font-bold text-center transition-all"
                 >
                   Advisory
                 </Link>
               </div>
             </div>
           ) : (
-            <div className="rounded-3xl border border-white/10 bg-gradient-to-b from-slate-900/90 via-slate-900/60 to-slate-950/90 backdrop-blur-xl p-6 sm:p-7 relative overflow-hidden hover:border-purple-400/30 transition-all duration-300 shadow-xl flex flex-col justify-between">
-              <div className="absolute top-0 right-0 w-36 h-36 rounded-full bg-purple-500/10 blur-3xl pointer-events-none" />
+            <div className="rounded-3xl border border-white/10 bg-gradient-to-b from-slate-900/90 via-slate-900/60 to-slate-950/90 backdrop-blur-xl p-6 sm:p-7 relative overflow-hidden hover:border-white/30 transition-all duration-300 shadow-xl flex flex-col justify-between">
+              <div className="absolute top-0 right-0 w-36 h-36 rounded-full bg-white/10 blur-3xl pointer-events-none" />
 
               <div className="relative z-10">
                 <div className="flex items-center justify-between mb-4 pb-3 border-b border-white/5">
@@ -452,9 +452,9 @@ export default function Dashboard() {
                   </div>
                   <div className="flex items-center justify-between p-3 rounded-2xl bg-white/[0.02] border border-white/5">
                     <span className="flex items-center gap-2 text-slate-300 font-medium">
-                      <Cpu size={15} className="text-purple-400 shrink-0" /> Toolchain Suite
+                      <Cpu size={15} className="text-zinc-400 shrink-0" /> Toolchain Suite
                     </span>
-                    <span className="text-purple-300 font-bold text-[11px] px-2 py-0.5 rounded-full bg-purple-500/15 border border-purple-500/30">
+                    <span className="text-white font-bold text-[11px] px-2 py-0.5 rounded-full bg-white/10 border border-white/20">
                       25 Active Tools
                     </span>
                   </div>
@@ -464,13 +464,13 @@ export default function Dashboard() {
               <div className="mt-5 pt-3 border-t border-white/10 relative z-10 flex gap-2">
                 <Link
                   to="/app/kali-control"
-                  className="flex-1 py-2 px-3 rounded-full bg-purple-600 hover:bg-purple-500 text-white font-extrabold text-xs text-center shadow-[0_0_15px_rgba(168,85,247,0.3)] transition-all flex items-center justify-center gap-1.5"
+                  className="flex-1 py-2 px-3 rounded-full bg-white hover:bg-zinc-200 text-zinc-950 font-black text-white font-extrabold text-xs text-center shadow-[0_0_15px_rgba(168,85,247,0.3)] transition-all flex items-center justify-center gap-1.5"
                 >
                   <Terminal size={13} /> Kali Terminal
                 </Link>
                 <Link
                   to="/app/settings"
-                  className="py-2 px-3 rounded-full border border-white/15 hover:border-purple-400/40 bg-white/[0.03] text-slate-200 hover:text-white text-xs font-bold text-center transition-all"
+                  className="py-2 px-3 rounded-full border border-white/15 hover:border-white/40 bg-white/[0.03] text-slate-200 hover:text-white text-xs font-bold text-center transition-all"
                 >
                   Plans &amp; Config
                 </Link>
@@ -479,7 +479,7 @@ export default function Dashboard() {
           )}
 
           {/* Quick Launch Hub (Curved 2x2 Squircle Pods) */}
-          <div className="rounded-3xl border border-white/10 bg-gradient-to-b from-slate-900/90 via-slate-900/60 to-slate-950/90 backdrop-blur-xl p-6 sm:p-7 relative overflow-hidden hover:border-purple-400/30 transition-all duration-300 shadow-xl">
+          <div className="rounded-3xl border border-white/10 bg-gradient-to-b from-slate-900/90 via-slate-900/60 to-slate-950/90 backdrop-blur-xl p-6 sm:p-7 relative overflow-hidden hover:border-white/30 transition-all duration-300 shadow-xl">
             <div className="mb-4 pb-3 border-b border-white/5">
               <h2 className="text-base font-bold text-white tracking-tight">Security Tooling</h2>
               <p className="text-xs text-slate-400 mt-0.5">Fast-access operational modules</p>
@@ -488,26 +488,26 @@ export default function Dashboard() {
             <div className="grid grid-cols-2 gap-3">
               <Link
                 to="/app/scans"
-                className="p-4 rounded-2xl bg-white/[0.02] hover:bg-purple-500/10 border border-white/5 hover:border-purple-400/40 transition-all duration-300 group flex flex-col justify-between hover:shadow-[0_6px_20px_rgba(168,85,247,0.1)]"
+                className="p-4 rounded-2xl bg-white/[0.02] hover:bg-white/10 border border-white/5 hover:border-white/40 transition-all duration-300 group flex flex-col justify-between hover:shadow-[0_6px_20px_rgba(168,85,247,0.1)]"
               >
-                <div className="w-10 h-10 rounded-2xl bg-purple-500/15 text-purple-400 border border-purple-500/30 flex items-center justify-center mb-2.5 group-hover:scale-110 transition-transform">
+                <div className="w-10 h-10 rounded-2xl bg-white/10 text-zinc-400 border border-white/20 flex items-center justify-center mb-2.5 group-hover:scale-110 transition-transform">
                   <Radar size={18} />
                 </div>
                 <div>
-                  <h3 className="text-xs font-bold text-white group-hover:text-purple-300 transition-colors">Target Scan</h3>
+                  <h3 className="text-xs font-bold text-white group-hover:text-white transition-colors">Target Scan</h3>
                   <p className="text-[10px] text-slate-400 mt-0.5">Blackbox Pentest</p>
                 </div>
               </Link>
 
               <Link
                 to="/app/github"
-                className="p-4 rounded-2xl bg-white/[0.02] hover:bg-purple-500/10 border border-white/5 hover:border-purple-400/40 transition-all duration-300 group flex flex-col justify-between hover:shadow-[0_6px_20px_rgba(168,85,247,0.1)]"
+                className="p-4 rounded-2xl bg-white/[0.02] hover:bg-white/10 border border-white/5 hover:border-white/40 transition-all duration-300 group flex flex-col justify-between hover:shadow-[0_6px_20px_rgba(168,85,247,0.1)]"
               >
-                <div className="w-10 h-10 rounded-2xl bg-purple-500/15 text-purple-400 border border-purple-500/30 flex items-center justify-center mb-2.5 group-hover:scale-110 transition-transform">
+                <div className="w-10 h-10 rounded-2xl bg-white/10 text-zinc-400 border border-white/20 flex items-center justify-center mb-2.5 group-hover:scale-110 transition-transform">
                   <GitBranch size={18} />
                 </div>
                 <div>
-                  <h3 className="text-xs font-bold text-white group-hover:text-purple-300 transition-colors">GitHub CI/CD</h3>
+                  <h3 className="text-xs font-bold text-white group-hover:text-white transition-colors">GitHub CI/CD</h3>
                   <p className="text-[10px] text-slate-400 mt-0.5">Continuous Audit</p>
                 </div>
               </Link>
@@ -541,11 +541,11 @@ export default function Dashboard() {
           </div>
 
           {/* Lead Architect & Advisory Banner (Organic Squircle Shape with Aura) */}
-          <div className="rounded-3xl p-6 border border-purple-500/30 bg-gradient-to-br from-purple-950/30 via-slate-900/80 to-slate-950/90 backdrop-blur-2xl hover:border-purple-400/50 shadow-[0_12px_32px_rgba(0,0,0,0.5)] transition-all duration-300 relative overflow-hidden group">
-            <div className="absolute -bottom-10 -right-10 w-32 h-32 rounded-full bg-purple-500/10 blur-2xl pointer-events-none" />
+          <div className="rounded-3xl p-6 border border-white/20 bg-gradient-to-br from-zinc-900/90 via-slate-900/80 to-slate-950/90 backdrop-blur-2xl hover:border-white/40 shadow-[0_12px_32px_rgba(0,0,0,0.5)] transition-all duration-300 relative overflow-hidden group">
+            <div className="absolute -bottom-10 -right-10 w-32 h-32 rounded-full bg-white/10 blur-2xl pointer-events-none" />
 
             <div className="flex items-center gap-3.5 mb-3.5 relative z-10">
-              <div className="w-14 h-14 rounded-2xl overflow-hidden border-2 border-purple-400/60 shadow-[0_0_20px_rgba(168,85,247,0.25)] shrink-0 bg-slate-900 ring-4 ring-purple-500/20">
+              <div className="w-14 h-14 rounded-2xl overflow-hidden border-2 border-white/50 shadow-[0_0_20px_rgba(255,255,255,0.15)] shrink-0 bg-slate-900 ring-4 ring-white/10">
                 <img
                   src="/saif.png"
                   alt="Muhammad Saifudin"
@@ -557,11 +557,11 @@ export default function Dashboard() {
               <div className="min-w-0">
                 <div className="flex items-center gap-1.5">
                   <h3 className="text-xs sm:text-sm font-bold text-white truncate">Muhammad Saifudin</h3>
-                  <span className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider rounded-full bg-purple-500 text-slate-950 shadow">
+                  <span className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider rounded-full bg-white text-zinc-950 font-black shadow">
                     Lead
                   </span>
                 </div>
-                <p className="text-[11px] text-purple-300 font-semibold mt-0.5">Lead Security Architect</p>
+                <p className="text-[11px] text-white font-semibold mt-0.5">Lead Security Architect</p>
               </div>
             </div>
             <p className="text-xs text-slate-300 leading-relaxed mb-4 relative z-10">
@@ -569,7 +569,7 @@ export default function Dashboard() {
             </p>
             <Link
               to="/app/consultants"
-              className="py-2.5 px-4 rounded-full border border-purple-500/40 bg-purple-500/10 text-purple-300 hover:bg-purple-500/20 hover:text-white group-hover:border-purple-400/70 shadow-[0_0_15px_rgba(168,85,247,0.15)] transition-all flex items-center justify-center gap-1.5 text-xs font-bold relative z-10"
+              className="py-2.5 px-4 rounded-full border border-white/20 bg-white/10 text-white hover:bg-white/15 hover:text-white group-hover:border-white/50 shadow-[0_0_15px_rgba(168,85,247,0.15)] transition-all flex items-center justify-center gap-1.5 text-xs font-bold relative z-10"
             >
               <span>Consult Security Architect</span>
               <ArrowRight size={14} className="group-hover:translate-x-1 transition-transform" />

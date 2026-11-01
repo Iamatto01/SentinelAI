@@ -143,8 +143,8 @@ export default function HeroNodeGraph() {
             ctx.moveTo(nodes[i].x, nodes[i].y)
             ctx.lineTo(nodes[j].x, nodes[j].y)
             ctx.strokeStyle = isDark
-              ? `rgba(168, 85, 247, ${alpha})`
-              : `rgba(99, 102, 241, ${alpha})`
+              ? `rgba(255, 255, 255, ${alpha})`
+              : `rgba(0, 0, 0, ${alpha})`
             ctx.lineWidth = nodes[i].isCore || nodes[j].isCore ? 1.2 : 0.7
             ctx.stroke()
           }
@@ -169,8 +169,8 @@ export default function HeroNodeGraph() {
 
           ctx.beginPath()
           ctx.arc(px, py, 1.8, 0, Math.PI * 2)
-          ctx.fillStyle = isDark ? '#a855f7' : '#7c3aed'
-          ctx.shadowColor = isDark ? 'rgba(168, 85, 247, 0.9)' : 'rgba(124, 58, 237, 0.6)'
+          ctx.fillStyle = isDark ? '#ffffff' : '#000000'
+          ctx.shadowColor = isDark ? 'rgba(255, 255, 255, 0.9)' : 'rgba(0, 0, 0, 0.5)'
           ctx.shadowBlur = 6
           ctx.fill()
           ctx.shadowBlur = 0
@@ -203,9 +203,9 @@ export default function HeroNodeGraph() {
           const ringRadius = n.radius + Math.sin(n.pulse) * 4 + 4
           ctx.beginPath()
           ctx.arc(n.x, n.y, Math.max(0.5, ringRadius), 0, Math.PI * 2)
-            ctx.strokeStyle = isDark
-            ? n.isVuln ? 'rgba(244, 63, 94, 0.8)' : n.isCore ? 'rgba(168, 85, 247, 0.6)' : 'rgba(99, 102, 241, 0.4)'
-            : n.isVuln ? 'rgba(244, 63, 94, 0.6)' : n.isCore ? 'rgba(168, 85, 247, 0.5)' : 'rgba(99, 102, 241, 0.3)'
+          ctx.strokeStyle = isDark
+            ? n.isVuln ? 'rgba(244, 63, 94, 0.8)' : n.isCore ? 'rgba(255, 255, 255, 0.7)' : 'rgba(56, 189, 248, 0.5)'
+            : n.isVuln ? 'rgba(244, 63, 94, 0.6)' : n.isCore ? 'rgba(0, 0, 0, 0.7)' : 'rgba(14, 165, 233, 0.4)'
           ctx.lineWidth = 1
           ctx.stroke()
         }
@@ -214,9 +214,9 @@ export default function HeroNodeGraph() {
         ctx.beginPath()
         ctx.arc(n.x, n.y, n.radius, 0, Math.PI * 2)
         if (isDark) {
-          ctx.fillStyle = n.isCore ? '#a855f7' : n.isVuln ? '#f43f5e' : n.isAgent ? '#22d3ee' : '#6366f1'
+          ctx.fillStyle = n.isCore ? '#ffffff' : n.isVuln ? '#f43f5e' : n.isAgent ? '#38bdf8' : '#71717a'
         } else {
-          ctx.fillStyle = n.isCore ? '#000000' : n.isVuln ? '#18181b' : n.isAgent ? '#27272a' : '#71717a'
+          ctx.fillStyle = n.isCore ? '#000000' : n.isVuln ? '#f43f5e' : n.isAgent ? '#0284c7' : '#71717a'
         }
         ctx.fill()
 

@@ -90,8 +90,8 @@ export default function StatCard({ icon: Icon, label, value, sub, tone = 'purple
           <div className={`w-11 h-11 rounded-2xl flex items-center justify-center transition-transform duration-300 group-hover:scale-110 shrink-0 shadow-md ${
             tone === 'critical' ? 'bg-rose-500/15 text-rose-300 border border-rose-400/30 shadow-rose-500/15' :
             tone === 'emerald' ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-400/30 shadow-emerald-500/15' :
-            tone === 'purple' || tone === 'cyan' || tone === 'accent' ? 'bg-purple-500/15 text-purple-300 border border-purple-400/30 shadow-purple-500/15' :
-            'bg-purple-500/15 text-purple-300 border border-purple-400/30 shadow-purple-500/15'
+            tone === 'purple' || tone === 'cyan' || tone === 'accent' ? 'bg-white/10 text-white border border-white/20 shadow-white/5' :
+            'bg-white/10 text-white border border-white/20 shadow-white/5'
           }`}>
             <Icon size={19} />
           </div>
@@ -109,7 +109,7 @@ export default function StatCard({ icon: Icon, label, value, sub, tone = 'purple
           <div className={`h-full rounded-full transition-all duration-700 ${
             tone === 'critical' ? 'bg-gradient-to-r from-rose-500 to-amber-500 w-1/2 group-hover:w-full' :
             tone === 'emerald' ? 'bg-gradient-to-r from-emerald-400 to-teal-500 w-3/4 group-hover:w-full' :
-            'bg-gradient-to-r from-purple-400 via-violet-500 to-indigo-500 w-3/5 group-hover:w-full'
+            'bg-gradient-to-r from-white via-zinc-400 to-zinc-600 w-3/5 group-hover:w-full'
           }`} />
         </div>
       </div>

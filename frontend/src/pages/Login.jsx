@@ -94,8 +94,8 @@ export default function Login() {
   }
 
   return (
-    <div className={`min-h-screen flex flex-col justify-center items-center px-4 py-12 relative overflow-hidden selection:bg-purple-500 selection:text-white transition-colors ${
-      isNight ? 'bg-[#090b14]' : 'bg-[#f8fafc]'
+    <div className={`min-h-screen flex flex-col justify-center items-center px-4 py-12 relative overflow-hidden selection:bg-white selection:text-black transition-colors ${
+      isNight ? 'bg-[#090b10]' : 'bg-[#f8fafc]'
     }`}>
 
       {/* Top-Left Back Button (No Arrow) */}
@@ -103,8 +103,8 @@ export default function Login() {
         to="/"
         className={`fixed top-5 left-5 z-50 inline-flex items-center px-3.5 py-2 rounded-full border text-xs font-bold transition-all duration-300 shadow-xl cursor-pointer active:scale-95 ${
           isNight
-            ? 'bg-slate-900/80 border-white/15 text-slate-200 hover:text-white hover:border-purple-400/50'
-            : 'bg-white/95 border-slate-300 text-slate-800 hover:text-purple-600 hover:border-purple-500'
+            ? 'bg-slate-900/80 border-white/15 text-slate-200 hover:text-white hover:border-white/40'
+            : 'bg-white/95 border-slate-300 text-slate-800 hover:text-black hover:border-black'
         }`}
         aria-label="Back to Landing Page"
       >
@@ -117,8 +117,8 @@ export default function Login() {
         onClick={toggleNightMode}
         className={`fixed top-5 right-5 z-50 inline-flex items-center gap-2 px-3.5 py-2 rounded-full border text-xs font-bold transition-all duration-300 shadow-xl cursor-pointer active:scale-95 ${
           isNight
-            ? 'bg-slate-900/80 border-white/15 text-slate-200 hover:text-white hover:border-purple-400/50'
-            : 'bg-white/95 border-slate-300 text-slate-800 hover:text-purple-600 hover:border-purple-500'
+            ? 'bg-slate-900/80 border-white/15 text-slate-200 hover:text-white hover:border-white/40'
+            : 'bg-white/95 border-slate-300 text-slate-800 hover:text-black hover:border-black'
         }`}
         title={isNight ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
         aria-label="Toggle Theme"
@@ -130,29 +130,29 @@ export default function Login() {
           </>
         ) : (
           <>
-            <Moon size={15} className="text-purple-600" />
+            <Moon size={15} className="text-zinc-800" />
             <span>Dark Mode</span>
           </>
         )}
       </button>
 
-      {/* Ambient Glowing Spotlights */}
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-purple-600/10 rounded-full blur-[140px] pointer-events-none" />
-      <div className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[350px] h-[350px] bg-violet-500/10 rounded-full blur-[90px] pointer-events-none" />
+      {/* Ambient Glowing Spotlights - Stealth Neutral */}
+      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-white/[0.03] rounded-full blur-[140px] pointer-events-none" />
+      <div className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[350px] h-[350px] bg-zinc-500/[0.03] rounded-full blur-[90px] pointer-events-none" />
 
       {/* Main Unified Login Card */}
       <div className="w-full max-w-[460px] relative z-10 my-auto motion-fade-up">
         
         {/* Card Header & Brand */}
         <div className="text-center mb-6">
-          <div className="inline-flex items-center justify-center p-3 rounded-2xl bg-gradient-to-b from-purple-950/60 to-slate-900/90 border border-purple-500/30 shadow-[0_0_30px_rgba(168,85,247,0.25)] mb-3 relative group">
+          <div className="inline-flex items-center justify-center p-3 rounded-2xl bg-gradient-to-b from-zinc-800/80 to-slate-900/90 border border-white/15 shadow-[0_0_30px_rgba(255,255,255,0.06)] mb-3 relative group">
             <InspectorLogo size={42} />
           </div>
           <div className="flex items-center justify-center gap-2">
             <h1 className="text-2xl font-black tracking-tight text-white">
-              Sentinel<span className="text-purple-400">AI</span>
+              Sentinel<span className="text-zinc-400">AI</span>
             </h1>
-            <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/30 font-bold">
+            <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-white/10 text-zinc-300 border border-white/20 font-bold">
               v2.4
             </span>
           </div>
@@ -166,20 +166,20 @@ export default function Login() {
         {/* Unified Card Container */}
         <div className={`rounded-3xl border p-6 sm:p-8 backdrop-blur-2xl transition-all duration-300 shadow-2xl relative ${
           isNight
-            ? 'bg-[#0f121e]/90 border-purple-500/20 shadow-[0_20px_60px_rgba(0,0,0,0.8),0_0_30px_rgba(168,85,247,0.08)] text-slate-100'
+            ? 'bg-[#0c0d13]/95 border-white/15 shadow-[0_20px_60px_rgba(0,0,0,0.8),0_0_30px_rgba(255,255,255,0.02)] text-slate-100'
             : 'bg-white border-slate-200 text-slate-900 shadow-xl shadow-slate-200/50'
         }`}>
 
           {/* Mode Switcher Tabs */}
           <div className={`flex rounded-2xl p-1 border mb-6 transition-colors ${
-            isNight ? 'bg-[#090b14] border-white/10' : 'bg-slate-100 border-slate-200'
+            isNight ? 'bg-[#090a0f] border-white/10' : 'bg-slate-100 border-slate-200'
           }`}>
             <button
               type="button"
               onClick={() => { setMode('login'); setErr('') }}
               className={`flex-1 py-2 text-xs font-bold rounded-xl transition-all cursor-pointer ${
                 mode === 'login'
-                  ? 'bg-purple-600 text-white shadow-lg shadow-purple-500/30'
+                  ? 'bg-white text-zinc-950 font-black shadow-lg shadow-white/10'
                   : isNight ? 'text-slate-400 hover:text-white' : 'text-slate-600 hover:text-slate-950'
               }`}
             >
@@ -190,7 +190,7 @@ export default function Login() {
               onClick={() => { setMode('register'); setErr('') }}
               className={`flex-1 py-2 text-xs font-bold rounded-xl transition-all cursor-pointer ${
                 mode === 'register'
-                  ? 'bg-purple-600 text-white shadow-lg shadow-purple-500/30'
+                  ? 'bg-white text-zinc-950 font-black shadow-lg shadow-white/10'
                   : isNight ? 'text-slate-400 hover:text-white' : 'text-slate-600 hover:text-slate-950'
               }`}
             >
@@ -208,11 +208,11 @@ export default function Login() {
               <label className={`text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 ${
                 isNight ? 'text-slate-300' : 'text-slate-700'
               }`}>
-                <User size={13} className={isNight ? 'text-purple-400' : 'text-purple-500'} /> Username or Email
+                <User size={13} className={isNight ? 'text-zinc-400' : 'text-zinc-600'} /> Username or Email
               </label>
               <input
                 name="sentinel_auth_user"
-                className={`input py-2.5 text-sm transition-all focus:border-purple-400 focus:ring-2 focus:ring-purple-400/20 w-full ${
+                className={`input py-2.5 text-sm transition-all focus:border-white focus:ring-2 focus:ring-white/20 w-full ${
                   isNight
                     ? 'text-slate-100 bg-[#141829] border-white/10 placeholder-slate-500'
                     : 'text-slate-900 bg-slate-50 border-slate-300 placeholder-slate-400 font-medium'
@@ -230,12 +230,12 @@ export default function Login() {
                 <label className={`text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 ${
                   isNight ? 'text-slate-300' : 'text-slate-700'
                 }`}>
-                  <Mail size={13} className={isNight ? 'text-purple-400' : 'text-purple-500'} /> Email Address
+                  <Mail size={13} className={isNight ? 'text-zinc-400' : 'text-zinc-600'} /> Email Address
                 </label>
                 <input
                   name="sentinel_auth_email"
                   type="email"
-                  className={`input py-2.5 text-sm transition-all focus:border-purple-400 focus:ring-2 focus:ring-purple-400/20 w-full ${
+                  className={`input py-2.5 text-sm transition-all focus:border-white focus:ring-2 focus:ring-white/20 w-full ${
                     isNight
                       ? 'text-slate-100 bg-[#141829] border-white/10 placeholder-slate-500'
                       : 'text-slate-900 bg-slate-50 border-slate-300 placeholder-slate-400 font-medium'
@@ -253,13 +253,13 @@ export default function Login() {
               <label className={`text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 ${
                 isNight ? 'text-slate-300' : 'text-slate-700'
               }`}>
-                <KeyRound size={13} className={isNight ? 'text-purple-400' : 'text-purple-500'} /> Password
+                <KeyRound size={13} className={isNight ? 'text-zinc-400' : 'text-zinc-600'} /> Password
               </label>
               <div className="relative flex items-center">
                 <input
                   name="sentinel_auth_pass"
                   type={showPassword ? 'text' : 'password'}
-                  className={`input py-2.5 pr-11 text-sm transition-all focus:border-purple-400 focus:ring-2 focus:ring-purple-400/20 w-full ${
+                  className={`input py-2.5 pr-11 text-sm transition-all focus:border-white focus:ring-2 focus:ring-white/20 w-full ${
                     isNight
                       ? 'text-slate-100 bg-[#141829] border-white/10 placeholder-slate-500'
                       : 'text-slate-900 bg-slate-50 border-slate-300 placeholder-slate-400 font-medium'
@@ -274,12 +274,12 @@ export default function Login() {
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
                   className={`absolute right-3 p-1 rounded-lg transition-colors focus:outline-none ${
-                    isNight ? 'hover:bg-white/10 text-slate-400 hover:text-purple-300' : 'hover:bg-slate-200 text-slate-500 hover:text-purple-600'
+                    isNight ? 'hover:bg-white/10 text-slate-400 hover:text-white' : 'hover:bg-slate-200 text-slate-500 hover:text-black'
                   }`}
                   title={showPassword ? 'Hide password' : 'Reveal password'}
                 >
                   {showPassword ? (
-                    <Eye size={16} className={isNight ? 'text-purple-400' : 'text-purple-500'} />
+                    <Eye size={16} className={isNight ? 'text-zinc-300' : 'text-zinc-700'} />
                   ) : (
                     <EyeOff size={16} className="text-slate-400" />
                   )}
@@ -305,7 +305,7 @@ export default function Login() {
                 <div className={`space-y-2 pt-2 border-t ${isNight ? 'border-white/10' : 'border-slate-200'}`}>
                   <div className="flex items-center justify-between text-xs">
                     <span className={`font-bold ${isNight ? 'text-slate-200' : 'text-slate-800'}`}>Select Plan:</span>
-                    <span className="text-[10px] text-purple-400 font-medium">Live from Admin Settings</span>
+                    <span className="text-[10px] text-zinc-400 font-medium">Live from Admin Settings</span>
                   </div>
 
                   <div className={`grid gap-2 ${
@@ -328,19 +328,19 @@ export default function Login() {
                           onClick={() => setPlanId(p.id)}
                           className={`relative p-2 rounded-xl border text-center transition-all cursor-pointer flex flex-col justify-between items-center min-h-[58px] ${
                             isSelected
-                              ? 'border-purple-400 bg-purple-500/20 shadow-[0_0_15px_rgba(168,85,247,0.25)] text-white ring-1 ring-purple-400'
+                              ? 'border-white bg-white/15 shadow-[0_0_15px_rgba(255,255,255,0.15)] text-white ring-1 ring-white/40'
                               : isNight
                                 ? 'border-white/10 bg-slate-900/40 text-slate-400 hover:border-white/20 hover:text-slate-200'
-                                : 'border-slate-200 bg-white text-slate-600 hover:border-purple-300'
+                                : 'border-slate-200 bg-white text-slate-600 hover:border-zinc-400'
                           }`}
                         >
                           {isPopular && (
-                            <span className="absolute -top-1.5 right-1 px-1.5 py-0.2 rounded-full bg-purple-500 text-[8px] font-black tracking-wider uppercase text-white shadow-sm">
+                            <span className="absolute -top-1.5 right-1 px-1.5 py-0.2 rounded-full bg-white text-[8px] font-black tracking-wider uppercase text-zinc-950 shadow-sm">
                               Popular
                             </span>
                           )}
                           <div className="text-[11px] font-bold truncate max-w-full">{cleanName(p)}</div>
-                          <div className="text-xs font-black text-purple-300 mt-0.5">
+                          <div className="text-xs font-black text-white mt-0.5">
                             {price === 0 ? 'Free' : `${curr === 'USD' ? '$' : 'RM '}${price}`}
                           </div>
                           {quota !== undefined && quota > 0 && (

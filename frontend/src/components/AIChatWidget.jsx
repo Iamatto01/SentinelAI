@@ -86,10 +86,10 @@ export default function AIChatWidget() {
           onClick={() => setOpen(true)}
           title="SentinelAI Detective Assistant"
           aria-label="Open SentinelAI Chat"
-          className="fixed bottom-4 right-4 sm:bottom-6 sm:right-6 z-40 w-13 h-13 rounded-2xl flex items-center justify-center hover:scale-110 active:scale-95 transition-all p-2 bg-slate-950/95 border border-purple-500/50 shadow-[0_0_24px_rgba(168,85,247,0.4)] hover:border-purple-400 hover:shadow-[0_0_32px_rgba(168,85,247,0.6)] cursor-pointer"
+          className="fixed bottom-4 right-4 sm:bottom-6 sm:right-6 z-40 w-13 h-13 rounded-2xl flex items-center justify-center hover:scale-110 active:scale-95 transition-all p-2 bg-slate-950/95 border border-white/20 shadow-[0_0_24px_rgba(255,255,255,0.08)] hover:border-white/50 hover:shadow-[0_0_32px_rgba(255,255,255,0.18)] cursor-pointer"
         >
           <InspectorLogo size={28} />
-          <span className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-purple-500 border-2 border-slate-950 animate-pulse" />
+          <span className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-emerald-400 border-2 border-slate-950 animate-pulse" />
         </button>
       )}
 
@@ -105,18 +105,18 @@ export default function AIChatWidget() {
       {/* Responsive Chat Widget Window */}
       {open && (
         <div
-          className="fixed inset-x-3 bottom-3 top-16 sm:inset-auto sm:bottom-6 sm:right-6 sm:w-96 sm:h-[540px] z-50 card flex flex-col overflow-hidden glass-in shadow-2xl rounded-3xl border border-purple-500/30 bg-slate-950/95 backdrop-blur-2xl"
+          className="fixed inset-x-3 bottom-3 top-16 sm:inset-auto sm:bottom-6 sm:right-6 sm:w-96 sm:h-[540px] z-50 card flex flex-col overflow-hidden glass-in shadow-2xl rounded-3xl border border-white/15 bg-slate-950/95 backdrop-blur-2xl"
           role="dialog"
           aria-label="AI Chat Assistant"
         >
           {/* Header Bar */}
-          <div className="flex items-center justify-between px-4 py-3 border-b border-white/10 bg-gradient-to-r from-purple-950/40 via-slate-900/60 to-slate-950 shrink-0">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-white/10 bg-slate-900/90 shrink-0">
             <div className="flex items-center gap-2.5 min-w-0">
               <InspectorLogo size={24} />
               <div className="min-w-0">
                 <div className="flex items-center gap-1.5">
                   <p className="text-sm font-bold text-slate-100 tracking-tight truncate">AI Detective</p>
-                  <span className="text-[9px] bg-purple-500/20 text-purple-300 px-2 py-0.5 rounded-full border border-purple-500/30 font-extrabold uppercase">
+                  <span className="text-[9px] bg-white/10 text-zinc-300 px-2 py-0.5 rounded-full border border-white/20 font-extrabold uppercase">
                     web-hunter
                   </span>
                 </div>
@@ -151,10 +151,9 @@ export default function AIChatWidget() {
                 <div
                   className={`max-w-[88%] sm:max-w-[85%] rounded-2xl px-3.5 py-2.5 text-xs sm:text-sm whitespace-pre-wrap leading-relaxed ${
                     m.role === 'user'
-                      ? 'text-white font-medium shadow-md shadow-purple-950/40'
+                      ? 'bg-white text-zinc-950 font-semibold shadow-md shadow-black/40'
                       : 'glass-soft text-slate-200 border border-white/10 shadow-sm'
                   }`}
-                  style={m.role === 'user' ? { background: 'linear-gradient(135deg, #a855f7 0%, #7c3aed 100%)' } : {}}
                 >
                   {m.content}
                 </div>
@@ -162,9 +161,9 @@ export default function AIChatWidget() {
             ))}
             {busy && (
               <div className="flex justify-start">
-                <div className="glass-soft rounded-2xl px-3.5 py-2 flex items-center gap-2 border border-purple-500/20">
-                  <Loader2 size={14} className="animate-spin text-purple-400" />
-                  <span className="text-xs text-purple-300 font-medium">Analysing threat telemetry…</span>
+                <div className="glass-soft rounded-2xl px-3.5 py-2 flex items-center gap-2 border border-white/15">
+                  <Loader2 size={14} className="animate-spin text-zinc-400" />
+                  <span className="text-xs text-zinc-300 font-medium">Analysing threat telemetry…</span>
                 </div>
               </div>
             )}
@@ -177,14 +176,14 @@ export default function AIChatWidget() {
               <button
                 type="button"
                 onClick={() => { setInput('List all crawl findings and vulnerabilities from this scan'); }}
-                className="text-[10px] text-purple-200 hover:text-white bg-purple-500/15 hover:bg-purple-500/25 rounded-lg px-2.5 py-1 border border-purple-500/30 transition-all font-semibold cursor-pointer"
+                className="text-[10px] text-zinc-300 hover:text-white bg-white/5 hover:bg-white/10 rounded-lg px-2.5 py-1 border border-white/15 transition-all font-semibold cursor-pointer"
               >
                 List scan findings
               </button>
               <button
                 type="button"
                 onClick={() => { setInput('What is the risk score and critical flaw breakdown?'); }}
-                className="text-[10px] text-purple-200 hover:text-white bg-purple-500/15 hover:bg-purple-500/25 rounded-lg px-2.5 py-1 border border-purple-500/30 transition-all font-semibold cursor-pointer"
+                className="text-[10px] text-zinc-300 hover:text-white bg-white/5 hover:bg-white/10 rounded-lg px-2.5 py-1 border border-white/15 transition-all font-semibold cursor-pointer"
               >
                 Risk summary
               </button>
@@ -195,7 +194,7 @@ export default function AIChatWidget() {
           <form onSubmit={send} className="p-3 border-t border-white/10 bg-slate-950 flex items-center gap-2 shrink-0">
             <input
               ref={inputRef}
-              className="input flex-1 text-xs sm:text-sm py-2.5 px-3 rounded-xl border border-white/15 focus:border-purple-500 focus:ring-1 focus:ring-purple-500/40 bg-slate-900/80 text-white placeholder-slate-500"
+              className="input flex-1 text-xs sm:text-sm py-2.5 px-3 rounded-xl border border-white/15 focus:border-white focus:ring-1 focus:ring-white/20 bg-slate-900/80 text-white placeholder-slate-500"
               placeholder="Ask the AI specialist…"
               value={input}
               onChange={(e) => setInput(e.target.value)}
@@ -203,7 +202,7 @@ export default function AIChatWidget() {
             <button
               type="submit"
               disabled={busy || !input.trim()}
-              className="btn-primary px-3.5 py-2.5 rounded-xl shadow-[0_0_12px_rgba(168,85,247,0.3)] disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer flex items-center justify-center shrink-0"
+              className="btn-primary px-3.5 py-2.5 rounded-xl shadow-[0_0_12px_rgba(255,255,255,0.15)] disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer flex items-center justify-center shrink-0"
               aria-label="Send Message"
             >
               <Send size={15} />
