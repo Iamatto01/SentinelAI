@@ -3226,29 +3226,42 @@ async function renderSimplifiedPdf({ file, reportTitle, scans = [], project = nu
       )
     } else {
       items.forEach((item, idx) => {
-        // Precise text measurements matching exact rendering fonts & widths
-        const titleText = `${idx + 1}. ${item.title}`
-        const titleH = Math.max(16, doc.fontSize(11).font('Helvetica-Bold').heightOfString(titleText, { width: w - 215 }))
-        const headerH = Math.max(30, titleH + 18)
+        const uMeta = urgencyBadgeColors[item.urgency] || urgencyBadgeColors.optional
+        const dMeta = difficultyBadgeColors[item.difficulty] || difficultyBadgeColors.medium
 
-        const symptomH = Math.max(14, doc.fontSize(8.5).font('Helvetica').heightOfString(item.symptom || 'N/A', { width: w - 144 }))
-        const riskH = Math.max(14, doc.fontSize(8.5).font('Helvetica').heightOfString(item.risk || 'N/A', { width: w - 144 }))
+        // Measure badges from right to left to avoid any overlapping
+        const diffText = dMeta.label
+        const diffW = Math.round(doc.fontSize(7.5).font('Helvetica-Bold').widthOfString(diffText) + 12)
+        const diffX = rightX - 14 - diffW
+
+        const urgText = uMeta.label
+        const urgW = Math.round(doc.fontSize(7.5).font('Helvetica-Bold').widthOfString(urgText) + 12)
+        const urgX = diffX - 8 - urgW
+
+        // Max title width leaves a clear safety margin before the leftmost badge
+        const maxTitleW = Math.max(160, urgX - (leftX + 14) - 12)
+
+        // Precise text measurements matching exact rendering fonts & widths with lineGap
+        const titleText = `${idx + 1}. ${item.title}`
+        const titleH = Math.max(16, doc.fontSize(11).font('Helvetica-Bold').heightOfString(titleText, { width: maxTitleW }))
+        const headerH = Math.max(32, titleH + 18)
+
+        const symptomH = Math.max(14, doc.fontSize(8.5).font('Helvetica').heightOfString(item.symptom || 'N/A', { width: w - 144, lineGap: 2.5 }))
+        const riskH = Math.max(14, doc.fontSize(8.5).font('Helvetica').heightOfString(item.risk || 'N/A', { width: w - 144, lineGap: 2.5 }))
         
         // Measure Courier font for code/prescription accurately
-        const prescH = Math.max(14, doc.fontSize(8.5).font('Courier').heightOfString(item.prescription || 'N/A', { width: w - 48 }))
-        const prescBoxH = prescH + 40
+        const prescH = Math.max(14, doc.fontSize(8.5).font('Courier').heightOfString(item.prescription || 'N/A', { width: w - 48, lineGap: 2.5 }))
+        const prescBoxH = prescH + 44
 
-        // Total card height with 16pt clean bottom padding (kotak tutup elok2)
-        const totalCardH = headerH + symptomH + 8 + riskH + 10 + prescBoxH + 16
+        // Total card height with clean, spacious vertical padding
+        const totalCardH = headerH + symptomH + 12 + riskH + 14 + prescBoxH + 18
 
         // Page break if needed
-        if (doc.y + totalCardH > doc.page.height - 55) {
+        if (doc.y + totalCardH > doc.page.height - 50) {
           doc.addPage()
         }
 
         const cardY = doc.y
-        const uMeta = urgencyBadgeColors[item.urgency] || urgencyBadgeColors.optional
-        const dMeta = difficultyBadgeColors[item.difficulty] || difficultyBadgeColors.medium
 
         // Card container - clean border fully enclosing content
         doc.roundedRect(leftX, cardY, w, totalCardH, 4).fillAndStroke('#FFFFFF', BRAND.cardBorder)
@@ -3257,39 +3270,35 @@ async function renderSimplifiedPdf({ file, reportTitle, scans = [], project = nu
 
         // Title row (multiline-safe)
         doc.fontSize(11).font('Helvetica-Bold').fillColor(BRAND.primary)
-          .text(titleText, leftX + 14, cardY + 12, { width: w - 215 })
+          .text(titleText, leftX + 14, cardY + 12, { width: maxTitleW })
 
-        // Badges on top right
-        let curBadgeX = rightX - 14
-        const timeBadgeW = drawRoundedBadge(doc, `~${item.estimatedMinutes || 25} MIN`, curBadgeX - 55, cardY + 10, '#64748B', '#FFFFFF', null, 2)
-        curBadgeX -= (timeBadgeW + 6)
-        const diffBadgeW = drawRoundedBadge(doc, dMeta.label, curBadgeX - 65, cardY + 10, dMeta.bg, '#FFFFFF', null, 2)
-        curBadgeX -= (diffBadgeW + 6)
-        drawRoundedBadge(doc, uMeta.label, curBadgeX - 95, cardY + 10, uMeta.bg, '#FFFFFF', null, 2)
+        // Badges on top right (cleanly separated, no estimated time badge)
+        drawRoundedBadge(doc, urgText, urgX, cardY + 10, uMeta.bg, '#FFFFFF', null, 2)
+        drawRoundedBadge(doc, diffText, diffX, cardY + 10, dMeta.bg, '#FFFFFF', null, 2)
 
         let contentY = cardY + headerH
 
         // Row 1: Symptom
         doc.fontSize(8).font('Helvetica-Bold').fillColor(BRAND.textMuted).text('WHAT WAS FOUND:', leftX + 14, contentY, { width: 110 })
-        doc.fontSize(8.5).font('Helvetica').fillColor(BRAND.textDark).text(item.symptom || 'N/A', leftX + 130, contentY, { width: w - 144 })
-        contentY += symptomH + 8
+        doc.fontSize(8.5).font('Helvetica').fillColor(BRAND.textDark).text(item.symptom || 'N/A', leftX + 130, contentY, { width: w - 144, lineGap: 2.5 })
+        contentY += symptomH + 12
 
         // Row 2: Risk
         doc.fontSize(8).font('Helvetica-Bold').fillColor('#DC2626').text('WHY IT MATTERS:', leftX + 14, contentY, { width: 110 })
-        doc.fontSize(8.5).font('Helvetica').fillColor(BRAND.textDark).text(item.risk || 'N/A', leftX + 130, contentY, { width: w - 144 })
-        contentY += riskH + 10
+        doc.fontSize(8.5).font('Helvetica').fillColor(BRAND.textDark).text(item.risk || 'N/A', leftX + 130, contentY, { width: w - 144, lineGap: 2.5 })
+        contentY += riskH + 14
 
         // Row 3: Prescription Box (HOW TO FIX)
         doc.roundedRect(leftX + 14, contentY, w - 28, prescBoxH, 3).fillAndStroke('#F8FAFC', BRAND.cardBorder)
         doc.rect(leftX + 14, contentY, 3, prescBoxH).fill('#16A34A')
         doc.fontSize(8).font('Helvetica-Bold').fillColor('#16A34A').text('HOW TO FIX (RECOMMENDED REMEDIATION):', leftX + 24, contentY + 7)
-        doc.fontSize(8.5).font('Courier').fillColor(BRAND.primary).text(item.prescription || 'N/A', leftX + 24, contentY + 20, { width: w - 48 })
+        doc.fontSize(8.5).font('Courier').fillColor(BRAND.primary).text(item.prescription || 'N/A', leftX + 24, contentY + 22, { width: w - 48, lineGap: 2.5 })
         doc.fontSize(7.5).font('Helvetica').fillColor(BRAND.textMuted)
           .text(`Severity: ${String(item.severity || 'info').toUpperCase()}  |  Confidence: ${item.confidence ?? 60}% (evidence certainty, separate from CVSS impact)`,
             leftX + 24, contentY + prescBoxH - 12, { width: w - 48 })
 
-        // Final Y position below the card with breathing space
-        doc.y = cardY + totalCardH + 14
+        // Final Y position below the card with generous breathing space
+        doc.y = cardY + totalCardH + 24
       })
     }
 

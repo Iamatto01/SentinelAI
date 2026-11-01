@@ -479,7 +479,7 @@ export default function Landing() {
                     style={{ width: '120px', height: '120px', minWidth: '120px', minHeight: '120px', maxWidth: '120px', maxHeight: '120px' }}
                   >
                     <img
-                      src="/fyp2_presenter.png"
+                      src="/saif.png"
                       alt="Muhammad Saifudin"
                       style={{
                         width: '120px',
@@ -489,9 +489,10 @@ export default function Landing() {
                         maxWidth: '120px',
                         maxHeight: '120px',
                         objectFit: 'cover',
-                        objectPosition: '50% 28%',
+                        objectPosition: '50% 25%',
                         display: 'block',
                       }}
+                      onError={(e) => { e.currentTarget.src = '/saif.JPG' }}
                     />
                   </div>
                   <span className={`mt-2 px-2.5 py-0.5 rounded-full text-[9px] font-mono font-black uppercase tracking-wider ${

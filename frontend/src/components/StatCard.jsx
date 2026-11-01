@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
 
 /**
  * Animate a numeric value from 0 to `end` over `duration` ms.
@@ -31,33 +32,20 @@ function useCountUp(end, duration = 900) {
   return isNumeric ? display : end
 }
 
-export default function StatCard({ icon: Icon, label, value, sub, tone = 'purple', trend }) {
-  const iconBoxes = {
-    cyan: 'icon-box-purple',
-    accent: 'icon-box-purple',
-    purple: 'icon-box-purple',
-    emerald: 'icon-box-emerald',
-    amber: 'icon-box-amber',
-    critical: 'icon-box-rose',
-    high: 'icon-box-amber',
-    medium: 'icon-box-purple',
-    low: 'icon-box-purple',
-    info: 'icon-box-emerald',
-  }
-
-  const boxClass = iconBoxes[tone] || 'icon-box-purple'
+export default function StatCard({ icon: Icon, label, value, sub, tone = 'slate', trend, to, onClick }) {
   const animated = useCountUp(value)
   const isLive = trend === 'Live' || (trend && trend.toLowerCase() === 'live')
   const isIdleOrReady = trend && (trend.toLowerCase() === 'idle' || trend.toLowerCase() === 'ready' || trend.toLowerCase() === 'standby')
+  const isClickable = Boolean(to || onClick)
 
-  return (
-    <div className="rounded-3xl border border-white/10 bg-gradient-to-b from-slate-900/90 via-slate-900/60 to-slate-950/90 backdrop-blur-xl p-5 relative overflow-hidden group hover:border-purple-400/40 hover:shadow-[0_12px_32px_rgba(168,85,247,0.15)] hover-lift transition-all duration-300 h-full min-h-[125px] flex flex-col justify-between">
-      {/* Curved Ambient Aura */}
-      <div className="absolute -top-10 -right-10 w-28 h-28 rounded-full bg-purple-500/10 blur-2xl group-hover:bg-purple-500/20 group-hover:scale-125 transition-all duration-500 pointer-events-none" />
+  const cardContent = (
+    <>
+      {/* Curved Ambient Aura (Monochrome Neutral) */}
+      <div className="absolute -top-10 -right-10 w-28 h-28 rounded-full bg-white/[0.04] blur-2xl group-hover:bg-white/[0.08] group-hover:scale-125 transition-all duration-500 pointer-events-none" />
 
       <div className="flex items-start justify-between gap-3 relative z-10">
         <div className="min-w-0 flex-1">
-          <p className="text-[11px] uppercase tracking-wider font-bold text-slate-400 truncate">{label}</p>
+          <p className="text-[11px] uppercase tracking-wider font-bold text-slate-400 truncate group-hover:text-zinc-200 transition-colors">{label}</p>
           <div className="flex items-center gap-2 mt-1.5 flex-wrap">
             <p className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight count-up leading-none">{animated}</p>
             {trend && (
@@ -90,7 +78,6 @@ export default function StatCard({ icon: Icon, label, value, sub, tone = 'purple
           <div className={`w-11 h-11 rounded-2xl flex items-center justify-center transition-transform duration-300 group-hover:scale-110 shrink-0 shadow-md ${
             tone === 'critical' ? 'bg-rose-500/15 text-rose-300 border border-rose-400/30 shadow-rose-500/15' :
             tone === 'emerald' ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-400/30 shadow-emerald-500/15' :
-            tone === 'purple' || tone === 'cyan' || tone === 'accent' ? 'bg-white/10 text-white border border-white/20 shadow-white/5' :
             'bg-white/10 text-white border border-white/20 shadow-white/5'
           }`}>
             <Icon size={19} />
@@ -100,7 +87,7 @@ export default function StatCard({ icon: Icon, label, value, sub, tone = 'purple
 
       <div className="relative z-10 pt-2">
         {sub ? (
-          <p className="text-xs text-slate-400 font-medium truncate">{sub}</p>
+          <p className="text-xs text-slate-400 font-medium truncate group-hover:text-slate-300 transition-colors">{sub}</p>
         ) : (
           <div className="h-4" />
         )}
@@ -113,6 +100,32 @@ export default function StatCard({ icon: Icon, label, value, sub, tone = 'purple
           }`} />
         </div>
       </div>
+    </>
+  )
+
+  const containerClasses = `rounded-3xl border border-white/10 bg-gradient-to-b from-slate-900/90 via-slate-900/60 to-slate-950/90 backdrop-blur-xl p-5 relative overflow-hidden group hover:border-white/30 hover:shadow-[0_12px_32px_rgba(255,255,255,0.08)] hover-lift transition-all duration-300 h-full min-h-[125px] flex flex-col justify-between text-left ${
+    isClickable ? 'cursor-pointer active:scale-[0.98]' : ''
+  }`
+
+  if (to) {
+    return (
+      <Link to={to} className={containerClasses}>
+        {cardContent}
+      </Link>
+    )
+  }
+
+  if (onClick) {
+    return (
+      <button onClick={onClick} type="button" className={containerClasses}>
+        {cardContent}
+      </button>
+    )
+  }
+
+  return (
+    <div className={containerClasses}>
+      {cardContent}
     </div>
   )
 }

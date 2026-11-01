@@ -32,6 +32,8 @@ export default function Dashboard() {
   const totalFindings = data?.totals?.findings || 0
   const criticalCount = data?.severity?.critical || 0
   const highCount = data?.severity?.high || 0
+  const activeScan = (data?.recentScans || []).find(s => s.status === 'running') || data?.recentScans?.[0]
+  const activeScanUrl = activeScan?.id ? `/app/scans/${activeScan.id}` : '/app/scans'
   const sevData = SEV_CONFIG
     .map(c => ({
       name: c.label,
@@ -98,6 +100,7 @@ export default function Dashboard() {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 items-stretch">
         <div className="motion-fade-up motion-delay-1 h-full">
           <StatCard
+            to="/app/scans"
             icon={FolderKanban}
             label="Total Scans Executed"
             value={data?.totals?.scans || 0}
@@ -108,6 +111,7 @@ export default function Dashboard() {
         </div>
         <div className="motion-fade-up motion-delay-2 h-full">
           <StatCard
+            to="/app/findings"
             icon={Bug}
             label="Discovered Findings"
             value={data?.totals?.findings || 0}
@@ -118,6 +122,7 @@ export default function Dashboard() {
         </div>
         <div className="motion-fade-up motion-delay-3 h-full">
           <StatCard
+            to={activeScanUrl}
             icon={Activity}
             label="Active Engine Scans"
             value={data?.runningScans || 0}
@@ -129,6 +134,7 @@ export default function Dashboard() {
         <div className="motion-fade-up motion-delay-4 h-full">
           {isClient ? (
             <StatCard
+              to="/app/billing"
               icon={Zap}
               label="Available Scan Quota"
               value={subData?.isUnlimited ? 'Unlimited' : `${subData?.remainingQuota ?? 0}`}
@@ -138,6 +144,7 @@ export default function Dashboard() {
             />
           ) : (
             <StatCard
+              to="/app/kali-control"
               icon={Terminal}
               label="Kali Toolchain Health"
               value="25 / 25"
@@ -278,7 +285,7 @@ export default function Dashboard() {
                   <Link
                     key={s.id}
                     to={`/app/scans/${s.id}`}
-                    className="flex items-center justify-between rounded-2xl border border-white/10 bg-slate-900/50 hover:bg-white/[0.06] hover:border-white/40 p-4 transition-all duration-300 group hover:shadow-[0_4px_20px_rgba(168,85,247,0.1)]"
+                    className="flex items-center justify-between rounded-2xl border border-white/10 bg-slate-900/50 hover:bg-white/[0.06] hover:border-white/40 p-4 transition-all duration-300 group hover:shadow-[0_4px_20px_rgba(255,255,255,0.06)]"
                   >
                     <div className="flex items-center gap-3.5 min-w-0 pr-2">
                       <div className="w-11 h-11 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center text-slate-300 group-hover:text-white group-hover:border-white/30 transition-colors shrink-0">
