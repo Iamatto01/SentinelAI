@@ -23,28 +23,35 @@
 </div>
 
 ## Table of Contents
-1. [Executive Summary & Abstract](#1-executive-summary--abstract)
-2. [Problem Statement & Research Motivation](#2-problem-statement--research-motivation)
-3. [Project Objectives](#3-project-objectives)
-4. [Key System Features & Interface Showcase](#4-key-system-features--interface-showcase)
-   - [Dual-Protocol UI (Day/Night Theme Split)](#41-dual-protocol-interface-obsidian-vs-sunlight)
-   - [Security Overview & Threat Matrix Dashboard](#42-security-overview--threat-matrix-dashboard)
-   - [Unified DAST (Blackbox) & SAST (Whitebox) Pipeline](#43-unified-dast-blackbox--sast-whitebox-pipeline)
-   - [Real-Time Execution Console & Telemetry Stream](#44-real-time-execution-console--telemetry-stream)
-   - [Autonomous Finding Verification & FTS5 RAG Knowledge Base](#45-autonomous-finding-verification--fts5-rag-knowledge-base)
-   - [Continuous Monitoring & Scheduled Security Scans](#46-continuous-monitoring--scheduled-security-scans)
-5. [System Architecture & Pipeline Methodology](#5-system-architecture--pipeline-methodology)
-   - [High-Level Data Flow](#51-high-level-data-flow-diagram)
-   - [The 4-Stage Vulnerability Enrichment Chain](#52-the-4-stage-vulnerability-enrichment-chain)
-   - [Multi-Tier Architecture Breakdown](#53-multi-tier-architecture-breakdown)
-6. [The 53 AI Specialist Persona Mesh](#6-the-53-ai-specialist-persona-mesh)
-7. [Technology Stack Matrix](#7-technology-stack-matrix)
-8. [Installation & Setup Guide](#8-installation--setup-guide)
-   - [Local Development Setup](#81-local-development-setup)
-   - [Remote Kali Linux Production Deployment](#82-remote-kali-linux-production-deployment)
-   - [Environment Configuration](#83-environment-configuration)
-9. [Experimental Evaluation & Real-World Validation](#9-experimental-evaluation--real-world-validation)
-10. [Ethical Disclosure & Legal Notice](#10-ethical-disclosure--legal-notice)
+- [SentinelAI — Autonomous Multi-Agent AI Penetration Testing \& Vulnerability Assessment Platform](#sentinelai--autonomous-multi-agent-ai-penetration-testing--vulnerability-assessment-platform)
+    - [**Final Year Project (FYP 2) — Kulliyyah of Information and Communication Technology (KICT)**](#final-year-project-fyp-2--kulliyyah-of-information-and-communication-technology-kict)
+  - [Table of Contents](#table-of-contents)
+  - [1. Executive Summary \& Abstract](#1-executive-summary--abstract)
+  - [2. Problem Statement \& Research Motivation](#2-problem-statement--research-motivation)
+  - [3. Project Objectives](#3-project-objectives)
+  - [4. Key System Features \& Interface Showcase](#4-key-system-features--interface-showcase)
+    - [4.1. Dual-Protocol Interface (Obsidian vs. Sunlight)](#41-dual-protocol-interface-obsidian-vs-sunlight)
+    - [4.2. Security Overview \& Threat Matrix Dashboard](#42-security-overview--threat-matrix-dashboard)
+    - [4.3. Unified DAST (Blackbox) \& SAST (Whitebox) Pipeline](#43-unified-dast-blackbox--sast-whitebox-pipeline)
+    - [4.4. Real-Time Execution Console \& Telemetry Stream](#44-real-time-execution-console--telemetry-stream)
+    - [4.5. Autonomous Finding Verification \& FTS5 RAG Knowledge Base](#45-autonomous-finding-verification--fts5-rag-knowledge-base)
+    - [4.6. Continuous Monitoring \& Subsystem Integrations](#46-continuous-monitoring--subsystem-integrations)
+  - [5. System Architecture \& Pipeline Methodology](#5-system-architecture--pipeline-methodology)
+    - [5.1. High-Level Data Flow Diagram](#51-high-level-data-flow-diagram)
+    - [5.2. The 4-Stage Vulnerability Enrichment Chain](#52-the-4-stage-vulnerability-enrichment-chain)
+    - [5.3. Multi-Tier Architecture Breakdown](#53-multi-tier-architecture-breakdown)
+  - [6. The 53 AI Specialist Persona Mesh](#6-the-53-ai-specialist-persona-mesh)
+    - [Functional Domain Grouping](#functional-domain-grouping)
+  - [7. Technology Stack Matrix](#7-technology-stack-matrix)
+  - [8. Installation \& Setup Guide](#8-installation--setup-guide)
+    - [8.1. Local Development Setup](#81-local-development-setup)
+      - [Prerequisites:](#prerequisites)
+    - [8.2. Remote Kali Linux Production Deployment](#82-remote-kali-linux-production-deployment)
+    - [8.3. Environment Configuration](#83-environment-configuration)
+  - [9. Experimental Evaluation \& Real-World Validation](#9-experimental-evaluation--real-world-validation)
+    - [Test Case 1: Live Target Assessment (`https://italeemc.iium.edu.my`)](#test-case-1-live-target-assessment-httpsitaleemciiumedumy)
+    - [Test Case 2: SAST Whitebox Source Code Audit](#test-case-2-sast-whitebox-source-code-audit)
+  - [10. Ethical Disclosure \& Legal Notice](#10-ethical-disclosure--legal-notice)
 
 ---
 
@@ -403,45 +410,10 @@ GROQ_API_KEY=your_groq_api_key_here
 OPENROUTER_API_KEY=your_openrouter_api_key_here
 OPENROUTER_MODEL=deepseek/deepseek-r1-distill-qwen-32b:free
 
-# AI finding verification — network re-check before the offline heuristic
-AI_HEURISTIC_NETWORK_VERIFY=true
-AI_HEURISTIC_NETWORK_TIMEOUT_MS=8000
-
-# Metasploit RPC bridge (optional — the orchestrator also runs native/custom steps)
-# Accepts either the legacy names (MSF_RPC_URL + MSF_USER/MSF_PASS) or the split form.
-MSF_RPC_URL=http://127.0.0.1:55553/api/
-MSF_USER=msf
-MSF_PASS=msf
-MSF_TIMEOUT_MS=120000
-# MSF_RPC_HOST=127.0.0.1
-# MSF_RPC_PORT=55553
-# MSF_RPC_SSL=false
-# MSF_RPC_USER=msf
-# MSF_RPC_PASS=msf
-
-# Out-of-band callback listener (SSRF / XXE / blind injection verification)
-OOB_ENABLED=true
-OOB_BIND_HOST=0.0.0.0
-OOB_PORT=4711
-# Public URL reachable by the target — defaults to http://<request host>:OOB_PORT
-# OOB_PUBLIC_URL=https://oob.example.com
-OOB_TTL_MS=1800000
-
-# BeEF browser-hook server (optional — XSS executor falls back to headless verification)
-BEEF_HOOK_URL=http://127.0.0.1:3000/hook.js
-BEEF_USER=beef
-BEEF_PASS=beef
-
 # Knowledge Base & Database Paths
 DB_PATH=output/fyp2.db
 PAYLOADS_DIR=knowledge/payloads
 ```
-
-> **Finding verification tiers.** `verifyFinding()` tries the configured LLM first. If no
-> provider answers (or replies with unparseable output) it re-probes the target over the wire
-> (`network-reverify`), and only when the claim cannot be settled on the wire does it fall back
-> to the deterministic, evidence-gated heuristic (`evidence-heuristic`). Every verdict records
-> which tier produced it, so a finding is never marked "AI-validated" on text alone.
 
 ---
 
@@ -457,7 +429,7 @@ SentinelAI was tested and benchmarked across university web infrastructure and d
   - High / Critical vulnerabilities: **0 False Positives** (all verified by AI reasoning mesh).
   - Categorized under:
     - `A02:2025 - Security Misconfiguration` (Missing HTTP headers, exposed git/login surfaces)
-    - `A04:2025 - Cryptographic Failures` (Insecure cookie attributes without SameSite/Secure flags)
+  - `A04:2025 - Cryptographic Failures` (Insecure cookie attributes without  SameSite/Secure flags)
     - `A05:2025 - Injection Surfaces` (Form parameter harvesting for targeted probing)
     - `A07:2025 - Authentication Failures` (Default credential validation on admin portal)
 

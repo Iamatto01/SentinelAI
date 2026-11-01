@@ -349,8 +349,19 @@ export class UnifiedPipeline {
         this.log(scanId, 'info', `🤖 [AI] verifying finding: "${f.title}" (severity=${f.severity}, module=${f.module})\n🤖 [AI] input evidence: ${JSON.stringify(f.evidence || {}).slice(0, 800)}`)
         const v = await aiEngine.verifyFinding(f, targetType)
         verdict = v
-        this.log(scanId, 'info', `🤖 [AI] verdict from ${v.agent || 'unknown-agent'}: ${v.isTruePositive ? '✅ TRUE POSITIVE' : '❌ false positive'} (confidence=${v.confidence})\n🤖 [AI] reasoning: ${(v.verdict || '').slice(0, 1000)}`)
-        if (!v.isTruePositive) {
+        // An undecided verdict (isTruePositive === null) is not a rejection. The
+        // model was reached but nothing in the evidence settled the claim, so
+        // calling it a false positive both hides a real lead and produced the
+        // "❌ false positive (confidence=0)" line that made every scan look empty.
+        const undecided = v.isTruePositive === null || v.isTruePositive === undefined
+        const label = undecided
+          ? '⚖️  undecided — no artifact settled it'
+          : v.isTruePositive ? '✅ TRUE POSITIVE' : '❌ false positive'
+        this.log(scanId, 'info', `🤖 [AI] verdict from ${v.agent || 'unknown-agent'}: ${label} (confidence=${v.confidence})\n🤖 [AI] reasoning: ${(v.verdict || '').slice(0, 1000)}`)
+        if (undecided) {
+          f.evidence = { ...(f.evidence || {}), verification: 'needs-validation', aiUndecided: true }
+          this.log(scanId, 'info', `🤖 [${v.agent}] "${f.title}" kept as ${f.severity} but flagged needs-validation — the report files it under unverified leads, not confirmed findings`)
+        } else if (!v.isTruePositive) {
           // Don't blindly discard — if AI confidence is low (< 60), keep the
           // finding with downgraded severity. The AI might be wrong.
           if (v.confidence != null && v.confidence < 60) {
@@ -515,7 +526,16 @@ export class UnifiedPipeline {
         f.owaspCategory || null, f.description || '', f.laymanImpact || null, f.remediation || '',
         f.module || 'unknown', 'open',
         JSON.stringify(f.evidence || {}), JSON.stringify(f.poc || {}),
-        verdict ? JSON.stringify({ agent: verdict.agent, confidence: verdict.confidence, reasoning: verdict.verdict }) : null,
+        // Persist the FULL verdict. Storing only {agent, confidence, reasoning}
+        // made a null/unverified result render identically to a confirmed one,
+        // and threw away the evidence tier the operator needs to judge it.
+        verdict ? JSON.stringify({
+          agent: verdict.agent,
+          confidence: verdict.confidence,
+          reasoning: verdict.verdict,
+          is_true_positive: verdict.isTruePositive,
+          evidence_tier: verdict.evidenceTier || null,
+        }) : null,
         fingerprint,
         f.target || null,
         now
@@ -543,6 +563,7 @@ export class UnifiedPipeline {
     const scanId = scan.id
     const target = scan.target
     this._beginScan(scanId)
+    aiEngine.llm.resetUsageTotals()
     const catLabel = owaspCategories.length ? ` [OWASP: ${owaspCategories.join(',')}]` : ''
     this.log(scanId, 'info', `▶ Blackbox scan started on ${target} (depth=offensive — all probes active)${catLabel}`)
     this.progress(scanId, 2)
@@ -2024,9 +2045,9 @@ export class UnifiedPipeline {
   }
 
   // ── WHITEBOX ───────────────────────────────────────────────────────────────
-  async runWhitebox(scan, { files = [], language = '', focus = '', verify = true, depth = 'standard', owaspCategories = [], whiteboxPasses = null } = {}) {
-    const scanId = scan.id
+  async runWhitebox(scan, { files = [], language = '', focus = '', verify = true, depth = 'standard', owaspCategories = [], whiteboxPasses = null } = {}) {    const scanId = scan.id
     this._beginScan(scanId)
+    aiEngine.llm.resetUsageTotals()
     // ALWAYS full offensive: pattern scanner + 3 specialist AI passes
     const catLabel = owaspCategories.length ? ` [OWASP: ${owaspCategories.join(',')}]` : ''
     this.log(scanId, 'info', `▶ Whitebox static analysis started (${files.length} files, depth=offensive)${catLabel}`)
@@ -2519,6 +2540,16 @@ export class UnifiedPipeline {
       if (f.cvss != null && f.cvss > maxCvss) maxCvss = Number(f.cvss)
     }
     const score = computeRiskScore(counts, maxCvss)
+    // Persist what the AI pass actually cost. A scan that fell back to the
+    // evidence heuristics leaves calls=0 here, which is the only honest way to
+    // tell "the model looked at this and disagreed" apart from "no model ran".
+    const usage = aiEngine.llm.getUsageTotals()
+    try {
+      db.run(`UPDATE scans SET token_usage = ? WHERE id = ?`, JSON.stringify(usage), scanId)
+      this.log(scanId, 'info',
+        `🤖 [AI] model usage: ${usage.calls} call(s), ${usage.total_tokens} token(s)` +
+        (usage.calls === 0 ? ' — no model was reached; every verdict came from evidence heuristics' : ''))
+    } catch { /* non-critical */ }
     db.run(`UPDATE scans SET status = ?, risk_score = ?, progress = 100, finished_at = ? WHERE id = ?`,
       status, score, new Date().toISOString(), scanId)
     const scan = db.get(`SELECT * FROM scans WHERE id = ?`, scanId)

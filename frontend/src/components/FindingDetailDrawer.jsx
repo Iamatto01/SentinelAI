@@ -1,12 +1,11 @@
 import React, { useEffect, useState } from 'react'
-import { X, Loader2, ShieldAlert, BookOpen, StickyNote, Send, ExternalLink, Trash2, Bot, Sparkles, AlertTriangle, Target, Wrench, Crosshair, Bug, Play, Pause, Square, ChevronRight, CheckCircle, XCircle, Clock, Copy, Check, Terminal } from 'lucide-react'
+import { X, Loader2, ShieldAlert, BookOpen, StickyNote, Send, ExternalLink, Trash2, Bot, Sparkles, AlertTriangle, Target, Wrench, Crosshair, Bug, Play, Pause, Square, ChevronRight, CheckCircle, XCircle, Clock, Copy, Check, Terminal, ShieldCheck } from 'lucide-react'
 import { prettifyTitle } from '../lib/formatters.js'
 import { api } from '../lib/api.js'
 import { useAi } from '../lib/AiContext.jsx'
 import SeverityBadge from './SeverityBadge.jsx'
 import Tooltip from './Tooltip.jsx'
 import Cvss4Calculator from './Cvss4Calculator.jsx'
-import { ShieldCheck } from 'lucide-react'
 
 function safeParse(j, fallback) {
   if (!j) return fallback
@@ -17,35 +16,245 @@ function safeParse(j, fallback) {
 // ── Plain-English summary generator ─────────────────────────────────────────
 // Turns technical finding fields into a simple "what / why dangerous / what to do"
 // explanation that non-security people can understand. No AI call needed.
+//
+// Matching is deliberately two-channel:
+//   `cwes`  — exact CWE id equality. An id is ground truth emitted by the
+//             scanner, so it must never be matched by substring. `CWE-798`
+//             contains `CWE-79`, `CWE-787` contains `CWE-78`, `CWE-228`
+//             contains `CWE-22`: unbounded regexes here silently explained a
+//             hardcoded-credential finding as Cross-Site Scripting.
+//   `match` — keyword regex, tested only against human-readable claim text
+//             (title / impact / description), never against the CWE field.
 const VULN_EXPLAIN = [
-  { match: /(git|svn)[/\s]?(config|entries|exposure|repository)/i, what: 'Folder kawalan versi (git/svn) tersedar kepada umum.', why: 'Attacker boleh download keseluruhan source code termasuk password, API keys, dan sejarah perubahan — ibarat bagi kunci rumah beserta pelan lantai.', fix: 'Sekat akses ke /.git dan /.svn di web server. Keluarkan folder ini dari root web.' },
-  { match: /(backup|dump|\.sql|\.bak|database)/i, what: 'Fail backup atau dump database boleh diakses dari internet.', why: 'Semua data (pengguna, kata laluan, rekod perniagaan) boleh dimuat turun terus. Ini punca utama kebocoran data besar.', fix: 'Alihkan fail backup keluar dari root web. Sekat akses, atau padamkan.' },
-  { match: /(heartbleed|CVE-2014-0160)/i, what: 'Server SSL/TLS ada kelemahan Heartbleed.', why: 'Attacker boleh curi ingatan server — termasuk kunci peribadi SSL, kata laluan pengguna, dan token sesi — tanpa tinggal jejak.', fix: 'Kemas kini OpenSSL ke versi patch. Batalkan & jana semula sijil SSL.' },
-  { match: /(eternalblue|ms17-010|CVE-2017-0144)/i, what: 'Perkhidmatan Windows SMB terdedah kepada exploit EternalBlue.', why: 'Ini exploit yang sama digunakan oleh ransomware WannaCry — attacker boleh ambil alih server sepenuhnya dari jauh.', fix: 'Pasang patch Microsoft MS17-010 segera. Sekat port 445 di firewall.' },
-  { match: /(anonymous\s+ftp|ftp-anon)/i, what: 'Pelayan FTP benarkan log masuk tanpa kata laluan (anonymous).', why: 'Sesiapa sahaja boleh muat turun atau muat naik fail ke server anda.', fix: 'Matikan log masuk anonymous dalam konfigurasi FTP.' },
-  { match: /(shellshock|CVE-2014-6271)/i, what: 'Server web terdedah kepada Shellshock (Bash bug).', why: 'Attacker boleh jalankan sebarang arahan di server melalui header HTTP — ambil alih penuh mesin.', fix: 'Kemas kini Bash. Sekat atau tapis CGI scripts.' },
-  { match: /(sql\s*injection|sqli|CWE-89)/i, what: 'Aplikasi terima input pengguna terus ke dalam arahan SQL (SQL Injection).', why: 'Attacker boleh baca, ubah, atau padam keseluruhan database — termasuk senarai pengguna dan kata laluan.', fix: 'Guna prepared statements / parameterized queries. Jangan gabungkan input pengguna terus ke SQL.' },
-  { match: /(xss|cross[- ]site\s*scripting|CWE-79)/i, what: 'Aplikasi paparkan input pengguna tanpa tapisan (Cross-Site Scripting).', why: 'Attacker boleh tanam script jahat yang mencuri sesi/kuki pengguna lain — boleh ambil alih akaun tanpa tahu kata laluan.', fix: 'Encode semua output HTML. Guna Content Security Policy (CSP).' },
-  { match: /(command\s*injection|CWE-78|remote\s*code)/i, what: 'Aplikasi benarkan input pengguna dijalankan sebagai arahan sistem.', why: 'Attacker boleh kawal penuh server — paling bahaya dari semua jenis kerentanan.', fix: 'Jangan hantar input pengguna ke shell. Guna whitelist input yang ketat.' },
-  { match: /(directory\s*traversal|path\s*traversal|CWE-22)/i, what: 'Aplikasi benarkan akses fail di luar folder yang dibenarkan (Path Traversal).', why: 'Attacker boleh baca fail sensitif server seperti /etc/passwd atau fail konfigurasi.', fix: 'Sahkan dan hadkan input path. Guna whitelist nama fail.' },
-  { match: /(ssrf|server[- ]side\s*request|CWE-918)/i, what: 'Server boleh dipaksa membuat request ke destinasi dalaman (SSRF).', why: 'Attacker boleh akses perkhidmatan dalaman (database, metadata cloud) yang sepatutnya tersembunyi dari internet.', fix: 'Sahkan dan whitelist semua URL yang server akan panggil.' },
-  { match: /(deserialization|CWE-502|unserialize|pickle|yaml\.load)/i, what: 'Aplikasi deserialize data tak dipercayai (Insecure Deserialization).', why: 'Attacker boleh laksanakan kod hasad semasa proses deserialize — ambil alih server.', fix: 'Jangan deserialize data dari pengguna. Guna format selamat seperti JSON.' },
-  { match: /(hardcoded|secret|api[\s_-]?key|password|credential|CWE-798)/i, what: 'Kata laluan atau kunci API ditulis terus dalam kod (hardcoded secret).', why: 'Sesiapa yang nampak kod boleh guna kunci ini untuk akses servis/database anda.', fix: 'Pindahkan secrets ke environment variables atau vault. Batalkan kunci yang bocor.' },
-  { match: /(weak\s*(crypto|hash|cipher)|md5|sha1|CWE-327|CWE-338)/i, what: 'Aplikasi guna algoritma kripto yang lemah/lapuk.', why: 'Kata laluan atau data yang di-hash boleh dipecahkan dengan mudah menggunakan rainbow tables.', fix: 'Guna algoritma moden: bcrypt/Argon2 untuk kata laluan, SHA-256+ untuk hashing.' },
-  { match: /(jwt|token|CWE-347)/i, what: 'Token sesi (JWT) tidak disahkan dengan betul.', why: 'Attacker boleh palsukan token untuk jadi mana-mana pengguna termasuk admin.', fix: 'Sahkan signature JWT di server. Jangan terima algoritma "none".' },
-  { match: /(cors|cross[- ]origin|CWE-942)/i, what: 'Polisi CORS terlalu longgar (benarkan mana-mana origin).', why: 'Laman web jahat boleh baca data pengguna dari aplikasi ini melalui browser mangsa.', fix: 'Hadkan CORS kepada domain yang dipercayai sahaja.' },
-  { match: /(phpinfo|server-status|debug|actuator|info\s*leak|disclosure)/i, what: 'Server dedahkan maklumat dalaman (konfigurasi, versi, env).', why: 'Attacker dapat peta lengkap sistem — versi software, path, env variables — untuk rancang serangan yang lebih tepat.', fix: 'Matikan halaman debug/info di production.' },
-  { match: /(directory\s*listing|open\s*directory)/i, what: 'Server paparkan senarai fail dalam folder (directory listing).', why: 'Attacker nampak semua fail — senang cari backup, config, atau data sensitif.', fix: 'Matikan autoindex/Options Indexes di web server.' },
-  { match: /(login|admin|portal|dashboard|panel)\s*(page|surface|endpoint)?/i, what: 'Halaman log masuk/panel admin dijumpai dan boleh diakses.', why: 'Ini sasaran utama untuk brute-force kata laluan. Kalau guna password lemah, attacker masuk terus.', fix: 'Hadkan akses panel admin (VPN/IP whitelist). Kuatkuasakan 2FA dan lockout.' },
-  { match: /(clickjacking|frame)/i, what: 'Halaman boleh dimuatkan dalam iframe laman lain (Clickjacking).', why: 'Attacker boleh tipu pengguna klik butang tanpa sedar — contoh: tukar kata laluan atau buat pembayaran.', fix: 'Tambah header X-Frame-Options: DENY atau CSP frame-ancestors.' },
-  { match: /(waf|firewall)\s*(not|missing|detected)/i, what: 'Tiada Web Application Firewall (WAF) dikesan di hadapan aplikasi.', why: 'Serangan biasa (SQLi, XSS) sampai terus ke aplikasi tanpa tapisan pertama.', fix: 'Pertimbangkan WAF seperti Cloudflare, ModSecurity, atau AWS WAF.' },
+  {
+    id: 'pentest-meta',
+    cwes: [],
+    match: /penetration[- ]test(ing)?|pentest|security\s*assessment|bug\s*bounty|scope\s*(document|file)|hackerone|responsible\s*disclosure|test\s*plan/i,
+    what: 'Fail atau halaman ini ialah bahan kerja ujian keselamatan (skop, laporan, atau nota pentest) — bukan kelemahan sistem.',
+    why: 'Ia tidak boleh dieksploitasi sendiri. Tetapi kalau ia terdedah kepada awam, ia beri attacker peta sasaran: senarai endpoint, akaun ujian, dan had serangan.',
+    fix: 'Alihkan dokumen ujian ke storan dalaman. Jangan letak laporan pentest atau fail skop di root web.',
+  },
+  {
+    id: 'auth-bypass',
+    cwes: ['CWE-306', 'CWE-287', 'CWE-288', 'CWE-620'],
+    match: /unauthenticated|no\s*authentication|without\s*(?:auth|login)|auth(?:entication)?\s*bypass|broken\s*auth|exposed\s*(?:api|endpoint)/i,
+    what: 'Endpoint ini boleh dicapai tanpa log masuk — semakan autentikasi tiada atau boleh dipintas.',
+    why: 'Attacker terus guna fungsi dalaman (baca data, ubah rekod, buat akaun) tanpa perlu tahu sebarang kata laluan.',
+    fix: 'Pasang semakan sesi pada setiap route (middleware auth), bukan pada UI sahaja. Default menolak, kecuali route awam yang disenaraikan.',
+  },
+  {
+    id: 'panel-login',
+    cwes: ['CWE-284', 'CWE-799'],
+    match: /(?:login|log-in|signin|sign-in|admin|administrative|portal|dashboard|panel|cpanel|console|backend)\b/i,
+    what: 'Halaman log masuk atau panel pentadbir dijumpai dan boleh diakses dari internet.',
+    why: 'Ini pintu utama ke sistem. Kalau kata laluan lemah atau tiada had cubaan, attacker boleh brute-force dan masuk sebagai admin.',
+    fix: 'Hadkan akses panel (VPN atau IP allowlist), kuatkuasakan 2FA, tambah lockout selepas beberapa cubaan gagal, dan tukar URL lalai.',
+  },
+  {
+    id: 'sqli',
+    cwes: ['CWE-89', 'CWE-564'],
+    match: /sql\s*injection|sql\s*inject|\bsqli\b|\bunion\s+select\b/i,
+    what: 'Input pengguna masuk terus ke dalam arahan SQL (SQL Injection).',
+    why: 'Attacker boleh baca, ubah, atau padam keseluruhan database — termasuk senarai pengguna dan kata laluan.',
+    fix: 'Guna prepared statements / parameterized queries. Jangan gabungkan input pengguna terus ke SQL.',
+  },
+  {
+    id: 'xss',
+    cwes: ['CWE-79', 'CWE-80', 'CWE-83', 'CWE-87'],
+    match: /(?:^|[^a-z])xss|cross[- ]site\s*scripting/i,
+    what: 'Aplikasi paparkan input pengguna tanpa tapisan (Cross-Site Scripting).',
+    why: 'Attacker boleh tanam script jahat yang mencuri sesi/kuki pengguna lain — boleh ambil alih akaun tanpa tahu kata laluan.',
+    fix: 'Encode semua output HTML. Guna Content Security Policy (CSP).',
+  },
+  {
+    id: 'cmd-injection',
+    cwes: ['CWE-78', 'CWE-77', 'CWE-74', 'CWE-94'],
+    match: /command\s*injection|shell\s*injection|code\s*injection|command\s*execution|code\s*execution|remote\s*code\s*execution|os\s*command|\brce\b/i,
+    what: 'Aplikasi benarkan input pengguna dijalankan sebagai arahan sistem.',
+    why: 'Attacker boleh kawal penuh server — paling bahaya dari semua jenis kerentanan.',
+    fix: 'Jangan hantar input pengguna ke shell. Guna whitelist input yang ketat dan API tanpa shell.',
+  },
+  {
+    id: 'traversal',
+    cwes: ['CWE-22', 'CWE-23', 'CWE-35', 'CWE-36', 'CWE-73'],
+    match: /directory\s*traversal|path\s*traversal|local\s*file\s*inclusion|\blfi\b|\.\.\//i,
+    what: 'Aplikasi benarkan akses fail di luar folder yang dibenarkan (Path Traversal).',
+    why: 'Attacker boleh baca fail sensitif server seperti /etc/passwd atau fail konfigurasi.',
+    fix: 'Sahkan dan hadkan input path. Guna whitelist nama fail dan resolve laluan sebenar sebelum dibaca.',
+  },
+  {
+    id: 'ssrf',
+    cwes: ['CWE-918'],
+    match: /\bssrf\b|server[- ]side\s*request\s*forgery/i,
+    what: 'Server boleh dipaksa membuat request ke destinasi dalaman (SSRF).',
+    why: 'Attacker boleh akses perkhidmatan dalaman (database, metadata cloud) yang sepatutnya tersembunyi dari internet.',
+    fix: 'Sahkan dan whitelist semua URL yang server akan panggil. Sekat julat IP dalaman dan endpoint metadata cloud.',
+  },
+  {
+    id: 'deserialization',
+    cwes: ['CWE-502'],
+    match: /deserializ|unserialize|pickle\.loads|yaml\.load\b|objectinputstream/i,
+    what: 'Aplikasi deserialize data tak dipercayai (Insecure Deserialization).',
+    why: 'Attacker boleh laksanakan kod hasad semasa proses deserialize — ambil alih server.',
+    fix: 'Jangan deserialize data dari pengguna. Guna format selamat seperti JSON dengan skema ketat.',
+  },
+  {
+    id: 'hardcoded-secret',
+    cwes: ['CWE-798', 'CWE-259', 'CWE-321', 'CWE-522', 'CWE-260'],
+    match: /hard[\s-]?coded|secret\s*key|api[\s_-]?key|\bpassword\s*(?:in|hard)|credential/i,
+    what: 'Kata laluan atau kunci API ditulis terus dalam kod (hardcoded secret).',
+    why: 'Sesiapa yang nampak kod boleh guna kunci ini untuk akses servis/database anda.',
+    fix: 'Pindahkan secrets ke environment variables atau vault. Batalkan kunci yang bocor dan jana semula.',
+  },
+  {
+    id: 'weak-crypto',
+    cwes: ['CWE-327', 'CWE-328', 'CWE-338', 'CWE-916', 'CWE-326'],
+    match: /weak\s*(?:crypto|hash|cipher|algorithm)|\bmd5\b|\bsha1\b|\bdes\b|\brc4\b/i,
+    what: 'Aplikasi guna algoritma kripto yang lemah/lapuk.',
+    why: 'Kata laluan atau data yang di-hash boleh dipecahkan dengan mudah menggunakan rainbow tables.',
+    fix: 'Guna algoritma moden: bcrypt/Argon2 untuk kata laluan, SHA-256+ untuk hashing.',
+  },
+  {
+    id: 'jwt',
+    cwes: ['CWE-347', 'CWE-345', 'CWE-290', 'CWE-488'],
+    match: /\bjwt\b|json\s*web\s*token|bearer\s*token\s*(?:not|un)?validat/i,
+    what: 'Token sesi (JWT) tidak disahkan dengan betul.',
+    why: 'Attacker boleh palsukan token untuk jadi mana-mana pengguna termasuk admin.',
+    fix: 'Sahkan signature JWT di server. Tolak algoritma "none" dan jangan terima alg dari klien.',
+  },
+  {
+    id: 'cors',
+    cwes: ['CWE-942', 'CWE-346'],
+    match: /\bcors\b|cross[- ]origin\s*resource/i,
+    what: 'Polisi CORS terlalu longgar.',
+    why: 'Kalau Access-Control-Allow-Credentials turut dihantar, laman web jahat boleh baca data pengguna dari aplikasi ini melalui browser mangsa.',
+    fix: 'Hadkan CORS kepada domain yang dipercayai sahaja. Jangan gabungkan wildcard origin dengan credentials.',
+  },
+  {
+    id: 'git-exposure',
+    cwes: ['CWE-527', 'CWE-538'],
+    match: /(?:\.git|\.svn|version\s*control)[\s/]*(?:config|entries|exposure|repository|directory|found)|git\s*(?:config|repo)/i,
+    what: 'Folder kawalan versi (git/svn) terdedah kepada umum.',
+    why: 'Attacker boleh download keseluruhan source code termasuk password, API keys, dan sejarah perubahan — ibarat bagi kunci rumah beserta pelan lantai.',
+    fix: 'Sekat akses ke /.git dan /.svn di web server. Keluarkan folder ini dari root web.',
+  },
+  {
+    id: 'header-noise',
+    cwes: ['CWE-693'],
+    match: /missing\s*(?:security\s*)?header|security\s*header|content-security-policy|strict-transport-security|referrer-policy|permissions-policy|x-content-type-options/i,
+    what: 'Satu atau lebih header keselamatan HTTP tiada pada respons server.',
+    why: 'Header ini bukan pintu masuk. Ia lapisan pertahanan kedua yang menghalang serangan sedia ada (XSS, clickjacking, sniffing) daripada berjaya. Tanpanya, kelemahan lain jadi lebih mudah dieksploitasi.',
+    fix: 'Tetapkan di reverse proxy: Strict-Transport-Security, X-Content-Type-Options: nosniff, Referrer-Policy, dan Content-Security-Policy. Satu perubahan pada konfigurasi, bukan satu per halaman.',
+  },
+  {
+    id: 'backup-exposure',
+    cwes: ['CWE-530', 'CWE-552'],
+    // Deliberately does NOT match the bare word "database": every SQLi
+    // description mentions a database, and matching it here made the backup
+    // rule swallow injection findings before their own rule was consulted.
+    match: /backup\s*file|database\s*(?:dump|backup)|\.sql\b|\.bak\b|\.zip\b|\.tar\.gz\b|db\s*dump|sql\s*dump/i,
+    what: 'Fail backup atau dump database boleh diakses dari internet.',
+    why: 'Semua data (pengguna, kata laluan, rekod perniagaan) boleh dimuat turun terus. Ini punca utama kebocoran data besar.',
+    fix: 'Alihkan fail backup keluar dari root web. Sekat akses, atau padamkan.',
+  },
+  {
+    id: 'heartbleed',
+    cwes: [],
+    match: /heartbleed|CVE-2014-0160/i,
+    what: 'Server SSL/TLS ada kelemahan Heartbleed.',
+    why: 'Attacker boleh curi ingatan server — termasuk kunci peribadi SSL, kata laluan pengguna, dan token sesi — tanpa tinggal jejak.',
+    fix: 'Kemas kini OpenSSL ke versi patch. Batalkan & jana semula sijil SSL.',
+  },
+  {
+    id: 'eternalblue',
+    cwes: [],
+    match: /eternalblue|ms17-010|CVE-2017-0144/i,
+    what: 'Perkhidmatan Windows SMB terdedah kepada exploit EternalBlue.',
+    why: 'Ini exploit yang sama digunakan oleh ransomware WannaCry — attacker boleh ambil alih server sepenuhnya dari jauh.',
+    fix: 'Pasang patch Microsoft MS17-010 segera. Sekat port 445 di firewall.',
+  },
+  {
+    id: 'anon-ftp',
+    cwes: ['CWE-287'],
+    match: /\bftp\b|file\s*transfer\s*protocol/i,
+    what: 'Pelayan FTP benarkan log masuk tanpa kata laluan (anonymous).',
+    why: 'Sesiapa sahaja boleh muat turun atau muat naik fail ke server anda.',
+    fix: 'Matikan log masuk anonymous dalam konfigurasi FTP.',
+  },
+  {
+    id: 'shellshock',
+    cwes: [],
+    match: /shellshock|CVE-2014-6271/i,
+    what: 'Server web terdedah kepada Shellshock (Bash bug).',
+    why: 'Attacker boleh jalankan sebarang arahan di server melalui header HTTP — ambil alih penuh mesin.',
+    fix: 'Kemas kini Bash. Sekat atau tapis CGI scripts.',
+  },
+  {
+    id: 'dir-listing',
+    cwes: ['CWE-548'],
+    match: /directory\s*listing|open\s*directory|autoindex|index\s*of\s*\//i,
+    what: 'Server paparkan senarai fail dalam folder (directory listing).',
+    why: 'Attacker nampak semua fail — senang cari backup, config, atau data sensitif.',
+    fix: 'Matikan autoindex / Options -Indexes di web server.',
+  },
+  {
+    id: 'info-leak',
+    cwes: ['CWE-200', 'CWE-209', 'CWE-497', 'CWE-215'],
+    match: /phpinfo|server-status|debug\s*(?:mode|page|endpoint)|actuator|stack\s*trace|verbose\s*error|information\s*(?:leak|disclosure|exposure)|internal\s*(?:path|config)\s*(?:leak|expos)|server\s*(?:header|banner)\s*(?:information|disclosure)|\bcsp\b/i,
+    what: 'Server dedahkan maklumat dalaman (konfigurasi, versi, env, stack trace).',
+    why: 'Attacker dapat peta lengkap sistem — versi software, path, env variables — untuk rancang serangan yang lebih tepat.',
+    fix: 'Matikan halaman debug/info di production. Pulangkan mesej ralat generik kepada pengguna.',
+  },
+  {
+    id: 'clickjacking',
+    cwes: ['CWE-1021'],
+    match: /clickjacking|frame[- ]?busting/i,
+    what: 'Halaman boleh dimuatkan dalam iframe laman lain (Clickjacking).',
+    why: 'Attacker boleh tipu pengguna klik butang tanpa sedar — contoh: tukar kata laluan atau buat pembayaran.',
+    fix: 'Tambah header X-Frame-Options: DENY atau CSP frame-ancestors.',
+  },
+  {
+    id: 'waf',
+    cwes: [],
+    match: /\bwaf\b.*(?:not|missing|absent|undetected)|no\s*(?:waf|web\s*application\s*firewall)|web\s*application\s*firewall.*(?:not|missing)/i,
+    what: 'Tiada Web Application Firewall (WAF) dikesan di hadapan aplikasi.',
+    why: 'Serangan biasa (SQLi, XSS) sampai terus ke aplikasi tanpa tapisan pertama.',
+    fix: 'Pertimbangkan WAF seperti Cloudflare, ModSecurity, atau AWS WAF.',
+  },
 ]
 
+/**
+ * Pick the explanation that best fits a finding.
+ *
+ * A CWE id is machine-readable ground truth, so an exact id match is decisive.
+ * Everything else competes on where the keyword appeared: a title hit is much
+ * stronger evidence than a word buried in a long description.
+ */
 function buildSummary(f, evidence) {
-  const text = [f.title, f.description, f.module, f.cwe_id].filter(Boolean).join(' ')
-  for (const rule of VULN_EXPLAIN) {
-    if (rule.match.test(text)) return rule
-  }
+    const cwes = String(f.cwe_id || '').toUpperCase().match(/CWE-\d+/g) || []
+    if (cwes.length) {
+      // Exact membership only. Prefix regexes on this field made CWE-798
+      // ("hardcoded credentials") match the CWE-79 rule and the panel was
+      // explaining XSS for a hardcoded password.
+      for (const rule of VULN_EXPLAIN) {
+        if (rule.cwes.some(c => cwes.includes(c))) return rule
+      }
+    }
+
+    const title = String(f.title || '')
+    const body = [f.description, f.layman_impact].filter(Boolean).join(' ')
+    const module = String(f.module || '')
+    let best = null
+    let bestScore = 0
+    for (const rule of VULN_EXPLAIN) {
+      let score = 0
+      if (rule.match.test(title)) score = 60
+      else if (rule.match.test(body)) score = 30
+      else if (rule.match.test(module)) score = 20
+      if (score > bestScore) { best = rule; bestScore = score }
+    }
+    if (best) return best
+
   // Generic fallback using severity
   const sev = (f.severity || 'info').toLowerCase()
   const sevWord = { critical: 'SANGAT KRITIKAL', high: 'berbahaya', medium: 'sederhana', low: 'rendah', info: 'maklumat sahaja' }[sev] || 'perlu perhatian'
@@ -295,7 +504,7 @@ export default function FindingDetailDrawer({ finding, onClose, onStatusChange, 
     { id: 'overview', label: 'Overview', icon: ShieldAlert },
     { id: 'cvss', label: 'CVSS 4.0', icon: ShieldCheck },
     { id: 'exploit', label: 'Exploit', icon: Crosshair },
-    { id: 'ai', label: 'AI Assistant', icon: Bot },
+    { id: 'ai', label: 'AI Chat', icon: Bot },
     { id: 'poc', label: 'PoC / Evidence', icon: BookOpen },
     { id: 'cve', label: 'CVE', icon: ExternalLink },
     { id: 'notes', label: `Notes (${notes.length})`, icon: StickyNote },
@@ -338,7 +547,66 @@ export default function FindingDetailDrawer({ finding, onClose, onStatusChange, 
         <div className="p-5 space-y-4 overflow-y-auto flex-1">
           {tab === 'overview' && (
             <>
-              <div className="flex flex-wrap gap-2 text-[11px]">
+                {/* Verification status — the first thing an operator needs to know:
+                    was this claim actually confirmed, or is it still unproven? */}
+                {(() => {
+                  const tp = verdict?.is_true_positive
+                  const tier = verdict?.evidence_tier || evidence?.aiEvidenceTier || null
+                  const conf = verdictPct
+                  let tone, label, detail
+                  if (tp === true) {
+                    tone = 'emerald'
+                    label = 'CONFIRMED'
+                    detail = tier === 'exploited'
+                      ? 'An artifact in the evidence shows the exploit actually worked.'
+                      : tier === 'validated'
+                        ? 'Evidence proves the vulnerable configuration and the path to it.'
+                        : tier === 'observed'
+                          ? 'A literal artifact (tool output / HTTP response) matches the claim, but exploitation was not demonstrated.'
+                          : 'The claim is backed by a captured artifact.'
+                  } else if (tp === false) {
+                    tone = 'rose'
+                    label = 'REJECTED'
+                    detail = 'The evidence contradicts this claim, or no artifact supports it.'
+                  } else {
+                    tone = 'amber'
+                    label = 'UNVERIFIED'
+                    detail = 'No artifact settles this claim yet. Treat it as a lead, not a finding — run the PoC below to confirm or dismiss it.'
+                  }
+                  const toneMap = {
+                    emerald: 'border-emerald-500/30 bg-emerald-500/[0.07] text-emerald-300',
+                    rose: 'border-rose-500/30 bg-rose-500/[0.07] text-rose-300',
+                    amber: 'border-amber-500/30 bg-amber-500/[0.07] text-amber-300',
+                  }
+                  return (
+                    <div className={`rounded-xl border p-3 ${toneMap[tone]}`}>
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-[11px] uppercase tracking-wider font-bold flex items-center gap-1.5">
+                          <ShieldAlert size={12} /> {label}
+                        </p>
+                        <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider opacity-80">
+                          {verdict?.agent && <span>{verdict.agent}</span>}
+                          {conf != null && <span>· {conf}%</span>}
+                          {tier && <span className="px-1.5 py-0.5 rounded bg-black/20">{tier}</span>}
+                        </div>
+                      </div>
+                      <p className="text-xs mt-1.5 leading-relaxed text-slate-300">{detail}</p>
+                      {verdict?.reasoning && (
+                        <p className="text-[11px] mt-1.5 leading-relaxed text-slate-400 italic">{verdict.reasoning}</p>
+                      )}
+                      {tp !== true && (
+                        <button
+                          type="button"
+                          onClick={() => setTab('exploit')}
+                          className="mt-2 text-[11px] font-semibold underline underline-offset-2 hover:opacity-80"
+                        >
+                          Verify it now — open the Exploit tab →
+                        </button>
+                      )}
+                    </div>
+                  )
+                })()}
+                <div className="flex flex-wrap gap-2 text-[11px]">
                 {finding.owasp_category && <span className="chip bg-accent/10 text-accent border border-accent/30">{finding.owasp_category}</span>}
                 {finding.cwe_id && <span className="chip bg-ink-700 text-slate-300 border border-ink-600">{finding.cwe_id}</span>}
                 {cveId && <span className="chip bg-sev-high/10 text-sev-high border border-sev-high/30">{cveId}</span>}
@@ -385,8 +653,11 @@ export default function FindingDetailDrawer({ finding, onClose, onStatusChange, 
               )}
               {verdict && (
                 <div className="rounded-lg bg-accent/5 border border-accent/20 p-3">
-                  <p className="text-[11px] uppercase tracking-wider text-accent/80 mb-1">Agent Verdict · {verdict.agent}{verdictPct != null ? ` · ${verdictPct}%` : ''}</p>
-                  <p className="text-xs text-slate-300 whitespace-pre-wrap">{verdict.reasoning}</p>
+                  <p className="text-[11px] uppercase tracking-wider text-accent/80 mb-1">
+                    Agent Verdict · {verdict.agent || 'unknown'}{verdictPct != null ? ` · ${verdictPct}%` : ''}
+                    {verdict.evidence_tier ? ` · ${verdict.evidence_tier}` : ''}
+                  </p>
+                  <p className="text-xs text-slate-300 whitespace-pre-wrap">{verdict.reasoning || 'No reasoning recorded.'}</p>
                   {Array.isArray(evidence?.actions) && evidence.actions.length > 0 && (
                     <div className="mt-2 pt-2 border-t border-accent/10">
                       <p className="text-[10px] uppercase tracking-wider text-slate-500 mb-1">Provenance</p>
@@ -802,21 +1073,99 @@ export default function FindingDetailDrawer({ finding, onClose, onStatusChange, 
             </div>
           )}
 
-          {tab === 'poc' && (
-            <>
-              {Object.keys(evidence).length === 0 && Object.keys(poc).length === 0 && (
-                <p className="text-sm text-slate-500">No evidence or PoC captured for this finding.</p>
-              )}
-              {Object.keys(evidence).length > 0 && (
-                <div><p className="label">Evidence</p>
-                  <pre className="terminal text-xs whitespace-pre-wrap">{JSON.stringify(evidence, null, 2)}</pre></div>
-              )}
-              {Object.keys(poc).length > 0 && (
-                <div><p className="label">PoC / Payloads</p>
-                  <pre className="terminal text-xs whitespace-pre-wrap">{JSON.stringify(poc, null, 2)}</pre></div>
-              )}
-            </>
-          )}
+          {tab === 'poc' && (() => {
+            const hasEvidence = Object.keys(evidence).length > 0
+            const hasPoc = Object.keys(poc).length > 0
+            const hidden = ['actions', 'exploitPlaybooks', 'aiEvidenceTier']
+            const proofEvidence = Object.fromEntries(Object.entries(evidence).filter(([k]) => !hidden.includes(k)))
+            const proofPoc = Object.fromEntries(Object.entries(poc).filter(([k]) => !hidden.includes(k)))
+            const hasProof = Object.keys(proofEvidence).length > 0 || Object.keys(proofPoc).length > 0
+
+            // Build runnable verification steps from what the finding actually is.
+            // These are read-only replays an operator can paste in a terminal —
+            // the whole point of a PoC tab is "show me how to check this".
+            const target = finding.target || ''
+            const base = target ? (target.startsWith('http') ? target : `https://${target}`) : ''
+            const hints = Array.isArray(evidence.paths) ? evidence.paths.slice(0, 5)
+              : Array.isArray(evidence.discovered) ? evidence.discovered.slice(0, 5)
+              : Array.isArray(evidence.urls) ? evidence.urls.slice(0, 5) : []
+            const recipe = []
+            if (base) {
+              recipe.push({ label: 'Header + status fingerprint', cmd: `curl -skI ${base}` })
+              if (hints.length) {
+                recipe.push({ label: 'Replay the discovered path(s)', cmd: hints.map(p => `curl -skI ${base.replace(/\/$/, '')}/${String(p).replace(/^\//, '')}`).join('\n') })
+              }
+              const params = evidence.parameters || evidence.params
+              if (Array.isArray(params) && params.length) {
+                const url = `${base.replace(/\/$/, '')}/?${params.slice(0, 4).map(p => `${p}=1`).join('&')}`
+                recipe.push({ label: 'Exercise the discovered parameter(s)', cmd: `curl -sk "${url}"` })
+              }
+              if (/sql/i.test(`${finding.title} ${finding.module}`)) {
+                recipe.push({ label: 'SQLi re-probe (benign, time-based)', cmd: `curl -sk -o /dev/null -w 'baseline %{time_total}s\\n' "${base}"\ncurl -sk -o /dev/null -w "payload  %{time_total}s\\n" "${base}${base.includes('?') ? '&' : '?'}id=1'%20AND%20SLEEP(5)--%20-"` })
+              }
+              if (/xss|cross.?site/i.test(`${finding.title} ${finding.module}`)) {
+                recipe.push({ label: 'XSS tag-reflection check', cmd: `curl -sk "${base}${base.includes('?') ? '&' : '?'}q=%3Csvg%2Fonload%3Dalert(1)%3E" | grep -o '<svg/onload=alert(1)>'` })
+              }
+              if (/cors/i.test(`${finding.title} ${finding.module}`)) {
+                recipe.push({ label: 'CORS origin reflection', cmd: `curl -sk -H 'Origin: https://evil.example' -D - -o /dev/null "${base}" | grep -i 'access-control'` })
+              }
+              if (/header/i.test(`${finding.title} ${finding.module}`)) {
+                recipe.push({ label: 'Confirm the missing header', cmd: `curl -skI ${base} | grep -iE 'strict-transport-security|content-security-policy|x-frame-options' || echo 'header absent — finding reproduced'` })
+              }
+            }
+
+            return (
+              <>
+                {!hasProof && (
+                  <div className="rounded-xl border border-amber-500/30 bg-amber-500/[0.06] p-4 space-y-2">
+                    <p className="text-[11px] uppercase tracking-wider font-bold text-amber-300 flex items-center gap-1.5">
+                      <AlertTriangle size={12} /> No tool confirmation captured
+                    </p>
+                    <p className="text-xs text-slate-300 leading-relaxed">
+                      Nothing in this finding proves the claim yet — no scanner output, no HTTP response, no tool verdict.
+                      It survived as a <span className="font-mono">lead</span>, not a confirmed bug.
+                      {verdict?.reasoning ? ` Reason it stayed open: ${verdict.reasoning}` : ''}
+                    </p>
+                    <p className="text-xs text-slate-400 leading-relaxed">
+                      Either run the PoC below by hand, or use the <span className="font-semibold text-accent">Exploit</span> tab to
+                      replay it automatically. If the replay contradicts the claim, mark the finding as a false positive.
+                    </p>
+                  </div>
+                )}
+
+                {recipe.length > 0 && (
+                  <div className="space-y-2">
+                    <p className="label">How to verify this yourself</p>
+                    {recipe.map((r, i) => (
+                      <div key={i} className="rounded-lg border border-white/10 bg-white/[0.02] overflow-hidden">
+                        <div className="flex items-center justify-between px-3 py-1.5 border-b border-white/10">
+                          <span className="text-[11px] text-slate-300 font-medium">{r.label}</span>
+                          <button onClick={() => copyAttackCommand(r.cmd)} className="text-[10px] text-accent hover:opacity-80 flex items-center gap-1">
+                            {pocCopied ? <><Check size={10} /> Copied</> : <><Copy size={10} /> Copy</>}
+                          </button>
+                        </div>
+                        <pre className="terminal text-[11px] whitespace-pre-wrap p-3">{r.cmd}</pre>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {Object.keys(proofEvidence).length > 0 && (
+                  <div><p className="label">Captured Evidence</p>
+                    <pre className="terminal text-xs whitespace-pre-wrap">{JSON.stringify(proofEvidence, null, 2)}</pre></div>
+                )}
+                {Object.keys(proofPoc).length > 0 && (
+                  <div><p className="label">PoC / Payloads</p>
+                    <pre className="terminal text-xs whitespace-pre-wrap">{JSON.stringify(proofPoc, null, 2)}</pre></div>
+                )}
+                {hasEvidence && Object.keys(proofEvidence).length === 0 && !hasPoc && recipe.length === 0 && (
+                  <p className="text-xs text-slate-500">
+                    This finding carries only verification metadata (no target to replay against).
+                  </p>
+                )}
+              </>
+            )
+          })()}
 
           {tab === 'cve' && (
             <>

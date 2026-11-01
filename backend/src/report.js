@@ -7,6 +7,7 @@ import { OWASP } from './owasp.js'
 import { aiEngine } from './ai/ai-engine.js'
 import { computeRiskScore, riskRatingFromScore } from './pipeline.js'
 import { calculateCvss4, defaultVectorForFinding } from './cvss4.js'
+import { VERIFY_STATUS, classifyFinding, aggregateFindings, normalizeConfidence } from './report-contract.js'
 
 /**
  * FYP2 Report Generator - Modern, High-Visual PDF Pentest Report.
@@ -236,6 +237,7 @@ function isNoiseFinding(v) {
   return false
 }
 
+// ── Evidence validation & aggregation ────────────────────────────────────────
 function categorizeFinding(finding) {
   const title = (finding.title || '').toLowerCase()
   const desc = (finding.description || '').toLowerCase()
@@ -1148,12 +1150,25 @@ function cveReference(cveId) {
 }
 
 function confidencePercent(v) {
+  const status = v.verifyStatus || v.verify_status
   const tier = String(v.validationTier || v.evidence?.validationTier || '').toLowerCase()
+
+  // Verification status outranks the model's self-report. A finding either has a
+  // captured artifact or it does not; the reviewer's numeric guess cannot talk a
+  // CONFIRMED finding down to 10% while the card above calls it HIGH and real.
+  if (status === VERIFY_STATUS.CONFIRMED) {
+    if (tier === 'exploited') return 98
+    if (tier === 'validated') return 95
+    return 90
+  }
+  if (status === VERIFY_STATUS.REJECTED) return 5
+
   if (tier === 'exploited') return 98
   if (tier === 'validated') return 95
   if (v.aiConfidence > 0) return Math.round(v.aiConfidence * 100)
   if (v.evidence?.knownCves?.length || v.cveId) return 85
   if (tier === 'needs-validation') return 45
+  if (status === VERIFY_STATUS.UNVERIFIED) return 40
   if (v.evidence?.url || v.evidence?.output || v.evidence?.status) return 75
   return 60
 }
@@ -1203,6 +1218,29 @@ function findingEvidenceContext(v) {
     observed: observed ? String(observed).replace(/\s+/g, ' ').slice(0, 260) : null,
     location,
   }
+}
+
+/**
+ * Verbatim artifact string for the fix card. A confirmed finding must show the
+ * request/response that proved it, not just assert a verdict.
+ */
+function describeCapturedProof(v) {
+  const ev = v.evidence || {}
+  const url = typeof ev.url === 'string' ? ev.url : null
+  const status = ev.status ?? ev.statusCode ?? ev.httpStatus
+  const body = typeof ev.body === 'string' ? ev.body.replace(/\s+/g, ' ').trim() : null
+  const observed = typeof ev.matched === 'string' ? ev.matched
+    : typeof ev.header === 'string' ? ev.header
+      : typeof ev.banner === 'string' ? ev.banner
+        : typeof ev.output === 'string' ? ev.output
+          : typeof ev.raw === 'string' ? ev.raw : null
+
+  const bits = []
+  if (url) bits.push(status != null ? `${url} -> HTTP ${status}` : url)
+  if (observed) bits.push(observed.replace(/\s+/g, ' ').trim().slice(0, 220))
+  if (body) bits.push(`body: ${body.slice(0, 220)}`)
+  if (!bits.length) return null
+  return bits.join('  |  ')
 }
 
 function concreteVerification(v, endpoint) {
@@ -1366,8 +1404,13 @@ function toView(f, scanTarget) {
     sources: evidence?.sources || [f.module],
     poc,
     aiAgent: verdict?.agent || null,
-    aiConfidence: verdict?.confidence != null ? verdict.confidence / 100 : 0,
+    aiConfidence: normalizeConfidence(verdict?.confidence),
     aiReasoning: cleanPdfText(verdict?.reasoning || null),
+    // Truth status of the claim. `true` = an artifact confirmed it, `false` = the
+    // evidence contradicted it, `null`/absent = nobody settled it, so the reader
+    // must treat it as a lead rather than a finding.
+    aiVerification: typeof verdict?.is_true_positive === 'boolean' ? verdict.is_true_positive : null,
+    aiEvidenceTier: verdict?.evidence_tier || evidence?.aiEvidenceTier || null,
     // Provenance: every verification action the pipeline recorded for this
     // finding, so a reader can distinguish a model verdict from a deterministic
     // attribution and see when each one ran.
@@ -1585,9 +1628,11 @@ function renderTableOfContents(doc) {
   const sections = [
     ['1.  Executive Summary', 'Overview of target security posture & vulnerability breakdown'],
     ['2.  Methodology', 'Testing frameworks, scanning tools & verification standards'],
-    ['3.  Findings Summary', 'Severity distribution chart, module breakdown & OWASP mapping'],
-    ['4.  Detailed Findings', 'In-depth vulnerability analysis, evidence, PoC & remediation guidance'],
-    ['5.  Appendix', 'Scan execution statistics, engine details & disclaimer'],
+    ['3.  Findings Summary', 'Severity distribution, prioritised fix list & verification scope'],
+    ['4.  Issue Classification', 'Deduplicated issue register with occurrence counts & verification status'],
+    ['5.  Detailed Findings', 'In-depth analysis, evidence, PoC & remediation guidance'],
+    ['Appendix A', 'Unverified leads and evidence-rejected observations'],
+    ['6.  Appendix', 'Validation tally, scan statistics, engine details & disclaimer'],
   ]
   const x = doc.page.margins.left
   const w = doc.page.width - doc.page.margins.left - doc.page.margins.right
@@ -1602,7 +1647,7 @@ function renderTableOfContents(doc) {
   }
 }
 
-function renderExecutiveSummary(doc, { vulnerabilities, scans, isWhitebox, aiNarrative = null, aiAttackChain = null }) {
+function renderExecutiveSummary(doc, { vulnerabilities, scans, isWhitebox, aiNarrative = null, aiAttackChain = null, verificationSummary = null }) {
   drawSectionTitle(doc, '1.  Executive Summary')
   const x = doc.page.margins.left
   const w = doc.page.width - doc.page.margins.left - doc.page.margins.right
@@ -1622,6 +1667,29 @@ function renderExecutiveSummary(doc, { vulnerabilities, scans, isWhitebox, aiNar
     x, doc.y, { width: w },
   )
   doc.moveDown(1)
+
+  // ── VERIFICATION LEDGER ──
+  // States plainly how many raw observations became reported findings, and how
+  // many are still unproven. Without this the reader cannot tell a reproduced
+  // bug from scanner noise.
+  if (verificationSummary) {
+    const vs = verificationSummary
+    ensureSpace(doc, 72)
+    const vy = doc.y
+    doc.rect(x, vy, 4, 58).fill(BRAND.accent)
+    doc.fontSize(10).font('Helvetica-Bold').fillColor(BRAND.primary)
+      .text('Evidence validation', x + 12, vy)
+    const ledger =
+      `Of ${vs.rawFindings} raw observation${vs.rawFindings !== 1 ? 's' : ''}, this report documents ` +
+      `${vs.reportedRootCauses} distinct issue${vs.reportedRootCauses !== 1 ? 's' : ''} after de-duplication. ` +
+      `${vs.confirmed} ${vs.confirmed === 1 ? 'is' : 'are'} backed by a captured artifact; ` +
+      `${vs.unverified} remain unverified and are listed separately in Appendix A as leads to reproduce; ` +
+      `${vs.rejected} ${vs.rejected === 1 ? 'was' : 'were'} contradicted by the collected evidence and ${vs.rejected === 1 ? 'is' : 'are'} excluded from remediation.`
+    doc.fontSize(9).font('Helvetica').fillColor(BRAND.textDark)
+      .text(ledger, x + 12, vy + 14, { width: w - 16, height: 40 })
+    doc.y = vy + 64
+    doc.moveDown(0.6)
+  }
 
   // ── AI ANALYSIS ── The AI's independent assessment (unique to SentinelAI) ──
   if (aiNarrative) {
@@ -1734,8 +1802,7 @@ function renderExecutiveSummary(doc, { vulnerabilities, scans, isWhitebox, aiNar
   }
 }
 
-function renderMethodology(doc, { vulnerabilities, isWhitebox }) {
-  drawSectionTitle(doc, '2.  Methodology')
+function renderMethodology(doc, { vulnerabilities, isWhitebox, scans }) {  drawSectionTitle(doc, '2.  Methodology')
   const x = doc.page.margins.left
   const w = doc.page.width - doc.page.margins.left - doc.page.margins.right
 
@@ -1853,6 +1920,58 @@ function renderMethodology(doc, { vulnerabilities, isWhitebox }) {
     doc.font('Helvetica').fillColor(BRAND.textMuted).text(desc, { width: w - 20 })
     doc.moveDown(0.1)
   }
+
+  renderAiUsageLedger(doc, { scans })
+}
+
+/**
+ * Disclose whether a model was actually reached, and what it cost. A persona
+ * list alone proves the platform *can* call an LLM; this proves it *did* for
+ * this scan, and says so plainly when it did not.
+ */
+function renderAiUsageLedger(doc, { scans }) {
+  const x = doc.page.margins.left
+  const w = doc.page.width - doc.page.margins.left - doc.page.margins.right
+  const raw = scans?.[0]?.token_usage
+  let usage = null
+  try { usage = typeof raw === 'string' ? JSON.parse(raw) : (raw || null) } catch { usage = null }
+
+  const calls = Number(usage?.calls) || 0
+  const totalTokens = Number(usage?.total_tokens) || 0
+  const models = usage?.models || {}
+  const modelNames = Object.keys(models)
+  const reached = calls > 0 && (totalTokens > 0 || modelNames.length > 0)
+
+  const lines = []
+  if (reached) {
+    lines.push(`Model calls: ${calls}  |  Tokens billed: ${totalTokens.toLocaleString('en-US')}` +
+      (usage.prompt_tokens || usage.completion_tokens
+        ? `  (${Number(usage.prompt_tokens) || 0} prompt / ${Number(usage.completion_tokens) || 0} completion)`
+        : ''))
+    if (modelNames.length) {
+      lines.push(`Models reached: ${modelNames.map((m) => `${m}${models[m] ? ` (${models[m]} call${models[m] === 1 ? '' : 's'})` : ''}`).join(', ')}`)
+    }
+    lines.push('AI verdicts in this report are advisory annotations attached to captured artifacts. ' +
+      'They are never accepted as proof of exploitability on their own - see the evidence-validation ledger.')
+  } else {
+    lines.push('No language model was reached during this scan (0 calls, 0 tokens).')
+    lines.push('Every verdict and reproduction step in this report was produced by the deterministic ' +
+      'evidence-validation engine, not by a model. Nothing here is AI speculation, and nothing here was ' +
+      'confirmed by AI review either - treat AI confidence figures as not applicable.')
+  }
+
+  ensureSpace(doc, 90)
+  doc.moveDown(1)
+  doc.fontSize(12).font('Helvetica-Bold').fillColor(reached ? BRAND.primary : '#B45309')
+    .text('AI Model Usage', x, doc.y)
+  doc.moveDown(0.4)
+
+  doc.fontSize(8.5).font('Helvetica').fillColor(BRAND.textDark)
+  for (const line of lines) {
+    ensureSpace(doc, 26)
+    doc.text(line, x + 5, doc.y, { width: w - 20 })
+    doc.moveDown(0.3)
+  }
 }
 
 function renderFindingsSummary(doc, { vulnerabilities }) {
@@ -1926,8 +2045,165 @@ function renderFindingsSummary(doc, { vulnerabilities }) {
   }
 }
 
+/**
+ * Issue classification table. One row per aggregated root cause so a warning
+ * repeated across dozens of endpoints appears once with an occurrence count,
+ * and the reader can see at a glance whether the claim was actually proven.
+ */
+function renderClassificationTable(doc, { vulnerabilities }) {
+  drawSectionTitle(doc, '4.  Issue Classification', 'One row per root cause — repeated observations are counted, not duplicated.')
+  const x = doc.page.margins.left
+  const w = doc.page.width - doc.page.margins.left - doc.page.margins.right
+  const cols = [
+    { key: 'id', label: '#', w: 24, align: 'left' },
+    { key: 'category', label: 'Category / Issue', w: 0, align: 'left' }, // flexible
+    { key: 'severity', label: 'Severity', w: 62, align: 'left' },
+    { key: 'occ', label: 'Seen', w: 40, align: 'left' },
+    { key: 'verify', label: 'Verification', w: 84, align: 'left' },
+  ]
+  const fixed = cols.reduce((acc, c) => acc + c.w, 0)
+  cols[1].w = Math.max(120, w - fixed)
+
+  const drawHeaderRow = () => {
+    ensureSpace(doc, 40)
+    const y = doc.y
+    doc.rect(x, y, w, 18).fill(BRAND.primary)
+    let cx = x + 4
+    for (const c of cols) {
+      doc.fontSize(8).font('Helvetica-Bold').fillColor('#FFFFFF')
+        .text(c.label, cx, y + 5.5, { width: c.w - 6, align: c.align })
+      cx += c.w
+    }
+    doc.y = y + 20
+  }
+
+  if (!vulnerabilities.length) {
+    doc.fontSize(10).font('Helvetica').fillColor(BRAND.textMuted).text('No issues reached reporting threshold.', x, doc.y, { width: w })
+    return
+  }
+
+  drawHeaderRow()
+  let rowIdx = 0
+  for (const v of vulnerabilities) {
+    rowIdx += 1
+    ensureSpace(doc, 30)
+    const y = doc.y
+    const c = SEV_COLORS[(v.severity || 'info').toLowerCase()] || SEV_COLORS.info
+    if (rowIdx % 2 === 0) doc.rect(x, y, w, 20).fill('#F1F5F9')
+    let cx = x + 4
+    doc.fontSize(8).font('Helvetica-Bold').fillColor(BRAND.textMuted).text(String(rowIdx), cx, y + 6, { width: cols[0].w - 6 })
+    cx += cols[0].w
+    const label = String(v.title || v.category || 'Unclassified').slice(0, 92)
+    doc.fontSize(8).font('Helvetica-Bold').fillColor(BRAND.textDark).text(cleanPdfText(label), cx, y + 4, { width: cols[1].w - 6, height: 12, ellipsis: true })
+    doc.fontSize(7).font('Helvetica').fillColor(BRAND.textMuted)
+      .text(cleanPdfText(String(v.category || '')), cx, y + 12, { width: cols[1].w - 6, height: 9, ellipsis: true })
+    cx += cols[1].w
+    drawPillBadge(doc, sevLabel(v.severity), cx, y + 4, c.bg)
+    cx += cols[2].w
+    doc.fontSize(8).font('Helvetica').fillColor(BRAND.textDark)
+      .text(`${v.occurrences || 1}x`, cx, y + 6, { width: cols[3].w - 6 })
+    cx += cols[3].w
+    const statusColor = v.verifyStatus === VERIFY_STATUS.CONFIRMED ? '#047857'
+      : v.verifyStatus === VERIFY_STATUS.REJECTED ? '#B91C1C' : '#B45309'
+    doc.fontSize(7.5).font('Helvetica-Bold').fillColor(statusColor)
+      .text(String(v.verifyStatus || 'Unverified').toUpperCase(), cx, y + 6, { width: cols[4].w - 6, ellipsis: true })
+    doc.y = y + 22
+  }
+
+  // Legend — keeps the classification honest about what each status means.
+  doc.moveDown(0.8)
+  ensureSpace(doc, 54)
+  doc.fontSize(12).font('Helvetica-Bold').fillColor(BRAND.primary).text('How to read the verification column', x, doc.y)
+  doc.moveDown(0.4)
+  const legend = [
+    ['CONFIRMED', 'A concrete artifact backs the claim — tool output, a captured HTTP response, or a reproduced payload echo.'],
+    ['UNVERIFIED', 'The evidence does not settle the claim. Treat it as a lead to reproduce, not as a proven defect.'],
+    ['REJECTED', 'The collected evidence contradicts the claim. Listed for transparency only, never as a fix item.'],
+  ]
+  for (const [k, txt] of legend) {
+    ensureSpace(doc, 24)
+    const y = doc.y
+    const col = k === 'CONFIRMED' ? '#047857' : k === 'REJECTED' ? '#B91C1C' : '#B45309'
+    doc.fontSize(8).font('Helvetica-Bold').fillColor(col).text(k, x + 4, y, { width: 76 })
+    doc.fontSize(8).font('Helvetica').fillColor(BRAND.textDark).text(cleanPdfText(txt), x + 86, y, { width: w - 92 })
+    doc.moveDown(0.5)
+  }
+}
+
+/**
+ * Appendix for everything that did not survive validation. Presented separately
+ * so an unproven lead is never mistaken for a confirmed vulnerability, while
+ * still giving the operator the raw material to reproduce it.
+ */
+function renderUnverifiedAppendix(doc, { unverifiedFindings = [], rejectedFindings = [] }) {
+  if (!unverifiedFindings.length && !rejectedFindings.length) return
+  doc.addPage()
+  drawSectionTitle(doc, 'Appendix A.  Unverified & Rejected Observations', 'Not counted as findings. Reproduce before treating any of these as a defect.')
+  const x = doc.page.margins.left
+  const w = doc.page.width - doc.page.margins.left - doc.page.margins.right
+
+  if (unverifiedFindings.length) {
+    ensureSpace(doc, 40)
+    doc.fontSize(11).font('Helvetica-Bold').fillColor('#B45309').text(`Unverified leads (${unverifiedFindings.length})`, x, doc.y)
+    doc.moveDown(0.4)
+    doc.fontSize(8.5).font('Helvetica').fillColor(BRAND.textMuted)
+      .text('No tool confirmation was captured for these claims. Each item tells you exactly how to reproduce or dismiss it.', x, doc.y, { width: w })
+    doc.moveDown(0.6)
+    for (const v of unverifiedFindings) {
+      ensureSpace(doc, 70)
+      const y = doc.y
+      const c = SEV_COLORS[(v.severity || 'info').toLowerCase()] || SEV_COLORS.info
+      doc.rect(x, y, 3, 46).fill('#D97706')
+      drawPillBadge(doc, 'UNVERIFIED', x + 10, y + 2, '#B45309')
+      drawPillBadge(doc, sevLabel(v.severity), x + 88, y + 2, c.bg)
+      doc.fontSize(9).font('Helvetica-Bold').fillColor(BRAND.textDark)
+        .text(cleanPdfText(String(v.title || '').slice(0, 110)), x + 156, y + 3, { width: w - 166, height: 13, ellipsis: true })
+      const detail = [
+        v.aiReasoning ? `Why unproven: ${v.aiReasoning}` : null,
+        v.occurrences > 1 ? `Observed at ${v.occurrences} locations${v.locations && v.locations.length ? ` (e.g. ${v.locations.slice(0, 3).join(', ')})` : ''}.` : null,
+        `Reproduce: ${describeReproduction(v)}`,
+      ].filter(Boolean).join(' ')
+      doc.fontSize(7.5).font('Helvetica').fillColor(BRAND.textDark)
+        .text(cleanPdfText(detail), x + 10, y + 18, { width: w - 20, height: 28, ellipsis: true })
+      doc.y = y + 50
+    }
+  }
+
+  if (rejectedFindings.length) {
+    ensureSpace(doc, 50)
+    doc.moveDown(0.6)
+    doc.fontSize(11).font('Helvetica-Bold').fillColor('#B91C1C').text(`Rejected by evidence (${rejectedFindings.length})`, x, doc.y)
+    doc.moveDown(0.4)
+    doc.fontSize(8.5).font('Helvetica').fillColor(BRAND.textMuted)
+      .text('Listed for transparency. The evidence collected contradicted these claims, so no remediation is required.', x, doc.y, { width: w })
+    doc.moveDown(0.5)
+    for (const v of rejectedFindings) {
+      ensureSpace(doc, 26)
+      const y = doc.y
+      doc.rect(x, y, w, 22).fillAndStroke('#FEF2F2', '#FECACA')
+      drawPillBadge(doc, 'REJECTED', x + 8, y + 4.5, '#B91C1C')
+      doc.fontSize(8.5).font('Helvetica-Bold').fillColor(BRAND.textDark)
+        .text(cleanPdfText(String(v.title || '').slice(0, 100)), x + 82, y + 5, { width: w - 92, height: 12, ellipsis: true })
+      doc.y = y + 25
+    }
+  }
+}
+
+/** Short, type-specific reproduction hint so a lead is actionable, not vague. */
+function describeReproduction(v) {
+  const t = `${v.title || ''} ${v.category || ''}`.toLowerCase()
+  const where = (v.locations && v.locations[0]) || (v.evidence && (v.evidence.url || v.evidence.path)) || v.asset || 'the affected endpoint'
+  if (/sql/.test(t)) return `replay ${where} with a sleep-based payload and compare response time against a benign baseline.`
+  if (/xss|cross.site/.test(t)) return `submit ${'<svg/onload=alert(1)>'} to the reported parameter and grep the response for unencoded reflection.`
+  if (/cors/.test(t)) return `re-request ${where} with 'Origin: https://evil.example' and check for Access-Control-Allow-Credentials: true.`
+  if (/header|hsts|csp|policy/.test(t)) return `curl -sI ${where} and confirm the header is genuinely absent (not just case-different).`
+  if (/admin|panel|login|auth/.test(t)) return `fetch ${where} unauthenticated and record the status code and any data returned.`
+  if (/path|traversal|lfi/.test(t)) return `request ${where} with a known-safe traversal sequence and check whether a local file is returned.`
+  return `re-request ${where} and capture the full response to confirm the condition.`
+}
+
 function renderDetailedFindings(doc, { vulnerabilities, isWhitebox }) {
-  drawSectionTitle(doc, '4.  Detailed Findings')
+  drawSectionTitle(doc, '5.  Detailed Findings')
   const x = doc.page.margins.left
   const w = doc.page.width - doc.page.margins.left - doc.page.margins.right
 
@@ -2209,6 +2485,16 @@ function renderDetailedFindings(doc, { vulnerabilities, isWhitebox }) {
         }
         evText = cleanPdfText(evText).trim()
 
+        // A finding whose only recorded fact is where the probe ran has no
+        // artifact. Say so in the evidence box instead of leaving the reader to
+        // assume the tool observed something.
+        if (!v.evidenceFields || v.evidenceFields.length === 0) {
+          const where = v.evidenceLocation || ev?.url || ev?.path
+          evText = `No tool output or HTTP response was captured for this claim.`
+            + (where ? `\nLocation probed: ${where}` : '')
+            + `\nReproduce before treating it as a defect: ${describeReproduction(v)}`
+        }
+
         if (evText) {
           ensureSpace(doc, 55)
           doc.fontSize(9.5).font('Helvetica-Bold').fillColor(BRAND.primary).text('Technical Evidence:', x, doc.y)
@@ -2227,17 +2513,28 @@ function renderDetailedFindings(doc, { vulnerabilities, isWhitebox }) {
       // REAL Proof of Concept Payload - copy-paste ready
       if (v.pocPayload) {
         const isAiPoc = v.pocSource === 'ai-generated'
+        // A declined generation must not be dressed up as a targeted exploit. The
+        // page says plainly that this is a generic template.
+        const declined = !isAiPoc && v.pocDeclined === true
         const pocLabel = isAiPoc
           ? (isWhitebox ? 'AI-Generated Exploit (Code Audit):' : 'AI-Generated Proof of Concept:')
-          : (isWhitebox ? 'Exploitation Steps (Code Audit):' : 'Proof of Concept (Copy-Paste Ready):')
-        const pocText = v.pocPayload
+          : declined
+            ? (isWhitebox
+              ? 'Generic Exploitation Pattern (NOT tailored to this finding):'
+              : 'Generic Exploitation Pattern (NOT tailored to this finding):')
+            : (isWhitebox ? 'Exploitation Steps (Code Audit):' : 'Proof of Concept (Copy-Paste Ready):')
+        const pocCaveat = declined
+          ? `No finding-specific reproduction was generated (${v.pocDeclineReason || 'generator declined'}).`
+            + ` The pattern below is a starting point only — confirm every step against the captured evidence before running it.`
+          : null
+        const pocText = pocCaveat ? `NOTE: ${pocCaveat}\n\n${v.pocPayload}` : v.pocPayload
         const pocLinesHeight = doc.fontSize(7.5).font('Helvetica').heightOfString(pocText, { width: w - 24 })
         const pocBoxH = Math.min(pocLinesHeight + 16, 260)
-        
+
         // Ensure whole label + box fit on current page without pushing into footer margin
         ensureSpace(doc, pocBoxH + 30)
 
-        doc.fontSize(9.5).font('Helvetica-Bold').fillColor('#DC2626').text(pocLabel, x, doc.y)
+        doc.fontSize(9.5).font('Helvetica-Bold').fillColor(declined ? '#B45309' : '#DC2626').text(pocLabel, x, doc.y)
         doc.moveDown(0.2)
 
         // AI badge for AI-generated PoCs
@@ -2251,10 +2548,10 @@ function renderDetailedFindings(doc, { vulnerabilities, isWhitebox }) {
         const pocY = doc.y
 
         // Red left border accent
-        doc.rect(x, pocY, 4, pocBoxH).fill('#DC2626')
-        doc.rect(x + 4, pocY, w - 4, pocBoxH).fillAndStroke('#FEF2F2', '#FECACA')
+        doc.rect(x, pocY, 4, pocBoxH).fill(declined ? '#D97706' : '#DC2626')
+        doc.rect(x + 4, pocY, w - 4, pocBoxH).fillAndStroke(declined ? '#FFFBEB' : '#FEF2F2', declined ? '#FDE68A' : '#FECACA')
 
-        doc.fontSize(7.5).font('Helvetica').fillColor('#991B1B')
+        doc.fontSize(7.5).font('Helvetica').fillColor(declined ? '#92400E' : '#991B1B')
           .text(pocText, x + 12, pocY + 8, { width: w - 24, height: pocBoxH - 14, ellipsis: true })
         doc.y = pocY + pocBoxH + 8
       }
@@ -2337,13 +2634,40 @@ function renderDetailedFindings(doc, { vulnerabilities, isWhitebox }) {
   }
 }
 
-function renderAppendix(doc, { scans, project, isWhitebox }) {
-  drawSectionTitle(doc, '5.  Appendix')
+function renderAppendix(doc, { scans, project, isWhitebox, verificationSummary = null }) {
+  drawSectionTitle(doc, '6.  Appendix')
   const x = doc.page.margins.left
   const w = doc.page.width - doc.page.margins.left - doc.page.margins.right
 
-  doc.fontSize(12).font('Helvetica-Bold').fillColor(BRAND.primary).text('A.  Scan Details', x, doc.y)
-  doc.moveDown(0.5)
+  // Validation tally — proves what the report did with the raw output rather
+  // than silently dropping it.
+  if (verificationSummary) {
+    ensureSpace(doc, 92)
+    doc.fontSize(12).font('Helvetica-Bold').fillColor(BRAND.primary).text('A.  Validation Summary', x, doc.y)
+    doc.moveDown(0.5)
+    const vtY = doc.y
+    doc.rect(x, vtY, w, 72).fillAndStroke(BRAND.cardBg, BRAND.cardBorder)
+    const stats = [
+      ['Raw observations', verificationSummary.rawFindings, BRAND.textDark],
+      ['Reported root causes', verificationSummary.reportedRootCauses, BRAND.accent],
+      ['Confirmed with artifact', verificationSummary.confirmed, '#047857'],
+      ['Unverified (needs replay)', verificationSummary.unverified, '#B45309'],
+      ['Rejected by evidence', verificationSummary.rejected, '#B91C1C'],
+    ]
+    const cellW = (w - 24) / stats.length
+    stats.forEach(([lbl, val, col], i) => {
+      const px = x + 12 + i * cellW
+      doc.fontSize(16).font('Helvetica-Bold').fillColor(col).text(String(val ?? 0), px, vtY + 14, { width: cellW - 8 })
+      doc.fontSize(7.5).font('Helvetica').fillColor(BRAND.textMuted).text(lbl, px, vtY + 40, { width: cellW - 8 })
+    })
+    doc.y = vtY + 80
+    doc.moveDown(0.8)
+    doc.fontSize(12).font('Helvetica-Bold').fillColor(BRAND.primary).text('B.  Scan Details', x, doc.y)
+    doc.moveDown(0.5)
+  } else {
+    doc.fontSize(12).font('Helvetica-Bold').fillColor(BRAND.primary).text('A.  Scan Details', x, doc.y)
+    doc.moveDown(0.5)
+  }
 
   for (const s of scans) {
     ensureSpace(doc, 105)
@@ -2539,6 +2863,20 @@ export async function generateReport(scanId, minSeverity = 'info', statusFilter 
     const project = scan.project_id ? db.get(`SELECT * FROM projects WHERE id = ?`, scan.project_id) : null
 
     const vulnerabilities = filteredRows.map(r => toView(r, scan.target))
+    // Classify every claim before it reaches a page: artifact-backed confirmations
+    // are separated from unproven leads and explicit rejections, then repeated
+    // root causes are collapsed so the report does not print one header warning
+    // forty times. `raw` keeps the pre-aggregation list for the appendix counts.
+    const classified = vulnerabilities.map(classifyFinding)
+    const reportedFindings = aggregateFindings(classified)
+    const rejectedFindings = reportedFindings.filter(v => v.verifyStatus === VERIFY_STATUS.REJECTED)
+    const activeFindings = reportedFindings.filter(v => v.verifyStatus !== VERIFY_STATUS.REJECTED)
+    const unverifiedFindings = activeFindings.filter(v => v.verifyStatus === VERIFY_STATUS.UNVERIFIED)
+    const confirmedFindings = activeFindings.filter(v => v.verifyStatus === VERIFY_STATUS.CONFIRMED)
+    for (const v of reportedFindings) {
+      v.rawCount = v.members ? v.members.length : 1
+      delete v.members
+    }
   scan._findingCount = vulnerabilities.length
   const scans = [scan]
   const isWhitebox = scan.mode === 'whitebox' || scan.target_type === 'code'
@@ -2547,14 +2885,25 @@ export async function generateReport(scanId, minSeverity = 'info', statusFilter 
   // ── AI-GENERATED INSIGHTS ──
   // These are the AI's INDEPENDENT analysis — not a regurgitation of scanner output.
   // This is what makes the audit report different from raw scanner results.
+  // Everything downstream renders the aggregated, classified picture: rejected
+  // claims never reach a page, and unverified leads are called out separately
+  // instead of being mixed in with reproduced findings.
+  const reportFindings = activeFindings
   const counts = { critical: 0, high: 0, medium: 0, low: 0, info: 0 }
-  for (const v of vulnerabilities) counts[v.severity] = (counts[v.severity] || 0) + 1
-  const owaspCategories = [...new Set(vulnerabilities.map(v => v.owaspCategory).filter(Boolean))]
-  const modules = [...new Set(vulnerabilities.map(v => v.module).filter(Boolean))]
-  const topFindings = vulnerabilities
+  for (const v of reportFindings) counts[v.severity] = (counts[v.severity] || 0) + 1
+  const owaspCategories = [...new Set(reportFindings.map(v => v.owaspCategory).filter(Boolean))]
+  const modules = [...new Set(reportFindings.map(v => v.module).filter(Boolean))]
+  const topFindings = reportFindings
     .filter(v => ['critical', 'high'].includes(v.severity))
     .slice(0, 10)
     .map(v => ({ title: v.title, severity: v.severity, owaspCategory: v.owaspCategory }))
+  const verificationSummary = {
+    confirmed: confirmedFindings.length,
+    unverified: unverifiedFindings.length,
+    rejected: rejectedFindings.length,
+    rawFindings: vulnerabilities.length,
+    reportedRootCauses: reportFindings.length,
+  }
 
   let aiNarrative = null
   let aiAttackChain = null
@@ -2562,7 +2911,7 @@ export async function generateReport(scanId, minSeverity = 'info', statusFilter 
   try {
     aiNarrative = await Promise.race([
       aiEngine.summarize({
-        target: scan.target, totalFindings: vulnerabilities.length,
+        target: scan.target, totalFindings: reportFindings.length,
         severityCounts: counts, topFindings, owaspCategories, isWhitebox, modules,
       }),
       aiRaceTimeout(30000, 'AI summarize'),
@@ -2570,32 +2919,34 @@ export async function generateReport(scanId, minSeverity = 'info', statusFilter 
   } catch (e) { console.warn('[Report] AI narrative skipped:', e.message) }
   try {
     aiAttackChain = await Promise.race([
-      aiEngine.generateAttackChain(vulnerabilities, scan.target),
+      aiEngine.generateAttackChain(reportFindings, scan.target),
       aiRaceTimeout(30000, 'AI attack chain'),
     ])
   } catch (e) { console.warn('[Report] AI attack chain skipped:', e.message) }
 
-  // ── AI-GENERATED PoC EXPLOITS for critical/high findings ──
-  // The AI produces tailored, copy-pasteable exploits using the ACTUAL
-    // vulnerable code or URL evidence — far more useful than generic template PoCs.
-    // Include ALL critical/high findings (code evidence for whitebox, URL/response
-    // evidence for blackbox) so the exploit section is never empty. If a scan has
-    // no critical/high findings, fall back to medium so the section still renders.
-    let pocCandidates = vulnerabilities.filter(v =>
-      ['critical', 'high'].includes(v.severity)
-    )
-    if (!pocCandidates.length) {
-      pocCandidates = vulnerabilities.filter(v => v.severity === 'medium')
+  // ── AI-GENERATED PoC EXPLOITS ──
+  // The AI produces tailored, copy-pasteable exploits using the ACTUAL vulnerable
+  // code or URL evidence. Candidates are drawn ONLY from reproduced findings: a
+  // weaponised exploit for a claim we have not proven hands the reader a precise
+  // recipe for something that may not exist. Leads get a reproduction hint in the
+  // appendix instead, which is what actually settles them.
+  {
+    const pocCandidatesAll = confirmedFindings
+      .filter(v => ['critical', 'high', 'medium'].includes(String(v.severity).toLowerCase()))
+      .slice(0, 8) // limit to avoid excessive LLM calls
+    if (!pocCandidatesAll.length) {
+      console.warn('[Report] No reproduced critical/high/medium finding — skipping AI PoC generation')
     }
-    pocCandidates = pocCandidates.slice(0, 8) // limit to avoid excessive LLM calls
-  if (pocCandidates.length) {
     const targetType = isWhitebox ? 'code' : 'url'
-    const pocPromises = pocCandidates.map(async v => {
+    const pocPromises = pocCandidatesAll.map(async v => {
       try {
         const aiPoc = await aiEngine.generateExploitPoc(v, targetType)
         if (aiPoc) {
           // Build a rich PoC payload replacing the template-generated one
-          const steps = (aiPoc.exploitSteps || []).map((s, i) => `${i + 1}. ${s}`).join('\n')
+          // Models usually number their own steps; re-numbering produced "1. 1. Send…".
+          const steps = (aiPoc.exploitSteps || [])
+            .map((s, i) => (/^\s*\d+[.)]/.test(String(s)) ? String(s) : `${i + 1}. ${s}`))
+            .join('\n')
           v.pocPayload = [
             aiPoc.attackCommand ? `Attack Command:\n${aiPoc.attackCommand}` : '',
             aiPoc.pocPayload ? `\nPayload:\n${aiPoc.pocPayload}` : '',
@@ -2604,8 +2955,22 @@ export async function generateReport(scanId, minSeverity = 'info', statusFilter 
             aiPoc.prerequisites ? `\nPrerequisites:\n${aiPoc.prerequisites}` : '',
           ].filter(Boolean).join('\n')
           v.pocSource = 'ai-generated'
+        } else {
+          // No tailored reproduction was produced. Say so on the page instead of
+          // presenting the generic template as if it were specific to this target.
+          v.pocDeclined = true
+          v.pocSource = 'template'
         }
-      } catch { /* keep template PoC on failure */ }
+      } catch (e) {
+        const declined = e?.declined === true
+        const reason = declined
+          ? 'no model would draft a tailored reproduction for this finding'
+          : `PoC generation failed (${e?.message || 'unknown error'})`
+        console.warn(`[Report] ${reason}: ${v.title}`)
+        v.pocDeclined = true
+        v.pocDeclineReason = reason
+        v.pocSource = 'template'
+      }
       return v
     })
     await Promise.all(pocPromises)
@@ -2622,7 +2987,7 @@ export async function generateReport(scanId, minSeverity = 'info', statusFilter 
     if (reportType === 'simple') {
         // Extract detected tech stack from whatweb findings for click-path prescriptions
         const detectedTech = []
-        for (const v of vulnerabilities) {
+        for (const v of reportFindings) {
           const mod = v.module || ''
           const title = v.title || ''
           if (mod === 'native:whatweb' || /whatweb/i.test(title)) {
@@ -2634,17 +2999,24 @@ export async function generateReport(scanId, minSeverity = 'info', statusFilter 
 
         let simplifiedGuide = null
         try {
-          simplifiedGuide = await aiEngine.generateSimplifiedActionGuide(vulnerabilities, scan.target, uniqueTech)
+          // Feed the guide only reproduced findings: it echoes what it is given
+          // back as action items, so handing it the leads reintroduces them.
+          const guideInput = confirmedFindings.length > 0 ? confirmedFindings : []
+          simplifiedGuide = await aiEngine.generateSimplifiedActionGuide(guideInput, scan.target, uniqueTech)
         } catch { /* non-fatal */ }
         await renderSimplifiedPdf({
           file, reportTitle: custom.customTitle || `Simplified IT Action Guide: ${scan.target || 'Unknown Target'}`,
-          scans, project, vulnerabilities, isWhitebox, aiNarrative, simplifiedGuide, custom, detectedTech: uniqueTech,
+          scans, project, vulnerabilities: reportFindings, isWhitebox, aiNarrative, simplifiedGuide, custom, detectedTech: uniqueTech,
+          unverifiedFindings, rejectedFindings, verificationSummary,
         })
         try { fs.copyFileSync(file, friendlyFile) } catch {}
         return { file, friendlyFile, filename, counts, riskScore: scan.risk_score, reportType: 'simple' }
       }
 
-    await renderPdf({ file, reportTitle, scans, project, vulnerabilities, isWhitebox, aiNarrative, aiAttackChain, custom })
+    await renderPdf({
+      file, reportTitle, scans, project, vulnerabilities: reportFindings, isWhitebox, aiNarrative, aiAttackChain, custom,
+      unverifiedFindings, rejectedFindings, verificationSummary,
+    })
 
     try {
       fs.copyFileSync(file, friendlyFile)
@@ -2670,12 +3042,31 @@ export async function generateProjectReport(projectId) {
   }
   const isWhitebox = scans.some(s => s.mode === 'whitebox' || s.target_type === 'code')
 
+  // Same contract as a single-scan report: classify, then aggregate repeats.
+  const allViews = vulnerabilities.map(classifyFinding)
+  const reportedFindings = aggregateFindings(allViews)
+  const rejectedFindings = reportedFindings.filter(v => v.verifyStatus === VERIFY_STATUS.REJECTED)
+  const activeFindings = reportedFindings.filter(v => v.verifyStatus !== VERIFY_STATUS.REJECTED)
+  const unverifiedFindings = activeFindings.filter(v => v.verifyStatus === VERIFY_STATUS.UNVERIFIED)
+  const confirmedFindings = activeFindings.filter(v => v.verifyStatus === VERIFY_STATUS.CONFIRMED)
+  for (const v of reportedFindings) {
+    v.rawCount = v.members ? v.members.length : 1
+    delete v.members
+  }
+  const verificationSummary = {
+    confirmed: confirmedFindings.length,
+    unverified: unverifiedFindings.length,
+    rejected: rejectedFindings.length,
+    rawFindings: allViews.length,
+    reportedRootCauses: activeFindings.length,
+  }
+
   // ── AI-GENERATED INSIGHTS for project report ──
   const counts = { critical: 0, high: 0, medium: 0, low: 0, info: 0 }
-  for (const v of vulnerabilities) counts[v.severity] = (counts[v.severity] || 0) + 1
-  const owaspCategories = [...new Set(vulnerabilities.map(v => v.owaspCategory).filter(Boolean))]
-  const modules = [...new Set(vulnerabilities.map(v => v.module).filter(Boolean))]
-  const topFindings = vulnerabilities
+  for (const v of activeFindings) counts[v.severity] = (counts[v.severity] || 0) + 1
+  const owaspCategories = [...new Set(activeFindings.map(v => v.owaspCategory).filter(Boolean))]
+  const modules = [...new Set(activeFindings.map(v => v.module).filter(Boolean))]
+  const topFindings = activeFindings
     .filter(v => ['critical', 'high'].includes(v.severity))
     .slice(0, 10)
     .map(v => ({ title: v.title, severity: v.severity, owaspCategory: v.owaspCategory }))
@@ -2684,20 +3075,24 @@ export async function generateProjectReport(projectId) {
   let aiAttackChain = null
   try {
     aiNarrative = await aiEngine.summarize({
-      target: project.name, totalFindings: vulnerabilities.length,
+      target: project.name, totalFindings: activeFindings.length,
       severityCounts: counts, topFindings, owaspCategories, isWhitebox, modules,
     })
   } catch { /* non-fatal */ }
   try {
-    aiAttackChain = await aiEngine.generateAttackChain(vulnerabilities, project.name)
+    aiAttackChain = await aiEngine.generateAttackChain(activeFindings, project.name)
   } catch { /* non-fatal */ }
 
   const file = path.join(config.outputDir, `report-project-${projectId}.pdf`)
-  await renderPdf({ file, reportTitle: `Project Report: ${project.name}`, scans, project, vulnerabilities, isWhitebox, aiNarrative, aiAttackChain })
+  await renderPdf({
+    file, reportTitle: `Project Report: ${project.name}`, scans, project,
+    vulnerabilities: activeFindings, isWhitebox, aiNarrative, aiAttackChain,
+    unverifiedFindings, rejectedFindings, verificationSummary,
+  })
   return { file }
 }
 
-async function renderPdf({ file, reportTitle, scans, project, vulnerabilities, isWhitebox, aiNarrative = null, aiAttackChain = null, custom = {} }) {
+async function renderPdf({ file, reportTitle, scans, project, vulnerabilities, isWhitebox, aiNarrative = null, aiAttackChain = null, custom = {}, unverifiedFindings = [], rejectedFindings = [], verificationSummary = null }) {
   await new Promise((resolve, reject) => {
     const doc = new PDFDocument({
       size: 'A4',
@@ -2719,7 +3114,7 @@ async function renderPdf({ file, reportTitle, scans, project, vulnerabilities, i
     renderTableOfContents(doc)
 
     doc.addPage()
-    renderExecutiveSummary(doc, { vulnerabilities, scans, isWhitebox, aiNarrative, aiAttackChain })
+    renderExecutiveSummary(doc, { vulnerabilities, scans, isWhitebox, aiNarrative, aiAttackChain, verificationSummary })
 
     const smartBreak = () => {
       const usable = doc.page.height - doc.page.margins.top - doc.page.margins.bottom
@@ -2743,11 +3138,15 @@ async function renderPdf({ file, reportTitle, scans, project, vulnerabilities, i
     smartBreak()
     renderFindingsSummary(doc, { vulnerabilities })
 
+    renderClassificationTable(doc, { vulnerabilities })
+
     doc.addPage()
     renderDetailedFindings(doc, { vulnerabilities, isWhitebox })
 
+    renderUnverifiedAppendix(doc, { unverifiedFindings, rejectedFindings })
+
     smartBreak()
-    renderAppendix(doc, { scans, project, isWhitebox })
+    renderAppendix(doc, { scans, project, isWhitebox, verificationSummary })
 
     // Page footers & headers
     const range = doc.bufferedPageRange()
@@ -2899,7 +3298,7 @@ function buildSimplifiedActionItem(v, index, detectedTech = []) {
  * Strips out raw scanner noise and provides structured, clean, emoji-free
  * visual dashboards, priority matrix tables, step-by-step fix cards, and sign-off checklists.
  */
-async function renderSimplifiedPdf({ file, reportTitle, scans = [], project = null, vulnerabilities = [], isWhitebox = false, aiNarrative = null, simplifiedGuide = null, custom = {}, detectedTech = [] }) {
+async function renderSimplifiedPdf({ file, reportTitle, scans = [], project = null, vulnerabilities = [], isWhitebox = false, aiNarrative = null, simplifiedGuide = null, custom = {}, detectedTech = [], unverifiedFindings = [], rejectedFindings = [], verificationSummary = null }) {
   await new Promise((resolve, reject) => {
     const doc = new PDFDocument({
       size: 'A4',
@@ -2920,12 +3319,37 @@ async function renderSimplifiedPdf({ file, reportTitle, scans = [], project = nu
     const leftX = doc.page.margins.left
     const rightX = doc.page.width - doc.page.margins.right
 
+    // Only reproduced findings become action items. An unverified lead has no
+    // artifact behind it, so telling an IT team to spend time patching it is the
+    // exact dishonesty this contract exists to prevent. Leads stay visible in
+    // Appendix A with their reproduction hint; they never enter the work queue.
+    const confirmedVulnerabilities = (Array.isArray(vulnerabilities) ? vulnerabilities : [])
+      .filter(v => v && v.verifyStatus !== VERIFY_STATUS.UNVERIFIED && v.verifyStatus !== VERIFY_STATUS.REJECTED)
+
     // Triage counts
-    const criticalFindings = vulnerabilities.filter(v => (v.severity || '').toLowerCase() === 'critical')
-    const highFindings = vulnerabilities.filter(v => (v.severity || '').toLowerCase() === 'high')
-    const mediumFindings = vulnerabilities.filter(v => (v.severity || '').toLowerCase() === 'medium')
-    const lowFindings = vulnerabilities.filter(v => (v.severity || '').toLowerCase() === 'low')
-    const infoFindings = vulnerabilities.filter(v => (v.severity || '').toLowerCase() === 'info')
+    // Only validated issues become action items. Unproven leads are counted in
+    // the verification panel so the operator sees them without them inflating
+    // the work queue.
+    if (verificationSummary) {
+      const vs = verificationSummary
+      const vy = doc.y
+      doc.rect(leftX, vy, w, 62).fillAndStroke('#F0F9FF', '#BAE6FD')
+      doc.fontSize(10).font('Helvetica-Bold').fillColor(BRAND.primary)
+        .text('Evidence validation', leftX + 12, vy + 9)
+      const ledger =
+        `${vs.rawFindings} raw observation(s) reduced to ${vs.reportedRootCauses} distinct issue(s); ` +
+        `${vs.confirmed} confirmed with a captured artifact, ${vs.unverified} unverified (see Appendix A), ` +
+        `${vs.rejected} rejected by evidence and excluded from all action items.`
+      doc.fontSize(8.5).font('Helvetica').fillColor(BRAND.textDark)
+        .text(sanitizePdfText(ledger), leftX + 12, vy + 24, { width: w - 24, height: 30 })
+      doc.y = vy + 70
+      doc.moveDown(0.6)
+    }
+    const criticalFindings = confirmedVulnerabilities.filter(v => (v.severity || '').toLowerCase() === 'critical')
+    const highFindings = confirmedVulnerabilities.filter(v => (v.severity || '').toLowerCase() === 'high')
+    const mediumFindings = confirmedVulnerabilities.filter(v => (v.severity || '').toLowerCase() === 'medium')
+    const lowFindings = confirmedVulnerabilities.filter(v => (v.severity || '').toLowerCase() === 'low')
+    const infoFindings = confirmedVulnerabilities.filter(v => (v.severity || '').toLowerCase() === 'info')
 
     const todayCount = simplifiedGuide?.taskCountToday !== undefined 
       ? Number(simplifiedGuide.taskCountToday) 
@@ -2935,33 +3359,53 @@ async function renderSimplifiedPdf({ file, reportTitle, scans = [], project = nu
     const actionableTotal = todayCount + weekCount + laterCount
 
     // Items list (from AI guide or enriched findings)
+    // The AI guide is asked about `confirmedVulnerabilities` for exactly this
+    // reason: previously it echoed the unproven leads back as fix cards, so the
+    // same report claimed "4 unverified" and then told the operator to go patch
+    // them. Matching back to the finding is what lets us prove the item is
+    // grounded; an item we cannot ground is discarded, never printed.
     let items = []
     if (simplifiedGuide?.actionItems && Array.isArray(simplifiedGuide.actionItems) && simplifiedGuide.actionItems.length > 0) {
-      items = simplifiedGuide.actionItems.map((item, idx) => {
-        const matched = vulnerabilities.find(v =>
-          (v.title && item.title && (v.title.toLowerCase().includes(item.title.toLowerCase()) || item.title.toLowerCase().includes(v.title.toLowerCase()))) ||
-          ((v.severity || '').toLowerCase() === (item.severity || '').toLowerCase())
-        )
-        const sev = (item.severity || matched?.severity || 'medium').toLowerCase()
-        return {
-          title: sanitizePdfText(item.title || `Action Item #${idx + 1}`),
-          severity: sev,
-          cvss: item.cvss ?? matched?.cvss ?? null,
-          cvssVector: item.cvssVector ?? matched?.cvss_vector ?? null,
-          finding: matched,
-          symptom: sanitizePdfText(item.symptom || 'Anomalous configuration identified on target system.'),
-          risk: sanitizePdfText(item.risk || 'Presents security risks if left unaddressed.'),
-          prescription: sanitizePdfText(item.prescription || 'Apply recommended vendor configuration hardening.'),
-          urgency: item.urgency === 'fix-today' ? 'fix-today' : item.urgency === 'this-week' ? 'this-week' : 'optional',
-          difficulty: item.difficulty === 'easy' ? 'easy' : item.difficulty === 'hard' ? 'hard' : 'medium',
-          estimatedMinutes: parseInt(item.estimatedMinutes, 10) || 25,
-          verification: sanitizePdfText(item.verification || 'Re-scan with SentinelAI after applying changes.'),
-          confidence: item.confidence != null ? Number(item.confidence) : (matched ? confidencePercent(matched) : 75),
-          references: Array.isArray(item.references) ? item.references.filter(Boolean).slice(0, 4) : [],
-        }
-      })
-    } else {
-      const sortedVulnerabilities = [...vulnerabilities].sort((a, b) => {
+      items = simplifiedGuide.actionItems
+        .map((item, idx) => {
+          const matched = confirmedVulnerabilities.find(v =>
+            (v.title && item.title && (v.title.toLowerCase().includes(item.title.toLowerCase()) || item.title.toLowerCase().includes(v.title.toLowerCase()))) ||
+            ((v.severity || '').toLowerCase() === (item.severity || '').toLowerCase())
+          )
+          const sev = (item.severity || matched?.severity || 'medium').toLowerCase()
+          return {
+            title: sanitizePdfText(item.title || `Action Item #${idx + 1}`),
+            severity: sev,
+            cvss: item.cvss ?? matched?.cvss ?? null,
+            cvssVector: item.cvssVector ?? matched?.cvss_vector ?? null,
+            finding: matched,
+            symptom: sanitizePdfText(item.symptom || 'Anomalous configuration identified on target system.'),
+            risk: sanitizePdfText(item.risk || 'Presents security risks if left unaddressed.'),
+            prescription: sanitizePdfText(item.prescription || 'Apply recommended vendor configuration hardening.'),
+            urgency: item.urgency === 'fix-today' ? 'fix-today' : item.urgency === 'this-week' ? 'this-week' : 'optional',
+            difficulty: item.difficulty === 'easy' ? 'easy' : item.difficulty === 'hard' ? 'hard' : 'medium',
+            estimatedMinutes: parseInt(item.estimatedMinutes, 10) || 25,
+            verification: sanitizePdfText(item.verification || 'Re-scan with SentinelAI after applying changes.'),
+            confidence: item.confidence != null ? Number(item.confidence) : (matched ? confidencePercent(matched) : 75),
+            references: Array.isArray(item.references) ? item.references.filter(Boolean).slice(0, 4) : [],
+          }
+        })
+        .filter(item => {
+          // "General Security Maintenance" is filler, not a fix. A card may only
+          // stay if it points at a reproduced finding and carries real prose.
+          if (item.finding) return true
+          const fillerTitle = /general security maintenance|action item|miscellaneous|other issues/i.test(item.title)
+          const fillerSymptom = /anomalous configuration|presents security risks if left/i.test(item.symptom)
+          const fillerPrescription = /apply recommended vendor configuration|vendor or framework fix/i.test(item.prescription)
+          if (fillerTitle || (fillerSymptom && fillerPrescription)) {
+            console.warn(`[Report] Dropped ungrounded action card: "${item.title}"`)
+            return false
+          }
+          return false
+        })
+    }
+    if (!items.length) {
+      const sortedVulnerabilities = [...confirmedVulnerabilities].sort((a, b) => {
         const ai = SEV_ORDER.indexOf((a.severity || 'info').toLowerCase())
         const bi = SEV_ORDER.indexOf((b.severity || 'info').toLowerCase())
         if (ai !== bi) return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi)
@@ -3329,7 +3773,10 @@ async function renderSimplifiedPdf({ file, reportTitle, scans = [], project = nu
         const sevColor = SEV_COLORS[sevKey] || SEV_COLORS.info
 
         const sevBadgeText = `${sevKey.toUpperCase()} ${score.toFixed(1)}`
-        const confVal = Math.max(10, Math.min(100, Math.round(Number(item.confidence ?? (item.finding ? confidencePercent(item.finding) : 75)))))
+        // Never floor this. A card above warns the reader that confidence is
+        // evidence certainty; printing 75% for a finding whose reviewer said 10%
+        // contradicts the sentence sitting next to it.
+        const confVal = Math.max(0, Math.min(100, Math.round(Number(item.confidence ?? (item.finding ? confidencePercent(item.finding) : 75)))))
         const confBadgeText = `AI CONFIDENCE ${confVal}%`
 
         // Measure badges from right to left to avoid any overlapping
@@ -3349,13 +3796,23 @@ async function renderSimplifiedPdf({ file, reportTitle, scans = [], project = nu
 
         const symptomH = Math.max(14, doc.fontSize(8.5).font('Helvetica').heightOfString(item.symptom || 'N/A', { width: w - 144, lineGap: 2.5 }))
         const riskH = Math.max(14, doc.fontSize(8.5).font('Helvetica').heightOfString(item.risk || 'N/A', { width: w - 144, lineGap: 2.5 }))
-        
+
+        // Captured proof and a copy-pasteable reproduction command. Without these
+        // the operator is told "this is real" without ever seeing the request that
+        // produced it, and has nothing to run before and after the fix.
+        const proofLine = item.finding ? describeCapturedProof(item.finding) : null
+        const reproCmd = item.finding
+          ? concreteVerification(item.finding, findingEvidenceContext(item.finding).endpoint)
+          : null
+        const proofH = proofLine ? Math.max(12, doc.fontSize(8).font('Courier').heightOfString(proofLine, { width: w - 48, lineGap: 2 })) + 26 : 0
+        const reproH = reproCmd ? Math.max(12, doc.fontSize(8).font('Courier').heightOfString(reproCmd, { width: w - 48, lineGap: 2 })) + 26 : 0
+
         // Measure Courier font for code/prescription accurately
         const prescH = Math.max(14, doc.fontSize(8.5).font('Courier').heightOfString(item.prescription || 'N/A', { width: w - 48, lineGap: 2.5 }))
         const prescBoxH = prescH + 44
 
         // Total card height with clean, spacious vertical padding
-        const totalCardH = headerH + symptomH + 12 + riskH + 14 + prescBoxH + 18
+        const totalCardH = headerH + symptomH + 12 + riskH + 14 + prescBoxH + proofH + reproH + 18
 
         // Page break if needed
         if (doc.y + totalCardH > doc.page.height - 50) {
@@ -3371,7 +3828,7 @@ async function renderSimplifiedPdf({ file, reportTitle, scans = [], project = nu
 
         // Title row (multiline-safe)
         doc.fontSize(11).font('Helvetica-Bold').fillColor(BRAND.primary)
-          .text(titleText, leftX + 14, cardY + 12, { width: maxTitleW })
+          .text(titleText, leftX + 14, cardY + 12, { width: maxTitleW, height: Math.max(titleH, headerH - 14) })
 
         // 2 Badges: Severity with formula score & AI Confidence
         drawRoundedBadge(doc, sevBadgeText, sevX, cardY + 10, sevColor.bg, '#FFFFFF', null, 2)
@@ -3381,22 +3838,41 @@ async function renderSimplifiedPdf({ file, reportTitle, scans = [], project = nu
 
         // Row 1: Symptom
         doc.fontSize(8).font('Helvetica-Bold').fillColor(BRAND.textMuted).text('WHAT WAS FOUND:', leftX + 14, contentY, { width: 110 })
-        doc.fontSize(8.5).font('Helvetica').fillColor(BRAND.textDark).text(item.symptom || 'N/A', leftX + 130, contentY, { width: w - 144, lineGap: 2.5 })
+        doc.fontSize(8.5).font('Helvetica').fillColor(BRAND.textDark).text(item.symptom || 'N/A', leftX + 130, contentY, { width: w - 144, lineGap: 2.5, height: symptomH + 4 })
         contentY += symptomH + 12
 
         // Row 2: Risk
         doc.fontSize(8).font('Helvetica-Bold').fillColor('#DC2626').text('WHY IT MATTERS:', leftX + 14, contentY, { width: 110 })
-        doc.fontSize(8.5).font('Helvetica').fillColor(BRAND.textDark).text(item.risk || 'N/A', leftX + 130, contentY, { width: w - 144, lineGap: 2.5 })
+        doc.fontSize(8.5).font('Helvetica').fillColor(BRAND.textDark).text(item.risk || 'N/A', leftX + 130, contentY, { width: w - 144, lineGap: 2.5, height: riskH + 4 })
         contentY += riskH + 14
 
         // Row 3: Prescription Box (HOW TO FIX)
         doc.roundedRect(leftX + 14, contentY, w - 28, prescBoxH, 3).fillAndStroke('#F8FAFC', BRAND.cardBorder)
         doc.rect(leftX + 14, contentY, 3, prescBoxH).fill('#16A34A')
         doc.fontSize(8).font('Helvetica-Bold').fillColor('#16A34A').text('HOW TO FIX (RECOMMENDED REMEDIATION):', leftX + 24, contentY + 7)
-        doc.fontSize(8.5).font('Courier').fillColor(BRAND.primary).text(item.prescription || 'N/A', leftX + 24, contentY + 22, { width: w - 48, lineGap: 2.5 })
+        doc.fontSize(8.5).font('Courier').fillColor(BRAND.primary).text(item.prescription || 'N/A', leftX + 24, contentY + 22, { width: w - 48, lineGap: 2.5, height: prescH + 4 })
         doc.fontSize(7.5).font('Helvetica').fillColor(BRAND.textMuted)
           .text(`Severity: ${sevKey.toUpperCase()} (CVSS ${score.toFixed(1)})  |  AI Confidence: ${confVal}% (evidence certainty, separate from CVSS impact)`,
             leftX + 24, contentY + prescBoxH - 12, { width: w - 48 })
+        contentY += prescBoxH + 10
+
+        // Row 4: What we actually observed (the artifact, verbatim)
+        if (proofLine) {
+          doc.roundedRect(leftX + 14, contentY, w - 28, proofH, 3).fillAndStroke('#EFF6FF', '#BFDBFE')
+          doc.rect(leftX + 14, contentY, 3, proofH).fill('#2563EB')
+          doc.fontSize(8).font('Helvetica-Bold').fillColor('#2563EB').text('WHAT WE CAPTURED (PROOF):', leftX + 24, contentY + 7)
+          doc.fontSize(8).font('Courier').fillColor(BRAND.textDark).text(proofLine, leftX + 24, contentY + 21, { width: w - 48, lineGap: 2, height: proofH - 24 })
+          contentY += proofH + 8
+        }
+
+        // Row 5: The exact command that reproduces it, before and after the fix
+        if (reproCmd) {
+          doc.roundedRect(leftX + 14, contentY, w - 28, reproH, 3).fillAndStroke('#FFFBEB', '#FDE68A')
+          doc.rect(leftX + 14, contentY, 3, reproH).fill('#D97706')
+          doc.fontSize(8).font('Helvetica-Bold').fillColor('#B45309').text('REPRODUCE / VERIFY THE FIX:', leftX + 24, contentY + 7)
+          doc.fontSize(8).font('Courier').fillColor(BRAND.textDark).text(reproCmd, leftX + 24, contentY + 21, { width: w - 48, lineGap: 2, height: reproH - 24 })
+          contentY += reproH + 8
+        }
 
         // Final Y position below the card with generous breathing space
         doc.y = cardY + totalCardH + 24
@@ -3407,7 +3883,9 @@ async function renderSimplifiedPdf({ file, reportTitle, scans = [], project = nu
     // PAGE 4 (or Final Page): IT OPERATIONS CHECKLIST & SIGN-OFF
     // =========================================================================
     const checkRowH = 22
-    const checkRowCount = Math.max(3, Math.min(items.length, 8))
+    // Only render rows we actually have action items for. Padding the table with
+    // synthetic rows invented an action directive the report never recommended.
+    const checkRowCount = Math.max(1, Math.min(items.length, 8))
     const checkTableH = 22 + checkRowCount * checkRowH
     // Reserve room for: section title, checklist table, gap, sign-off card, footnote.
     const closingBlockH = 40 + checkTableH + 16 + 65 + 30 + (custom.customConclusion ? 50 : 0)
@@ -3438,11 +3916,11 @@ async function renderSimplifiedPdf({ file, reportTitle, scans = [], project = nu
 
       doc.fontSize(8).font('Helvetica-Bold').fillColor(BRAND.primary).text(String(c + 1), leftX + 10, rowY + 6, { width: 20 })
       doc.fontSize(8).font('Helvetica').fillColor(BRAND.textDark).text(
-        itm ? String(itm.title).slice(0, 42) : 'General Security Maintenance',
+        String(itm.title).slice(0, 42),
         leftX + 35, rowY + 6, { width: 230 },
       )
-      
-      const sevLabel = itm ? itm.severity.toUpperCase() : 'MEDIUM'
+
+      const sevLabel = String(itm.severity || 'medium').toUpperCase()
       const sevColor = SEV_COLORS[itm?.severity] || SEV_COLORS.medium
       drawRoundedBadge(doc, sevLabel, leftX + 270, rowY + 4, sevColor.bg, '#FFFFFF', null, 2)
 
@@ -3470,6 +3948,61 @@ async function renderSimplifiedPdf({ file, reportTitle, scans = [], project = nu
       '* After implementing all fixes, re-trigger a SentinelAI verification scan to ensure 100% compliance closure.',
       leftX + 16, signY + 48, { width: w - 32 },
     )
+
+    // =========================================================================
+    // UNVERIFIED LEADS & REJECTED OBSERVATIONS
+    // Kept out of the action queue: nothing here has been proven, so listing it
+    // as a fix task would create work that may be chasing a scanner artifact.
+    // =========================================================================
+    if (unverifiedFindings.length || rejectedFindings.length) {
+      ensureSpace(doc, 90)
+      const ax = leftX
+      doc.rect(ax, doc.y, 4, 16).fill(BRAND.accent)
+      doc.fontSize(12).font('Helvetica-Bold').fillColor(BRAND.primary)
+        .text('Appendix A.  Unverified & Rejected Observations', ax + 12, doc.y)
+      doc.moveDown(0.35)
+      doc.fontSize(8).font('Helvetica').fillColor(BRAND.textMuted)
+        .text('Not action items. Reproduce each lead before treating it as a defect.', ax, doc.y, { width: w })
+      doc.moveDown(0.7)
+
+      if (unverifiedFindings.length) {
+        doc.fontSize(9.5).font('Helvetica-Bold').fillColor('#B45309').text(`Unverified leads (${unverifiedFindings.length})`, ax, doc.y)
+        doc.moveDown(0.35)
+        for (const v of unverifiedFindings) {
+          if (doc.y + 54 > doc.page.height - 60) doc.addPage()
+          const y = doc.y
+          doc.rect(ax, y, 3, 44).fill('#D97706')
+          drawPillBadge(doc, 'UNVERIFIED', ax + 9, y + 2, '#B45309')
+          doc.fontSize(8.5).font('Helvetica-Bold').fillColor(BRAND.textDark)
+            .text(sanitizePdfText(String(v.title || '').slice(0, 100)), ax + 82, y + 3, { width: w - 90, height: 12, ellipsis: true })
+          const detail = [
+            v.aiReasoning ? `Not proven: ${v.aiReasoning}` : null,
+            v.occurrences > 1 ? `Seen ${v.occurrences}x${v.locations && v.locations.length ? ` (e.g. ${v.locations.slice(0, 2).join(', ')})` : ''}.` : null,
+            `To confirm: ${describeReproduction(v)}`,
+          ].filter(Boolean).join(' ')
+          doc.fontSize(7.5).font('Helvetica').fillColor(BRAND.textDark)
+            .text(sanitizePdfText(detail), ax + 9, y + 17, { width: w - 18, height: 26, ellipsis: true })
+          doc.y = y + 48
+        }
+        doc.moveDown(0.4)
+      }
+
+      if (rejectedFindings.length) {
+        if (doc.y + 50 > doc.page.height - 60) doc.addPage()
+        doc.fontSize(9.5).font('Helvetica-Bold').fillColor('#B91C1C').text(`Rejected by evidence (${rejectedFindings.length})`, ax, doc.y)
+        doc.moveDown(0.35)
+        for (const v of rejectedFindings) {
+          if (doc.y + 24 > doc.page.height - 60) doc.addPage()
+          const y = doc.y
+          doc.rect(ax, y, w, 20).fillAndStroke('#FEF2F2', '#FECACA')
+          drawPillBadge(doc, 'REJECTED', ax + 7, y + 3.5, '#B91C1C')
+          doc.fontSize(8).font('Helvetica-Bold').fillColor(BRAND.textDark)
+            .text(sanitizePdfText(String(v.title || '').slice(0, 95)), ax + 75, y + 4, { width: w - 82, height: 11, ellipsis: true })
+          doc.y = y + 23
+        }
+      }
+      doc.moveDown(0.5)
+    }
 
     // Custom Conclusion if specified
     if (custom.customConclusion) {
