@@ -27,6 +27,12 @@ export function prettifyTitle(raw) {
   let t = String(raw).trim()
 
   // 1. Semantic pattern matchers for common scanner chatter
+  if (/^(?:whatweb:\s*)?technology stack\s*[—:-]/i.test(t)) {
+    return 'Technology Stack Detected'
+  }
+  if (/^whatweb:\s*technology stack detected\b/i.test(t)) {
+    return t.replace(/^whatweb:\s*/i, '')
+  }
   if (/uncommon header\(s\)\s*['"]([^'"]+)['"]/i.test(t)) {
     const m = t.match(/uncommon header\(s\)\s*['"]([^'"]+)['"]/i)
     return `Uncommon Header Detected: '${m[1]}'`
@@ -95,5 +101,5 @@ export function prettifyTitle(raw) {
     t = t.charAt(0).toUpperCase() + t.slice(1)
   }
 
-  return t || 'Security Finding'
+  return t ? (t.length > 140 ? `${t.slice(0, 137).trimEnd()}...` : t) : 'Security Finding'
 }

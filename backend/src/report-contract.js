@@ -189,13 +189,86 @@ function pickWitness(members) {
 }
 
 /**
+ * The concrete subject a finding names: paths, endpoints, dotted versions,
+ * filenames, hostnames. These are the tokens the group key deliberately
+ * erases, so they are what tells a correctly collapsed group from a wrongly
+ * collapsed one.
+ *
+ * Paths are matched with their leading slash. A slug-only pattern would miss
+ * `/swagger-ui` and `/api-docs` entirely — hyphens are not separators — which
+ * is exactly the case where two endpoint discoveries must be told apart.
+ */
+export function subjectDiscriminators(title) {
+  const s = String(title || '').toLowerCase().replace(/^\s*\d+\.\s*/, '')
+  const out = new Set()
+  for (const m of s.matchAll(/\/[a-z0-9_.~%-]+(?:\/[a-z0-9_.~%-]+)*/g)) out.add(m[0])
+  for (const m of s.matchAll(/\b[a-z0-9_-]+(?:\.[a-z0-9_-]+)+\b/g)) out.add(m[0])
+  for (const m of s.matchAll(/\b\d+(?:\.\d+)+\b/g)) out.add(m[0])
+  return out
+}
+
+/** The single path a finding names, for the collapsed row's location list. */
+export function primarySubjectPath(title) {
+  const s = String(title || '').replace(/^\s*\d+\.\s*/, '')
+  const m = s.match(/\/[A-Za-z0-9_.~%-]+(?:\/[A-Za-z0-9_.~%-]+)*/)
+  return m ? m[0] : null
+}
+
+/**
+ * Two titles name the same subject when their concrete identifiers agree. A
+ * title naming nothing concrete cannot contradict anything, so it always
+ * matches — "Technology Stack Detected" is not evidence for a specific path.
+ */
+export function subjectMatches(aTitle, bTitle) {
+  const a = subjectDiscriminators(aTitle)
+  const b = subjectDiscriminators(bTitle)
+  if (!a.size || !b.size) return true
+  for (const t of a) if (!b.has(t)) return false
+  for (const t of b) if (!a.has(t)) return false
+  return true
+}
+
+/**
+ * A collapsed group may only adopt a member's evidence when that member names
+ * the same subject the group prints.
+ *
+ * `aggregateFindings` normalises every path to `<path>` in the group key, so
+ * "API endpoint discovered: /swagger-ui", "…: /api/v1/admin" and every other
+ * discovered path are correctly one root cause — endpoint discovery ran and
+ * found N paths. But the group then printed the FIRST member's title above the
+ * most-captured member's payload, so card #24 was titled `/api/v1/admin` and
+ * carried `/swagger-ui`'s JSON as its proof. The report layer cannot see this
+ * (the DB is clean) because it materialises here, during aggregation.
+ *
+ * The witness is therefore restricted to members whose subject matches the
+ * group's title. Return null when nothing agrees, so the caller prints no
+ * evidence rather than another finding's evidence.
+ */
+function pickSubjectConsistentWitness(g) {
+  const wanted = subjectDiscriminators(g.title)
+  if (!wanted.size) return pickWitness(g.members)
+  const agreeing = g.members.filter((m) => {
+    const have = subjectDiscriminators(m.title)
+    for (const w of wanted) if (!have.has(w)) return false
+    return true
+  })
+  return agreeing.length ? pickWitness(agreeing) : null
+}
+
+/**
  * Re-derive a collapsed group's public fields from its members. Inheriting a
  * member's `evidence` without also inheriting that member's artifact field list
  * would print "Confirmed" above an empty evidence box — so status and evidence
  * are always recomputed together, never patched independently.
  */
 function reconcileGroup(g) {
-  const witness = pickWitness(g.members)
+  const witness = pickSubjectConsistentWitness(g) || pickWitness(g.members)
+  // The group prints its own subject. When the witness captured evidence for a
+  // different one, keep the status (a capture did happen for this root cause)
+  // but surface the mismatch so the renderer can withhold the payload instead
+  // of presenting another finding's proof.
+  const witnessSubjectMismatch = witness && !subjectMatches(witness.title, g.title) ? witness.title : null
+  g.evidenceSubjectMismatch = witnessSubjectMismatch
   g.evidence = witness.evidence
   g.poc = witness.poc
   g.pocSource = witness.pocSource
@@ -236,7 +309,11 @@ export function aggregateFindings(classified) {
       .replace(/\s+/g, ' ')
       .trim()
     const key = [v.category || 'uncategorized', v.module || '', normTitle].join('|')
-    const where = v.asset || (v.evidence && (v.evidence.url || v.evidence.path))
+    // The path is the useful location; the bare asset host is not. `asset` is
+    // the same host for every row of a scan, so letting it win produced
+    // "Observed at 25 locations (e.g. italeemc.iium.edu.my)" — a list of one
+    // repeated value that hid which endpoints were actually found.
+    const where = (v.evidence && (v.evidence.url || v.evidence.path)) || primarySubjectPath(v.title) || v.asset
     const existing = groups.get(key)
     if (existing) {
       existing.occurrences += 1

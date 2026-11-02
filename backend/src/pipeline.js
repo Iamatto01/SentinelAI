@@ -18,6 +18,7 @@ import {
   calculateCvss4,
   defaultVectorForFinding,
   severityFromCvss4Score,
+  evaluateFindingCvss,
 } from './cvss4.js'
 import * as db from './db.js'
 
@@ -31,8 +32,67 @@ import * as db from './db.js'
  * Emits live events via the provided emitter (WebSocket broadcast).
  */
 
-const SEVERITY_SCORE = { critical: 9.3, high: 8.7, medium: 5.3, low: 2.1, info: 0.0 }
+/**
+ * Score floor per severity band, used ONLY for ordering/ranking internals that
+ * never render a number. Any value that reaches a report must come from
+ * `evaluateFindingCvss()` — see the design contract in cvss4.js.
+ */
 const SEVERITY_RANK = { info: 0, low: 1, medium: 2, high: 3, critical: 4 }
+
+/**
+ * Stages that describe the same underlying fact ("this product/version is
+ * what's running here"). They share ONE fingerprint so the CVE correlation
+ * produced by the version audit merges into the EOL record instead of being
+ * deduplicated away as a "different" finding. Before this, the audit finding
+ * was collapsed by the title-keyed fingerprint and the report printed
+ * "nginx 1.18 … 0 matched" while NVD actually held applicable CVEs.
+ */
+const VERSION_FINDING_MODULES = new Set(['version-lifecycle', 'version-audit'])
+
+/**
+ * Resolve an EOL date for a detected `<major>.<minor>` branch.
+ *
+ * Hardcoded per-branch maps always go stale, and the previous implementation
+ * read `entry.eol[branch]` directly: a missing key yielded `undefined`,
+ * `new Date('undefined-01')` silently parsed as 2001-01-01T00:00:00Z (Node
+ * returns a VALID Date for this), and the report claimed an EOL date of
+ * "undefined" with "314 months" of exposure.
+ *
+ * Returns { status: 'supported' } for a null registry value,
+ * { status: 'unknown' } when nothing can be asserted, or
+ * { status: 'eol', eolDate, derived, oldestBranch }.
+ */
+function resolveEolDate(eolMap, branch) {
+  if (Object.prototype.hasOwnProperty.call(eolMap, branch)) {
+    const mapped = eolMap[branch]
+    if (mapped === null) return { status: 'supported' }
+    return { status: 'eol', eolDate: mapped, derived: false, oldestBranch: null }
+  }
+  // An untracked branch is still decidable when it is numerically OLDER than
+  // every tracked one: it must have reached EOL no later than the oldest
+  // tracked branch did. That is a conservative (never optimistic) answer.
+  const tracked = Object.keys(eolMap).filter(k => eolMap[k] !== null)
+  if (!tracked.length) return { status: 'unknown' }
+  let oldest = null
+  for (const key of tracked) {
+    if (!/^\d+(\.\d+)*$/.test(key) || !/^\d+(\.\d+)*$/.test(branch)) continue
+    if (compareDottedVersions(key, branch) > 0 && (!oldest || compareDottedVersions(key, oldest) < 0)) oldest = key
+  }
+  if (!oldest) return { status: 'unknown' }
+  return { status: 'eol', eolDate: eolMap[oldest], derived: true, oldestBranch: oldest }
+}
+
+function compareDottedVersions(a, b) {
+  const pa = String(a).split('.').map(n => parseInt(n, 10) || 0)
+  const pb = String(b).split('.').map(n => parseInt(n, 10) || 0)
+  const len = Math.max(pa.length, pb.length)
+  for (let i = 0; i < len; i++) {
+    const d = (pa[i] || 0) - (pb[i] || 0)
+    if (d !== 0) return d
+  }
+  return 0
+}
+
 
 function evidenceTier(finding, targetType) {
   const code = String(finding.evidence?.code || '')
@@ -41,6 +101,35 @@ function evidenceTier(finding, targetType) {
   if (/process\.env\.[A-Z0-9_]+\s*\|\||token|api.?key|secret/i.test(code)) return 'observed'
   if (/query\s*\(|queryRunner\.query|\.query\(/i.test(code) && /\$\{|\+/.test(code)) return 'needs-validation'
   return 'observed'
+}
+
+/**
+ * Union two evidence payloads from the same logical finding.
+ *
+ * The old merge wrote `{ ...storedEvidence, sources }` — discarding everything the
+ * incoming record had learned. That silently dropped the whole NVD correlation
+ * (`knownCves`, `criticalCount`, `totalCves`) whenever the version-audit record
+ * merged into the version-lifecycle record, which is why the report card printed
+ * "0 matched" for a component with six applicable CVEs.
+ *
+ * Contract: incoming values win where they are informative, stored values are
+ * kept where the incoming side says nothing (null/undefined/empty array).
+ */
+const NON_INFORMATIVE = new Set([null, undefined, '', 'unknown', 'n/a'])
+export function mergeFindingEvidence(stored = {}, incoming = {}) {
+  const out = { ...stored }
+  for (const [key, value] of Object.entries(incoming || {})) {
+    if (key === 'sources') continue
+    const informative = Array.isArray(value)
+      ? value.length > 0
+      : typeof value === 'object' && value !== null
+        ? Object.keys(value).length > 0
+        : !NON_INFORMATIVE.has(value)
+    // A concrete finding count is always better than "not looked up".
+    if (key === 'totalCves' && out[key] != null && out[key] !== 0 && (value == null || value === 0)) continue
+    if (informative || !(key in out)) out[key] = value
+  }
+  return out
 }
 
 function findingFingerprint(finding) {
@@ -53,6 +142,12 @@ function findingFingerprint(finding) {
     const raw = finding.target || evidence.url || ''
     try { return new URL(raw).hostname.toLowerCase() } catch { return String(raw).toLowerCase() }
   })()
+  // Product/version records are keyed on the PRODUCT, not the wording of the
+  // title, so the EOL stage and the CVE-audit stage collapse into one record
+  // that carries both halves of the truth.
+  if (VERSION_FINDING_MODULES.has(finding.module) && evidence.product) {
+    return `version|${String(evidence.product).toLowerCase()}|${host}`
+  }
   const category = /jwt|token|api.?key|secret|credential/i.test(finding.title || '') ? 'credential'
     : /sql injection|raw query|query interpolation/i.test(finding.title || '') ? 'sql-injection' : String(finding.title || '').toLowerCase()
   return `${cwe}|${file}|${line}|${category}|${host}`
@@ -433,13 +528,19 @@ export class UnifiedPipeline {
     const tier = f.evidence?.aiEvidenceTier === 'needs-validation' ? 'needs-validation' : evidenceTier(f, targetType)
     f.evidence = { ...(f.evidence || {}), validationTier: tier }
 
-    // Ensure CVSS v4.0 vector & score are evaluated using FIRST standard
-    if (!f.cvssVector) {
-      f.cvssVector = defaultVectorForFinding(f)
-    }
-    const cvssEval = calculateCvss4(f.cvssVector)
-    if (f.cvss == null || f.cvss === 0) {
-      f.cvss = cvssEval.score
+    // CVSS v4.0 score is DERIVED from the vector, never accepted from upstream.
+    // Trusting an inbound `f.cvss` let a tool's guess (10.0 on a log file) become
+    // permanent, and `Math.max()` in the merge below then made it unremovable —
+    // that is exactly how the report ended up ranking CRITICAL 9.3 below HIGH 10.0.
+    {
+      const evaluated = evaluateFindingCvss(f)
+      f.cvssVector = evaluated.vector
+      f.cvss = evaluated.score
+      f.severity = evaluated.severity
+      if (evaluated.reconciled) {
+        this.log(scanId, 'info',
+          `🎯 CVSS reconciled "${f.title}": declared ${evaluated.declaredScore ?? '—'}/${evaluated.declaredSeverity ?? '—'} → ${evaluated.score}/${evaluated.severity} (${evaluated.vector})`)
+      }
     }
 
     // Merge repeated detections from pattern scanning and AI audit passes.
@@ -448,29 +549,46 @@ export class UnifiedPipeline {
     if (existing) {
       const evidence = JSON.parse(existing.evidence || '{}')
       const sources = new Set([...(evidence.sources || [existing.module]), f.module || 'unknown'])
-      const severity = SEVERITY_RANK[f.severity] > SEVERITY_RANK[existing.severity] ? f.severity : existing.severity
+      const severity = SEVERITY_RANK[f.severity] > SEVERITY_RANK[existing.severity] ? f.severity : existing.severity      // Recomputed, never merged upward. The previous `Math.max(existing, new)`
+      // made any inflated score permanent for the lifetime of the DB row.
+      const merged = evaluateFindingCvss({
+        ...f,
+        severity,
+        cvssVector: SEVERITY_RANK[f.severity] >= SEVERITY_RANK[existing.severity]
+          ? (f.cvssVector || existing.cvss_vector)
+          : (existing.cvss_vector || f.cvssVector),
+      })
 
       // When merging, prefer AI-generated descriptions over pattern-scan boilerplate.
       // AI findings carry richer attack-path analysis, remediation with code examples,
       // and layman impact — the pattern-scan templates are generic by comparison.
       const isExistingPattern = existing.module === 'pattern-scan'
       const isNewAi = (f.module || '').startsWith('code-audit') || (f.module || '') === 'ai-audit'
+      // Evidence is unioned, never replaced — see mergeFindingEvidence().
+      const mergedEvidence = mergeFindingEvidence(evidence, f.evidence)
+      mergedEvidence.sources = [...sources]
+      if (VERSION_FINDING_MODULES.has(f.module) || VERSION_FINDING_MODULES.has(existing.module)) {
+        // Keep both halves of the version record: the EOL verdict and the CVE list.
+        mergedEvidence.mergedStages = [...new Set([
+          ...(Array.isArray(evidence.mergedStages) ? evidence.mergedStages : []),
+          existing.module, f.module,
+        ].filter(Boolean))]
+      }
       if (isExistingPattern && isNewAi) {
         db.run(`UPDATE findings SET severity = ?, cvss = ?, cvss_vector = ?, description = ?, layman_impact = ?, remediation = ?, evidence = ? WHERE id = ?`,
-          severity,
-          Math.max(existing.cvss || 0, f.cvss || SEVERITY_SCORE[f.severity] || 0),
-          f.cvssVector || existing.cvss_vector,
+          merged.severity,
+          merged.score,
+          merged.vector,
           f.description || existing.description,
           f.laymanImpact || existing.layman_impact,
           f.remediation || existing.remediation,
-          JSON.stringify({ ...evidence, sources: [...sources], aiPreferred: true }),
+          JSON.stringify({ ...mergedEvidence, aiPreferred: true }),
           existing.id)
         this.log(scanId, 'info', `↪ Merged: AI description replaced pattern-scan boilerplate for: ${f.title}`)
       } else {
-        db.run(`UPDATE findings SET severity = ?, cvss = ?, cvss_vector = ?, evidence = ? WHERE id = ?`, severity,
-          Math.max(existing.cvss || 0, f.cvss || SEVERITY_SCORE[f.severity] || 0),
-          f.cvssVector || existing.cvss_vector,
-          JSON.stringify({ ...evidence, sources: [...sources] }), existing.id)
+        db.run(`UPDATE findings SET severity = ?, cvss = ?, cvss_vector = ?, evidence = ? WHERE id = ?`,
+          merged.severity, merged.score, merged.vector,
+          JSON.stringify(mergedEvidence), existing.id)
         this.log(scanId, 'info', `↪ Deduplicated finding: ${f.title}`)
       }
       return db.get(`SELECT * FROM findings WHERE id = ?`, existing.id)
@@ -522,7 +640,7 @@ export class UnifiedPipeline {
         `INSERT INTO findings (id, scan_id, title, severity, cvss, cvss_vector, cwe_id, cve_id, owasp_category, description, layman_impact, remediation, module, status, evidence, poc, agent_verdict, fingerprint, target, created_at)
          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
         id, scanId, f.title || 'Untitled finding', f.severity || 'info',
-        f.cvss ?? SEVERITY_SCORE[f.severity] ?? 0, f.cvssVector || null, f.cweId || f.cwe || null, f.cveId || null,
+        f.cvss ?? 0, f.cvssVector || null, f.cweId || f.cwe || null, f.cveId || null,
         f.owaspCategory || null, f.description || '', f.laymanImpact || null, f.remediation || '',
         f.module || 'unknown', 'open',
         JSON.stringify(f.evidence || {}), JSON.stringify(f.poc || {}),
@@ -761,7 +879,7 @@ export class UnifiedPipeline {
       { product: 'Moodle', re: /\bmoodle[^\d]{0,20}(\d+)\.(\d+)/i, eol: { '4.5': '2027-06', '4.4': '2026-12', '4.3': '2025-12', '4.1': '2025-12', '4.0': '2024-12', '3.9': '2023-12', '3.8': '2022-11', '3.7': '2021-11' }, note: 'Moodle LTS releases get 3 years of support; non-LTS only 18 months.' },
       { product: 'WordPress', re: /\bwordpress[^\d]{0,20}(\d+)\.(\d+)/i, eol: { '6.0': '2024-04', '5.9': '2023-12', '5.8': '2022-12', '5.7': '2022-03', '5.6': '2021-12' }, note: 'WordPress core versions stop receiving security updates once superseded.' },
       { product: 'Apache HTTP Server', re: /\bapache(?:\/|\s)?(\d+)\.(\d+)/i, eol: { '2.4': null, '2.2': '2017-07', '2.0': '2013-07' }, note: 'Apache 2.2 and earlier are EOL — no security patches since 2017.' },
-      { product: 'nginx', re: /\bnginx(?:\/|\s)?(\d+)\.(\d+)/i, eol: { '1.25': '2024-05', '1.24': '2024-04', '1.23': '2023-10', '1.22': '2023-04', '1.20': '2022-04' }, note: 'nginx stable branches get 1 year of support.' },
+      { product: 'nginx', re: /\bnginx(?:\/|\s)?(\d+)\.(\d+)/i, eol: { '1.29': '2026-05', '1.28': '2026-04', '1.27': '2025-05', '1.26': '2025-04', '1.25': '2024-05', '1.24': '2024-04', '1.23': '2023-05', '1.22': '2023-04', '1.21': '2022-05', '1.20': '2022-04', '1.19': '2021-05', '1.18': '2021-04', '1.17': '2020-05', '1.16': '2020-04', '1.15': '2019-05', '1.14': '2019-04' }, note: 'nginx supports a branch until the next stable release ships, so 1.18 (Apr 2020) went unpatched when 1.20 landed in Apr 2021.' },
       { product: 'PHP', re: /\bphp[^\d]{0,10}(\d+)\.(\d+)/i, eol: { '8.3': '2027-12', '8.2': '2026-12', '8.1': '2025-12', '8.0': '2023-11', '7.4': '2022-11', '7.3': '2021-12', '7.2': '2020-11', '7.1': '2019-12', '7.0': '2019-01', '5.6': '2018-12' }, note: 'PHP branches get 2 years active + 2 years security support.' },
       { product: 'OpenSSH', re: /\bopenssh[^\d]{0,10}(\d+)\.(\d+)/i, eol: { '8.9': '2024-07', '8.8': '2023-09', '8.7': '2023-04', '8.6': '2022-07', '8.4': '2021-09', '8.2': '2021-03', '7.9': '2020-09' }, note: 'OpenSSH releases get ~2 years of security support.' },
       { product: 'jQuery', re: /\bjquery[^\d]{0,10}(\d+)\.(\d+)/i, eol: { '3.6': null, '3.5': '2021-11', '3.4': '2020-06', '3.3': '2019-08', '2.2': '2017-03', '1.12': '2017-03' }, note: 'jQuery 3.6+ is maintained; older branches have known XSS (CVE-2020-11022/11023).' },
@@ -778,65 +896,67 @@ export class UnifiedPipeline {
       const m = versionText.match(entry.re)
       if (!m) continue
       const majorMinor = `${m[1]}.${m[2]}`
-      const eolDate = entry.eol[majorMinor]
-      if (eolDate === null) continue // actively supported
       if (seen.has(entry.product)) continue
       seen.add(entry.product)
-      const eol = new Date(`${eolDate}-01`)
+      const eolLookup = resolveEolDate(entry.eol, majorMinor)
+      if (eolLookup.status === 'supported') continue // actively supported branch
+      if (eolLookup.status === 'unknown') {
+        // Never invent an EOL date. A missing registry entry used to fall
+        // through to `new Date('undefined-01')`, which JS silently parses as
+        // 2001-01-01T00:00:00Z — producing "EOL (undefined) ... 314 months"
+        // in a live report while every downstream check said the date was valid.
+        this.log(scanId, 'warn',
+          `📅 EOL registry has no branch for ${entry.product} ${majorMinor} — EOL status not asserted (add the branch to EOL_REGISTRY)`)
+        continue
+      }
+      const { eolDate, derived, oldestBranch } = eolLookup
+      // A falsy/blank date is not a date. Guarding only `Number.isNaN` let the
+      // string "undefined-01" through (validated by a looser formatter elsewhere)
+      // and the finding shipped as "END-OF-LIFE (undefined) — no security
+      // patches for 314 months", i.e. `new Date('undefined-01')` silently
+      // becoming 2001-01-01. Refuse to assert an EOL claim we cannot date.
+      if (!eolDate || typeof eolDate !== 'string' || !/^\d{4}-\d{2}$/.test(eolDate)) {
+        this.log(scanId, 'warn',
+          `📅 EOL date for ${entry.product} ${majorMinor} resolved to "${eolDate}" — not a YYYY-MM value, so no EOL claim is made`)
+        continue
+      }
+      const eol = new Date(`${eolDate}-01T00:00:00Z`)
+      if (Number.isNaN(eol.getTime())) {
+        this.log(scanId, 'warn', `📅 EOL date "${eolDate}" for ${entry.product} ${majorMinor} is not a valid date — skipping`)
+        continue
+      }
+      const provenance = derived
+        ? ` Ops note: branch ${majorMinor} is older than the oldest branch tracked (${oldestBranch}); the date shown is that branch's EOL, so this build has been unpatched for AT LEAST this long.`
+        : ''
       if (eol < now) {
-        const monthsPast = Math.floor((now - eol) / (1000 * 60 * 60 * 24 * 30))
-
-        // ── CVE ENRICHMENT: look up known vulnerabilities for this product+version ──
-        let cveResults = []
-        let topCveId = null
-        let cveNote = ''
-        try {
-          this.log(scanId, 'info', `🔍 Looking up CVEs for ${entry.product} ${majorMinor} on NVD...`)
-          const nvdResult = await findVersionVulnerabilities(entry.product, majorMinor)
-          if (nvdResult && !nvdResult.error && nvdResult.results?.length > 0) {
-            // Sort by CVSS score descending to get the most severe CVE
-            cveResults = nvdResult.results
-              .filter(r => r.cvss?.score != null)
-              .sort((a, b) => (b.cvss?.score || 0) - (a.cvss?.score || 0))
-            topCveId = cveResults[0]?.id || nvdResult.results[0]?.id || null
-            const totalCves = nvdResult.results.length
-            const criticalCount = cveResults.filter(r => (r.cvss?.score || 0) >= 9.0).length
-            const highCount = cveResults.filter(r => (r.cvss?.score || 0) >= 7.0 && (r.cvss?.score || 0) < 9.0).length
-            cveNote = ` NVD lists ${totalCves} known CVE(s) affecting ${entry.product} ${majorMinor}${criticalCount ? ` (${criticalCount} critical, ${highCount} high)` : highCount ? ` (${highCount} high)` : ''}.`
-            this.log(scanId, 'info', `🔍 Found ${totalCves} CVEs for ${entry.product} ${majorMinor}${topCveId ? ` — top: ${topCveId} (CVSS ${cveResults[0]?.cvss?.score})` : ''}`)
-          } else {
-            this.log(scanId, 'info', `🔍 No specific CVEs found on NVD for ${entry.product} ${majorMinor} (EOL risk still applies)`)
-          }
-        } catch (e) {
-          this.log(scanId, 'warn', `🔍 CVE lookup failed for ${entry.product} ${majorMinor}: ${e.message}`)
-        }
+        const monthsPast = Math.floor((now - eol) / (1000 * 60 * 60 * 24 * 30.44))
 
         await this.ingestFinding(scanId, {
           title: `${entry.product} ${majorMinor} is END-OF-LIFE (${eolDate}) — no security patches for ${monthsPast} months`,
           severity: monthsPast > 24 ? 'high' : 'medium',
           cweId: 'CWE-1104',
-          cveId: topCveId || null,
           owaspCategory: 'A03:2025-Software Supply Chain Failures',
-          description: `${entry.product} ${majorMinor} was detected on the target and reached end-of-life on ${eolDate} — ${monthsPast} months ago. ${entry.note} EOL software receives NO security patches: every vulnerability disclosed since ${eolDate} remains unpatched and publicly exploitable. This is frequently the single highest-impact risk on a target, even when no specific CVE is matched.${cveNote}`,
+          description: `${entry.product} ${majorMinor} was detected on the target and reached end-of-life on ${eolDate} — ${monthsPast} months ago. ${entry.note} EOL software receives NO security patches: every vulnerability disclosed since ${eolDate} remains unpatched and publicly exploitable. This is frequently the single highest-impact risk on a target, even when no specific CVE is matched.${provenance}`,
           remediation: `Upgrade ${entry.product} from ${majorMinor} to the latest supported release. If immediate upgrade is impossible, isolate the service (WAF rules, network segmentation) and schedule the upgrade as a priority.`,
           module: 'version-lifecycle',
           evidence: {
             product: entry.product,
             version: majorMinor,
             eolDate,
+            eolDateDerived: derived,
+            eolDerivedFromBranch: derived ? oldestBranch : null,
             monthsPast,
             detectedFrom: m[0],
-            // Attach top CVEs so users can see details in the drawer
-            knownCves: cveResults.slice(0, 10).map(c => ({
-              id: c.id,
-              score: c.cvss?.score,
-              severity: c.cvss?.severity || c.severity,
-              description: (c.description || '').slice(0, 300),
-            })),
-            totalCves: cveResults.length || 0,
+            // CVE correlation is owned by the version audit stage, which runs
+            // immediately after this one and merges into this record (see
+            // VERSION_FINDING_MODULES). Reporting `totalCves: 0` here would
+            // assert a negative that nobody actually verified.
+            cveLookupOwner: 'version-audit',
+            knownCves: [],
+            totalCves: null,
           },
         }, { verify })
-        this.log(scanId, 'info', `📅 EOL: ${entry.product} ${majorMinor} (EOL ${eolDate}, ${monthsPast} months past)${topCveId ? ` — top CVE: ${topCveId}` : ''}`)
+        this.log(scanId, 'info', `📅 EOL: ${entry.product} ${majorMinor} (EOL ${eolDate}${derived ? `, inferred from branch ${oldestBranch}` : ''}, ${monthsPast} months past)`)
       } else {
         const monthsLeft = Math.ceil((eol - now) / (1000 * 60 * 60 * 24 * 30))
         if (monthsLeft <= 6) {
@@ -848,7 +968,14 @@ export class UnifiedPipeline {
             description: `${entry.product} ${majorMinor} reaches end-of-life on ${eolDate} (${monthsLeft} months). Plan the upgrade now to avoid running unpatched software.`,
             remediation: `Schedule an upgrade of ${entry.product} before ${eolDate}.`,
             module: 'version-lifecycle',
-            evidence: { product: entry.product, version: majorMinor, eolDate, monthsLeft },
+            evidence: {
+              product: entry.product,
+              version: majorMinor,
+              eolDate,
+              eolDateDerived: derived,
+              monthsLeft,
+              cveLookupOwner: 'version-audit',
+            },
           }, { verify })
         }
       }
@@ -939,11 +1066,43 @@ export class UnifiedPipeline {
       })
 
       if (correlation.error) {
+        // A failed lookup is NOT a clean component. Silently continuing made the
+        // report omit the component entirely, which a reader then interpreted as
+        // "nothing found" instead of "the check could not run".
         this.log(scanId, 'warn', `🔬 CVE lookup failed for ${d.product} ${d.version}: ${correlation.error}`)
+        const clean = buildVersionFinding(d, { ...correlation, results: [] })
+        await this.ingestFinding(scanId, {
+          ...clean,
+          title: `${d.product} ${d.version} fingerprinted — NVD lookup failed`,
+          severity: 'low',
+          description:
+            `${d.product} ${d.version} (${d.kind}) was read from ${d.source} at ${d.matched}, but the NIST NVD ` +
+            `lookup could not complete (${correlation.error}). No conclusion about this version's vulnerability ` +
+            `status can be drawn from this scan — the absence of advisories here is a tool failure, not evidence of patching.`,
+          remediation: `Re-run the CVE correlation for ${d.product} ${d.version} against NVD (rate limits and network egress are the usual causes), or confirm the patch level from the vendor's advisory feed directly.`,
+          evidence: { ...clean.evidence, totalCves: null, knownCves: [], nvdMatch: 'error', nvdStatus: 'error', nvdError: String(correlation.error).slice(0, 400) },
+        }, { verify: false })
         continue
       }
       if (!correlation.total) {
-        this.log(scanId, 'info', `🔬 ${d.product} ${d.version}: no matching CVEs on NVD`)
+        // A fingerprinted version with no NVD match is still an inventory fact
+        // and still proof that the version banner is exposed. Skipping it left
+        // the report claiming the stack was "inconclusive" on scans where the
+        // server had happily announced its exact build.
+        this.log(scanId, 'info', `🔬 ${d.product} ${d.version}: no matching CVEs on NVD (recording fingerprint only)`)
+        const clean = buildVersionFinding(d, correlation)
+        await this.ingestFinding(scanId, {
+          ...clean,
+          title: `${d.product} ${d.version} fingerprinted — no NVD advisory matched`,
+          severity: 'low',
+          description:
+            `${d.product} ${d.version} (${d.kind}) was read from ${d.source} at ${d.matched}. ` +
+            `NIST NVD returned no advisory for this product/version pair. ` +
+            `That is not a clean bill of health: NVD matching is keyword-based, vendor advisories are published outside it, ` +
+            `and a suppressed or backported build number can hide a vulnerable body. ` +
+            `Confirm the installed version against the vendor's own advisory feed before treating it as patched.`,
+          evidence: { ...clean.evidence, totalCves: 0, knownCves: [], nvdMatch: 'empty', nvdStatus: 'empty' },
+        }, { verify: false })
         continue
       }
 
@@ -2630,10 +2789,18 @@ export function computeRiskScore(counts, maxCvss = null) {
   const med = Number(c.medium) || 0
   const low = Number(c.low) || 0
 
+  // A CVSS v4.0 base score is a per-vulnerability metric — it is NOT additive.
+  // Adding a prevalence "residual" on top of it produced aggregate scores that
+  // outranked their own worst finding (249 findings whose worst issue was 9.3
+  // were reported as 10.0/10, i.e. worse than any actual vulnerability found).
+  // When a real CVSS score exists it is the authoritative headline; prevalence
+  // is reported separately as finding counts, never folded into the score.
+  if (maxCvss != null && Number(maxCvss) > 0) {
+    return Math.min(10.0, Math.round(Number(maxCvss) * 10) / 10)
+  }
+
   let base = 0.0
-  if (maxCvss != null && maxCvss > 0) {
-    base = Number(maxCvss)
-  } else if (crit > 0) {
+  if (crit > 0) {
     base = 9.0
   } else if (high > 0) {
     base = 7.0
@@ -2689,7 +2856,7 @@ function extractFindingsFromOutput(tool, output, target = '') {
   const lines = cleanOutput.split('\n')
   const discoveredUrls = [] // collected for chaining into dalfox/sqlmap
   const push = (title, severity, evidence, extra = {}) => findings.push({
-    title: cleanText(title).replace(/\s+/g, ' ').trim(), severity, description: cleanText(evidence).slice(0, 400), evidence: { tool, raw: cleanText(evidence).slice(0, 800) }, ...extra,
+    title: cleanText(title).replace(/\s+/g, ' ').trim().slice(0, 160), severity, description: cleanText(evidence).slice(0, 400), evidence: { tool, raw: cleanText(evidence).slice(0, 800) }, ...extra,
   })
 
   // ── nmap: open ports + service versions + script findings ──
@@ -2862,7 +3029,7 @@ function extractFindingsFromOutput(tool, output, target = '') {
         .filter((t) => !/^(IP|Country|Title|HTTPServer)\b/i.test(t))
       const stack = [server, ...techs].filter(Boolean)
       if (stack.length) {
-        push(`whatweb: Technology stack — ${stack.slice(0, 12).join(', ')}`, 'info', line, { url })
+        push(`Technology Stack Detected (${stack.length} ${stack.length === 1 ? 'technology' : 'technologies'})`, 'info', line, { url })
       }
 
         // ── VERSION UNVERIFIED DETECTION ──

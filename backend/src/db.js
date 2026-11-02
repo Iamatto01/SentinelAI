@@ -589,7 +589,7 @@ function migrate(d) {
  * data/default-custom-scripts.json change so existing installations pick the
  * fixes up on boot (see seedDefaultScripts).
  */
-const CUSTOM_SCRIPTS_REVISION = 2
+const CUSTOM_SCRIPTS_REVISION = 4
 
 /** sha256 of a shipped script body — used to tell "stale bundle" from "operator edit". */
 function bodyHash(text) {

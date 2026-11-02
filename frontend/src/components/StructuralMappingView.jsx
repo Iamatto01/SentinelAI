@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useMemo, useState, useCallback } from 'react'
 import { X, Network, RotateCw, ZoomIn, ZoomOut, Maximize2, Minimize2, Move, GripHorizontal } from 'lucide-react'
+import { prettifyTitle } from '../lib/formatters.js'
 
 /**
  * StructuralMappingView — renders an interactive, force-directed graph of the scan's
@@ -148,7 +149,7 @@ export default function StructuralMappingView({ scan, findings, logs, onClose, o
         if (sampledPerKey[key] < 4) {
           const nodeId = `find-${idx}`
           _nodes.push({
-            id: nodeId, label: f.title || 'Untitled', type: 'finding',
+            id: nodeId, label: prettifyTitle(f.title) || 'Untitled', type: 'finding',
             module: mod, severity: sev, cwe: f.cwe_id, cvss: f.cvss,
             findingData: f,
           })
@@ -161,7 +162,7 @@ export default function StructuralMappingView({ scan, findings, logs, onClose, o
       allFindings.forEach((f, idx) => {
         const nodeId = `find-${idx}`
         _nodes.push({
-          id: nodeId, label: f.title || 'Untitled', type: 'finding',
+          id: nodeId, label: prettifyTitle(f.title) || 'Untitled', type: 'finding',
           severity: f.severity, cwe: f.cwe_id, cvss: f.cvss,
           findingData: f,
         })
@@ -660,7 +661,7 @@ export default function StructuralMappingView({ scan, findings, logs, onClose, o
                       )}
                     </div>
                     <h4 className="text-xs font-semibold text-slate-200 group-hover:text-white line-clamp-2">
-                      {f.title}
+                      {prettifyTitle(f.title)}
                     </h4>
                   </div>
                 ))}

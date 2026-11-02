@@ -303,8 +303,22 @@ export async function correlateVersion({ product, version, log } = {}) {
     const critical = cves.filter(c => (c.cvss?.score || 0) >= 9.0).length
     const high = cves.filter(c => (c.cvss?.score || 0) >= 7.0 && (c.cvss?.score || 0) < 9.0).length
     const medium = cves.filter(c => (c.cvss?.score || 0) >= 4.0 && (c.cvss?.score || 0) < 7.0).length
-    if (log) log(`🔍 ${product} ${version}: ${cves.length} CVE(s) — ${critical} critical, ${high} high, ${medium} medium`)
-    return { product, version, cves, critical, high, medium, total: cves.length }
+    if (log) {
+      log(`🔍 ${product} ${version}: ${cves.length} applicable CVE(s) — ${critical} critical, ${high} high, ${medium} medium`)
+      if (nvd.outOfRangeCount) log(`   ${nvd.outOfRangeCount} advisory scope(s) name ${product} but exclude version ${version}`)
+    }
+    return {
+      product,
+      version,
+      cves,
+      critical,
+      high,
+      medium,
+      total: cves.length,
+      cpeTargets: nvd.cpeTargets || [],
+      applicability: nvd.applicability,
+      outOfRangeCount: nvd.outOfRangeCount || 0,
+    }
   } catch (e) {
     return { product, version, cves: [], error: e.message }
   }
@@ -327,16 +341,28 @@ export function severityFromCves({ critical = 0, high = 0, medium = 0, total = 0
  */
 export function buildVersionFinding(detected, correlation) {
   const { product, version, kind, owasp, cwe, source, matched } = detected
-  const { cves = [], critical = 0, high = 0, medium = 0, total = 0 } = correlation || {}
+  const { cves = [], critical = 0, high = 0, medium = 0, total = 0, cpeTargets = [], outOfRangeCount = 0 } = correlation || {}
   const severity = severityFromCves({ critical, high, medium, total })
   const top = cves[0]
   const cveList = cves.slice(0, 10).map(c => ({
     id: c.id,
     score: c.cvss?.score,
     severity: c.cvss?.severity || c.severity,
+    // The advisory's own vector lets the scoring authority borrow a real
+    // Critical vector for a component whose template is only a default.
+    vector: c.cvss?.vector || null,
+    vectorVersion: c.cvss?.version || null,
     description: (c.description || '').slice(0, 300),
     cwe: (c.weaknesses || []).filter(w => /^CWE-/.test(w)).slice(0, 3),
     references: (c.references || []).slice(0, 5),
+    range: c.applicableRanges?.[0]
+      ? [
+          c.applicableRanges[0].startIncluding ? `>= ${c.applicableRanges[0].startIncluding}` : '',
+          c.applicableRanges[0].startExcluding ? `> ${c.applicableRanges[0].startExcluding}` : '',
+          c.applicableRanges[0].endIncluding ? `<= ${c.applicableRanges[0].endIncluding}` : '',
+          c.applicableRanges[0].endExcluding ? `< ${c.applicableRanges[0].endExcluding}` : '',
+        ].filter(Boolean).join(' ')
+      : null,
   }))
 
   const sevBreakdown = [
@@ -346,17 +372,20 @@ export function buildVersionFinding(detected, correlation) {
   ].filter(Boolean).join(', ')
 
   return {
-    title: `${product} ${version} — ${total} known CVE${total === 1 ? '' : 's'}${sevBreakdown ? ` (${sevBreakdown})` : ''}`,
+    title: `${product} ${version} — ${total} applicable CVE${total === 1 ? '' : 's'}${sevBreakdown ? ` (${sevBreakdown})` : ''}`,
     severity,
     cweId: cwe || 'CWE-1104',
     cveId: top?.id || null,
     owaspCategory: owasp || 'A03:2025-Software Supply Chain Failures',
     description:
       `The target exposes ${product} ${version} (${kind}) via ${source}. ` +
-      `NIST NVD lists ${total} published CVE${total === 1 ? '' : 's'} matching this product and version` +
+      `NIST NVD lists ${total} published CVE${total === 1 ? '' : 's'} whose CPE applicability range covers exactly this version` +
       `${sevBreakdown ? `, including ${sevBreakdown}` : ''}. ` +
       (top
         ? `The highest-scoring is ${top.id} (CVSS ${top.cvss?.score ?? 'n/a'}): ${(top.description || '').slice(0, 240)} `
+        : '') +
+      (outOfRangeCount
+        ? `A further ${outOfRangeCount} advisories name this product but exclude version ${version}, and are deliberately not counted here. `
         : '') +
       `Running a version with published CVEs means any attacker with a vulnerability scanner can identify and attempt these exploits without any custom research.`,
     remediation:
@@ -376,7 +405,11 @@ export function buildVersionFinding(detected, correlation) {
       highCount: high,
       mediumCount: medium,
       knownCves: cveList,
-      nvdQuery: `${product} ${version}`,
+      nvdQuery: `cpe:2.3:a:${(cpeTargets[0] || product).replace(/^\*:/, '')}`,
+      cpeTargets,
+      applicabilityChecked: true,
+      outOfRangeCount,
+      nvdStatus: total ? 'match' : 'empty',
       references: cveList.flatMap(c => c.references || []),
     },
   }

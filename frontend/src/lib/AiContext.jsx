@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react'
 import { Sparkles, Bot, X, ExternalLink, CheckCircle } from 'lucide-react'
 import { api } from './api.js'
+import { prettifyTitle } from './formatters.js'
 
 const AiContext = createContext(null)
 
@@ -37,7 +38,7 @@ export function AiProvider({ children }) {
     const existing = findingChats[finding.id]
     if (existing && existing.length > 0) return existing
     return [
-      { role: 'assistant', text: `Hi! I am your AI Security Assistant. Ask me anything about this finding: "${finding.title}".` }
+      { role: 'assistant', text: `Hi! I am your AI Security Assistant. Ask me anything about this finding: "${prettifyTitle(finding.title)}".` }
     ]
   }
 
@@ -52,7 +53,7 @@ export function AiProvider({ children }) {
     // 1. Update finding chat history immediately
     setFindingChats((prev) => {
       const current = prev[fid] || [
-        { role: 'assistant', text: `Hi! I am your AI Security Assistant. Ask me anything about this finding: "${finding.title}".` }
+        { role: 'assistant', text: `Hi! I am your AI Security Assistant. Ask me anything about this finding: "${prettifyTitle(finding.title)}".` }
       ]
       const updated = [...current, userMsg]
       const next = { ...prev, [fid]: updated }
@@ -90,7 +91,7 @@ export function AiProvider({ children }) {
         id: notifId,
         findingId: fid,
         finding,
-        title: finding.title,
+        title: prettifyTitle(finding.title),
         replyPreview: aiReply.length > 120 ? aiReply.slice(0, 120) + '…' : aiReply,
         ts: Date.now()
       }
@@ -99,7 +100,7 @@ export function AiProvider({ children }) {
 
       // Play subtle browser notification if permitted
       if ('Notification' in window && Notification.permission === 'granted') {
-        new Notification(`AI Assistant: ${finding.title}`, {
+        new Notification(`AI Assistant: ${prettifyTitle(finding.title)}`, {
           body: aiReply.slice(0, 100),
           icon: '/favicon.svg'
         })
@@ -119,7 +120,7 @@ export function AiProvider({ children }) {
           id: `notif_err_${Date.now()}`,
           findingId: fid,
           finding,
-          title: finding.title,
+          title: prettifyTitle(finding.title),
           replyPreview: errMsg,
           isError: true,
           ts: Date.now()

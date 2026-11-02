@@ -4,6 +4,7 @@ import {
   CheckCircle2, XCircle, AlertTriangle, Terminal, Info, Sparkles
 } from 'lucide-react'
 import { api } from '../lib/api.js'
+import { prettifyTitle } from '../lib/formatters.js'
 
 const LANGS = [
   { value: 'bash', label: 'Bash' },
@@ -268,7 +269,7 @@ export default function CustomScripts() {
                     <div key={i} className="border border-slate-700/50 rounded-lg p-3 bg-black/20">
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase sev-${f.severity}`}>{f.severity}</span>
-                        <span className="font-medium text-slate-100 text-sm">{f.title}</span>
+                        <span className="font-medium text-slate-100 text-sm">{prettifyTitle(f.title)}</span>
                       </div>
                       {f.description && <p className="text-xs text-slate-400 mt-1.5">{f.description}</p>}
                     </div>

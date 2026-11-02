@@ -6,7 +6,9 @@ import * as db from './db.js'
 import { OWASP } from './owasp.js'
 import { aiEngine } from './ai/ai-engine.js'
 import { computeRiskScore, riskRatingFromScore } from './pipeline.js'
-import { calculateCvss4, defaultVectorForFinding } from './cvss4.js'
+import { calculateCvss4, defaultVectorForFinding, evaluateFindingCvss } from './cvss4.js'
+import { extractVersions } from './version-audit.js'
+import { findVersionVulnerabilities } from './cve.js'
 import { VERIFY_STATUS, classifyFinding, aggregateFindings, normalizeConfidence } from './report-contract.js'
 
 /**
@@ -144,6 +146,13 @@ function cleanPdfText(str) {
 export function sanitizePdfText(str) {
   if (!str) return ''
   return String(str)
+    // Interpolated values that lost their source reach the PDF as the literal
+    // words "undefined" / "NaN", which reads as a broken tool in an otherwise
+    // formal report ("END-OF-LIFE (undefined)"). Collapse the containing
+    // parenthetical or clause instead of printing the placeholder.
+    .replace(/\(\s*(?:undefined|null|NaN)\s*\)/g, '')
+    .replace(/\s+(?:on|since|until|before)\s+(?:undefined|null|NaN)\b/gi, '')
+    .replace(/\b(?:undefined|null|NaN)\s+(?:months?|days?|weeks?|years?)\b/gi, 'unknown duration')
     .normalize('NFKD')
     .replace(/\r/g, '')
     .replace(/\x1B\[[0-9;]*[a-zA-Z]/g, '') // strip ANSI codes
@@ -152,7 +161,10 @@ export function sanitizePdfText(str) {
     .replace(/[\u2013\u2014\u2015]/g, ' - ') // em-dash / en-dash
     .replace(/\u2026/g, '...') // ellipsis
     .replace(/[\u2022\u2023\u25E6\u2043\u2219]/g, '* ') // bullets
-    .replace(/[\u2192\u21D2\u279C\u2794]/g, ' -> ') // arrows
+    .replace(/[\u2192\u21D2\u279C\u2794]/g, ' -> ') // right-pointing arrows
+    .replace(/[\u2191]/g, '^') // up arrow (used by the severity-reconciliation note)
+    .replace(/[\u2193]/g, 'v') // down arrow
+    .replace(/[\u2190]/g, '<- ') // left arrow
     .replace(/[\u2713\u2714\u2611]/g, '[OK] ') // checkmarks
     .replace(/[\u2717\u2718\u2612]/g, '[X] ') // crosses
     .replace(/[\u26A0\u26A1]/g, '[!] ') // warning signs
@@ -1174,33 +1186,287 @@ function confidencePercent(v) {
 }
 
 /**
- * Calculate the exact numerical formula score for a finding or action card.
- * Priority: explicit cvss -> cvssVector calculation -> CVSS v4 default vector -> FIRST qualitative band.
+ * The numerical score a finding renders with — delegated to the single CVSS
+ * authority so the PDF can never show a number that disagrees with its own
+ * vector or its severity band.
  */
 export function getFindingFormulaScore(finding = {}) {
-  if (finding.cvss != null && !isNaN(Number(finding.cvss)) && Number(finding.cvss) > 0) {
-    return Math.round(Number(finding.cvss) * 10) / 10
-  }
-  if (finding.score != null && !isNaN(Number(finding.score)) && Number(finding.score) > 0) {
-    return Math.round(Number(finding.score) * 10) / 10
+  return evaluateFindingCvss(finding).score
+}
+
+/** Full evaluation for a rendered item, so the card can print its vector too. */
+function getFindingCvssEvaluation(item = {}) {
+  return evaluateFindingCvss(item)
+}
+
+/**
+ * Turn the version-audit findings into a real technology inventory the report
+ * can print: product, detected version, how it was seen, and the CVE tally.
+ *
+ * The pipeline already fingerprints products and correlates them against NVD,
+ * but `renderSimplifiedPdf` only ever read `native:whatweb` titles, so the
+ * cover page fell back to the placeholder
+ * 'Standard Web Application Architecture (HTTP/HTTPS Reverse Proxy & Application
+ * Server)' even on scans where `nginx 1.18` with published CVEs was detected.
+ * A reader could not tell what they were running, let alone which advisories
+ * applied.
+ */
+/**
+ * Recover (product, version) pairs from a finding that is not a version-audit
+ * record. The inventory used to read only `version-audit` / `version-lifecycle`
+ * rows, so a scan whose `http-headers` module explicitly proved
+ * `Server: nginx/1.18.0` (and whose nuclei tech-detect confirmed nginx) still
+ * printed the stack as unknown unless one weak custom-script row happened to
+ * survive. Every disclosure channel now contributes:
+ *   1. evidence.product / evidence.version       (structured)
+ *   2. evidence.observed / banner / header / matched / raw / body / output
+ *   3. the finding title and description
+ * Returns [] when nothing concrete is named — a bare product with no version is
+ * deliberately excluded here; that is what the versionless inventory is for.
+ */
+function recoverVersionDisclosures(v) {
+  const ev = v?.evidence && typeof v.evidence === 'object' ? v.evidence : {}
+  const out = []
+  const push = (product, version, detectedFrom) => {
+    if (!product || !version) return
+    if (!/\d/.test(String(version))) return
+    out.push({ product: String(product).slice(0, 60), version: String(version).slice(0, 24), detectedFrom: String(detectedFrom || '').slice(0, 80) })
   }
 
-  const vector = finding.cvssVector || finding.cvss_vector || defaultVectorForFinding(finding)
-  if (vector) {
-    try {
-      const res = calculateCvss4(vector)
-      if (res && res.score != null && res.score > 0) {
-        return Math.round(res.score * 10) / 10
+  if (ev.product && ev.version) push(ev.product, ev.version, ev.detectedFrom || v.title)
+
+  const blobs = []
+  for (const key of ['observed', 'banner', 'header', 'matched', 'detectedFrom', 'server', 'raw', 'body', 'bodyPreview', 'output', 'bodySnippet']) {
+    const val = ev[key]
+    if (typeof val === 'string' && val) blobs.push(val)
+  }
+  if (typeof v.title === 'string') blobs.push(v.title)
+  if (typeof v.description === 'string') blobs.push(v.description.slice(0, 600))
+
+  for (const blob of blobs) {
+    // Server headers are the single richest source; extractVersions already
+    // owns the signature table, so reuse it instead of duplicating regexes.
+    for (const d of extractVersions(blob.slice(0, 4000), 'finding-evidence')) {
+      push(d.product, d.version, d.matched || blob.slice(0, 60))
+    }
+  }
+  return out
+}
+
+export function buildTechStackFingerprint(findings = []) {
+  // One row per product. The EOL stage and the CVE-audit stage each know half the
+  // truth about the same component, so rows are MERGED per product instead of
+  // deduplicated per product+version-string. The old code keyed on
+  // `${product}|${version}` and dropped whichever record arrived second, which is
+  // how a scan that had six applicable nginx CVEs still printed "0 matched".
+  const byProduct = new Map()
+
+  const rowFor = (product) => {
+    const key = String(product || '').toLowerCase()
+    if (!byProduct.has(key)) {
+      byProduct.set(key, {
+        product: String(product).slice(0, 60),
+        versions: new Set(),
+        version: null,
+        versionUnverified: true,
+        kind: null,
+        detectedFrom: null,
+        detectionSource: null,
+        totalCves: null,
+        criticalCount: 0,
+        highCount: 0,
+        mediumCount: 0,
+        knownCves: [],
+        cveSource: null,
+        references: [],
+        nvdStatus: null,
+        verifiedAtProvider: false,
+        refreshFailed: false,
+        remedy: null,
+        eolDate: null,
+        eolDateDerived: false,
+        monthsPast: null,
+        modules: [],
+      })
+    }
+    return byProduct.get(key)
+  }
+
+  for (const f of Array.isArray(findings) ? findings : []) {
+    if (!f) continue
+    const ev = f.evidence || {}
+    const mod = String(f.module || '')
+
+    // Two admission paths:
+    //  A. the finding IS a version record (audit / lifecycle, or carries
+    //     evidence.product) — profiled below as before;
+    //  B. the finding merely DISCLOSES a product+version somewhere in its
+    //     evidence or prose — it must still reach the inventory, because an
+    //     operator reading "Detected technology" needs the thing the scan
+    //     actually proved, not just the module that happened to file a ticket.
+    const isVersionRecord = mod === 'version-audit' || mod === 'version-lifecycle' || Boolean(ev.product)
+    if (!isVersionRecord) {
+      for (const d of recoverVersionDisclosures(f)) {
+        const disclosureRow = rowFor(d.product)
+        disclosureRow.versions.add(d.version)
+        if (!disclosureRow.version || d.version.length > disclosureRow.version.length) disclosureRow.version = d.version
+        disclosureRow.versionUnverified = false
+        disclosureRow.detectedFrom = disclosureRow.detectedFrom || d.detectedFrom || null
+        disclosureRow.detectionSource = disclosureRow.detectionSource || mod || null
+        if (!disclosureRow.modules.includes(mod)) disclosureRow.modules.push(mod)
       }
-    } catch {}
+      continue
+    }
+
+    const row = rowFor(ev.product || f.title || 'Unknown product')
+    if (ev.version) {
+      row.versions.add(String(ev.version).slice(0, 24))
+      // Prefer the full release (1.18.0) over the branch (1.18) for display.
+      const v = String(ev.version)
+      if (!row.version || v.length > row.version.length) row.version = v.slice(0, 24)
+      row.versionUnverified = false
+    }
+    row.kind = row.kind || (ev.kind ? String(ev.kind) : null)
+    row.detectedFrom = row.detectedFrom || (ev.detectedFrom ? String(ev.detectedFrom).slice(0, 80) : null)
+    row.detectionSource = row.detectionSource || (ev.detectionSource ? String(ev.detectionSource).slice(0, 40) : null)
+    if (!row.modules.includes(mod)) row.modules.push(mod)
+
+    const known = Array.isArray(ev.knownCves) ? ev.knownCves : []
+    const declared = Number.isFinite(Number(ev.totalCves)) && ev.totalCves !== null ? Number(ev.totalCves) : null
+    // A completed lookup wins. Falling back to known.length turns a truncated
+    // advisory list (the audit keeps 10) into a fake "10 applicable CVEs" on a
+    // disclosure row that never queried NVD at all — which then prints as a
+    // HIGH severity component with no advisories behind it.
+    // Provenance decides whether "0" means "checked and clean" or "never checked":
+    // only a record that names its own CPE query/status can claim a completed
+    // lookup. Older rows persisted before the CPE-first rewrite carry a bare
+    // totalCves:0 with no query behind it, and those must not print as clean.
+    const hasLookupProvenance = ev.nvdStatus === 'match'
+      || ev.nvdStatus === 'empty'
+      || ev.nvdStatus === 'error'
+      || Boolean(ev.nvdQuery)
+      || (Array.isArray(ev.cpeTargets) && ev.cpeTargets.length > 0)
+    if (declared != null && hasLookupProvenance) {
+      row.verifiedAtProvider = true
+    }
+    if (declared != null) row.totalCves = declared
+    // CVE buckets come last: a rival module's severity label must never inflate a
+    // row whose own NVD lookup reported zero.
+    if (declared == null || declared > 0 || ev.nvdStatus === 'match') {
+      row.criticalCount = Math.max(row.criticalCount, Number(ev.criticalCount) || 0)
+      row.highCount = Math.max(row.highCount, Number(ev.highCount) || 0)
+      row.mediumCount = Math.max(row.mediumCount, Number(ev.mediumCount) || 0)
+    }
+    if (ev.nvdStatus && (!row.nvdStatus || ev.nvdStatus === 'match')) row.nvdStatus = String(ev.nvdStatus)
+    if (ev.cveRefreshFailed === true) row.refreshFailed = true
+
+    const mergedKnown = [...row.knownCves]
+    for (const c of known) {
+      if (!c || !c.id) continue
+      if (!mergedKnown.some(x => x.id === c.id)) mergedKnown.push(c)
+    }
+    row.knownCves = mergedKnown
+
+    row.cveSource = row.cveSource || (ev.nvdQuery ? `NVD query: ${ev.nvdQuery}` : null)
+    for (const r of Array.isArray(ev.references) ? ev.references : []) {
+      if (r && !row.references.includes(r)) row.references.push(String(r))
+    }
+    if (ev.eolDate) row.eolDate = String(ev.eolDate)
+    if (ev.eolDateDerived === true) row.eolDateDerived = true
+    if (Number.isFinite(Number(ev.monthsPast))) row.monthsPast = Number(ev.monthsPast)
   }
 
-  const s = (finding.severity || 'info').toLowerCase()
-  if (s === 'critical') return 9.5
-  if (s === 'high') return 8.2
-  if (s === 'medium') return 5.5
-  if (s === 'low') return 2.5
-  return 0.0
+  const rows = [...byProduct.values()].map(r => ({
+    product: r.product,
+    version: r.version,
+    versionUnverified: r.versionUnverified,
+    kind: r.kind,
+    detectedFrom: r.detectedFrom,
+    detectionSource: r.detectionSource,
+    totalCves: r.totalCves,
+    criticalCount: r.criticalCount,
+    highCount: r.highCount,
+    mediumCount: r.mediumCount,
+    knownCves: [...r.knownCves]
+      .sort((a, b) => (Number(b.score) || 0) - (Number(a.score) || 0))
+      .slice(0, 6)
+      .map(c => ({
+        id: String(c.id || ''),
+        score: c.score != null ? Number(c.score) : null,
+        severity: c.severity ? String(c.severity) : null,
+        description: c.description ? String(c.description) : null,
+        cwe: Array.isArray(c.cwe) ? c.cwe.join(', ') : (c.cwe ? String(c.cwe) : null),
+      })),
+    cveSource: r.cveSource,
+    references: r.references.slice(0, 3),
+    eolDate: r.eolDate,
+    eolDateDerived: r.eolDateDerived,
+    monthsPast: r.monthsPast,
+    modules: [...r.modules],
+    // Only a record that shows its own query may claim "0 matched". Older rows
+    // persisted before the CPE-first rewrite carry a bare totalCves:0 with no
+    // query behind it — those are indeterminate, not clean.
+    lookupStatus: r.verifiedAtProvider
+      ? (r.nvdStatus || (r.totalCves > 0 ? 'match' : 'empty'))
+      : r.refreshFailed
+        ? 'error'
+        : 'not-performed',
+    // What the reader should do about it. A failed refresh and a lookup that was
+    // never run are different states and must not share wording.
+    remedy: r.verifiedAtProvider && !r.refreshFailed
+      ? null
+      : r.refreshFailed
+        ? 'NVD refresh failed at report time - re-run, then re-audit this version'
+        : `CVE correlation not on record for ${r.product} ${r.version || ''}`.trim(),
+    lifecycleOnly: r.modules.length === 1 && r.modules[0] === 'version-lifecycle',
+  }))
+
+  // Products that were identified but whose version could not be pinned are
+  // still worth printing — they are the ones an operator must inventory by hand.
+  const versionless = rows.filter(r => r.versionUnverified)
+  const withVersion = rows.filter(r => !r.versionUnverified)
+  withVersion.sort((a, b) => {
+    if (b.criticalCount !== a.criticalCount) return b.criticalCount - a.criticalCount
+    if (b.highCount !== a.highCount) return b.highCount - a.highCount
+    if ((b.totalCves || 0) !== (a.totalCves || 0)) return (b.totalCves || 0) - (a.totalCves || 0)
+    return a.product.localeCompare(b.product)
+  })
+
+  const ordered = [...withVersion, ...versionless].slice(0, 24)
+
+  return { rows: ordered, detectedCount: ordered.length, versionedCount: withVersion.length, ...summarizeTechStack(ordered) }
+}
+
+/**
+ * Totals for the cover card. Kept separate from the row builder because the
+ * report-time NVD refresh mutates rows afterwards, and a summary frozen before
+ * the refresh would keep printing "no CVE check run" next to a row that now
+ * carries six advisories.
+ */
+function summarizeTechStack(ordered = []) {
+  const cveTotal = ordered.reduce((acc, r) => acc + (r.totalCves || 0), 0)
+  const criticalTotal = ordered.reduce((acc, r) => acc + (r.criticalCount || 0), 0)
+  const highTotal = ordered.reduce((acc, r) => acc + (r.highCount || 0), 0)
+  const advisories = ordered
+    .flatMap(r => r.knownCves.map(c => ({ ...c, product: r.product, version: r.version })))
+    .filter(c => c.id)
+    .slice(0, 12)
+  const lookupEmpty = ordered.filter(r => r.lookupStatus === 'empty').length
+  const refreshFailed = ordered.filter(r => r.lookupStatus === 'error' || r.refreshFailed).length
+  // A component that was only ever seen through a disclosure channel (server
+  // banner, tech-detect, header leak) has no CVE record of its own. Printing
+  // "0 matched" for it reads as "checked and clean" — the opposite of the truth.
+  const disclosedOnly = ordered.filter(r => r.lookupStatus === 'not-performed').length
+
+  return {
+    cveTotal,
+    criticalTotal,
+    highTotal,
+    advisories,
+    lookupFailures: refreshFailed,
+    lookupEmpty,
+    disclosedOnly,
+  }
 }
 
 function findingEvidenceContext(v) {
@@ -1223,35 +1489,288 @@ function findingEvidenceContext(v) {
 /**
  * Verbatim artifact string for the fix card. A confirmed finding must show the
  * request/response that proved it, not just assert a verdict.
+ *
+ * Two things must never appear here:
+ *  1. the internal `matched` fingerprint (`cwe-538|||credential|127.0.0.1`), which
+ *     is a deduplication key, not a server response;
+ *  2. `raw`, when `raw` is just the finding's own JSON re-serialised — printing it
+ *     back to the reader as "proof" is circular and tells them nothing they were
+ *     not already told one line above.
+ *
+ * So the panel is built from response-shaped material only. When the evidence
+ * genuinely captured no HTTP response, it returns `null` and the card says so
+ * explicitly instead of inventing a request.
  */
 function describeCapturedProof(v) {
   const ev = v.evidence || {}
-  const url = typeof ev.url === 'string' ? ev.url : null
   const status = ev.status ?? ev.statusCode ?? ev.httpStatus
-  const body = typeof ev.body === 'string' ? ev.body.replace(/\s+/g, ' ').trim() : null
-  const observed = typeof ev.matched === 'string' ? ev.matched
-    : typeof ev.header === 'string' ? ev.header
-      : typeof ev.banner === 'string' ? ev.banner
-        : typeof ev.output === 'string' ? ev.output
-          : typeof ev.raw === 'string' ? ev.raw : null
+  const url = typeof ev.url === 'string' ? ev.url
+    : typeof ev.endpoint === 'string' ? ev.endpoint
+      : typeof ev.path === 'string' ? ev.path
+        : null
+  // `header`, `banner` and `server` are observations about the target.
+  // `matched` (dedup key) and `fingerprint` (internal correlation key) are
+  // scanner bookkeeping and are excluded on purpose.
+  const observed = typeof ev.header === 'string' ? ev.header
+    : typeof ev.banner === 'string' ? ev.banner
+      : typeof ev.server === 'string' ? `server: ${ev.server}`
+        : typeof ev.observed === 'string' ? ev.observed
+          : null
+  const bodyCandidates = [ev.body, ev.bodyPreview, ev.bodySnippet, ev.response, ev.output]
+    .filter(x => typeof x === 'string' && x.trim())
+  const raw = typeof ev.raw === 'string' ? ev.raw.trim() : null
+  const looksLikeOwnJson = raw && /^\{[\s\S]*"(title|severity|description|cweId|owaspCategory)"\s*:/.test(raw)
+  const body = bodyCandidates[0] || (raw && !looksLikeOwnJson ? raw : null)
 
   const bits = []
-  if (url) bits.push(status != null ? `${url} -> HTTP ${status}` : url)
-  if (observed) bits.push(observed.replace(/\s+/g, ' ').trim().slice(0, 220))
-  if (body) bits.push(`body: ${body.slice(0, 220)}`)
-  if (!bits.length) return null
-  return bits.join('  |  ')
+  if (ev.method || url) {
+    bits.push(`${ev.method ? String(ev.method).toUpperCase() : 'GET'} ${url || 'the endpoint'}`)
+  }
+  if (status != null) bits.push(`-> HTTP ${status}`)
+  if (ev.contentType) bits.push(String(ev.contentType))
+  const bytes = ev.bytes ?? ev.size ?? ev.contentLengthHeader
+  if (bytes != null) bits.push(`${bytes} bytes`)
+  if (ev.sourceCount != null) bits.push(`${ev.sourceCount} sources`)
+  if (observed) bits.push(String(observed).replace(/\s+/g, ' ').trim().slice(0, 200))
+  if (body) bits.push(`body: ${String(body).replace(/\s+/g, ' ').trim().slice(0, 300)}`)
+
+  return bits.length ? bits.join('  |  ') : null
 }
 
-function concreteVerification(v, endpoint) {
-  const url = endpoint || 'https://target.example'
+/**
+ * Structured, drawn reproduction of the captured artifact.
+ *
+ * The text proof line above proves *that* something was captured. Reviewers and
+ * IT staff alike keep asking to *see* it, so this builds a small terminal-style
+ * panel: a status bar, the observed key/value pairs, and a monospaced excerpt of
+ * the response body with the matched marker highlighted.
+ *
+ * Everything is derived from the finding's own evidence. Nothing is synthesised,
+ * and a finding whose evidence holds no response-shaped field returns null so the
+ * card can say so plainly rather than drawing an empty frame.
+ */
+function buildProofPanel(v, endpoint, reconciled) {
+  const ev = v?.evidence || {}
+  const url = (typeof ev.url === 'string' && ev.url)
+    || (typeof ev.endpoint === 'string' && ev.endpoint)
+    || (typeof ev.path === 'string' && ev.path)
+    || endpoint
+    || null
+  const status = ev.status ?? ev.statusCode ?? ev.httpStatus
+  const method = String(ev.method || 'GET').toUpperCase()
+
+  const markers = []
+  // Only tokens that could plausibly appear in a response: a CWE id, a file
+  // path, a status code. Title words are excluded — a title like "Session tokens
+  // not unique" would match the finding's own prose, not the capture.
+  const markerSource = [ev.matched, ev.file, ev.path, ev.endpoint, ev.url]
+    .filter(x => typeof x === 'string' && x.trim()).join(' ')
+  for (const token of markerSource.match(/cwe-\d+|\/[\w.\-]+\.\w{1,5}|\b[1-5]\d{2}\b/gi) || []) {
+    const t = String(token).toLowerCase()
+    if (t.length >= 4 && !markers.includes(t)) markers.push(t)
+  }
+
+  // Only strings that came off the wire. `raw` is accepted solely when it is not
+  // the finding's own JSON echoed back.
+  const rawBody = [ev.body, ev.bodyPreview, ev.bodySnippet, ev.response, ev.output]
+    .find(x => typeof x === 'string' && x.trim())
+    || (typeof ev.raw === 'string' && !/^\{[\s\S]*"(title|severity|description|cweId)"\s*:/.test(ev.raw.trim()) ? ev.raw : null)
+
+  let excerpt = rawBody ? String(rawBody).replace(/\s+/g, ' ').trim().slice(0, 520) : null
+  let hit = null
+  if (excerpt) {
+    for (const m of markers) {
+      const at = excerpt.toLowerCase().indexOf(m)
+      if (at >= 0) { hit = { marker: m, at, len: m.length }; break }
+    }
+  }
+
+  const headers = []
+  if (ev.contentType) headers.push(['Content-Type', String(ev.contentType).slice(0, 60)])
+  if (ev.server) headers.push(['Server', String(ev.server).slice(0, 60)])
+  const bytes = ev.bytes ?? ev.size ?? ev.contentLengthHeader
+  if (bytes != null) headers.push(['Content-Length', `${bytes} bytes`])
+  const observed = typeof ev.header === 'string' ? ev.header
+    : typeof ev.banner === 'string' ? ev.banner
+      : typeof ev.observed === 'string' ? ev.observed
+        : null
+  if (observed) headers.push(['Observed', String(observed).replace(/\s+/g, ' ').trim().slice(0, 90)])
+  const times = Array.isArray(ev.times) ? ev.times : null
+  if (times?.length) headers.push(['Response times', `${times.length} samples, ${Math.min(...times)}-${Math.max(...times)} ms`])
+  const statuses = Array.isArray(ev.statuses) ? ev.statuses : null
+  if (statuses?.length) headers.push(['Status sequence', statuses.slice(0, 10).join(' ')])
+  const sources = Array.isArray(ev.sources) ? ev.sources.filter(s => typeof s === 'string') : []
+  if (sources.length) headers.push(['Corroborating modules', sources.slice(0, 4).join(', ')])
+
+  const hasRequest = Boolean(url || status != null)
+  const hasFindings = headers.length > 0 || Boolean(excerpt)
+  if (!hasRequest && !hasFindings) return null
+
+  // Screenshot support. PoC scripts may attach a PNG as a data URI, a bare
+  // base64 string, or an absolute file path; all three end up embedded in the
+  // card. This is the only way the report can show real pixels — there is no
+  // headless browser in this stack — so it is advertised rather than assumed.
+  const shot = resolveScreenshotEvidence(ev)
+  if (shot) headers.push(['Screenshot', 'embedded below'])
+
+  // The scanner's own verbatim output, when the check did not capture a
+  // response. Labelled as scanner output, never as a server response.
+  //
+  // A verbatim payload is only usable as proof when it describes THIS finding.
+  // Evidence rows are sometimes stored under a neighbouring finding of the same
+  // class, and the raw JSON names its own subject ("title":"…/swagger-ui").
+  // Printing that under a "/api/v1/admin" heading hands the reader proof for a
+  // finding nobody mentioned. When the payload names a different subject, the
+  // mismatch is surfaced instead of the payload.
+  const verbatimRaw = (typeof ev.raw === 'string' && ev.raw.trim() && ev.raw.trim() !== excerpt)
+    ? ev.raw.trim().slice(0, 400)
+    : null
+  const verbatimSubjectMismatch = verbatimRaw
+    ? (payloadSubjectMismatch(verbatimRaw, v?.title)
+      // Aggregation can also know the witness came from a sibling — this covers
+      // the case where the group title names no path at all, so the payload's
+      // own title has nothing to contradict.
+      || v?.evidenceSubjectMismatch
+      || null)
+    : null
+  // The payload belongs to another finding: withhold it and say so. Printing
+  // another row's evidence is worse than printing less evidence.
+  const verbatim = verbatimSubjectMismatch ? null : verbatimRaw
+  const subjectNote = verbatimSubjectMismatch
+    ? `Stored payload describes "${String(verbatimSubjectMismatch).replace(/^\s*\d+\.\s*/, '').slice(0, 90)}", not this finding, so it is withheld rather than shown as proof.`
+    : null
+
+  // The raw payload carries the rating the scanner guessed, which is exactly the
+  // number the CVSS authority may have overruled. Printing it beside a different
+  // badge without comment makes the card look self-contradictory. When the two
+  // agree there is nothing to explain, so no note is emitted.
+  let verbatimNote = null
+  if (verbatim) {
+    const rawSev = (verbatim.match(/"severity"\s*:\s*"([a-z]+)"/i) || [])[1]
+      || (verbatim.match(/\bseverity\b[^\w]{1,4}\b(critical|high|medium|low|info(?:rmation)?)\b/i) || [])[1]
+    const rawSevNorm = rawSev ? String(rawSev).toLowerCase().replace(/^information$/, 'info') : null
+    const shown = reconciled || {}
+    const shownSev = shown.severity ? String(shown.severity).toLowerCase() : null
+    if (rawSevNorm && shownSev && rawSevNorm !== shownSev && shown.score != null) {
+      verbatimNote = `Scanner rated this "${rawSevNorm}"; corrected to ${String(shown.severity).toUpperCase()} `
+        + `${Number(shown.score).toFixed(1)} by the CVSS v4.0 authority.`
+    }
+  }
+
+  return {
+    url,
+    status: status != null ? String(status) : null,
+    method,
+    headers,
+    excerpt,
+    hit,
+    screenshot: shot,
+    verbatim,
+    verbatimSubjectMismatch,
+    subjectNote,
+    verbatimNote,
+    sourceNote: excerpt ? 'captured response body' : null,
+  }
+}
+
+/**
+ * Detect a stored verbatim payload that describes a different subject than the
+ * finding it is being printed under.
+ *
+ * A raw payload is JSON the scanner itself wrote, so it carries its own `title`.
+ * When that title names a concrete subject (`/swagger-ui`) and the finding names
+ * a different one (`/api/v1/admin`), the payload is evidence for another row and
+ * must not be presented as this finding's proof.
+ *
+ * Returns the payload's subject when it disagrees with the finding, else null.
+ */
+function payloadSubjectMismatch(rawPayload, findingTitle) {
+  if (typeof rawPayload !== 'string' || !rawPayload.trim()) return null
+  if (typeof findingTitle !== 'string' || !findingTitle.trim()) return null
+  let payloadTitle = null
+  try {
+    const parsed = JSON.parse(rawPayload)
+    if (parsed && typeof parsed.title === 'string') payloadTitle = parsed.title
+  } catch {
+    // Truncated or non-JSON payload: fall back to a shallow title scrape.
+    const m = rawPayload.match(/"title"\s*:\s*"([^"]{3,120})"/i)
+    if (m) payloadTitle = m[1]
+  }
+  if (!payloadTitle) return null
+  const norm = s => String(s)
+    .replace(/^\s*\d+\.\s*/, '')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim()
+  const a = norm(payloadTitle)
+  const b = norm(findingTitle)
+  if (!a || !b || a === b) return null
+  // Subjects are the identifiers a finding names: paths, hostnames, dotted
+  // versions. When the finding carries none, the payload cannot contradict it.
+  const subjects = s => (s.match(/[a-z0-9_.-]*[/\\._][a-z0-9_.\/-]*|\d+(?:\.\d+)+/g) || [])
+    .filter(t => t.length > 2)
+  const want = new Set(subjects(b))
+  if (!want.size) return null
+  const have = new Set(subjects(a))
+  for (const w of want) if (!have.has(w)) return payloadTitle
+  return null
+}
+
+/**
+ * Normalise a screenshot reference out of a finding's evidence.
+ * Accepts a data URI, a bare base64 PNG/JPEG payload, or a readable file path.
+ */
+function resolveScreenshotEvidence(ev) {
+  const cand = ev.screenshot || ev.screenshotPng || ev.image || (Array.isArray(ev.screenshots) ? ev.screenshots[0] : null)
+  if (typeof cand !== 'string' || !cand.trim()) return null
+  const value = cand.trim()
+  try {
+    if (value.startsWith('data:image/')) {
+      const b64 = value.slice(value.indexOf(',') + 1)
+      const buf = Buffer.from(b64, 'base64')
+      return buf.length > 100 ? buf : null
+    }
+    if (/^[A-Za-z]:[\\/]/.test(value) || value.startsWith('/')) {
+      if (!fs.existsSync(value)) return null
+      const buf = fs.readFileSync(value)
+      return buf.length > 100 ? buf : null
+    }
+    if (/^[A-Za-z0-9+/=\r\n]{200,}$/.test(value)) {
+      const buf = Buffer.from(value.replace(/\s+/g, ''), 'base64')
+      return buf.length > 100 ? buf : null
+    }
+  } catch {
+    return null
+  }
+  return null
+}
+
+/**
+ * Short host+path form for cramped labels where a full origin just wraps.
+ */
+function compactUrlForLabel(url) {
+  if (typeof url !== 'string' || !url.trim()) return 'the endpoint'
+  let out = url.trim()
+  out = out.replace(/^https?:\/\//i, (m) => (m.toLowerCase().startsWith('https') ? '(https) ' : '(http) '))
+  return out.replace(/\/$/, '').slice(0, 90)
+}
+
+function concreteVerification(v, endpoint) {  const url = endpoint || 'https://target.example'
   const safeUrl = /^https?:\/\//i.test(url) ? url : `https://${url}`
   const title = String(v.title || '').toLowerCase()
+  const host = safeUrl.replace(/^https?:\/\//i, '').split('/')[0]
   if (/header|hsts|csp|frame|content-type|cors/i.test(title)) {
     return `curl -sS -D - -o /dev/null "${safeUrl}" | grep -iE "^(server|x-powered-by|strict-transport-security|content-security-policy|x-frame-options|x-content-type-options|access-control-allow-origin):"`
   }
   if (/version|cve|outdated|eol|software|technology/i.test(title)) {
-    return `curl -sS -D - -o /dev/null "${safeUrl}" && nmap -Pn -sV --version-light "${safeUrl.replace(/^https?:\/\//i, '').split('/')[0]}"`
+    return `curl -sS -D - -o /dev/null "${safeUrl}" && nmap -Pn -sV --version-light "${host}"`
+  }
+  if (/source ?map/i.test(title)) {
+    const mapUrl = /\.map(\?|$)/i.test(safeUrl) ? safeUrl : `${safeUrl.replace(/\.js(\?|$)/i, '')}.map`
+    return `curl -sS -D - -o /dev/null "${mapUrl}" && curl -sS "${mapUrl}" | head -c 400`
+  }
+  if (/log file|backup|\.env|config file|exposed file|directory listing/i.test(title)) {
+    return `curl -sS -D - "${safeUrl}" | head -c 800`
   }
   return `curl -sS -o /dev/null -w "HTTP %{http_code}\\n" "${safeUrl}" && re-run the targeted SentinelAI check`
 }
@@ -1265,6 +1784,62 @@ function makeEvidenceDrivenProblem(v, fallback, context) {
   if (context.observed) parts.push(`Observed evidence: ${context.observed}.`)
   parts.push(fallback)
   return parts.join(' ')
+}
+
+/**
+ * A consequence sentence derived from the finding's OWN scored vector, keyed on
+ * the CVSS v4.0 impact metrics. This replaces the previous generic default
+ * ("impact depends on the access and data reachable from the affected
+ * component"), which was printed verbatim on every card whether the badge beside
+ * it said LOW 2.1 or CRITICAL 9.3 — a sentence that is true of every finding
+ * tells the reader nothing about this one.
+ */
+function consequenceFromFinding(v, context) {
+  const { vector } = evaluateFindingCvss(v)
+  const m = {}
+  for (const part of String(vector || '').split('/')) {
+    const idx = part.indexOf(':')
+    if (idx > 0) m[part.slice(0, idx)] = part.slice(idx + 1)
+  }
+  const where = context.location || context.endpoint || 'the affected component'
+  const out = []
+
+  // "Fully compromised" is only true when every leg of the CIA triad is lost.
+  // A read-only leak (VC:H with VI:N/VA:N) is a disclosure, not a takeover, and
+  // claiming takeover on a HIGH 8.7 card is the kind of overstatement that gets
+  // a report thrown out. Fall through so each lost leg gets its own clause.
+  //
+  // A mitigated/limited loss on a subsequent system is weaker evidence than the
+  // same loss on the vulnerable one, so it is only reported when the vulnerable
+  // system did not already report it — otherwise "confidential data is readable"
+  // and "a limited amount of data is disclosed" both fire for one leak.
+  const fullTakeover = m.VC === 'H' && m.VI === 'H' && m.VA === 'H'
+  if (fullTakeover) {
+    out.push(`${where} can be fully compromised (read, modified, and taken offline)`)
+  } else {
+    if (m.VC === 'H') out.push(`confidential data at ${where} is readable by an unauthorized party`)
+    else if (m.SC === 'H') out.push('confidential data on the downstream system is readable by an unauthorized party')
+    if (m.VI === 'H') out.push('stored records can be modified or forged')
+    else if (m.SI === 'H') out.push('data on the downstream system can be modified')
+    if (m.VA === 'H') out.push('the service can be interrupted')
+    else if (m.SA === 'H') out.push('the downstream system can be taken offline')
+    if (m.VC !== 'H' && m.SC === 'L') out.push('a limited amount of data or metadata is disclosed')
+    if (m.VI !== 'H' && m.SI === 'L') out.push('a limited modification is possible')
+    if (m.VA !== 'H' && m.SA === 'L') out.push('downstream availability is partially degraded')
+  }
+
+  if (m.PR === 'L') out.push('the attacker needs a low-privilege account')
+  if (m.PR === 'H') out.push('the attacker needs administrative access first')
+  if (m.UI === 'A') out.push('a victim must be induced to act')
+  if (m.UI === 'P') out.push('a victim must interact with crafted content')
+  if (m.AC === 'H') out.push('exploitation depends on conditions outside the attacker\'s control')
+
+  if (!out.length) {
+    out.push('no direct confidentiality, integrity, or availability loss is proven by the captured evidence; this is a hardening gap or an exploitable building block, not a break in itself')
+  }
+
+  const lead = context.status ? `The endpoint answered HTTP ${context.status}. ` : ''
+  return sanitizePdfText(`${lead}${out.join('; ')}.`)
 }
 
 /**
@@ -1386,11 +1961,33 @@ function toView(f, scanTarget) {
     context.parameter && `Affected parameter: ${context.parameter}.`,
     context.location && `Source location: ${context.location}.`,
   ].filter(Boolean).join(' ')
-  const view = {
-    title: beautifyFindingTitle(cleanPdfText(f.title)),
-    severity: (f.severity || 'info').toLowerCase(),
+  // Reconcile ONCE, here. Every downstream consumer (badges, counts, the
+  // triage queue, the class sort) reads the same reconciled values, so a card
+  // can never print "CRITICAL" in the pill and "CVSS 6.3" in the badge — and a
+  // triage summary can never say "20 critical" while the queue shows 8.
+  const cvssEvaluation = evaluateFindingCvss({
+    title: f.title,
+    severity: f.severity,
     cvss: f.cvss,
-    cvssVector: f.cvss_vector,
+    cvss_vector: f.cvss_vector,
+    cwe_id: f.cwe_id,
+    poc: f.poc,
+    status: f.status,
+    agent_verdict: f.agent_verdict,
+  })
+  const view = {
+    id: f.id,
+    title: beautifyFindingTitle(cleanPdfText(f.title)),
+    severity: cvssEvaluation.severity,
+    cvss: cvssEvaluation.score,
+    cvssVector: cvssEvaluation.vector,
+    cvssFindingClass: cvssEvaluation.findingClass,
+    cvssSource: cvssEvaluation.source,
+    cvssVectorSource: cvssEvaluation.vectorSource,
+    cvssReconciled: cvssEvaluation.reconciled,
+    auditNote: cvssEvaluation.auditNote || null,
+    declaredSeverity: f.severity ? String(f.severity).toLowerCase() : null,
+    declaredCvss: cvssEvaluation.declaredScore,
     cweId: f.cwe_id,
     cveId: f.cve_id,
     owaspCategory: f.owasp_category,
@@ -2050,8 +2647,127 @@ function renderFindingsSummary(doc, { vulnerabilities }) {
  * repeated across dozens of endpoints appears once with an occurrence count,
  * and the reader can see at a glance whether the claim was actually proven.
  */
+/**
+ * Technology / architecture / version inventory with CVE correlation.
+ *
+ * The simplified report always carried this table; the full report did not, which
+ * meant the "fuller" document was the one that answered "so what exactly is this
+ * thing running, and what does CVE say about that version?" least well. Same data,
+ * same wording, so the two exports cannot disagree.
+ */
+function renderTechInventory(doc, { techStack }) {
+  drawSectionTitle(
+    doc,
+    '4.  Technology & Version Inventory',
+    'Components read from live responses and scanner evidence, correlated against NIST NVD by exact version range.',
+  )
+  const x = doc.page.margins.left
+  const w = doc.page.width - doc.page.margins.left - doc.page.margins.right
+  const stack = techStack && techStack.hasData ? techStack : null
+
+  if (!stack || !stack.rows.length) {
+    doc.fontSize(10).font('Helvetica').fillColor(BRAND.textMuted)
+      .text(
+        'No product or version signature was exposed during this scan. That is not proof of a current stack — a WAF, CDN, '
+        + 'or banner suppression may be hiding it. Confirm the real inventory from an authenticated asset list.',
+        x, doc.y, { width: w },
+      )
+    return
+  }
+
+  const rows = stack.rows.slice(0, 30)
+  const cols = [
+    { key: 'product', label: 'Product / Component', w: 150 },
+    { key: 'version', label: 'Version', w: 78 },
+    { key: 'source', label: 'Detected From', w: 0 }, // flexible
+    { key: 'cves', label: 'Known CVEs (NVD)', w: 118 },
+  ]
+  const fixed = cols.reduce((a, c) => a + c.w, 0)
+  cols[2].w = Math.max(120, w - fixed)
+
+  ensureSpace(doc, 60)
+  const hy = doc.y
+  doc.rect(x, hy, w, 18).fill(BRAND.primary)
+  let cx = x + 4
+  for (const c of cols) {
+    doc.fontSize(8).font('Helvetica-Bold').fillColor('#FFFFFF')
+      .text(c.label, cx, hy + 5.5, { width: c.w - 6 })
+    cx += c.w
+  }
+  doc.y = hy + 20
+
+  for (const row of rows) {
+    ensureSpace(doc, 22)
+    const ry = doc.y
+    const cveText = row.totalCves > 0
+      ? `${row.totalCves}${row.criticalCount ? ` (${row.criticalCount} crit)` : row.highCount ? ` (${row.highCount} high)` : ''}`
+      : row.versionUnverified
+        ? 'n/a - version unknown'
+        : row.lookupStatus === 'error'
+          ? 'lookup FAILED'
+          : row.lookupStatus === 'not-performed'
+            ? 'no CVE check run'
+            : '0 matched'
+    const cveColor = row.criticalCount > 0 ? SEV_COLORS.critical.bg
+      : row.highCount > 0 ? SEV_COLORS.high.bg
+        : row.totalCves > 0 ? SEV_COLORS.medium.bg
+          : row.lookupStatus === 'error' || row.lookupStatus === 'not-performed' ? SEV_COLORS.medium.bg
+            : BRAND.textMuted
+
+    let px = x + 4
+    doc.fontSize(8.5).font('Helvetica-Bold').fillColor(BRAND.textDark)
+      .text(sanitizePdfText(row.product).slice(0, 40), px, ry, { width: cols[0].w - 6, ellipsis: true })
+    px += cols[0].w
+    doc.fontSize(8.5).font(row.versionUnverified ? 'Helvetica-Oblique' : 'Courier')
+      .fillColor(row.versionUnverified ? '#94A3B8' : BRAND.textDark)
+      .text(row.version ? sanitizePdfText(row.version).slice(0, 18) : 'not disclosed', px, ry, { width: cols[1].w - 6, ellipsis: true })
+    px += cols[1].w
+    doc.fontSize(7.5).font('Helvetica').fillColor(BRAND.textMuted)
+      .text(sanitizePdfText(row.detectedFrom || row.detectionSource || 'n/a').slice(0, 60), px, ry, { width: cols[2].w - 6, ellipsis: true })
+    px += cols[2].w
+    doc.fontSize(8).font('Helvetica-Bold').fillColor(cveColor)
+      .text(cveText, px, ry, { width: cols[3].w - 6, ellipsis: true })
+    if (row.eolDate && row.monthsPast > 0) {
+      doc.fontSize(6.5).font('Helvetica-Bold').fillColor(SEV_COLORS.high.bg)
+        .text(`EOL ${row.monthsPast}mo`, px, ry + 9, { width: cols[3].w - 6, ellipsis: true })
+      doc.y = ry + 20
+    } else {
+      doc.y = ry + 13
+    }
+    doc.strokeColor('#F1F5F9').lineWidth(0.6)
+      .moveTo(x, doc.y - 3).lineTo(x + w, doc.y - 3).stroke()
+  }
+
+  doc.moveDown(0.6)
+  if (stack.advisories.length) {
+    doc.fontSize(8).font('Helvetica-Bold').fillColor(BRAND.textDark)
+      .text("Advisories matching these exact versions (highest CVSS first):", x, doc.y, { width: w })
+    doc.moveDown(0.3)
+    for (const a of stack.advisories.slice(0, 12)) {
+      ensureSpace(doc, 30)
+      doc.fontSize(8).font('Helvetica-Bold').fillColor(BRAND.primary)
+        .text(`${a.id}${a.score != null ? `  CVSS ${a.score}` : ''}`, x, doc.y, { continued: true, width: w })
+      doc.font('Helvetica').fillColor(BRAND.textBody)
+        .text(`  ${sanitizePdfText(a.description || '').slice(0, 200)}`, { width: w })
+      doc.moveDown(0.25)
+    }
+  } else if (stack.lookupFailures > 0) {
+    doc.fontSize(8).font('Helvetica-Oblique').fillColor(SEV_COLORS.medium.bg)
+      .text(
+        `${stack.lookupFailures} component lookup(s) could not reach NVD. An unreachable lookup is not a clean component — re-run before treating these as patched.`,
+        x, doc.y, { width: w },
+      )
+  } else if (stack.disclosedOnly > 0) {
+    doc.fontSize(8).font('Helvetica-Oblique').fillColor(BRAND.textMuted)
+      .text(
+        'NVD returned no advisory covering these exact versions. Absence of a match is not proof of a patch: NVD applicability is range-based, vendor advisories exist outside it, and a backported build number can hide a vulnerable body.',
+        x, doc.y, { width: w },
+      )
+  }
+}
+
 function renderClassificationTable(doc, { vulnerabilities }) {
-  drawSectionTitle(doc, '4.  Issue Classification', 'One row per root cause — repeated observations are counted, not duplicated.')
+  drawSectionTitle(doc, '5.  Issue Classification', 'One row per root cause — repeated observations are counted, not duplicated.')
   const x = doc.page.margins.left
   const w = doc.page.width - doc.page.margins.left - doc.page.margins.right
   const cols = [
@@ -2160,7 +2876,7 @@ function renderUnverifiedAppendix(doc, { unverifiedFindings = [], rejectedFindin
         .text(cleanPdfText(String(v.title || '').slice(0, 110)), x + 156, y + 3, { width: w - 166, height: 13, ellipsis: true })
       const detail = [
         v.aiReasoning ? `Why unproven: ${v.aiReasoning}` : null,
-        v.occurrences > 1 ? `Observed at ${v.occurrences} locations${v.locations && v.locations.length ? ` (e.g. ${v.locations.slice(0, 3).join(', ')})` : ''}.` : null,
+        v.occurrences > 1 ? `Observed at ${v.occurrences} locations${formatLocationSample(v.locations, 3)}.` : null,
         `Reproduce: ${describeReproduction(v)}`,
       ].filter(Boolean).join(' ')
       doc.fontSize(7.5).font('Helvetica').fillColor(BRAND.textDark)
@@ -2189,6 +2905,19 @@ function renderUnverifiedAppendix(doc, { unverifiedFindings = [], rejectedFindin
   }
 }
 
+/**
+ * Sample merged locations for display. A merged group can hold 20+ paths; all of
+ * them on one line overflows a fixed-height text box and truncates mid-token, so
+ * the sample is capped and the count of the remainder is stated instead.
+ */
+function formatLocationSample(locations, max) {
+  const list = Array.isArray(locations) ? locations.filter(Boolean) : []
+  if (!list.length) return ''
+  const shown = list.slice(0, max)
+  const rest = list.length - shown.length
+  return ` (e.g. ${shown.join(', ')}${rest > 0 ? ` +${rest} more` : ''})`
+}
+
 /** Short, type-specific reproduction hint so a lead is actionable, not vague. */
 function describeReproduction(v) {
   const t = `${v.title || ''} ${v.category || ''}`.toLowerCase()
@@ -2203,7 +2932,7 @@ function describeReproduction(v) {
 }
 
 function renderDetailedFindings(doc, { vulnerabilities, isWhitebox }) {
-  drawSectionTitle(doc, '5.  Detailed Findings')
+  drawSectionTitle(doc, '6.  Detailed Findings')
   const x = doc.page.margins.left
   const w = doc.page.width - doc.page.margins.left - doc.page.margins.right
 
@@ -2635,7 +3364,7 @@ function renderDetailedFindings(doc, { vulnerabilities, isWhitebox }) {
 }
 
 function renderAppendix(doc, { scans, project, isWhitebox, verificationSummary = null }) {
-  drawSectionTitle(doc, '6.  Appendix')
+  drawSectionTitle(doc, '7.  Appendix')
   const x = doc.page.margins.left
   const w = doc.page.width - doc.page.margins.left - doc.page.margins.right
 
@@ -2832,6 +3561,116 @@ export function buildReportFilename({ scan, reportType = 'full', customScanner =
 }
 
 
+/**
+ * Bounded AI enrichment.
+ *
+ * Export used to await four sequential AI operations — narrative (30 s cap),
+ * attack chain (30 s cap), up to eight PoC generations (uncapped), then the
+ * simplified action guide (uncapped) — so a healthy scan could sit for several
+ * minutes while a dead provider burned every timeout in turn. Nothing on those
+ * calls is required to produce a valid PDF: the scoring, evidence and CVSS
+ * panels are all computed locally.
+ *
+ * This helper runs the whole enrichment stage concurrently under a single hard
+ * deadline. When the deadline passes, every unfinished piece resolves to
+ * `null` and the document is rendered without it. The writer then says the
+ * narrative was unavailable instead of silently printing an empty section.
+ */
+async function withAiEnrichment(deadlineMs, tasks) {
+  const started = Date.now()
+  const names = Object.keys(tasks)
+  const results = Object.fromEntries(names.map(n => [n, null]))
+  if (!names.length) return results
+  if (deadlineMs <= 0) return results
+
+  let timer = null
+  const expired = new Promise(resolve => { timer = setTimeout(() => resolve('__expired__'), deadlineMs) })
+
+  const runners = names.map(async n => {
+    try {
+      const value = await tasks[n]()
+      results[n] = value ?? null
+      return 'ok'
+    } catch (e) {
+      console.warn(`[Report] AI ${n} skipped: ${e?.message || e}`)
+      return 'err'
+    }
+  })
+  const settled = Promise.all(runners)
+
+  const winner = await Promise.race([settled.then(() => '__done__'), expired])
+  if (timer) clearTimeout(timer)
+
+  if (winner === '__done__') {
+    console.log(`[Report] AI enrichment finished in ${Date.now() - started} ms`)
+  } else {
+    const missing = names.filter(n => results[n] == null)
+    console.warn(
+      `[Report] AI enrichment deadline ${deadlineMs} ms reached; rendering without: ${missing.join(', ') || 'nothing pending'}`
+    )
+  }
+  return results
+}
+
+/**
+ * Fill in CVE correlation for components that were disclosed by the target but
+ * never audited. A redirect, a proxy or a cached empty response can leave the
+ * version audit with no record while the server banner plainly names the build;
+ * the report must not silently mark such a component "0 matched".
+ *
+ * Bounded by `deadlineMs` so a slow or blocked NVD never delays an export, and
+ * every row it cannot resolve keeps an explicit "not checked" state rather than
+ * falling back to a clean-looking zero.
+ */
+async function refreshUncorrelatedComponents(techStack, deadlineMs) {
+  if (!techStack?.rows?.length) return
+  const pending = techStack.rows.filter(r => r.lookupStatus === 'not-performed' && r.version && !r.versionUnverified)
+  if (!pending.length) return
+
+  const started = Date.now()
+  let timer = null
+  const expired = new Promise(resolve => { timer = setTimeout(() => resolve('__expired__'), deadlineMs) })
+  const work = Promise.all(pending.map(async row => {
+    try {
+      const result = await findVersionVulnerabilities(row.product, row.version)
+      if (!result || result.error) {
+        throw new Error(result?.error || 'no result returned')
+      }
+      const cves = Array.isArray(result.results) ? result.results : []
+      const ranked = [...cves].sort((a, b) => (Number(b.cvss?.score) || 0) - (Number(a.cvss?.score) || 0))
+      row.totalCves = cves.length
+      row.criticalCount = cves.filter(c => /critical/i.test(String(c.cvss?.severity || ''))).length
+      row.highCount = cves.filter(c => /high/i.test(String(c.cvss?.severity || ''))).length
+      row.mediumCount = cves.filter(c => /medium/i.test(String(c.cvss?.severity || ''))).length
+      row.knownCves = ranked.slice(0, 6).map(c => ({
+        id: c.id,
+        score: c.cvss?.score ?? null,
+        severity: c.cvss?.severity || null,
+        description: (c.description || '').slice(0, 300),
+        cwe: Array.isArray(c.weaknesses) ? c.weaknesses.slice(0, 3).join(', ') : null,
+      }))
+      row.lookupStatus = cves.length ? 'match' : 'empty'
+      row.verifiedAtProvider = true
+      row.refreshFailed = false
+      row.remedy = null
+    } catch (e) {
+      row.refreshFailed = true
+      row.remedy = `NVD lookup failed at report time (${e?.message || e}) - re-run before judging this component clean`
+    }
+  }))
+
+  const winner = await Promise.race([work.then(() => '__done__'), expired])
+  if (timer) clearTimeout(timer)
+  Object.assign(techStack, summarizeTechStack(techStack.rows), { hasData: techStack.rows.length > 0 })
+  const unresolved = pending.filter(r => r.lookupStatus === 'not-performed')
+  if (winner === '__done__') {
+    const matched = pending.filter(r => r.lookupStatus === 'match').length
+    console.log(`[Report] NVD refresh for ${pending.length} disclosed component(s) finished in ${Date.now() - started} ms (${matched} with advisories)`)
+  } else {
+    console.warn(`[Report] NVD refresh deadline ${deadlineMs} ms reached; ${unresolved.length} component(s) left uncorrelated`)
+  }
+}
+
 export async function generateReport(scanId, minSeverity = 'info', statusFilter = 'all', opts = {}) {
   const { reportType = 'full', custom = {} } = opts
   const scan = db.get(`SELECT * FROM scans WHERE id = ?`, scanId)
@@ -2905,44 +3744,37 @@ export async function generateReport(scanId, minSeverity = 'info', statusFilter 
     reportedRootCauses: reportFindings.length,
   }
 
+  // ── AI ENRICHMENT (bounded, concurrent) ──
+  // Everything below is optional decoration on top of locally-computed evidence,
+  // so it runs in parallel under one wall-clock budget configured by
+  // REPORT_AI_BUDGET_MS. See withAiEnrichment().
+  //
+  // The technology fingerprint is computed first because the action guide needs
+  // it as context. It is pure local work — no network, no model.
+  const techStack = buildTechStackFingerprint(reportFindings)
   let aiNarrative = null
   let aiAttackChain = null
-  const aiRaceTimeout = (ms, label) => new Promise((_, reject) => setTimeout(() => reject(new Error(label + ' timed out')), ms))
-  try {
-    aiNarrative = await Promise.race([
-      aiEngine.summarize({
-        target: scan.target, totalFindings: reportFindings.length,
-        severityCounts: counts, topFindings, owaspCategories, isWhitebox, modules,
-      }),
-      aiRaceTimeout(30000, 'AI summarize'),
-    ])
-  } catch (e) { console.warn('[Report] AI narrative skipped:', e.message) }
-  try {
-    aiAttackChain = await Promise.race([
-      aiEngine.generateAttackChain(reportFindings, scan.target),
-      aiRaceTimeout(30000, 'AI attack chain'),
-    ])
-  } catch (e) { console.warn('[Report] AI attack chain skipped:', e.message) }
+  let aiGuide = null
+  const aiBudgetMs = Number(process.env.REPORT_AI_BUDGET_MS ?? (reportType === 'simple' ? 12000 : 20000))
+  // Components the scan disclosed but never correlated against NVD used to print
+  // "0 matched", which reads as "checked and clean" and is the opposite of the
+  // evidence. Query NVD for them now, bounded by the same wall clock budget so an
+  // unresponsive NVD can never hold the export open.
+  await refreshUncorrelatedComponents(techStack, Math.min(aiBudgetMs, 15000))
+  const techStackForGuide = techStack.rows.map(r => (r.version ? `${r.product} ${r.version}` : r.product))
+  const pocCandidatesAll = confirmedFindings
+    .filter(v => ['critical', 'high', 'medium'].includes(String(v.severity).toLowerCase()))
+    .slice(0, 5) // limit to avoid excessive LLM calls
+  const targetType = isWhitebox ? 'code' : 'url'
 
-  // ── AI-GENERATED PoC EXPLOITS ──
-  // The AI produces tailored, copy-pasteable exploits using the ACTUAL vulnerable
-  // code or URL evidence. Candidates are drawn ONLY from reproduced findings: a
-  // weaponised exploit for a claim we have not proven hands the reader a precise
-  // recipe for something that may not exist. Leads get a reproduction hint in the
-  // appendix instead, which is what actually settles them.
-  {
-    const pocCandidatesAll = confirmedFindings
-      .filter(v => ['critical', 'high', 'medium'].includes(String(v.severity).toLowerCase()))
-      .slice(0, 8) // limit to avoid excessive LLM calls
-    if (!pocCandidatesAll.length) {
-      console.warn('[Report] No reproduced critical/high/medium finding — skipping AI PoC generation')
-    }
-    const targetType = isWhitebox ? 'code' : 'url'
-    const pocPromises = pocCandidatesAll.map(async v => {
+  // PoC generation is a side effect: each candidate decorates itself in place.
+  // A candidate that times out keeps the deterministic template already attached
+  // upstream, which is a truthful reproduction hint rather than a missing panel.
+  const generatePocs = async () => {
+    await Promise.all(pocCandidatesAll.map(async v => {
       try {
         const aiPoc = await aiEngine.generateExploitPoc(v, targetType)
         if (aiPoc) {
-          // Build a rich PoC payload replacing the template-generated one
           // Models usually number their own steps; re-numbering produced "1. 1. Send…".
           const steps = (aiPoc.exploitSteps || [])
             .map((s, i) => (/^\s*\d+[.)]/.test(String(s)) ? String(s) : `${i + 1}. ${s}`))
@@ -2972,8 +3804,29 @@ export async function generateReport(scanId, minSeverity = 'info', statusFilter 
         v.pocSource = 'template'
       }
       return v
-    })
-    await Promise.all(pocPromises)
+    }))
+    return pocCandidatesAll.length
+  }
+
+  const enrichment = await withAiEnrichment(aiBudgetMs, {
+    narrative: () => aiEngine.summarize({
+      target: scan.target, totalFindings: reportFindings.length,
+      severityCounts: counts, topFindings, owaspCategories, isWhitebox, modules,
+    }),
+    attackChain: () => aiEngine.generateAttackChain(reportFindings, scan.target),
+    pocs: generatePocs,
+    guide: () => {
+      // Feed the guide only reproduced findings: it echoes what it is given back
+      // as action items, so handing it the leads reintroduces them.
+      const guideInput = confirmedFindings.length > 0 ? confirmedFindings : []
+      return aiEngine.generateSimplifiedActionGuide(guideInput, scan.target, techStackForGuide)
+    },
+  })
+  aiNarrative = enrichment.narrative
+  aiAttackChain = enrichment.attackChain
+  aiGuide = enrichment.guide
+  if (reportType === 'simple') {
+    console.warn('[Report] action guide ' + (aiGuide ? 'generated' : 'unavailable — rendering deterministic task queue'))
   }
 
   const file = path.join(config.outputDir, reportType === 'simple' ? `simplified-report-${scanId}.pdf` : `report-${scanId}.pdf`)
@@ -2995,18 +3848,26 @@ export async function generateReport(scanId, minSeverity = 'info', statusFilter 
             if (m) detectedTech.push(...m[1].split(',').map(s => s.trim()))
           }
         }
+        // The version audit already fingerprints the server, libraries and JS
+        // frameworks, and correlates each against NVD. None of that ever reached
+        // the report: the cover printed a hardcoded "Standard Web Application
+        // Architecture" string even when the scan had detected `nginx 1.18.0`
+        // with published CVEs. `techStack` is built once, above, and shared with
+        // the action guide.
+        for (const row of techStack.rows) {
+          if (row.version) detectedTech.push(`${row.product} ${row.version}`)
+          else detectedTech.push(row.product)
+        }
         const uniqueTech = [...new Set(detectedTech)].slice(0, 15)
 
-        let simplifiedGuide = null
-        try {
-          // Feed the guide only reproduced findings: it echoes what it is given
-          // back as action items, so handing it the leads reintroduces them.
-          const guideInput = confirmedFindings.length > 0 ? confirmedFindings : []
-          simplifiedGuide = await aiEngine.generateSimplifiedActionGuide(guideInput, scan.target, uniqueTech)
-        } catch { /* non-fatal */ }
+        // The guide was generated concurrently above, under the shared budget.
+        // It is decoration: the task queue is derived deterministically from the
+        // findings themselves, so its absence changes wording, not content.
+        const simplifiedGuide = aiGuide
         await renderSimplifiedPdf({
           file, reportTitle: custom.customTitle || `Simplified IT Action Guide: ${scan.target || 'Unknown Target'}`,
           scans, project, vulnerabilities: reportFindings, isWhitebox, aiNarrative, simplifiedGuide, custom, detectedTech: uniqueTech,
+          techStack,
           unverifiedFindings, rejectedFindings, verificationSummary,
         })
         try { fs.copyFileSync(file, friendlyFile) } catch {}
@@ -3015,7 +3876,7 @@ export async function generateReport(scanId, minSeverity = 'info', statusFilter 
 
     await renderPdf({
       file, reportTitle, scans, project, vulnerabilities: reportFindings, isWhitebox, aiNarrative, aiAttackChain, custom,
-      unverifiedFindings, rejectedFindings, verificationSummary,
+      unverifiedFindings, rejectedFindings, verificationSummary, techStack,
     })
 
     try {
@@ -3084,15 +3945,20 @@ export async function generateProjectReport(projectId) {
   } catch { /* non-fatal */ }
 
   const file = path.join(config.outputDir, `report-project-${projectId}.pdf`)
+  // A project report spans several scans; build the inventory from the merged,
+  // newly classified finding set so the versions it cites are the ones this
+  // document actually reports on.
+  const techStack = buildTechStackFingerprint(activeFindings)
+  await refreshUncorrelatedComponents(techStack, 15000)
   await renderPdf({
     file, reportTitle: `Project Report: ${project.name}`, scans, project,
     vulnerabilities: activeFindings, isWhitebox, aiNarrative, aiAttackChain,
-    unverifiedFindings, rejectedFindings, verificationSummary,
+    unverifiedFindings, rejectedFindings, verificationSummary, techStack,
   })
   return { file }
 }
 
-async function renderPdf({ file, reportTitle, scans, project, vulnerabilities, isWhitebox, aiNarrative = null, aiAttackChain = null, custom = {}, unverifiedFindings = [], rejectedFindings = [], verificationSummary = null }) {
+async function renderPdf({ file, reportTitle, scans, project, vulnerabilities, isWhitebox, aiNarrative = null, aiAttackChain = null, custom = {}, unverifiedFindings = [], rejectedFindings = [], verificationSummary = null, techStack = null }) {
   await new Promise((resolve, reject) => {
     const doc = new PDFDocument({
       size: 'A4',
@@ -3137,6 +4003,9 @@ async function renderPdf({ file, reportTitle, scans, project, vulnerabilities, i
 
     smartBreak()
     renderFindingsSummary(doc, { vulnerabilities })
+
+    smartBreak()
+    renderTechInventory(doc, { techStack })
 
     renderClassificationTable(doc, { vulnerabilities })
 
@@ -3188,7 +4057,7 @@ async function renderPdf({ file, reportTitle, scans, project, vulnerabilities, i
  * Smart helper to construct rich, professional action cards even when AI is unavailable.
  */
 function buildSimplifiedActionItem(v, index, detectedTech = []) {
-  const title = sanitizePdfText(v.title || 'Security Finding')
+  let title = sanitizePdfText(v.title || 'Security Finding')
   const sev = (v.severity || 'medium').toLowerCase()
   const lowerTitle = title.toLowerCase()
 
@@ -3197,7 +4066,11 @@ function buildSimplifiedActionItem(v, index, detectedTech = []) {
   let estimatedMinutes = 30
   const context = findingEvidenceContext(v)
   let symptom = sanitizePdfText(v.description || '')
-  let risk = `An attacker can use this condition against ${context.endpoint || 'the tested asset'}; impact depends on the access and data reachable from the affected component.`
+  // Boilerplate removed. "impact depends on the access and data reachable from
+  // the affected component" is true of every finding and therefore tells the
+  // reader nothing; it was printed on cards whose severity badge said CRITICAL.
+  // A real consequence is derived from the finding's own scored vector below.
+  let risk = consequenceFromFinding(v, context)
   let prescription = sanitizePdfText(v.remediation || '')
   let verification = concreteVerification(v, context.endpoint)
 
@@ -3271,11 +4144,52 @@ function buildSimplifiedActionItem(v, index, detectedTech = []) {
     prescription = `Fix the reported condition on ${context.endpoint || context.location || 'the affected asset'}; do not close the finding until the same test returns the expected secure response.`
   }
 
+  const evaluation = evaluateFindingCvss(v)
+
+  // One card stands for every merged occurrence of the root cause, so a group of
+  // 25 discovered endpoints printed a single path and the reader had no way to
+  // know the other 24 existed. `occurrences` is the true count; `locations` is
+  // capped at 20 by aggregateFindings, so it can only ever be a sample and must
+  // never be used as the total. Three paths are named, the remainder is counted,
+  // which keeps the card height predictable. The header carries the same count so
+  // the card does not claim to be about the one path it happens to name.
+  const merged = Math.max(0, Number(v.occurrences) || 0)
+  if (merged > 1) {
+    const titlePaths = new Set(
+      (title.match(/\/[a-z0-9_.~%-]+(?:\/[a-z0-9_.~%-]+)*/gi) || []).map(s => s.toLowerCase()),
+    )
+    const others = (Array.isArray(v.locations) ? v.locations : [])
+      .filter(loc => /^[/.]/.test(String(loc)) && !titlePaths.has(String(loc).toLowerCase()))
+    const sample = others.slice(0, 3)
+    const rest = Math.max(0, merged - titlePaths.size - sample.length)
+    const parts = []
+    if (sample.length) parts.push(`at ${sample.join(', ')}`)
+    const restText = rest > 0 ? `+${rest} more` : ''
+    const detail = [parts.join(''), restText].filter(Boolean).join(' ')
+    if (detail) {
+      const lead = String(symptom).endsWith('.') ? ' ' : '. '
+      symptom = `${symptom}${lead}The same condition is also reproduced ${detail}.`
+    }
+    const plural = merged === 1 ? 'finding' : 'findings'
+    const mergedTitle = `${title} [${merged} ${plural} merged]`
+    if (mergedTitle.length <= 110) title = mergedTitle
+  }
+
   return {
     title,
-    severity: sev,
-    cvss: v.cvss != null ? Number(v.cvss) : null,
-    cvssVector: v.cvss_vector || v.cvssVector || null,
+    // The badge, the footer and the vector line all read the SAME evaluation.
+    // Carrying a raw DB `cvss` here was the bypass that let an AI guide number
+    // disagree with the printed vector string on the same card.
+    severity: evaluation.severity,
+    cvss: evaluation.score,
+    cvssVector: evaluation.vector,
+    cvssSource: evaluation.source,
+    cvssVectorSource: evaluation.vectorSource,
+    cvssFindingClass: evaluation.findingClass,
+    // Keep the ORIGINAL audit note. `v` is usually a report view whose stored
+    // vector has already been reconciled, so re-evaluating it yields
+    // source:'declared' with nothing to explain and would erase the correction.
+    auditNote: v.auditNote || evaluation.auditNote || null,
     finding: v,
     symptom: sanitizePdfText(symptom),
     risk: sanitizePdfText(risk),
@@ -3298,7 +4212,7 @@ function buildSimplifiedActionItem(v, index, detectedTech = []) {
  * Strips out raw scanner noise and provides structured, clean, emoji-free
  * visual dashboards, priority matrix tables, step-by-step fix cards, and sign-off checklists.
  */
-async function renderSimplifiedPdf({ file, reportTitle, scans = [], project = null, vulnerabilities = [], isWhitebox = false, aiNarrative = null, simplifiedGuide = null, custom = {}, detectedTech = [], unverifiedFindings = [], rejectedFindings = [], verificationSummary = null }) {
+async function renderSimplifiedPdf({ file, reportTitle, scans = [], project = null, vulnerabilities = [], isWhitebox = false, aiNarrative = null, simplifiedGuide = null, custom = {}, detectedTech = [], techStack = null, unverifiedFindings = [], rejectedFindings = [], verificationSummary = null }) {
   await new Promise((resolve, reject) => {
     const doc = new PDFDocument({
       size: 'A4',
@@ -3326,37 +4240,14 @@ async function renderSimplifiedPdf({ file, reportTitle, scans = [], project = nu
     const confirmedVulnerabilities = (Array.isArray(vulnerabilities) ? vulnerabilities : [])
       .filter(v => v && v.verifyStatus !== VERIFY_STATUS.UNVERIFIED && v.verifyStatus !== VERIFY_STATUS.REJECTED)
 
-    // Triage counts
-    // Only validated issues become action items. Unproven leads are counted in
-    // the verification panel so the operator sees them without them inflating
-    // the work queue.
-    if (verificationSummary) {
-      const vs = verificationSummary
-      const vy = doc.y
-      doc.rect(leftX, vy, w, 62).fillAndStroke('#F0F9FF', '#BAE6FD')
-      doc.fontSize(10).font('Helvetica-Bold').fillColor(BRAND.primary)
-        .text('Evidence validation', leftX + 12, vy + 9)
-      const ledger =
-        `${vs.rawFindings} raw observation(s) reduced to ${vs.reportedRootCauses} distinct issue(s); ` +
-        `${vs.confirmed} confirmed with a captured artifact, ${vs.unverified} unverified (see Appendix A), ` +
-        `${vs.rejected} rejected by evidence and excluded from all action items.`
-      doc.fontSize(8.5).font('Helvetica').fillColor(BRAND.textDark)
-        .text(sanitizePdfText(ledger), leftX + 12, vy + 24, { width: w - 24, height: 30 })
-      doc.y = vy + 70
-      doc.moveDown(0.6)
-    }
+    // Triage buckets. These describe the confirmed set; the *printed* counts are
+    // derived from `items` after the queue is built, so the cover can never
+    // advertise more tasks than the report actually renders.
     const criticalFindings = confirmedVulnerabilities.filter(v => (v.severity || '').toLowerCase() === 'critical')
     const highFindings = confirmedVulnerabilities.filter(v => (v.severity || '').toLowerCase() === 'high')
     const mediumFindings = confirmedVulnerabilities.filter(v => (v.severity || '').toLowerCase() === 'medium')
     const lowFindings = confirmedVulnerabilities.filter(v => (v.severity || '').toLowerCase() === 'low')
     const infoFindings = confirmedVulnerabilities.filter(v => (v.severity || '').toLowerCase() === 'info')
-
-    const todayCount = simplifiedGuide?.taskCountToday !== undefined 
-      ? Number(simplifiedGuide.taskCountToday) 
-      : criticalFindings.length
-    const weekCount = highFindings.length
-    const laterCount = mediumFindings.length
-    const actionableTotal = todayCount + weekCount + laterCount
 
     // Items list (from AI guide or enriched findings)
     // The AI guide is asked about `confirmedVulnerabilities` for exactly this
@@ -3368,16 +4259,68 @@ async function renderSimplifiedPdf({ file, reportTitle, scans = [], project = nu
     if (simplifiedGuide?.actionItems && Array.isArray(simplifiedGuide.actionItems) && simplifiedGuide.actionItems.length > 0) {
       items = simplifiedGuide.actionItems
         .map((item, idx) => {
-          const matched = confirmedVulnerabilities.find(v =>
-            (v.title && item.title && (v.title.toLowerCase().includes(item.title.toLowerCase()) || item.title.toLowerCase().includes(v.title.toLowerCase()))) ||
-            ((v.severity || '').toLowerCase() === (item.severity || '').toLowerCase())
-          )
+          // Grounding rule: a card may only borrow a finding's evidence when the
+          // title actually names the same subject. The previous version fell back
+          // to "first finding with the same severity", so a card titled
+          // `/api/v1/admin` rendered `/swagger-ui`'s payload, path and
+          // reproduction command as its proof — evidence for a finding nobody
+          // was told about, printed under a different heading.
+          //
+          // Titles that differ only by a trailing identifier (`: /a` vs `: /b`,
+          // `nginx 1.18.0` vs `nginx 1.24.0`) share a stem, which alone is not
+          // enough: two endpoints of the same class would still cross-link. So a
+          // match on the stem is only accepted when the distinguishing
+          // identifiers also agree.
+          const titleStem = t => String(t || '').toLowerCase()
+            .replace(/\s*[:|-]\s*.*$/, '')
+            .replace(/[^a-z0-9 ]+/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim()
+          const discriminators = t => (String(t || '').toLowerCase().match(/[a-z0-9_.-]*[/\\._][a-z0-9_.\/-]*|\d+(?:\.\d+)+/g) || [])
+            .filter(s => s.length > 2)
+          const itemDisc = discriminators(item.title)
+          const matched = confirmedVulnerabilities.find(v => {
+            const a = String(item.title || '').toLowerCase().trim()
+            const b = String(v.title || '').toLowerCase().trim()
+            if (!a || !b) return false
+            if (a === b) return true
+            const overlap = a.length >= 12 && b.length >= 12 &&
+              (a.includes(b) || b.includes(a)) && Math.min(a.length, b.length) / Math.max(a.length, b.length) >= 0.6
+            if (overlap) return true
+            if (!titleStem(a) || titleStem(a) !== titleStem(b)) return false
+            // Same stem, different identifiers: only a match when the card adds no
+            // identifier the finding lacks. A card naming nothing specific may
+            // borrow; a card naming `/api/v1/admin` may not borrow `/swagger-ui`.
+            const have = new Set(discriminators(b))
+            return itemDisc.every(d => have.has(d))
+          })
           const sev = (item.severity || matched?.severity || 'medium').toLowerCase()
+          // The AI guide proposes prose, never numbers. Its cvss/cvssVector are
+          // discarded and the item is re-scored through the authority so a card
+          // can never show a score its own vector string disagrees with.
+          // When we HAVE the finding, its own content decides the score — not the
+          // model's label.
+          const evaluation = matched
+            ? evaluateFindingCvss(matched)
+            : evaluateFindingCvss({
+              title: item.title,
+              // Allowlist the band so a hallucinated label such as "severe"
+              // cannot drag the derived severity to something undefined.
+              severity: ['critical', 'high', 'medium', 'low', 'info'].includes(sev) ? sev : 'info',
+              description: item.symptom,
+              remediation: item.prescription,
+            })
           return {
             title: sanitizePdfText(item.title || `Action Item #${idx + 1}`),
-            severity: sev,
-            cvss: item.cvss ?? matched?.cvss ?? null,
-            cvssVector: item.cvssVector ?? matched?.cvss_vector ?? null,
+            severity: evaluation.severity,
+            cvss: evaluation.score,
+            cvssVector: evaluation.vector,
+            cvssSource: evaluation.source,
+            cvssVectorSource: evaluation.vectorSource,
+            cvssFindingClass: evaluation.findingClass,
+            // Only meaningful when a stored rating was actually overruled. An
+            // item the AI proposed from scratch has no declared rating to audit.
+            auditNote: matched ? (matched.auditNote || evaluation.auditNote || null) : null,
             finding: matched,
             symptom: sanitizePdfText(item.symptom || 'Anomalous configuration identified on target system.'),
             risk: sanitizePdfText(item.risk || 'Presents security risks if left unaddressed.'),
@@ -3418,7 +4361,10 @@ async function renderSimplifiedPdf({ file, reportTitle, scans = [], project = nu
       const actionable = sortedVulnerabilities.filter(v => ['critical', 'high', 'medium'].includes((v.severity || '').toLowerCase()))
       const sourceFindings = actionable.length > 0 ? actionable : sortedVulnerabilities
 
-      items = sourceFindings.slice(0, 15).map((v, idx) => buildSimplifiedActionItem(v, idx, detectedTech))
+      // No slice here. A hard cap of 15 meant the cover advertised
+      // "49 actionable tasks" while only 15 cards ever printed, and the reader
+      // had no way to tell which 34 items were being silently withheld.
+      items = sourceFindings.map((v, idx) => buildSimplifiedActionItem(v, idx, detectedTech))
     }
 
     // STRICTLY SORT ITEMS FROM MOST DANGEROUS TO LEAST DANGEROUS
@@ -3432,6 +4378,20 @@ async function renderSimplifiedPdf({ file, reportTitle, scans = [], project = nu
       return (b.confidence ?? 60) - (a.confidence ?? 60)
     })
 
+    // The cover must describe the queue that follows it. These counts are taken
+    // from `items` — the exact list of cards printed — instead of a separate
+    // tally that could disagree with the rendered pages.
+    const queueCount = (sev) => items.filter(it => (it.severity || '').toLowerCase() === sev).length
+    const printedCritical = queueCount('critical')
+    const printedHigh = queueCount('high')
+    const printedMedium = queueCount('medium')
+    const printedLow = queueCount('low')
+    const printedInfo = queueCount('info')
+    const actionableTotal = printedCritical + printedHigh + printedMedium
+    const todayCount = printedCritical
+    const weekCount = printedHigh
+    const laterCount = printedMedium
+
     // Determine target name
     const primaryScan = scans[0] || {}
     const targetName = sanitizePdfText(primaryScan.target || 'Target System')
@@ -3442,6 +4402,7 @@ async function renderSimplifiedPdf({ file, reportTitle, scans = [], project = nu
     // PAGE 1: EXECUTIVE COVER PAGE
     // =========================================================================
     
+
     // Top Navy Header Banner
     doc.rect(0, 0, doc.page.width, 135).fill(BRAND.primary)
     doc.rect(0, 135, doc.page.width, 4).fill(BRAND.accent)
@@ -3535,29 +4496,151 @@ async function renderSimplifiedPdf({ file, reportTitle, scans = [], project = nu
     // Detected Tech Stack Card
     doc.y = metaY + metaH + 15
     const techY = doc.y
-    const techH = 55
-    doc.roundedRect(leftX, techY, w, techH, 4).fillAndStroke('#FFFFFF', BRAND.cardBorder)
-    doc.fontSize(8.5).font('Helvetica-Bold').fillColor(BRAND.primary).text('DETECTED TECHNOLOGY STACK', leftX + 16, techY + 10)
-    const techText = detectedTech.length > 0 
-      ? detectedTech.join(', ')
-      : 'Standard Web Application Architecture (HTTP/HTTPS Reverse Proxy & Application Server)'
-    doc.fontSize(9).font('Helvetica').fillColor(BRAND.textMuted).text(sanitizePdfText(techText), leftX + 16, techY + 24, { width: w - 32 })
-    doc.fontSize(7.5).font('Helvetica').fillColor('#94A3B8').text('* Remediation steps in this guide reference settings and syntax for these technologies.', leftX + 16, techY + 38, { width: w - 32 })
+    const stack = techStack && techStack.hasData ? techStack : null
+    const stackRows = stack ? stack.rows.slice(0, 8) : []
+    const techH = stack
+      ? 34 + Math.max(1, stackRows.length) * 15 + (stack.cveTotal > 0 || stack.advisories.length ? 15 : 0)
+      : 55
+    ensureSpace(doc, techH + 10)
+    const techTop = doc.y
+    doc.roundedRect(leftX, techTop, w, techH, 4).fillAndStroke('#FFFFFF', BRAND.cardBorder)
+    doc.fontSize(8.5).font('Helvetica-Bold').fillColor(BRAND.primary)
+      .text('DETECTED TECHNOLOGY & VERSION INVENTORY', leftX + 16, techTop + 10)
+
+    if (stack) {
+      // Columns: product / version / seen via / advisories
+      const cProd = leftX + 16
+      const cVer = leftX + 168
+      const cSeen = leftX + 240
+      const cCve = rightX - 96
+      doc.fontSize(7).font('Helvetica-Bold').fillColor('#94A3B8')
+      doc.text('PRODUCT / COMPONENT', cProd, techTop + 22, { width: 145 })
+      doc.text('VERSION', cVer, techTop + 22, { width: 66 })
+      doc.text('DETECTED FROM', cSeen, techTop + 22, { width: 150 })
+      doc.text('KNOWN CVEs', cCve, techTop + 22, { width: 90 })
+
+      let ry = techTop + 34
+      for (const row of stackRows) {
+        doc.strokeColor('#F1F5F9').lineWidth(0.6).moveTo(leftX + 12, ry - 2).lineTo(rightX - 12, ry - 2).stroke()
+        doc.fontSize(8).font('Helvetica-Bold').fillColor(BRAND.textDark)
+          .text(sanitizePdfText(row.product).slice(0, 32), cProd, ry, { width: 145, ellipsis: true })
+        doc.fontSize(8).font(row.versionUnverified ? 'Helvetica-Oblique' : 'Courier')
+          .fillColor(row.versionUnverified ? '#94A3B8' : BRAND.textDark)
+          .text(row.version ? sanitizePdfText(row.version).slice(0, 14) : 'not disclosed', cVer, ry, { width: 66, ellipsis: true })
+        doc.fontSize(7).font('Helvetica').fillColor(BRAND.textMuted)
+          .text(sanitizePdfText(row.detectedFrom || row.detectionSource || 'n/a').slice(0, 44), cSeen, ry, { width: 150, ellipsis: true })
+        const cveText = row.totalCves > 0
+          ? `${row.totalCves}${row.criticalCount ? ` (${row.criticalCount} crit)` : ''}`
+          : row.versionUnverified
+            ? 'n/a - version unknown'
+            : row.lookupStatus === 'error'
+              ? 'lookup FAILED'
+              : row.lookupStatus === 'not-performed'
+                ? 'no CVE check run'
+                : '0 matched'
+        doc.fontSize(7.5).font('Helvetica-Bold')
+          .fillColor(
+            row.criticalCount > 0 ? SEV_COLORS.critical.bg
+              : row.highCount > 0 ? SEV_COLORS.high.bg
+                : row.lookupStatus === 'error' || row.lookupStatus === 'not-performed' ? SEV_COLORS.medium.bg
+                  : BRAND.textMuted,
+          )
+          .text(cveText, cCve, ry, { width: 90, ellipsis: true })
+        // An end-of-life branch is a stronger statement than any single CVE: no
+        // advisory will ever be published for it again.
+        if (row.eolDate && row.monthsPast > 0) {
+          // Right-align inside the card instead of running off at cCve+62, which
+          // pushed the badge past the rounded edge for large month counts.
+          const eolLabel = `EOL ${row.monthsPast}mo`
+          doc.fontSize(6.5).font('Helvetica-Bold')
+          const eolW = doc.widthOfString(eolLabel) + 6
+          doc.fillColor(SEV_COLORS.high.bg)
+            .text(eolLabel, rightX - 16 - eolW, ry + 1, { width: eolW, align: 'right' })
+        }
+        ry += 15
+      }
+
+      if (stack.advisories.length) {
+        doc.fontSize(7).font('Helvetica').fillColor('#94A3B8')
+          .text(
+            `Advisories: ${stack.advisories.slice(0, 6).map(a => `${a.id}${a.score != null ? ` (${a.score})` : ''}`).join(', ')}${stack.advisories.length > 6 ? ', ...' : ''}`,
+            leftX + 16, ry + 1, { width: w - 32, ellipsis: true },
+          )
+      } else if (stack.lookupFailures > 0) {
+        // "0 CVEs" and "we could not reach NVD" are different claims. Printing the
+        // first when the second happened is the single most misleading line a
+        // technical inventory can carry.
+        doc.fontSize(7).font('Helvetica').fillColor(SEV_COLORS.medium.bg)
+          .text(
+            `${stack.lookupFailures} component(s) could not be correlated against NIST NVD during this scan (rate limit, egress block, or timeout). Treat their CVE exposure as UNKNOWN, not as clean, and re-run the correlation.`,
+            leftX + 16, ry + 1, { width: w - 32 },
+          )
+      } else if (stack.disclosedOnly > 0) {
+        // A component observed only through a banner or tech-detect has no CVE
+        // record of its own. Saying "0 matched" there would read as "checked and
+        // clean", which is the opposite of what the evidence supports.
+        doc.fontSize(7).font('Helvetica').fillColor(SEV_COLORS.medium.bg)
+          .text(
+            `${stack.disclosedOnly} component(s) were disclosed by the target but have no CVE correlation on record. Their exposure is not quantified here -- treat it as unknown and run the version audit against NVD for each.`,
+            leftX + 16, ry + 1, { width: w - 32 },
+          )
+      } else if (stack.cveTotal === 0) {
+        doc.fontSize(7).font('Helvetica').fillColor('#94A3B8')
+          .text(
+            'No NVD advisory matched the detected versions. Absence of a CVE is not proof of patching -- confirm versions against the vendor advisory feed.',
+            leftX + 16, ry + 1, { width: w - 32 },
+          )
+      }
+    } else {
+      // No fingerprint at all is a finding in itself, not a place for a
+      // reassuring generic string.
+      doc.fontSize(9).font('Helvetica').fillColor(BRAND.textDark)
+        .text('No product or version signature was captured on this assessment.', leftX + 16, techTop + 24, { width: w - 32 })
+      doc.fontSize(7.5).font('Helvetica').fillColor('#94A3B8')
+        .text('Server banners, X-Powered-By headers, cookies, generator meta tags and asset paths returned no recognisable signature. CVE correlation is therefore unavailable and cannot be assumed clean.', leftX + 16, techTop + 38, { width: w - 32 })
+    }
+    doc.y = techTop + techH + 12
 
     // Purpose & Guidance Callout
     doc.y = techY + techH + 15
     const guideY = doc.y
-    const guideH = 80
+    const guideBody = sanitizePdfText(custom.customSummary || 'This guide is designed for IT administrators, webmasters, and operations engineers. Rather than listing raw scanner vulnerabilities with academic CVSS ratings, it categorizes findings into plain-language tasks with clear business risks, step-by-step click-paths or configuration directives, and quick verification checks.')
+    const guideNote = 'Severity uses CVSS v4.0 when available. Confidence is evidence certainty, not impact: validated exploit 98%, confirmed code or AI review up to 95%, direct observation 75%, and unverified indicators 45-60%.'
+    // Measure instead of hardcoding: the default body is 5 lines at some widths
+    // and the fixed 80pt card clipped it.
+    doc.fontSize(8.5).font('Helvetica')
+    const guideBodyH = doc.heightOfString(guideBody, { width: w - 32, lineGap: 2 })
+    doc.fontSize(7.5).font('Helvetica')
+    const guideNoteH = doc.heightOfString(guideNote, { width: w - 32, lineGap: 1 })
+    const guideH = 28 + guideBodyH + 8 + guideNoteH + 12
     doc.roundedRect(leftX, guideY, w, guideH, 4).fillAndStroke(BRAND.cardBg, BRAND.cardBorder)
     doc.fontSize(9.5).font('Helvetica-Bold').fillColor(BRAND.primary).text('About This Simplified IT Action Guide', leftX + 16, guideY + 12)
     doc.fontSize(8.5).font('Helvetica').fillColor(BRAND.textDark).text(
-      sanitizePdfText(custom.customSummary || 'This guide is designed for IT administrators, webmasters, and operations engineers. Rather than listing raw scanner vulnerabilities with academic CVSS ratings, it categorizes findings into plain-language tasks with clear business risks, step-by-step click-paths or configuration directives, and quick verification checks.'),
-      leftX + 16, guideY + 28, { width: w - 32, lineGap: 2 },
+      guideBody, leftX + 16, guideY + 28, { width: w - 32, lineGap: 2 },
     )
     doc.fontSize(7.5).font('Helvetica').fillColor(BRAND.textMuted).text(
-      'Severity uses CVSS v4.0 when available. Confidence is evidence certainty, not impact: validated exploit 98%, confirmed code or AI review up to 95%, direct observation 75%, and unverified indicators 45-60%.',
-      leftX + 16, guideY + 61, { width: w - 32, lineGap: 1 },
+      guideNote,
+      leftX + 16, guideY + 28 + guideBodyH + 8, { width: w - 32, lineGap: 1 },
     )
+
+    // Evidence validation ledger. This used to be drawn before the cover page was
+    // created, so the banner painted over it while it stayed in the text layer.
+    if (verificationSummary) {
+      const vs = verificationSummary
+      const ledgerY = guideY + guideH + 18
+      const ledgerText =
+        `${vs.rawFindings} raw observation(s) reduced to ${vs.reportedRootCauses} distinct issue(s); ` +
+        `${vs.confirmed} confirmed with a captured artifact, ${vs.unverified} unverified (see Appendix A), ` +
+        `${vs.rejected} rejected by evidence and excluded from all action items.`
+      doc.fontSize(8.5).font('Helvetica')
+      const ledgerTextH = doc.heightOfString(sanitizePdfText(ledgerText), { width: w - 32, lineGap: 2 })
+      const ledgerH = 28 + ledgerTextH + 12
+      doc.roundedRect(leftX, ledgerY, w, ledgerH, 4).fillAndStroke('#F0F9FF', '#BAE6FD')
+      doc.fontSize(9).font('Helvetica-Bold').fillColor(BRAND.primary)
+        .text('Evidence Validation', leftX + 16, ledgerY + 12)
+      doc.fontSize(8.5).font('Helvetica').fillColor(BRAND.textDark)
+        .text(sanitizePdfText(ledgerText), leftX + 16, ledgerY + 28, { width: w - 32, lineGap: 2 })
+    }
 
     // Cover Page Footer Note (zero bottom margin prevents auto-addPage)
     const coverOrigBottom = doc.page.margins.bottom
@@ -3771,6 +4854,10 @@ async function renderSimplifiedPdf({ file, reportTitle, scans = [], project = nu
         const score = getFindingFormulaScore(item)
         const sevKey = (item.severity || 'info').toLowerCase()
         const sevColor = SEV_COLORS[sevKey] || SEV_COLORS.info
+        // The vector that produced `score`, printed on the card so the number is
+        // auditable rather than asserted.
+        const cvssVector = item.cvssVector || getFindingCvssEvaluation(item).vector
+        const vectorLine = `CVSS v4.0: ${Number(score).toFixed(1)} ${sevKey.toUpperCase()}  |  ${cvssVector}`
 
         const sevBadgeText = `${sevKey.toUpperCase()} ${score.toFixed(1)}`
         // Never floor this. A card above warns the reader that confidence is
@@ -3800,19 +4887,127 @@ async function renderSimplifiedPdf({ file, reportTitle, scans = [], project = nu
         // Captured proof and a copy-pasteable reproduction command. Without these
         // the operator is told "this is real" without ever seeing the request that
         // produced it, and has nothing to run before and after the fix.
-        const proofLine = item.finding ? describeCapturedProof(item.finding) : null
-        const reproCmd = item.finding
-          ? concreteVerification(item.finding, findingEvidenceContext(item.finding).endpoint)
+        //
+        // `item.finding` is only set when the AI guide's card matched a real
+        // finding. Items that did not match previously rendered NO proof and NO
+        // reproduction command at all, so the highest-severity card on the page
+        // could be the one with the least backing. The item itself now carries
+        // enough evidence to build both.
+        const proofSubject = item.finding || {
+          title: item.title,
+          evidence: item.finding?.evidence,
+        }
+        const contextEndpoint = item.finding
+          ? findingEvidenceContext(item.finding).endpoint
           : null
-        const proofH = proofLine ? Math.max(12, doc.fontSize(8).font('Courier').heightOfString(proofLine, { width: w - 48, lineGap: 2 })) + 26 : 0
+        const proofLine = describeCapturedProof(proofSubject)
+        const proofPanel = buildProofPanel(proofSubject, contextEndpoint, {
+          severity: item.severity || proofSubject.severity,
+          score: item.cvss ?? proofSubject.cvss_score ?? proofSubject.score,
+        })
+        const reproCmd = concreteVerification({ title: item.title }, contextEndpoint)
+        // When a drawn panel exists, the one-line proof summary is folded into it
+        // as a wrapped row instead of owning a second framed box. Two frames per
+        // card holding the same evidence was pure page growth.
+        if (proofPanel && proofLine) proofPanel.note = proofLine
+        const proofH = proofLine && !proofPanel ? Math.max(12, doc.fontSize(8).font('Courier').heightOfString(proofLine, { width: w - 48, lineGap: 2 })) + 26 : 0
         const reproH = reproCmd ? Math.max(12, doc.fontSize(8).font('Courier').heightOfString(reproCmd, { width: w - 48, lineGap: 2 })) + 26 : 0
 
-        // Measure Courier font for code/prescription accurately
-        const prescH = Math.max(14, doc.fontSize(8.5).font('Courier').heightOfString(item.prescription || 'N/A', { width: w - 48, lineGap: 2.5 }))
-        const prescBoxH = prescH + 44
+        // Height of the drawn proof panel, built from the exact offsets the render
+        // loop uses below: title bar, key/value rows, then optional blocks that
+        // each cost a 12pt label plus their own measured text height.
+        let panelH = 0
+        let panelNoteH = 0
+        let panelExcerptH = 0
+        let panelVerbatimH = 0
+        let panelVerbatimNoteH = 0
+        let panelSubjectNoteH = 0
+        let gapH = 0
+        if (proofPanel) {
+          panelNoteH = proofPanel.note
+            ? doc.fontSize(6.5).font('Courier').heightOfString(sanitizePdfText(proofPanel.note), { width: w - 48, lineGap: 2 })
+            : 0
+          panelExcerptH = proofPanel.excerpt
+            ? doc.fontSize(7).font('Courier').heightOfString(sanitizePdfText(proofPanel.excerpt), { width: w - 48, lineGap: 2 })
+            : 0
+          panelVerbatimH = proofPanel.verbatim
+            ? doc.fontSize(6.5).font('Courier').heightOfString(sanitizePdfText(proofPanel.verbatim), { width: w - 48, lineGap: 2 })
+            : 0
+          panelVerbatimNoteH = proofPanel.verbatimNote
+            ? doc.fontSize(6).font('Helvetica-Oblique').heightOfString(`\u2191 ${proofPanel.verbatimNote}`, { width: w - 48, lineGap: 1 })
+            : 0
+          panelSubjectNoteH = proofPanel.subjectNote
+            ? doc.fontSize(6).font('Helvetica-Oblique').heightOfString(sanitizePdfText(proofPanel.subjectNote), { width: w - 48, lineGap: 1 })
+            : 0
+          const blocks = [
+            panelNoteH ? 12 + panelNoteH + 6 : 0,
+            panelExcerptH ? 12 + panelExcerptH + 6 : 0,
+            panelVerbatimH ? 12 + panelVerbatimH + (panelVerbatimNoteH ? 8 + panelVerbatimNoteH : 0) : 0,
+            panelSubjectNoteH ? 4 + panelSubjectNoteH : 0,
+          ]
+          panelH = 16 + 6 + proofPanel.headers.filter(([label]) => !(label === 'Screenshot')).length * 10
+            + blocks.reduce((a, b) => a + b, 0) + 10
+        } else {
+          // Reserve the "no response captured" callout so the card height is
+          // still measured accurately and nothing overlaps the next card.
+          gapH = Math.max(14, doc.fontSize(8).font('Helvetica').heightOfString(
+            `No HTTP response was captured for this check. To confirm it yourself: ${reproCmd || 're-request the endpoint and inspect the response.'}`,
+            { width: w - 48, lineGap: 2 },
+          )) + 22
+        }
 
-        // Total card height with clean, spacious vertical padding
-        const totalCardH = headerH + symptomH + 12 + riskH + 14 + prescBoxH + proofH + reproH + 18
+        // Measure Courier font for code/prescription accurately. The meta block
+        // below the prescription stacks three lines (severity/confidence, the
+        // CVSS vector, and — when a stored rating was overruled — the audit note),
+        // so its height must be measured rather than assumed.
+        const auditNote = item.auditNote ? sanitizePdfText(item.auditNote) : null
+        const prescH = Math.max(14, doc.fontSize(8.5).font('Courier').heightOfString(item.prescription || 'N/A', { width: w - 48, lineGap: 2.5 }))
+        const auditNoteH = auditNote
+          ? doc.fontSize(6.5).font('Helvetica-Bold').heightOfString(`Note: ${auditNote}`, { width: w - 48, lineGap: 1 })
+          : 0
+        const metaTop = 22 + prescH + 8
+        const prescBoxH = metaTop + 18 + (auditNoteH ? auditNoteH + 3 : 0) + 8
+
+        // Total card height must equal what the render loop actually consumes:
+        // every block advances contentY by its own height plus its trailing gap.
+        const cardBase = headerH
+          + (symptomH + 12)
+          + (riskH + 14)
+          + (prescBoxH + 10)
+          + (proofLine && !proofPanel ? proofH + 8 : 0)
+          + (proofPanel ? 0 : gapH + 8)
+          + (reproCmd ? reproH + 8 : 0)
+          + 18
+        const panelBudget = doc.page.height - 50 - doc.page.margins.top - cardBase - (proofPanel ? 8 : 0)
+
+        // Hard ceiling: one card may never be taller than the band it must fit in,
+        // or the page break above can never satisfy it and the frame runs off the
+        // paper. Reclaim the excess from the panel's optional blocks, largest
+        // first, so the text heights the render uses shrink with the frame.
+        if (proofPanel && panelH > panelBudget) {
+          const floor = 16 + 6 + 10 + 12
+          let excess = panelH - Math.max(floor, panelBudget)
+          const shrinkVerbatim = Math.min(excess, Math.max(0, panelVerbatimH - 12))
+          panelVerbatimH = panelVerbatimH ? panelVerbatimH - shrinkVerbatim : 0
+          excess -= shrinkVerbatim
+          const shrinkExcerpt = Math.min(excess, Math.max(0, panelExcerptH - 12))
+          panelExcerptH = panelExcerptH ? panelExcerptH - shrinkExcerpt : 0
+          excess -= shrinkExcerpt
+          const shrinkNote = Math.min(excess, Math.max(0, panelNoteH - 12))
+          panelNoteH = panelNoteH ? panelNoteH - shrinkNote : 0
+          excess -= shrinkNote
+          const shrinkVerbatimNote = Math.min(excess, Math.max(0, panelVerbatimNoteH))
+          panelVerbatimNoteH = panelVerbatimNoteH ? panelVerbatimNoteH - shrinkVerbatimNote : 0
+          const blocks = [
+            panelNoteH ? 12 + panelNoteH + 6 : 0,
+            panelExcerptH ? 12 + panelExcerptH + 6 : 0,
+            panelVerbatimH ? 12 + panelVerbatimH + (panelVerbatimNoteH ? 8 + panelVerbatimNoteH : 0) : 0,
+          ]
+          panelH = 16 + 6 + proofPanel.headers.filter(([label]) => !(label === 'Screenshot')).length * 10
+            + blocks.reduce((a, b) => a + b, 0) + 10
+        }
+
+        const totalCardH = cardBase + (proofPanel ? panelH + 8 : 0)
 
         // Page break if needed
         if (doc.y + totalCardH > doc.page.height - 50) {
@@ -3853,16 +5048,128 @@ async function renderSimplifiedPdf({ file, reportTitle, scans = [], project = nu
         doc.fontSize(8.5).font('Courier').fillColor(BRAND.primary).text(item.prescription || 'N/A', leftX + 24, contentY + 22, { width: w - 48, lineGap: 2.5, height: prescH + 4 })
         doc.fontSize(7.5).font('Helvetica').fillColor(BRAND.textMuted)
           .text(`Severity: ${sevKey.toUpperCase()} (CVSS ${score.toFixed(1)})  |  AI Confidence: ${confVal}% (evidence certainty, separate from CVSS impact)`,
-            leftX + 24, contentY + prescBoxH - 12, { width: w - 48 })
+            leftX + 24, contentY + metaTop, { width: w - 48 })
+        doc.fontSize(6.5).font('Courier').fillColor('#94A3B8')
+          .text(sanitizePdfText(vectorLine), leftX + 24, contentY + metaTop + 11, { width: w - 48, ellipsis: true })
+        if (auditNote) {
+          // Never silently disagree with the stored rating: print the correction.
+          doc.fontSize(6.5).font('Helvetica-Bold').fillColor('#B45309')
+            .text(`Note: ${auditNote}`, leftX + 24, contentY + metaTop + 22, { width: w - 48, lineGap: 1, height: auditNoteH + 1 })
+        }
         contentY += prescBoxH + 10
-
-        // Row 4: What we actually observed (the artifact, verbatim)
-        if (proofLine) {
+        // Row 4: Scan context. Only drawn when there is no panel to carry it —
+        // otherwise the same sentence is rendered inside the panel header band,
+        // and a zero-height frame here would leak stray text under it.
+        if (proofLine && !proofPanel) {
           doc.roundedRect(leftX + 14, contentY, w - 28, proofH, 3).fillAndStroke('#EFF6FF', '#BFDBFE')
           doc.rect(leftX + 14, contentY, 3, proofH).fill('#2563EB')
-          doc.fontSize(8).font('Helvetica-Bold').fillColor('#2563EB').text('WHAT WE CAPTURED (PROOF):', leftX + 24, contentY + 7)
+          doc.fontSize(8).font('Helvetica-Bold').fillColor('#2563EB')
+            .text('SCAN CONTEXT:', leftX + 24, contentY + 7)
           doc.fontSize(8).font('Courier').fillColor(BRAND.textDark).text(proofLine, leftX + 24, contentY + 21, { width: w - 48, lineGap: 2, height: proofH - 24 })
           contentY += proofH + 8
+        }
+
+        // Row 4b: Drawn proof panel — the captured exchange, rendered as a small
+        // terminal so the reader can see the status line, the observed fields and
+        // the response body with the matched marker highlighted.
+        if (proofPanel) {
+          const px = leftX + 14
+          const pw = w - 28
+          doc.roundedRect(px, contentY, pw, panelH, 3).fillAndStroke('#0F172A', '#0F172A')
+
+          // Title bar: METHOD + URL on the left, status chip on the right.
+          doc.rect(px, contentY, pw, 16).fill('#1E293B')
+          const statusText = proofPanel.status ? `HTTP ${proofPanel.status}` : 'OBSERVED'
+          const statusOk = proofPanel.status && /^[23]/.test(proofPanel.status)
+          const statusWarn = proofPanel.status && /^[45]/.test(proofPanel.status)
+          doc.fontSize(6.5).font('Helvetica-Bold').fillColor(statusOk ? '#4ADE80' : statusWarn ? '#F87171' : '#FBBF24')
+            .text(statusText, px + 8, contentY + 4, { width: 70 })
+          doc.fontSize(6.5).font('Courier').fillColor('#E2E8F0')
+            .text(
+              sanitizePdfText(`${proofPanel.method} ${compactUrlForLabel(proofPanel.url || 'the endpoint')}`),
+              px + 82, contentY + 4, { width: pw - 92, ellipsis: true, lineBreak: false },
+            )
+          contentY += 16
+
+          // Key/value rows
+          let rowY = contentY + 6
+          for (const [label, value] of proofPanel.headers) {
+            doc.fontSize(6.5).font('Helvetica-Bold').fillColor('#94A3B8').text(`${label}:`, px + 10, rowY, { width: 96 })
+            doc.fontSize(6.5).font('Courier').fillColor('#E2E8F0').text(sanitizePdfText(value), px + 110, rowY, { width: pw - 122, ellipsis: true, lineBreak: false })
+            rowY += 10
+          }
+
+          // Screenshot, when a PoC script attached one.
+          if (proofPanel.screenshot) {
+            try {
+              doc.image(proofPanel.screenshot, px + 10, rowY, { fit: [pw - 20, 170], align: 'center' })
+              rowY += 180
+            } catch {
+              // Corrupt or unsupported image: fall through to the text block.
+            }
+          }
+
+          // Panel row: the one-line proof summary, wrapped inside the panel.
+          if (panelNoteH) {
+            doc.fontSize(6).font('Helvetica-Bold').fillColor('#7DD3FC').text('SCAN CONTEXT', px + 10, rowY + 4, { width: pw - 20 })
+            rowY += 12
+            doc.fontSize(6.5).font('Courier').fillColor('#CBD5E1')
+              .text(sanitizePdfText(proofPanel.note), px + 10, rowY, { width: pw - 20, lineGap: 2, height: panelNoteH })
+            rowY += panelNoteH + 6
+          }
+
+          // Body excerpt with the matched marker emphasised.
+          if (panelExcerptH) {
+            doc.fontSize(6).font('Helvetica-Bold').fillColor('#7DD3FC').text('CAPTURED RESPONSE BODY', px + 10, rowY + 4, { width: pw - 20 })
+            rowY += 12
+            doc.fontSize(7).font('Courier').fillColor('#CBD5E1')
+              .text(sanitizePdfText(proofPanel.excerpt), px + 10, rowY, { width: pw - 20, lineGap: 2, height: panelExcerptH })
+            if (proofPanel.hit) {
+              // Underline the matched marker so the eye lands on the proof.
+              const before = proofPanel.excerpt.slice(0, proofPanel.hit.at)
+              const lineIdx = Math.floor(doc.fontSize(7).font('Courier').widthOfString(before, { width: pw - 20 }) / (pw - 20))
+              const lineText = proofPanel.excerpt.slice(0, proofPanel.hit.at).split(/\s+/).pop() || ''
+              const xOff = px + 10 + Math.min(doc.fontSize(7).font('Courier').widthOfString(lineText.slice(-40), { width: pw - 20 }), pw - 40)
+              const uy = rowY + lineIdx * 9 + 8
+              doc.rect(xOff, uy + 1, Math.min(60, pw - 20), 0.6).fill('#38BDF8')
+            }
+            rowY += panelExcerptH + 6
+          }
+
+          // Scanner's own verbatim output, when no response body exists.
+          if (panelVerbatimH) {
+            doc.fontSize(6).font('Helvetica-Bold').fillColor('#7DD3FC').text('VERBATIM SCANNER OUTPUT', px + 10, rowY + 4, { width: pw - 20 })
+            rowY += 12
+            doc.fontSize(6.5).font('Courier').fillColor('#CBD5E1')
+              .text(sanitizePdfText(proofPanel.verbatim), px + 10, rowY, { width: pw - 20, lineGap: 2, height: panelVerbatimH })
+            rowY += panelVerbatimH
+            // The raw payload carries the rating the scanner guessed. If that differs
+            // from the reconciled badge above, say so here or the card reads as self-contradictory.
+            if (panelVerbatimNoteH) {
+              const noteText = sanitizePdfText(`\u2191 ${proofPanel.verbatimNote}`)
+              doc.fontSize(6).font('Helvetica-Oblique').fillColor('#FBBF24')
+                .text(noteText, px + 10, rowY + 2, { width: pw - 20, lineGap: 1, height: panelVerbatimNoteH })
+              rowY += 8 + panelVerbatimNoteH
+            }
+          }
+          // Stored evidence that describes a different finding is withheld and
+          // disclosed. Silence here would let the card look fully proven.
+          if (panelSubjectNoteH) {
+            doc.fontSize(6).font('Helvetica-Oblique').fillColor('#F87171')
+              .text(sanitizePdfText(proofPanel.subjectNote), px + 10, rowY + 2, { width: pw - 20, lineGap: 1, height: panelSubjectNoteH })
+            rowY += 4 + panelSubjectNoteH
+          }
+          contentY += panelH + 8
+        } else {
+          // No response-shaped evidence exists for this finding. Say that plainly
+          // and tell the reader how to produce the proof themselves, instead of
+          // printing the finding's own description back as if it were a capture.
+          const gapText = `No HTTP response was captured for this check. To confirm it yourself: ${reproCmd || 're-request the endpoint and inspect the response.'}`
+          doc.roundedRect(leftX + 14, contentY, w - 28, gapH, 3).fillAndStroke('#FFF7ED', '#FED7AA')
+          doc.rect(leftX + 14, contentY, 3, gapH).fill('#EA580C')
+          doc.fontSize(8).font('Helvetica-Bold').fillColor('#C2410C').text('NO RESPONSE CAPTURED:', leftX + 24, contentY + 7)
+          doc.fontSize(8).font('Helvetica').fillColor(BRAND.textDark).text(gapText, leftX + 24, contentY + 20, { width: w - 48, lineGap: 2, height: gapH - 24 })
+          contentY += gapH + 8
         }
 
         // Row 5: The exact command that reproduces it, before and after the fix
@@ -3883,12 +5190,30 @@ async function renderSimplifiedPdf({ file, reportTitle, scans = [], project = nu
     // PAGE 4 (or Final Page): IT OPERATIONS CHECKLIST & SIGN-OFF
     // =========================================================================
     const checkRowH = 22
-    // Only render rows we actually have action items for. Padding the table with
-    // synthetic rows invented an action directive the report never recommended.
-    const checkRowCount = Math.max(1, Math.min(items.length, 8))
-    const checkTableH = 22 + checkRowCount * checkRowH
-    // Reserve room for: section title, checklist table, gap, sign-off card, footnote.
-    const closingBlockH = 40 + checkTableH + 16 + 65 + 30 + (custom.customConclusion ? 50 : 0)
+    // Every action item gets a tracking row. The previous `min(items.length, 8)`
+    // cap printed an 8-row checklist under a cover page promising 49 tasks, which
+    // reads as a lost page rather than a deliberate cut. Rows are now chunked
+    // across pages so a long queue stays fully accountable.
+    const checkRows = items.slice()
+    const headerRowH = 22
+    const rowsFirstPage = Math.max(1, Math.floor((doc.page.height - doc.page.margins.bottom - 200 - headerRowH) / checkRowH))
+    const rowsNextPage = Math.max(1, Math.floor((doc.page.height - doc.page.margins.bottom - 120 - headerRowH) / checkRowH))
+    const checklistPages = []
+    if (!checkRows.length) {
+      checklistPages.push([])
+    } else {
+      let cursor = 0
+      checklistPages.push(checkRows.slice(cursor, cursor + rowsFirstPage))
+      cursor += rowsFirstPage
+      while (cursor < checkRows.length) {
+        checklistPages.push(checkRows.slice(cursor, cursor + rowsNextPage))
+        cursor += rowsNextPage
+      }
+    }
+
+    // Reserve room for the first checklist page plus the sign-off card beneath it.
+    const firstPageRows = checklistPages[0].length
+    const closingBlockH = 40 + headerRowH + firstPageRows * checkRowH + 16 + 65 + 30 + (custom.customConclusion ? 50 : 0)
     if (doc.y + closingBlockH > doc.page.height - doc.page.margins.bottom) {
       doc.addPage()
     } else {
@@ -3897,42 +5222,59 @@ async function renderSimplifiedPdf({ file, reportTitle, scans = [], project = nu
 
     drawSectionTitle(doc, 'Remediation Tracking Checklist', 'Record task assignment, implementation status, and verification sign-off')
 
-    const checkY = doc.y
+    let rowNumber = 0
+    for (let pageIdx = 0; pageIdx < checklistPages.length; pageIdx++) {
+      const pageRows = checklistPages[pageIdx]
+      if (!pageRows.length) break
+      if (pageIdx > 0) {
+        doc.addPage()
+        drawSectionTitle(doc, 'Remediation Tracking Checklist (continued)', `Action items ${rowNumber + 1} onward`)
+      }
 
-    doc.roundedRect(leftX, checkY, w, checkTableH, 4).fillAndStroke('#FFFFFF', BRAND.cardBorder)
-    doc.rect(leftX, checkY, w, 22).fill('#F1F5F9')
+      const checkY = doc.y
+      const pageTableH = headerRowH + pageRows.length * checkRowH
+      doc.roundedRect(leftX, checkY, w, pageTableH, 4).fillAndStroke('#FFFFFF', BRAND.cardBorder)
+      doc.rect(leftX, checkY, w, headerRowH).fill('#F1F5F9')
 
-    doc.fontSize(7.5).font('Helvetica-Bold').fillColor(BRAND.textMuted)
-    doc.text('#', leftX + 10, checkY + 7, { width: 20 })
-    doc.text('ACTION ITEM / DIRECTIVE', leftX + 35, checkY + 7, { width: 230 })
-    doc.text('PRIORITY', leftX + 270, checkY + 7, { width: 70 })
-    doc.text('ASSIGNED TO', leftX + 345, checkY + 7, { width: 85 })
-    doc.text('COMPLETED', leftX + 435, checkY + 7, { width: 75 })
+      doc.fontSize(7.5).font('Helvetica-Bold').fillColor(BRAND.textMuted)
+      doc.text('#', leftX + 10, checkY + 7, { width: 20 })
+      doc.text('ACTION ITEM / DIRECTIVE', leftX + 35, checkY + 7, { width: 230 })
+      doc.text('PRIORITY', leftX + 270, checkY + 7, { width: 70 })
+      doc.text('ASSIGNED TO', leftX + 345, checkY + 7, { width: 85 })
+      doc.text('COMPLETED', leftX + 435, checkY + 7, { width: 75 })
 
-    for (let c = 0; c < checkRowCount; c++) {
-      const rowY = checkY + 22 + c * checkRowH
-      const itm = items[c]
-      doc.strokeColor('#F1F5F9').lineWidth(0.8).moveTo(leftX, rowY).lineTo(rightX, rowY).stroke()
+      for (let c = 0; c < pageRows.length; c++) {
+        const rowY = checkY + headerRowH + c * checkRowH
+        const itm = pageRows[c]
+        doc.strokeColor('#F1F5F9').lineWidth(0.8).moveTo(leftX, rowY).lineTo(rightX, rowY).stroke()
 
-      doc.fontSize(8).font('Helvetica-Bold').fillColor(BRAND.primary).text(String(c + 1), leftX + 10, rowY + 6, { width: 20 })
-      doc.fontSize(8).font('Helvetica').fillColor(BRAND.textDark).text(
-        String(itm.title).slice(0, 42),
-        leftX + 35, rowY + 6, { width: 230 },
-      )
+        doc.fontSize(8).font('Helvetica-Bold').fillColor(BRAND.primary).text(String(rowNumber + 1), leftX + 10, rowY + 6, { width: 20 })
+        doc.fontSize(8).font('Helvetica').fillColor(BRAND.textDark).text(
+          String(itm.title).slice(0, 42),
+          leftX + 35, rowY + 6, { width: 230 },
+        )
 
-      const sevLabel = String(itm.severity || 'medium').toUpperCase()
-      const sevColor = SEV_COLORS[itm?.severity] || SEV_COLORS.medium
-      drawRoundedBadge(doc, sevLabel, leftX + 270, rowY + 4, sevColor.bg, '#FFFFFF', null, 2)
+        const sevLabel = String(itm.severity || 'medium').toUpperCase()
+        const rowSevColor = SEV_COLORS[itm?.severity] || SEV_COLORS.medium
+        drawRoundedBadge(doc, sevLabel, leftX + 270, rowY + 4, rowSevColor.bg, '#FFFFFF', null, 2)
 
-      // Signature lines
-      doc.strokeColor('#CBD5E1').lineWidth(0.5).moveTo(leftX + 345, rowY + 16).lineTo(leftX + 420, rowY + 16).stroke()
-      doc.rect(leftX + 445, rowY + 5, 10, 10).strokeColor('#94A3B8').lineWidth(1).stroke()
-      doc.fontSize(7.5).font('Helvetica').fillColor(BRAND.textMuted).text('Verified', leftX + 460, rowY + 6)
+        // Signature lines
+        doc.strokeColor('#CBD5E1').lineWidth(0.5).moveTo(leftX + 345, rowY + 16).lineTo(leftX + 420, rowY + 16).stroke()
+        doc.rect(leftX + 445, rowY + 5, 10, 10).strokeColor('#94A3B8').lineWidth(1).stroke()
+        doc.fontSize(7.5).font('Helvetica').fillColor(BRAND.textMuted).text('Verified', leftX + 460, rowY + 6)
+        rowNumber += 1
+      }
+
+      doc.y = checkY + pageTableH + 16
     }
 
-    doc.y = checkY + checkTableH + 16
+    if (!items.length) {
+      doc.fontSize(8).font('Helvetica').fillColor(BRAND.textMuted)
+        .text('No action items were confirmed on this assessment, so there is nothing to track.', leftX, doc.y, { width: w })
+    }
 
     // Sign-Off Container
+    ensureSpace(doc, 80)
     const signY = doc.y
     const signH = 65
     doc.roundedRect(leftX, signY, w, signH, 4).fillAndStroke(BRAND.cardBg, BRAND.cardBorder)
@@ -3948,6 +5290,7 @@ async function renderSimplifiedPdf({ file, reportTitle, scans = [], project = nu
       '* After implementing all fixes, re-trigger a SentinelAI verification scan to ensure 100% compliance closure.',
       leftX + 16, signY + 48, { width: w - 32 },
     )
+    doc.y = signY + signH + 12
 
     // =========================================================================
     // UNVERIFIED LEADS & REJECTED OBSERVATIONS
@@ -3977,7 +5320,7 @@ async function renderSimplifiedPdf({ file, reportTitle, scans = [], project = nu
             .text(sanitizePdfText(String(v.title || '').slice(0, 100)), ax + 82, y + 3, { width: w - 90, height: 12, ellipsis: true })
           const detail = [
             v.aiReasoning ? `Not proven: ${v.aiReasoning}` : null,
-            v.occurrences > 1 ? `Seen ${v.occurrences}x${v.locations && v.locations.length ? ` (e.g. ${v.locations.slice(0, 2).join(', ')})` : ''}.` : null,
+            v.occurrences > 1 ? `Seen ${v.occurrences}x${formatLocationSample(v.locations, 2)}.` : null,
             `To confirm: ${describeReproduction(v)}`,
           ].filter(Boolean).join(' ')
           doc.fontSize(7.5).font('Helvetica').fillColor(BRAND.textDark)
