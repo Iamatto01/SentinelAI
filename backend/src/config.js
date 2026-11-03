@@ -164,6 +164,7 @@ export const config = {
   },
 
   stripe: {
+    enabled: false,
     secretKey: (process.env.STRIPE_SECRET_KEY || '').trim(),
     publishableKey: (process.env.STRIPE_PUBLISHABLE_KEY || '').trim(),
     webhookSecret: (process.env.STRIPE_WEBHOOK_SECRET || '').trim(),
@@ -171,11 +172,11 @@ export const config = {
   },
 
   duitnow: {
-    enabled: true,
-    merchantName: process.env.DUITNOW_MERCHANT_NAME || 'MUHAMMAD SAIFUDIN BIN MO',
-    merchantAccount: process.env.DUITNOW_ACCOUNT || 'MDN1782300742811690',
-    qrPayload: '00020201021126520014A000000615000101068900530220MDN178230074281169025204731153034585802MY5925MUHAMMADSAIFUDINBINMOHDJA6006SEPANG63048577',
-    qrImage: '/duitnow-card.png',
+    enabled: false,
+    merchantName: '',
+    merchantAccount: '',
+    qrPayload: '',
+    qrImage: '',
   },
 }
 
