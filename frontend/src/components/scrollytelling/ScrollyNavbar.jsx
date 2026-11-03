@@ -197,11 +197,11 @@ export default function ScrollyNavbar() {
               className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold font-sans uppercase tracking-wider transition-all hover:scale-[1.02] active:scale-[0.98] ${
                 isNight
                   ? 'bg-white text-black hover:bg-neutral-200 shadow-[0_0_25px_rgba(255,255,255,0.25)]'
-                  : 'bg-black text-white hover:bg-zinc-800 shadow-[0_0_20px_rgba(0,0,0,0.25)]'
+                  : 'bg-black text-white !text-white hover:bg-zinc-800 shadow-[0_0_20px_rgba(0,0,0,0.25)]'
               }`}
             >
-              <span>Launch Console</span>
-              <ArrowUpRight size={14} className="stroke-[2.5]" />
+              <span className={isNight ? 'text-black' : 'text-white !text-white'}>Launch Console</span>
+              <ArrowUpRight size={14} className={`stroke-[2.5] ${isNight ? 'text-black' : 'text-white !stroke-white'}`} />
             </Link>
 
             {/* Mobile Hamburger */}

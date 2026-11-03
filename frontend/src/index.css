@@ -380,13 +380,38 @@ body.day-mode h3,
 body.day-mode h4,
 body.day-mode h5,
 body.day-mode h6,
-body.day-mode .text-white,
-body.day-mode .text-slate-100,
-body.day-mode .text-zinc-100,
-body.day-mode [class*="text-white"]:not([class*="btn-primary"]):not([class*="badge"]):not([class*="bg-"]):not(.terminal *),
-body.day-mode [class*="text-slate-100"]:not([class*="btn-primary"]):not([class*="badge"]):not(.terminal *),
-body.day-mode [class*="text-zinc-100"]:not([class*="btn-primary"]):not([class*="badge"]):not(.terminal *) {
+body.day-mode .text-white:not(.bg-black):not([class*="bg-black"]):not([class*="bg-zinc-9"]):not([class*="bg-slate-9"]):not([class*="bg-neutral-9"]):not(.btn-primary):not([class*="btn-"]),
+body.day-mode .text-slate-100:not([class*="bg-black"]):not([class*="bg-zinc-9"]):not([class*="bg-slate-9"]),
+body.day-mode .text-zinc-100:not([class*="bg-black"]):not([class*="bg-zinc-9"]):not([class*="bg-slate-9"]),
+body.day-mode [class*="text-white"]:not([class*="btn-primary"]):not([class*="badge"]):not([class*="bg-"]):not(.terminal *):not([class*="bg-black"] *):not(a[class*="bg-black"]):not(button[class*="bg-black"]),
+body.day-mode [class*="text-slate-100"]:not([class*="btn-primary"]):not([class*="badge"]):not(.terminal *):not([class*="bg-black"] *),
+body.day-mode [class*="text-zinc-100"]:not([class*="btn-primary"]):not([class*="badge"]):not(.terminal *):not([class*="bg-black"] *) {
   color: #0f172a !important;
+}
+
+/* Light Mode: Ensure black boxes, pills, buttons & badges always have bright white text and icons */
+body.day-mode .bg-black,
+body.day-mode [class*="bg-black"],
+body.day-mode a[class*="bg-black"],
+body.day-mode button[class*="bg-black"],
+body.day-mode .bg-black *,
+body.day-mode [class*="bg-black"] *,
+body.day-mode a[class*="bg-black"] *,
+body.day-mode button[class*="bg-black"] *,
+body.day-mode [class*="bg-zinc-950"] *,
+body.day-mode [class*="bg-zinc-900"] *,
+body.day-mode [class*="bg-neutral-950"] *,
+body.day-mode [class*="bg-neutral-900"] *,
+body.day-mode .btn-primary,
+body.day-mode .btn-primary * {
+  color: #ffffff !important;
+}
+
+body.day-mode a[class*="bg-black"] svg,
+body.day-mode button[class*="bg-black"] svg,
+body.day-mode [class*="bg-black"] svg,
+body.day-mode .bg-black svg {
+  stroke: #ffffff !important;
 }
 
 /* Light Mode: Secondary & Body Text */

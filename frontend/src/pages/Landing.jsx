@@ -127,11 +127,11 @@ export default function Landing() {
                   className={`px-6 py-3.5 rounded-xl font-mono text-xs font-black uppercase tracking-wider flex items-center gap-2 transition-all hover:scale-[1.02] active:scale-[0.98] ${
                     isNight
                       ? 'bg-white text-black hover:bg-neutral-200 shadow-[0_0_35px_rgba(255,255,255,0.35)]'
-                      : 'bg-black text-white hover:bg-zinc-800 shadow-[0_0_25px_rgba(0,0,0,0.25)]'
+                      : 'bg-black text-white !text-white hover:bg-zinc-800 shadow-[0_0_25px_rgba(0,0,0,0.25)]'
                   }`}
                 >
-                  <span>Start Free Assessment</span>
-                  <ArrowRight size={14} className="stroke-[2.5]" />
+                  <span className={isNight ? 'text-black' : 'text-white !text-white'}>Start Free Assessment</span>
+                  <ArrowRight size={14} className={`stroke-[2.5] ${isNight ? 'text-black' : 'text-white !stroke-white'}`} />
                 </Link>
 
                 <a
@@ -160,7 +160,7 @@ export default function Landing() {
           isNight ? 'border-white/10 bg-[#0A0A0A] text-neutral-400' : 'border-zinc-200 bg-zinc-100 text-zinc-600'
         }`}
       >
-        <div className="flex flex-wrap justify-center whitespace-normal text-xs font-mono gap-x-8 gap-y-2 px-4">
+        <div className="flex animate-marquee whitespace-nowrap text-xs font-mono gap-8 will-change-transform">
           <span>NMAP PORT RECON</span>
           <span>&bull;</span>
           <span>SQLMAP INJECTION PROBE</span>
@@ -194,6 +194,12 @@ export default function Landing() {
           <span>{agentsCount} AI SPECIALIST PERSONAS</span>
           <span>&bull;</span>
           <span>NATIVE KALI ENGINE</span>
+          <span>&bull;</span>
+          <span>LOCAL-FIRST SQLITE WAL</span>
+          <span>&bull;</span>
+          <span>METASPLOIT RPC POC</span>
+          <span>&bull;</span>
+          <span>AUTOMATED GIT PATCH DIFFS</span>
         </div>
       </motion.div>
 
@@ -308,13 +314,6 @@ export default function Landing() {
                       </svg>
                       <span>LinkedIn</span>
                     </a>
-
-                    <span className={`text-[11px] font-mono flex items-center gap-1 pl-2 ${
-                      isNight ? 'text-neutral-500' : 'text-zinc-500'
-                    }`}>
-                      <ShieldCheck size={13} className={isNight ? 'text-white' : 'text-black'} />
-                      <span>Academic Pentest Platform</span>
-                    </span>
                   </div>
                 </div>
               </div>

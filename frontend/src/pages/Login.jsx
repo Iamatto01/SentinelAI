@@ -94,17 +94,41 @@ export default function Login() {
   }
 
   return (
-    <div className={`min-h-screen flex flex-col justify-center items-center px-4 py-12 relative overflow-hidden selection:bg-white selection:text-black transition-colors ${
-      isNight ? 'bg-[#090b10]' : 'bg-[#f8fafc]'
+    <div className={`min-h-screen flex flex-col justify-center items-center px-4 py-12 relative overflow-hidden font-sans transition-colors duration-500 ${
+      isNight
+        ? 'bg-black text-white selection:bg-white selection:text-black'
+        : 'bg-[#FAFAFA] text-zinc-950 selection:bg-black selection:text-white'
     }`}>
+      {/* Top Overhead Spotlight */}
+      <div
+        className="pointer-events-none absolute inset-x-0 top-0 h-[500px] -translate-y-1/3 opacity-30 blur-3xl z-0"
+        style={{
+          background: isNight
+            ? 'radial-gradient(ellipse 80% 50% at 50% -20%, rgba(255,255,255,0.25), transparent 75%)'
+            : 'radial-gradient(ellipse 80% 50% at 50% -20%, rgba(0,0,0,0.08), transparent 75%)',
+        }}
+      />
 
-      {/* Top-Left Back Button (No Arrow) */}
+      {/* Subtle Architectural Wireframe / Dot-Matrix Grid */}
+      <div
+        className="pointer-events-none absolute inset-0 opacity-[0.035] z-0"
+        style={{
+          backgroundImage: isNight
+            ? 'linear-gradient(to right, #ffffff 1px, transparent 1px), linear-gradient(to bottom, #ffffff 1px, transparent 1px)'
+            : 'linear-gradient(to right, #000000 1px, transparent 1px), linear-gradient(to bottom, #000000 1px, transparent 1px)',
+          backgroundSize: '50px 50px',
+          maskImage: 'radial-gradient(ellipse 80% 70% at 50% 50%, black 40%, transparent 90%)',
+          WebkitMaskImage: 'radial-gradient(ellipse 80% 70% at 50% 50%, black 40%, transparent 90%)',
+        }}
+      />
+
+      {/* Top-Left Back Button */}
       <Link
         to="/"
-        className={`fixed top-5 left-5 z-50 inline-flex items-center px-3.5 py-2 rounded-full border text-xs font-bold transition-all duration-300 shadow-xl cursor-pointer active:scale-95 ${
+        className={`fixed top-5 left-5 z-50 inline-flex items-center px-4 py-2 rounded-xl border text-xs font-mono font-bold transition-all duration-300 cursor-pointer active:scale-95 ${
           isNight
-            ? 'bg-slate-900/80 border-white/15 text-slate-200 hover:text-white hover:border-white/40'
-            : 'bg-white/95 border-slate-300 text-slate-800 hover:text-black hover:border-black'
+            ? 'border-white/10 bg-[#0A0A0A]/90 text-neutral-300 hover:text-white hover:border-white/30 backdrop-blur-md'
+            : 'border-zinc-300 bg-white/90 text-zinc-700 hover:text-black hover:border-zinc-400 backdrop-blur-md shadow-sm'
         }`}
         aria-label="Back to Landing Page"
       >
@@ -115,48 +139,52 @@ export default function Login() {
       <button
         type="button"
         onClick={toggleNightMode}
-        className={`fixed top-5 right-5 z-50 inline-flex items-center gap-2 px-3.5 py-2 rounded-full border text-xs font-bold transition-all duration-300 shadow-xl cursor-pointer active:scale-95 ${
+        className={`fixed top-5 right-5 z-50 inline-flex items-center gap-2 px-3.5 py-2 rounded-xl border text-xs font-mono font-bold transition-all duration-300 cursor-pointer active:scale-95 ${
           isNight
-            ? 'bg-slate-900/80 border-white/15 text-slate-200 hover:text-white hover:border-white/40'
-            : 'bg-white/95 border-slate-300 text-slate-800 hover:text-black hover:border-black'
+            ? 'border-white/10 bg-[#0A0A0A]/90 text-neutral-300 hover:text-white hover:border-white/30 backdrop-blur-md'
+            : 'border-zinc-300 bg-white/90 text-zinc-700 hover:text-black hover:border-zinc-400 backdrop-blur-md shadow-sm'
         }`}
         title={isNight ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
         aria-label="Toggle Theme"
       >
         {isNight ? (
           <>
-            <Sun size={15} className="text-amber-400" />
-            <span>Light Mode</span>
+            <Sun size={15} className="text-white hover:rotate-90 transition-transform duration-300" />
+            <span>Light</span>
           </>
         ) : (
           <>
-            <Moon size={15} className="text-zinc-800" />
-            <span>Dark Mode</span>
+            <Moon size={15} className="text-black hover:-rotate-12 transition-transform duration-300" />
+            <span>Dark</span>
           </>
         )}
       </button>
-
-      {/* Ambient Glowing Spotlights - Stealth Neutral */}
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-white/[0.03] rounded-full blur-[140px] pointer-events-none" />
-      <div className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[350px] h-[350px] bg-zinc-500/[0.03] rounded-full blur-[90px] pointer-events-none" />
 
       {/* Main Unified Login Card */}
       <div className="w-full max-w-[460px] relative z-10 my-auto motion-fade-up">
         
         {/* Card Header & Brand */}
         <div className="text-center mb-6">
-          <div className="inline-flex items-center justify-center p-3 rounded-2xl bg-gradient-to-b from-zinc-800/80 to-slate-900/90 border border-white/15 shadow-[0_0_30px_rgba(255,255,255,0.06)] mb-3 relative group">
-            <InspectorLogo size={42} />
+          <div className={`inline-flex items-center justify-center p-3 rounded-2xl border mb-3 relative group ${
+            isNight
+              ? 'border-white/20 bg-white/5'
+              : 'border-zinc-300 bg-black/5'
+          }`}>
+            <InspectorLogo size={42} variant="base" className={isNight ? 'text-white' : 'text-black'} />
           </div>
           <div className="flex items-center justify-center gap-2">
-            <h1 className="text-2xl font-black tracking-tight text-white">
-              Sentinel<span className="text-zinc-400">AI</span>
+            <h1 className={`text-2xl font-black tracking-tight font-sans ${isNight ? 'text-white' : 'text-zinc-950'}`}>
+              Sentinel<span className={isNight ? 'text-neutral-400' : 'text-zinc-500'}>AI</span>
             </h1>
-            <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-white/10 text-zinc-300 border border-white/20 font-bold">
+            <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full border font-bold ${
+              isNight
+                ? 'border-white/20 bg-white/10 text-neutral-300'
+                : 'border-zinc-300 bg-zinc-100 text-zinc-700'
+            }`}>
               v2.4
             </span>
           </div>
-          <p className="text-xs text-slate-400 mt-1.5">
+          <p className={`text-xs font-mono mt-1.5 ${isNight ? 'text-neutral-400' : 'text-zinc-500'}`}>
             {mode === 'login'
               ? 'Sign in to access autonomous offensive security operations'
               : 'Create an account to start pentesting with 3 free scans'}
@@ -166,21 +194,25 @@ export default function Login() {
         {/* Unified Card Container */}
         <div className={`rounded-3xl border p-6 sm:p-8 backdrop-blur-2xl transition-all duration-300 shadow-2xl relative ${
           isNight
-            ? 'bg-[#0c0d13]/95 border-white/15 shadow-[0_20px_60px_rgba(0,0,0,0.8),0_0_30px_rgba(255,255,255,0.02)] text-slate-100'
-            : 'bg-white border-slate-200 text-slate-900 shadow-xl shadow-slate-200/50'
+            ? 'bg-[#0A0A0A] border-white/10 shadow-[0_20px_60px_rgba(0,0,0,0.9)] text-white'
+            : 'bg-white border-zinc-200 text-zinc-950 shadow-xl shadow-zinc-200/50'
         }`}>
 
           {/* Mode Switcher Tabs */}
-          <div className={`flex rounded-2xl p-1 border mb-6 transition-colors ${
-            isNight ? 'bg-[#090a0f] border-white/10' : 'bg-slate-100 border-slate-200'
+          <div className={`flex rounded-2xl p-1 border mb-6 font-mono text-xs transition-colors ${
+            isNight ? 'bg-black border-white/10' : 'bg-zinc-100 border-zinc-200'
           }`}>
             <button
               type="button"
               onClick={() => { setMode('login'); setErr('') }}
-              className={`flex-1 py-2 text-xs font-bold rounded-xl transition-all cursor-pointer ${
+              className={`flex-1 py-2 rounded-xl font-bold transition-all cursor-pointer ${
                 mode === 'login'
-                  ? 'bg-white text-zinc-950 font-black shadow-lg shadow-white/10'
-                  : isNight ? 'text-slate-400 hover:text-white' : 'text-slate-600 hover:text-slate-950'
+                  ? isNight
+                    ? 'bg-white text-black font-black shadow-md'
+                    : 'bg-black text-white !text-white font-black shadow-md'
+                  : isNight
+                    ? 'text-neutral-400 hover:text-white'
+                    : 'text-zinc-600 hover:text-black'
               }`}
             >
               Sign In
@@ -188,10 +220,14 @@ export default function Login() {
             <button
               type="button"
               onClick={() => { setMode('register'); setErr('') }}
-              className={`flex-1 py-2 text-xs font-bold rounded-xl transition-all cursor-pointer ${
+              className={`flex-1 py-2 rounded-xl font-bold transition-all cursor-pointer ${
                 mode === 'register'
-                  ? 'bg-white text-zinc-950 font-black shadow-lg shadow-white/10'
-                  : isNight ? 'text-slate-400 hover:text-white' : 'text-slate-600 hover:text-slate-950'
+                  ? isNight
+                    ? 'bg-white text-black font-black shadow-md'
+                    : 'bg-black text-white !text-white font-black shadow-md'
+                  : isNight
+                    ? 'text-neutral-400 hover:text-white'
+                    : 'text-zinc-600 hover:text-black'
               }`}
             >
               Create Account
@@ -200,22 +236,22 @@ export default function Login() {
 
           {/* Form */}
           <form onSubmit={submit} autoComplete="off" className="space-y-4">
-            {/* Hidden Dummy Inputs to prevent Chrome/Edge from autofilling saved credentials */}
+            {/* Hidden Dummy Inputs to prevent Chrome/Edge autofill bug */}
             <input type="text" name="fakeusernameremembered" style={{ display: 'none' }} tabIndex={-1} autoComplete="off" />
             <input type="password" name="fakepasswordremembered" style={{ display: 'none' }} tabIndex={-1} autoComplete="off" />
 
-            <div className="space-y-1.5">
+            <div className="space-y-1.5 font-mono">
               <label className={`text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 ${
-                isNight ? 'text-slate-300' : 'text-slate-700'
+                isNight ? 'text-neutral-300' : 'text-zinc-700'
               }`}>
-                <User size={13} className={isNight ? 'text-zinc-400' : 'text-zinc-600'} /> Username or Email
+                <User size={13} className={isNight ? 'text-neutral-400' : 'text-zinc-500'} /> Username or Email
               </label>
               <input
                 name="sentinel_auth_user"
-                className={`input py-2.5 text-sm transition-all focus:border-white focus:ring-2 focus:ring-white/20 w-full ${
+                className={`py-2.5 px-3 rounded-xl border text-sm transition-all w-full font-mono focus:outline-none ${
                   isNight
-                    ? 'text-slate-100 bg-[#141829] border-white/10 placeholder-slate-500'
-                    : 'text-slate-900 bg-slate-50 border-slate-300 placeholder-slate-400 font-medium'
+                    ? 'text-white bg-black border-white/15 placeholder-neutral-600 focus:border-white focus:ring-1 focus:ring-white/20'
+                    : 'text-zinc-950 bg-zinc-50 border-zinc-300 placeholder-zinc-400 focus:border-black focus:ring-1 focus:ring-black/20'
                 }`}
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
@@ -226,19 +262,19 @@ export default function Login() {
             </div>
 
             {mode === 'register' && (
-              <div className="space-y-1.5">
+              <div className="space-y-1.5 font-mono">
                 <label className={`text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 ${
-                  isNight ? 'text-slate-300' : 'text-slate-700'
+                  isNight ? 'text-neutral-300' : 'text-zinc-700'
                 }`}>
-                  <Mail size={13} className={isNight ? 'text-zinc-400' : 'text-zinc-600'} /> Email Address
+                  <Mail size={13} className={isNight ? 'text-neutral-400' : 'text-zinc-500'} /> Email Address
                 </label>
                 <input
                   name="sentinel_auth_email"
                   type="email"
-                  className={`input py-2.5 text-sm transition-all focus:border-white focus:ring-2 focus:ring-white/20 w-full ${
+                  className={`py-2.5 px-3 rounded-xl border text-sm transition-all w-full font-mono focus:outline-none ${
                     isNight
-                      ? 'text-slate-100 bg-[#141829] border-white/10 placeholder-slate-500'
-                      : 'text-slate-900 bg-slate-50 border-slate-300 placeholder-slate-400 font-medium'
+                      ? 'text-white bg-black border-white/15 placeholder-neutral-600 focus:border-white focus:ring-1 focus:ring-white/20'
+                      : 'text-zinc-950 bg-zinc-50 border-zinc-300 placeholder-zinc-400 focus:border-black focus:ring-1 focus:ring-black/20'
                   }`}
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
@@ -249,20 +285,20 @@ export default function Login() {
               </div>
             )}
 
-            <div className="space-y-1.5">
+            <div className="space-y-1.5 font-mono">
               <label className={`text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 ${
-                isNight ? 'text-slate-300' : 'text-slate-700'
+                isNight ? 'text-neutral-300' : 'text-zinc-700'
               }`}>
-                <KeyRound size={13} className={isNight ? 'text-zinc-400' : 'text-zinc-600'} /> Password
+                <KeyRound size={13} className={isNight ? 'text-neutral-400' : 'text-zinc-500'} /> Password
               </label>
               <div className="relative flex items-center">
                 <input
                   name="sentinel_auth_pass"
                   type={showPassword ? 'text' : 'password'}
-                  className={`input py-2.5 pr-11 text-sm transition-all focus:border-white focus:ring-2 focus:ring-white/20 w-full ${
+                  className={`py-2.5 pl-3 pr-11 rounded-xl border text-sm transition-all w-full font-mono focus:outline-none ${
                     isNight
-                      ? 'text-slate-100 bg-[#141829] border-white/10 placeholder-slate-500'
-                      : 'text-slate-900 bg-slate-50 border-slate-300 placeholder-slate-400 font-medium'
+                      ? 'text-white bg-black border-white/15 placeholder-neutral-600 focus:border-white focus:ring-1 focus:ring-white/20'
+                      : 'text-zinc-950 bg-zinc-50 border-zinc-300 placeholder-zinc-400 focus:border-black focus:ring-1 focus:ring-black/20'
                   }`}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
@@ -273,15 +309,15 @@ export default function Login() {
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className={`absolute right-3 p-1 rounded-lg transition-colors focus:outline-none ${
-                    isNight ? 'hover:bg-white/10 text-slate-400 hover:text-white' : 'hover:bg-slate-200 text-slate-500 hover:text-black'
+                  className={`absolute right-3 p-1 rounded-lg transition-colors focus:outline-none cursor-pointer ${
+                    isNight ? 'hover:bg-white/10 text-neutral-400 hover:text-white' : 'hover:bg-zinc-200 text-zinc-500 hover:text-black'
                   }`}
                   title={showPassword ? 'Hide password' : 'Reveal password'}
                 >
                   {showPassword ? (
-                    <Eye size={16} className={isNight ? 'text-zinc-300' : 'text-zinc-700'} />
+                    <Eye size={16} className={isNight ? 'text-white' : 'text-black'} />
                   ) : (
-                    <EyeOff size={16} className="text-slate-400" />
+                    <EyeOff size={16} className={isNight ? 'text-neutral-500' : 'text-zinc-400'} />
                   )}
                 </button>
               </div>
@@ -302,10 +338,10 @@ export default function Login() {
               }
 
               return (
-                <div className={`space-y-2 pt-2 border-t ${isNight ? 'border-white/10' : 'border-slate-200'}`}>
+                <div className={`space-y-2 pt-2 border-t font-mono ${isNight ? 'border-white/10' : 'border-zinc-200'}`}>
                   <div className="flex items-center justify-between text-xs">
-                    <span className={`font-bold ${isNight ? 'text-slate-200' : 'text-slate-800'}`}>Select Plan:</span>
-                    <span className="text-[10px] text-zinc-400 font-medium">Live from Admin Settings</span>
+                    <span className={`font-bold ${isNight ? 'text-neutral-200' : 'text-zinc-800'}`}>Select Plan:</span>
+                    <span className={`text-[10px] ${isNight ? 'text-neutral-500' : 'text-zinc-500'}`}>Live Synced</span>
                   </div>
 
                   <div className={`grid gap-2 ${
@@ -328,23 +364,37 @@ export default function Login() {
                           onClick={() => setPlanId(p.id)}
                           className={`relative p-2 rounded-xl border text-center transition-all cursor-pointer flex flex-col justify-between items-center min-h-[58px] ${
                             isSelected
-                              ? 'border-white bg-white/15 shadow-[0_0_15px_rgba(255,255,255,0.15)] text-white ring-1 ring-white/40'
+                              ? isNight
+                                ? 'border-white bg-white text-black font-black ring-1 ring-white/50 shadow-md'
+                                : 'border-black bg-black text-white !text-white font-black ring-1 ring-black/50 shadow-md'
                               : isNight
-                                ? 'border-white/10 bg-slate-900/40 text-slate-400 hover:border-white/20 hover:text-slate-200'
-                                : 'border-slate-200 bg-white text-slate-600 hover:border-zinc-400'
+                                ? 'border-white/10 bg-black/60 text-neutral-400 hover:border-white/20 hover:text-white'
+                                : 'border-zinc-200 bg-zinc-50 text-zinc-600 hover:border-zinc-400 hover:text-black'
                           }`}
                         >
                           {isPopular && (
-                            <span className="absolute -top-1.5 right-1 px-1.5 py-0.2 rounded-full bg-white text-[8px] font-black tracking-wider uppercase text-zinc-950 shadow-sm">
+                            <span className={`absolute -top-1.5 right-1 px-1.5 py-0.2 rounded-full text-[8px] font-black tracking-wider uppercase ${
+                              isSelected
+                                ? isNight ? 'bg-black text-white' : 'bg-white text-black'
+                                : isNight ? 'bg-white text-black' : 'bg-black text-white !text-white'
+                            }`}>
                               Popular
                             </span>
                           )}
                           <div className="text-[11px] font-bold truncate max-w-full">{cleanName(p)}</div>
-                          <div className="text-xs font-black text-white mt-0.5">
+                          <div className={`text-xs font-black mt-0.5 ${
+                            isSelected
+                              ? isNight ? 'text-black' : 'text-white !text-white'
+                              : isNight ? 'text-white' : 'text-zinc-950'
+                          }`}>
                             {price === 0 ? 'Free' : `${curr === 'USD' ? '$' : 'RM '}${price}`}
                           </div>
                           {quota !== undefined && quota > 0 && (
-                            <div className="text-[9px] text-slate-400 font-mono mt-0.5">
+                            <div className={`text-[9px] font-mono mt-0.5 ${
+                              isSelected
+                                ? isNight ? 'text-neutral-700' : 'text-zinc-300'
+                                : isNight ? 'text-neutral-500' : 'text-zinc-500'
+                            }`}>
                               {quota} {quota === 1 ? 'scan' : 'scans'}
                             </div>
                           )}
@@ -357,7 +407,7 @@ export default function Login() {
             })()}
 
             {err && (
-              <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-2.5 text-xs text-rose-300 font-semibold flex items-center gap-2">
+              <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-2.5 text-xs text-rose-300 font-semibold flex items-center gap-2 font-mono">
                 <AlertCircle size={14} className="shrink-0 text-rose-400" />
                 <span>{err}</span>
               </div>
@@ -367,15 +417,23 @@ export default function Login() {
             <button
               type="submit"
               disabled={busy}
-              className="btn-shine w-full justify-center py-3 text-xs font-extrabold shadow-glow hover:scale-[1.01] active:scale-[0.99] transition-all cursor-pointer mt-2 flex items-center gap-2"
+              className={`w-full justify-center py-3 rounded-xl text-xs font-mono font-black uppercase tracking-wider transition-all hover:scale-[1.01] active:scale-[0.99] cursor-pointer mt-2 flex items-center gap-2 ${
+                isNight
+                  ? 'bg-white text-black hover:bg-neutral-200 shadow-[0_0_25px_rgba(255,255,255,0.25)]'
+                  : 'bg-black text-white !text-white hover:bg-zinc-800 shadow-[0_0_20px_rgba(0,0,0,0.25)]'
+              }`}
             >
               {busy ? (
                 <>
-                  <Loader2 size={15} className="animate-spin" />
-                  <span>{mode === 'login' ? 'Authenticating...' : 'Creating Account...'}</span>
+                  <Loader2 size={15} className={`animate-spin ${isNight ? 'text-black' : 'text-white !text-white'}`} />
+                  <span className={isNight ? 'text-black' : 'text-white !text-white'}>
+                    {mode === 'login' ? 'Authenticating...' : 'Creating Account...'}
+                  </span>
                 </>
               ) : (
-                <span>{mode === 'login' ? 'Sign In to Platform' : 'Create Free Account'}</span>
+                <span className={isNight ? 'text-black' : 'text-white !text-white'}>
+                  {mode === 'login' ? 'Sign In to Platform' : 'Create Free Account'}
+                </span>
               )}
             </button>
           </form>
