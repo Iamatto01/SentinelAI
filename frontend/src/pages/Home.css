@@ -1054,17 +1054,20 @@ body.day-mode .card {
   border-color: rgba(15, 23, 42, 0.08) !important;
 }
 
-body.day-mode .text-white:not(.bg-black):not([class*="bg-black"]):not([class*="bg-zinc-9"]):not([class*="bg-slate-9"]) {
+body.day-mode .text-white:not([class*="bg-"]):not(.bg-black) {
   color: #0f172a !important;
 }
 
-body.day-mode .bg-black,
-body.day-mode [class*="bg-black"],
-body.day-mode a[class*="bg-black"],
-body.day-mode button[class*="bg-black"],
-body.day-mode .bg-black *,
-body.day-mode [class*="bg-black"] * {
+body.day-mode a.bg-black,
+body.day-mode a.bg-black span,
+body.day-mode button.bg-black,
+body.day-mode button.bg-black span,
+body.day-mode .bg-black.text-white,
+body.day-mode .bg-black.text-white span,
+body.day-mode a.bg-black svg,
+body.day-mode button.bg-black svg {
   color: #ffffff !important;
+  stroke: #ffffff !important;
 }
 
 body.day-mode .text-slate-300,

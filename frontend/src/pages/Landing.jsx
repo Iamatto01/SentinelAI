@@ -124,14 +124,15 @@ export default function Landing() {
               <div className="flex flex-wrap items-center gap-4 pt-2">
                 <Link
                   to="/login?mode=register&plan=trial"
+                  style={!isNight ? { color: '#ffffff' } : {}}
                   className={`px-6 py-3.5 rounded-xl font-mono text-xs font-black uppercase tracking-wider flex items-center gap-2 transition-all hover:scale-[1.02] active:scale-[0.98] ${
                     isNight
                       ? 'bg-white text-black hover:bg-neutral-200 shadow-[0_0_35px_rgba(255,255,255,0.35)]'
-                      : 'bg-black text-white !text-white hover:bg-zinc-800 shadow-[0_0_25px_rgba(0,0,0,0.25)]'
+                      : 'bg-black text-white hover:bg-zinc-800 shadow-[0_0_25px_rgba(0,0,0,0.25)]'
                   }`}
                 >
-                  <span className={isNight ? 'text-black' : 'text-white !text-white'}>Start Free Assessment</span>
-                  <ArrowRight size={14} className={`stroke-[2.5] ${isNight ? 'text-black' : 'text-white !stroke-white'}`} />
+                  <span style={!isNight ? { color: '#ffffff' } : {}}>Start Free Assessment</span>
+                  <ArrowRight size={14} className="stroke-[2.5]" style={!isNight ? { stroke: '#ffffff' } : {}} />
                 </Link>
 
                 <a
