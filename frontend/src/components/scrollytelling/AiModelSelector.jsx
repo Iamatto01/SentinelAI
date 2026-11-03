@@ -202,11 +202,14 @@ export default function AiModelSelector() {
                     : isNight ? 'bg-neutral-600' : 'bg-zinc-400'
                 }`} />
                 <span>{model.name}</span>
-                <span className={`text-[10px] px-1.5 py-0.5 rounded ${
-                  isSelected
-                    ? isNight ? 'bg-black/10 text-black' : 'bg-white/15 text-white'
-                    : isNight ? 'bg-white/5 text-neutral-400' : 'bg-zinc-100 text-zinc-600'
-                }`}>
+                <span
+                  className={`text-[10px] px-1.5 py-0.5 rounded font-mono font-bold model-badge ${
+                    isSelected
+                      ? isNight ? 'bg-black/15 text-black' : 'bg-white text-black'
+                      : isNight ? 'bg-white/5 text-neutral-400' : 'bg-zinc-100 text-zinc-600'
+                  }`}
+                  style={isSelected && !isNight ? { color: '#000000', backgroundColor: '#ffffff' } : {}}
+                >
                   {model.badge}
                 </span>
               </button>

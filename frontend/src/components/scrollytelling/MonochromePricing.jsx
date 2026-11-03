@@ -131,11 +131,14 @@ export default function MonochromePricing() {
                 }`}
               >
                 <span>Annual Billing</span>
-                <span className={`text-[10px] px-1.5 py-0.2 rounded font-black ${
-                  interval === 'yearly'
-                    ? isNight ? 'bg-black text-white' : 'bg-white text-black'
-                    : isNight ? 'bg-white/10 text-white' : 'bg-zinc-200 text-zinc-900'
-                }`}>
+                <span
+                  className={`text-[10px] px-1.5 py-0.2 rounded font-black model-badge ${
+                    interval === 'yearly'
+                      ? isNight ? 'bg-black text-white' : 'bg-white text-black'
+                      : isNight ? 'bg-white/10 text-white' : 'bg-zinc-200 text-zinc-900'
+                  }`}
+                  style={interval === 'yearly' && !isNight ? { color: '#000000', backgroundColor: '#ffffff' } : {}}
+                >
                   SAVE 17%
                 </span>
               </button>

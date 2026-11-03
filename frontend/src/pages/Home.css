@@ -1059,15 +1059,28 @@ body.day-mode .text-white:not([class*="bg-"]):not(.bg-black) {
 }
 
 body.day-mode a.bg-black,
-body.day-mode a.bg-black span,
 body.day-mode button.bg-black,
-body.day-mode button.bg-black span,
 body.day-mode .bg-black.text-white,
-body.day-mode .bg-black.text-white span,
+body.day-mode a.bg-black > span:not(.model-badge):not(.bg-white):not([class*="text-black"]):not([class*="bg-black/"]):not([class*="bg-zinc"]),
+body.day-mode button.bg-black > span:not(.model-badge):not(.bg-white):not([class*="text-black"]):not([class*="bg-black/"]):not([class*="bg-zinc"]),
+body.day-mode .bg-black.text-white > span:not(.model-badge):not(.bg-white):not([class*="text-black"]):not([class*="bg-black/"]):not([class*="bg-zinc"]),
 body.day-mode a.bg-black svg,
 body.day-mode button.bg-black svg {
   color: #ffffff !important;
   stroke: #ffffff !important;
+}
+
+body.day-mode button.bg-black .model-badge,
+body.day-mode button.bg-black span.model-badge,
+body.day-mode button.bg-black span.bg-white,
+body.day-mode button.bg-black span.text-black,
+body.day-mode button.bg-black [class*="text-black"],
+body.day-mode a.bg-black .model-badge,
+body.day-mode a.bg-black span.model-badge,
+body.day-mode a.bg-black span.bg-white,
+body.day-mode a.bg-black span.text-black {
+  color: #000000 !important;
+  background-color: #ffffff !important;
 }
 
 body.day-mode .text-slate-300,
