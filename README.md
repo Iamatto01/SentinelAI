@@ -271,6 +271,20 @@ Whenever a tool or code parser produces a potential security issue, it passes th
 - **Urgency:** Both reports show the per-finding priority action and deadline, plus a priority breakdown. SentinelAI applies a deterministic operational SLA separately from CVSS: Critical or explicitly known-exploited findings are immediate (within 24 hours), High within 7 days, Medium within 30 days, and Low in the next planned maintenance release. Findings marked `needs-validation` are assigned the same time window to validate, not represented as confirmed fixes. Informational observations have no remediation SLA. These are SentinelAI policy defaults, not FIRST CVSS rules.
 - **Aggregate scan risk:** The scan-level risk index is a separate severity-count summary; it is not a CVSS score for the scan.
 
+### 5.2.2. False-Positive Tuning
+
+The blackbox parser favors evidence-backed vulnerability claims and keeps reconnaissance observations separate from confirmed issues:
+
+- Nmap open ports are informational observations. Nmap CVE/version correlations are informational and marked `needs-validation` unless the script output explicitly reports a vulnerable condition.
+- Katana sensitive-looking URLs are informational leads that require validation; a path name alone does not establish exposure.
+- Dalfox JSON results without an exploit payload are informational candidates requiring validation. Positive SQLMap parameter confirmations are High rather than automatically Critical; explicit negative test results are ignored.
+- Nuclei JSONL findings must include a template identifier, supported severity, and a matched host/location. Malformed or incomplete records are not promoted through generic text heuristics.
+- FFUF/Gobuster path responses are evidence of path discovery, not proof that sensitive content is exposed. Verify the response body and access controls before treating a path as a vulnerability.
+- Built-in checks for configuration, backup, metadata, Mercurial, and admin paths compare responses with a randomized missing-path baseline or require file-specific content signatures. Admin, IDOR, rate-limit, upload-acceptance, cache-deception, and similar incomplete checks are informational validation leads, not confirmed vulnerabilities. Custom scripts can set `evidence.validationRequired: true` to make the pipeline/report show that validation is still required.
+- On startup, SentinelAI refreshes only allowlisted built-in script rows whose `updated_at` still matches the shipped version; rows edited through the UI are preserved. User-created scripts are not migrated by this update.
+
+Tool arguments are defined in `backend/src/integrations/native-tools.js`; native parser rules are in `backend/src/pipeline.js`; built-in custom-script checks are in `backend/src/data/default-custom-scripts.json`. Run `npm run test:parser` and `npm run test:custom` for parser and local-HTTP-fixture regression coverage. The custom-script test requires Bash on `PATH` (or `BASH_PATH` on Windows) and sends requests only to its loopback fixture. Add anonymized noisy-output examples before widening or narrowing a rule. Validate scanner tuning only against systems you own or are authorized to assess.
+
 ---
 
 ### 5.3. Multi-Tier Architecture Breakdown

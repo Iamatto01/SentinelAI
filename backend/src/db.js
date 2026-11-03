@@ -566,14 +566,58 @@ function migrate(d) {
 export function seedDefaultScripts(d = getDb()) {
   try {
     const existingCount = d.prepare('SELECT count(*) as c FROM custom_scripts').get()?.c || 0
-    if (existingCount > 0) {
-      return { seeded: false, count: existingCount, message: 'Custom scripts already present' }
-    }
     const seedPath = path.join(__dirname, 'data', 'default-custom-scripts.json')
     if (!fs.existsSync(seedPath)) {
       return { seeded: false, count: 0, message: 'Seed file not found' }
     }
     const defaultScripts = JSON.parse(fs.readFileSync(seedPath, 'utf8'))
+    if (existingCount > 0) {
+      const safeUpdateVersions = new Map([
+        ['cscript_73e4d9fd-3b7d-417c-8ab1-1c43209e8a9b', '2026-09-08T14:07:10.463Z'],
+        ['cscript_e7ff4920-95aa-468d-819d-9f9cab08c892', '2026-09-08T14:07:10.463Z'],
+        ['cscript_b0a52d87-4fae-41fe-a2a2-598de8ffd00c', '2026-09-08T14:07:10.464Z'],
+        ['cscript_b092f9be-c09c-4003-8671-7c4eb2851822', '2026-09-08T14:07:10.464Z'],
+        ['cscript_c7996f96-7c24-4a89-878a-fe1409fe86cb', '2026-09-08T14:16:32.025Z'],
+        ['cscript_f8d53172-ae45-4029-b4ac-2fea3e20e7ac', '2026-09-08T14:16:32.026Z'],
+        ['cscript_aecf8fa3-a389-4058-9b08-1d9642f54dee', '2026-09-08T14:16:32.026Z'],
+        ['cscript_8da1314b-0b45-4155-959b-c3071fbba4fd', '2026-09-09T00:24:25.776Z'],
+        ['cscript_b0aa2697-d429-45f5-a1c2-cf7090a2920d', '2026-09-08T14:19:43.313Z'],
+        ['cscript_b774ca9e-33e9-400d-810e-4291ae3cf079', '2026-09-08T14:19:43.313Z'],
+        ['cscript_283aeb96-39d3-47f7-a74f-9e34814abb72', '2026-09-08T14:21:45.520Z'],
+        ['cscript_0936b57c-d710-4681-b903-fda8aa7c2021', '2026-09-08T14:21:45.521Z'],
+        ['cscript_dbee3e7d-3ce5-49f6-900e-06b14949c417', '2026-09-08T14:21:45.521Z'],
+        ['cscript_74703556-afb9-4484-a372-c2959fe1be9f', '2026-09-08T14:21:45.521Z'],
+      ])
+      const updateStmt = d.prepare(`
+        UPDATE custom_scripts
+        SET command = ?, description = ?, severity_floor = ?, updated_at = ?
+        WHERE id = ? AND updated_at = ? AND command <> ?
+      `)
+      const syncUntouchedDefaults = d.transaction((scripts) => {
+        let updated = 0
+        for (const s of scripts) {
+          const previousUpdatedAt = safeUpdateVersions.get(s.id)
+          if (!previousUpdatedAt) continue
+          updated += updateStmt.run(
+            s.command,
+            s.description || '',
+            s.severity_floor || 'info',
+            s.updated_at || new Date().toISOString(),
+            s.id,
+            previousUpdatedAt,
+            s.command
+          ).changes
+        }
+        return updated
+      })
+      const updated = syncUntouchedDefaults(defaultScripts)
+      return {
+        seeded: false,
+        count: existingCount,
+        updated,
+        message: updated ? 'Updated untouched built-in scripts' : 'Custom scripts already present',
+      }
+    }
     const insertStmt = d.prepare(`
       INSERT OR IGNORE INTO custom_scripts (id, name, description, language, command, trigger_point, enabled, severity_floor, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)

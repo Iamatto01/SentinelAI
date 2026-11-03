@@ -29,6 +29,9 @@ import * as db from './db.js'
 const SEVERITY_RANK = { info: 0, low: 1, medium: 2, high: 3, critical: 4 }
 
 function evidenceTier(finding, targetType) {
+  if (finding.validationRequired || finding.evidence?.validationRequired || finding.evidence?.version_unverified) {
+    return 'needs-validation'
+  }
   const code = String(finding.evidence?.code || '')
   if (targetType !== 'code') return finding.evidence?.poc ? 'exploited' : 'observed'
   if (/JwtModule\.register|secret\s*:/i.test(code)) return 'validated'
@@ -2499,19 +2502,30 @@ function cleanText(txt) {
 }
 
 /** Heuristic extraction of findings from raw tool output. Grounded, no hallucination. */
-function extractFindingsFromOutput(tool, output, target = '') {
+export function extractFindingsFromOutput(tool, output, target = '') {
   const findings = []
   const cleanOutput = cleanText(output)
   const lines = cleanOutput.split('\n')
   const discoveredUrls = [] // collected for chaining into dalfox/sqlmap
-  const push = (title, severity, evidence, extra = {}) => findings.push({
-    title: cleanText(title).replace(/\s+/g, ' ').trim(), severity, description: cleanText(evidence).slice(0, 400), evidence: { tool, raw: cleanText(evidence).slice(0, 800) }, ...extra,
-  })
+  const push = (title, severity, evidence, extra = {}) => {
+    const { validationRequired, ...findingFields } = extra
+    findings.push({
+      title: cleanText(title).replace(/\s+/g, ' ').trim(),
+      severity,
+      description: cleanText(evidence).slice(0, 400),
+      evidence: {
+        tool,
+        raw: cleanText(evidence).slice(0, 800),
+        ...(validationRequired ? { validationRequired: true } : {}),
+      },
+      ...findingFields,
+      ...(validationRequired ? { validationRequired: true } : {}),
+    })
+  }
 
   // ── nmap: open ports + service versions + script findings ──
   if (tool === 'nmap') {
     const portRe = /^(\d+)\/(tcp|udp)\s+(\S+)\s+(\S+)\s*(.*)$/
-    const risky = { 21: 'FTP', 22: 'SSH', 23: 'Telnet', 25: 'SMTP', 445: 'SMB', 3389: 'RDP', 3306: 'MySQL', 5432: 'PostgreSQL', 6379: 'Redis', 27017: 'MongoDB', 9200: 'Elasticsearch', 1433: 'MSSQL', 5900: 'VNC', 11211: 'Memcached' }
     for (const line of lines) {
       const cleanLine = line.trim()
       const m = cleanLine.match(portRe)
@@ -2519,30 +2533,37 @@ function extractFindingsFromOutput(tool, output, target = '') {
         const port = parseInt(m[1])
         const svc = m[4]
         const ver = m[5]?.trim() || ''
-        const isRisky = risky[port]
         push(
-          `Open port ${port}/${m[2]} (${svc}${ver ? ` — ${ver}` : ''})${isRisky ? ` [${isRisky}]` : ''}`,
-          isRisky ? 'medium' : 'info',
+          `Open port ${port}/${m[2]} (${svc}${ver ? ` — ${ver}` : ''})`,
+          'info',
           cleanLine,
           { port, service: svc }
         )
       }
       // nmap NSE script findings (e.g. "| ssl-heartbleed: VULNERABLE" or "| vulners: CVE-2023-38408 7.5")
-      // Skip future-date CVEs (CVE-2026+) and negative results
+      // Skip future-date CVEs and negative results.
       if (/^\|.*(vulnerab|CVE-|backdoor|anonymous|weak)/i.test(cleanLine)) {
         const cveMatch = cleanLine.match(/(CVE-(\d{4})-\d+)/i)
-        // Skip future-year CVEs (CVE-2026 and beyond) — these are hallucinations
-        if (cveMatch && parseInt(cveMatch[2]) >= 2026) continue
+        if (cveMatch && parseInt(cveMatch[2]) > new Date().getFullYear()) continue
         // Skip negative/not-found messages
         if (/not vulnerable|not found|no (vulnerab|backdoor|issue)|couldn'?t find|state: /i.test(cleanLine)) continue
-        const cvssMatch = cleanLine.match(/\b(\d+\.\d+)\b/)
+        const cvssMatch = cleanLine.match(/\bCVSS(?:v[0-9.]+)?[:\s]+(\d{1,2}\.\d)\b/i)
         const cvss = cvssMatch ? parseFloat(cvssMatch[1]) : 0
-        // Severity based on CVSS score, not blindly "high" — version-only matches are weak
-        const sev = cvss >= 9.0 ? 'critical' : cvss >= 7.0 ? 'high' : cvss >= 4.0 ? 'medium' : 'low'
+        const versionMatch = /vulners/i.test(cleanLine) || (Boolean(cveMatch) && !/\bVULNERABLE\b/i.test(cleanLine))
+        const explicitVulnerability = /\bVULNERABLE\b/i.test(cleanLine)
+        // A version-to-CVE correlation is a lead, not proof that the target is exploitable.
+        const sev = versionMatch
+          ? 'info'
+          : explicitVulnerability
+            ? cvss >= 9.0 ? 'critical' : cvss >= 7.0 ? 'high' : cvss >= 4.0 ? 'medium' : 'high'
+            : 'info'
         const title = cveMatch
           ? `nmap vulners: ${cveMatch[1].toUpperCase()}${cvssMatch ? ` (CVSS ${cvssMatch[1]})` : ''}`
           : `nmap script: ${cleanLine.replace(/^[|\s#]+/, '').replace(/http\S+/gi, '').slice(0, 90)}`
-        push(title, sev, cleanLine, { cveId: cveMatch ? cveMatch[1].toUpperCase() : null })
+        push(title, sev, cleanLine, {
+          cveId: cveMatch ? cveMatch[1].toUpperCase() : null,
+          ...(!explicitVulnerability ? { validationRequired: true } : {}),
+        })
       }
     }
     if (findings.length) return { findings: findings.slice(0, 30), discoveredUrls }
@@ -2592,9 +2613,12 @@ function extractFindingsFromOutput(tool, output, target = '') {
           if (/\?[^=]+=/.test(url)) {
             push(`katana: Parameterized endpoint ${url.slice(0, 120)}`, 'info', url, { url })
           }
-          // Sensitive paths
+          // A path name alone does not establish exposure or a vulnerability.
           if (/admin|backup|config|\.git|\.env|upload|debug|phpinfo|console|actuator|swagger|api-doc/i.test(url)) {
-            push(`katana: Sensitive path discovered — ${url.slice(0, 120)}`, 'medium', url, { url })
+            push(`katana: Sensitive-looking path discovered — ${url.slice(0, 120)}`, 'info', url, {
+              url,
+              validationRequired: true,
+            })
           }
         }
       } catch { /* skip */ }
@@ -2613,10 +2637,11 @@ function extractFindingsFromOutput(tool, output, target = '') {
           const xssType = String(r.type || r.inject_type || 'reflected').toLowerCase()
           const xssParam = r.param || r.parameter || ''
           const xssWhere = r.data || r.url || r.evidence || target || ''
+          const hasExploitPayload = Boolean(r.poc || r.payload)
           const where = String(xssWhere).slice(0, 100)
           // Only include clauses we actually resolved — no "unknown parameter" / trailing dashes.
           const title = [
-            `XSS (${xssType})`,
+            `${hasExploitPayload ? 'XSS' : 'XSS candidate'} (${xssType})`,
             xssParam ? `in parameter "${xssParam}"` : 'on ' + (where || 'target'),
             !xssParam && where ? '' : (where ? `— ${where}` : '')
           ].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim()
@@ -2625,9 +2650,13 @@ function extractFindingsFromOutput(tool, output, target = '') {
             : `${xssType} XSS confirmed on ${where || 'target'}`
           push(
             title,
-            /stored/i.test(xssType) ? 'high' : 'medium',
+            hasExploitPayload ? (/stored/i.test(xssType) ? 'high' : 'medium') : 'info',
             `${detail} — payload: ${String(r.poc || r.payload || (r.evidence ? '' : 'see tool output')).slice(0, 200)}`.replace(/ — payload: $/, '').slice(0, 300),
-            { cweId: 'CWE-79', url: xssWhere }
+            {
+              cweId: 'CWE-79',
+              url: xssWhere,
+              ...(!hasExploitPayload ? { validationRequired: true } : {}),
+            }
           )
         }
       }
@@ -2647,7 +2676,7 @@ function extractFindingsFromOutput(tool, output, target = '') {
   // ── sqlmap: confirmed injection ──
   if (tool === 'sqlmap') {
     // Only match positive confirmation — skip "not injectable", "do not appear to be injectable"
-    const injectable = /(parameter '(.+)' is vulnerable|is vulnerable to|(?<!\bnot )injectable|(?<!\bnot appear to be )injectable)/i
+    const injectable = /(?:parameter\s+['"`]?[^\s'"`]+['"`]?\s+(?:appears to be .+?\s+)?injectable\b|parameter\s+['"`]?[^\s'"`]+['"`]?\s+is vulnerable\b|is vulnerable to .{0,80}\bsql injection\b)/i
     for (let i = 0; i < lines.length; i++) {
       // Skip lines that are clearly negative
       if (/not injectable|do not appear to be injectable|no parameter found|all tested parameters do not appear|back-end dbms is/i.test(lines[i])) continue
@@ -2655,7 +2684,7 @@ function extractFindingsFromOutput(tool, output, target = '') {
         const ctx = lines.slice(Math.max(0, i - 2), i + 3).join('\n')
         push(
           `SQL Injection — ${lines[i].trim().slice(0, 140)}`,
-          'critical',
+          'high',
           ctx.slice(0, 400),
           { cweId: 'CWE-89', owaspCategory: 'A05:2025-Injection' }
         )
@@ -2756,7 +2785,7 @@ function extractFindingsFromOutput(tool, output, target = '') {
       const t = line.trim()
       // arjun output: "[✓] Parameters found:", "[+] Parameters found:", "GET param:", "POST param:"
       if (/parameters?\s*found|param.*found|GET:|POST:|reflect/i.test(t) && !/testing|probing|scanning|starting|no parameter|not reflect/i.test(t)) {
-        push(`arjun: ${t.slice(0, 140)}`, 'low', t)
+        push(`arjun: ${t.slice(0, 140)}`, 'info', t, { validationRequired: true })
         // Extract URLs for chaining
         const urlMatch = t.match(/https?:\/\/\S+/i)
         if (urlMatch) discoveredUrls.push(urlMatch[0])
@@ -2775,7 +2804,11 @@ function extractFindingsFromOutput(tool, output, target = '') {
     if (line.trim().startsWith('{') && /"severity"/.test(line)) {
       try {
         const j = JSON.parse(line)
-        push(j.info?.name || j.templateID || 'nuclei finding', (j.info?.severity || 'info').toLowerCase(), line, {
+        const templateId = j['template-id'] || j.templateID || j.template
+        const matchedAt = j['matched-at'] || j.matchedAt || j.host
+        const severity = String(j.info?.severity || '').toLowerCase()
+        if (!templateId || !matchedAt || !['critical', 'high', 'medium', 'low', 'info'].includes(severity)) continue
+        push(j.info?.name || templateId, severity, line, {
           cveId: j.info?.classification?.['cve-id']?.[0] || null,
           cweId: j.info?.classification?.['cwe-id']?.[0] || null,
         })
@@ -2785,6 +2818,7 @@ function extractFindingsFromOutput(tool, output, target = '') {
     }
   }
   if (findings.length) return { findings: findings.slice(0, 30), discoveredUrls }
+  if (tool === 'nuclei') return { findings, discoveredUrls }
 
   // Skip lines that are clearly negative results (not vulnerable, couldn't find, etc.)
   // Defined here so both severity-tagged & keyword-heuristic sections can use it
@@ -2898,7 +2932,10 @@ function extractFindingsFromOutput(tool, output, target = '') {
     const blocked = ffufPaths.filter(p => !ACCESSIBLE.test(p.status) && /admin|backup|config|\.git|\.env|api|dashboard|login|phpmyadmin|debug|internal/i.test(p.path))
     const others = ffufPaths.filter(p => !/admin|backup|config|\.git|\.env|api|dashboard|login|phpmyadmin|debug|internal/i.test(p.path))
     for (const p of interesting.slice(0, 10)) {
-      push(`${tool}: Discovered ${p.path} (HTTP ${p.status})`, /admin|backup|\.git|\.env|config/i.test(p.path) && p.status !== '401' ? 'medium' : 'low', `${tool} discovered ${p.path} with HTTP status ${p.status}`)
+      const url = `${base}${p.path.startsWith('/') ? '' : '/'}${p.path}`
+      push(`${tool}: Sensitive-looking path discovered — ${p.path} (HTTP ${p.status})`, 'info',
+        `${tool} discovered ${p.path} with HTTP status ${p.status}; response content and access controls have not been validated.`,
+        { url, validationRequired: true })
     }
     if (blocked.length) {
       push(`${tool}: ${blocked.length} sensitive paths exist but are NOT accessible (HTTP 403/404)`, 'info',
