@@ -53,10 +53,11 @@ export const config = {
     .split(',').map(s => s.trim()).filter(Boolean),
 
   jwt: {
-    secret: process.env.JWT_SECRET || 'dev-secret-change-me',
+    secret: (() => { const s = process.env.JWT_SECRET || ''; if (!s || s.includes('CHANGE_ME')) { console.error('[SECURITY] JWT_SECRET is not set or uses the default placeholder. Generate one with: node -e "console.log(require(\'crypto\').randomBytes(64).toString(\'hex\'))"'); process.exit(1); } return s })(),
     issuer: process.env.JWT_ISSUER || 'fyp2-backend',
   },
   defaultAdminPassword: process.env.DEFAULT_ADMIN_PASSWORD || 'kali',
+  forceAdminPasswordChange: (process.env.FORCE_ADMIN_PASSWORD_CHANGE || 'true').trim() !== 'false',
   // Kali sudo password — used for systemctl/apt tool management.
   // Set to empty string for passwordless sudo (NOPASSWD in sudoers is preferred).
   kaliSudoPassword: process.env.KALI_SUDO_PASSWORD || 'kali',

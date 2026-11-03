@@ -485,6 +485,8 @@ function migrate(d) {
   try { d.exec(`ALTER TABLE projects ADD COLUMN user_id TEXT`) } catch (e) { if (!/duplicate column name/i.test(String(e))) throw e }
   try { d.exec(`ALTER TABLE projects ADD COLUMN client_id TEXT`) } catch (e) { if (!/duplicate column name/i.test(String(e))) throw e }
   try { d.exec(`ALTER TABLE projects ADD COLUMN cover TEXT`) } catch (e) { if (!/duplicate column name/i.test(String(e))) throw e }
+  try { d.exec(`ALTER TABLE users ADD COLUMN password_must_change INTEGER DEFAULT 0`) } catch (e) { if (!/duplicate column name/i.test(String(e))) throw e }
+  try { d.exec(`ALTER TABLE users ADD COLUMN token_generation INTEGER DEFAULT 0`) } catch (e) { if (!/duplicate column name/i.test(String(e))) throw e }
 
   // Migration: ensure github_repos has all required columns
   try { d.exec(`ALTER TABLE github_repos ADD COLUMN full_name TEXT`) } catch (e) { if (!/duplicate column name/i.test(String(e))) throw e }

@@ -15,6 +15,7 @@ Actions:
 import hashlib
 import os
 import shutil
+import socket
 import subprocess
 import sys
 import tarfile
@@ -101,32 +102,41 @@ def local_module_hashes():
 def detect_connection():
     has_ssh = shutil.which("ssh") is not None
     if has_ssh:
-        # 1. Try Cloudflare Access alias (kali-n100)
-        try:
-            res = subprocess.run(
-                ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", OPENSSH_HOST, "echo ping_cf_ok"],
-                capture_output=True, text=True, timeout=15
-            )
-            if res.returncode == 0 and "ping_cf_ok" in res.stdout:
-                return "openssh", OPENSSH_HOST, "Cloudflare Access Tunnel (Global)"
-        except Exception as e:
-            print(f"   [Debug] Cloudflare tunnel check failed: {e}")
+        # 1. Try Cloudflare Access alias (kali-n100) - retry once if initial handshake takes a moment
+        for attempt in range(1, 3):
+            try:
+                res = subprocess.run(
+                    ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=15", OPENSSH_HOST, "echo ping_cf_ok"],
+                    capture_output=True, text=True, timeout=20
+                )
+                if res.returncode == 0 and "ping_cf_ok" in res.stdout:
+                    return "openssh", OPENSSH_HOST, "Cloudflare Access Tunnel (Global)"
+            except Exception as e:
+                if attempt == 1:
+                    print(f"   [Debug] Cloudflare tunnel attempt 1 failed ({e}), retrying once...")
+                    time.sleep(1)
+                else:
+                    print(f"   [Debug] Cloudflare tunnel check failed: {e}")
 
         # 2. Try direct LAN OpenSSH
         lan_target = f"{KALI_USER}@{KALI_HOST}"
         try:
             res = subprocess.run(
-                ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=4", "-p", str(KALI_PORT), lan_target, "echo ping_lan_ok"],
-                capture_output=True, text=True, timeout=6
+                ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=3", "-p", str(KALI_PORT), lan_target, "echo ping_lan_ok"],
+                capture_output=True, text=True, timeout=5
             )
             if res.returncode == 0 and "ping_lan_ok" in res.stdout:
-                return "openssh", lan_target, "Direct Home LAN (192.168.68.132)"
+                return "openssh", lan_target, f"Direct Home LAN ({KALI_HOST})"
         except Exception:
             pass
 
-    # 3. Paramiko fallback
+    # 3. Paramiko fallback (only if LAN IP is actually reachable via TCP)
     if paramiko is not None:
-        return "paramiko", KALI_HOST, "Paramiko SSH (Direct LAN)"
+        try:
+            with socket.create_connection((KALI_HOST, KALI_PORT), timeout=3):
+                return "paramiko", KALI_HOST, f"Paramiko SSH (Direct LAN - {KALI_HOST})"
+        except Exception:
+            pass
 
     return None, None, None
 

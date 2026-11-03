@@ -59,13 +59,13 @@ export async function createStripeCheckoutSession({
       promoCode.trim().toUpperCase()
     )
     if (promo) {
-      if (promo.valid_until && new Date(promo.valid_until) < new Date()) {
+      if (promo.expires_at && new Date(promo.expires_at) < new Date()) {
         // Expired promo, ignore
-      } else if (promo.max_uses && promo.times_used >= promo.max_uses) {
+      } else if (promo.max_uses && (promo.used_count || 0) >= promo.max_uses) {
         // Max uses reached, ignore
       } else {
         appliedPromo = promo.code
-        if (promo.discount_type === 'percent') {
+        if (promo.discount_type === 'percentage' || promo.discount_type === 'percent') {
           discountAmount = (amount * Number(promo.discount_value)) / 100
         } else {
           discountAmount = Number(promo.discount_value)

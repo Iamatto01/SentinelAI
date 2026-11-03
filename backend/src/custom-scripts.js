@@ -103,8 +103,21 @@ function validateScript({ name, language, command, trigger_point }) {
   if (command.length > 50000) throw new Error('command too large (max 50KB)')
   if (!LANGS.includes(language)) throw new Error(`language must be one of: ${LANGS.join(', ')}`)
   if (!TRIGGERS.includes(trigger_point)) throw new Error(`trigger_point must be one of: ${TRIGGERS.join(', ')}`)
-  // Block obviously catastrophic commands — defense in depth (API layer is admin-only anyway)
-  if (/\brm\s+-rf\s+\/(?:\s|$)|\bmkfs\b|\bshutdown\b|\breboot\b|\bdd\s+if=\/dev\/(zero|random)\s+of=\/dev\/[sh]d/i.test(command)) {
+  // Block obviously catastrophic commands — defense in depth (API layer is admin-only anyway).
+  // Checks both direct invocation and common evasion patterns.
+  const dangerPatterns = [
+    /\brm\s+(-[a-zA-Z]*f[a-zA-Z]*\s+.*\/|--no-preserve-root)/i,
+    /\bmkfs\b/i,
+    /\bshutdown\b/i,
+    /\breboot\b/i,
+    /\bdd\s+.*\bof=\/dev\//i,
+    /\bfind\s+\/\s+.*-delete\b/i,
+    /\bchmod\s+(-[a-zA-Z]*\s+)*[0-7]*0{3}\s+\//i,
+    />\s*\/dev\/[sh]d/i,
+    /\bcurl\b.*\|\s*(ba)?sh\b/i,
+    /\bwget\b.*\|\s*(ba)?sh\b/i,
+  ]
+  if (dangerPatterns.some(re => re.test(command))) {
     throw new Error('command blocked: destructive system-level operation detected')
   }
 }
