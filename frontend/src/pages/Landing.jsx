@@ -6,10 +6,8 @@ import {
   DatabaseZap, Sparkles, Cpu, CheckCircle2, ChevronRight, Activity,
   GitBranch, Code2, Globe2, Network, Workflow, Zap, Layers
 } from 'lucide-react'
-import InspectorLogo from '../components/InspectorLogo.jsx'
 import ScrollyNavbar from '../components/scrollytelling/ScrollyNavbar.jsx'
 import ScrollProgressHUD from '../components/scrollytelling/ScrollProgressHUD.jsx'
-import HeroNodeGraph from '../components/scrollytelling/HeroNodeGraph.jsx'
 import LiveScanTerminal from '../components/scrollytelling/LiveScanTerminal.jsx'
 import AiModelSelector from '../components/scrollytelling/AiModelSelector.jsx'
 import VulnerabilityBento from '../components/scrollytelling/VulnerabilityBento.jsx'
@@ -24,7 +22,6 @@ import './Home.css'
 export default function Landing() {
   const { isNight } = useTheme()
   const [agentsCount, setAgentsCount] = useState(53)
-  const [heroTab, setHeroTab] = useState('radar')
   const [showThemeIntro, setShowThemeIntro] = useState(false)
 
   // Listen for replay event from navbar or dropdown
@@ -91,9 +88,6 @@ export default function Landing() {
           }}
         />
 
-        {/* Interactive 3D/Canvas Background: Monochrome Node-Graph */}
-        <HeroNodeGraph />
-
         {/* Hero Content Container */}
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10 w-full">
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 lg:gap-12 items-center">
@@ -151,260 +145,6 @@ export default function Landing() {
                   Explore Capabilities
                 </a>
               </div>
-
-              {/* Metrics Strip - Move & Combine Inward on Load */}
-              <div className="grid grid-cols-3 gap-3 pt-4 max-w-lg font-mono">
-                <motion.div
-                  initial={{ opacity: 0, x: -25 }}
-                  whileInView={{ opacity: 1, x: 0 }}
-                  viewport={{ once: true, amount: 0.25 }}
-                  transition={{ duration: 0.6, delay: 0.2, ease: [0.16, 1, 0.3, 1] }}
-                  className={`p-3 rounded-xl border backdrop-blur-md ${
-                    isNight ? 'border-white/10 bg-[#0A0A0A]/80' : 'border-zinc-200 bg-white/90 shadow-sm'
-                  }`}
-                >
-                  <div className={`text-xl sm:text-2xl font-black ${isNight ? 'text-white' : 'text-zinc-950'}`}>150+</div>
-                  <div className={`text-[10px] uppercase mt-0.5 ${isNight ? 'text-neutral-500' : 'text-zinc-500'}`}>Kali Security Tools</div>
-                </motion.div>
-
-                <motion.div
-                  initial={{ opacity: 0, y: 25 }}
-                  whileInView={{ opacity: 1, y: 0 }}
-                  viewport={{ once: true, amount: 0.25 }}
-                  transition={{ duration: 0.6, delay: 0.3, ease: [0.16, 1, 0.3, 1] }}
-                  className={`p-3 rounded-xl border backdrop-blur-md ${
-                    isNight ? 'border-white/10 bg-[#0A0A0A]/80' : 'border-zinc-200 bg-white/90 shadow-sm'
-                  }`}
-                >
-                  <div className={`text-xl sm:text-2xl font-black ${isNight ? 'text-white' : 'text-zinc-950'}`}>{agentsCount}</div>
-                  <div className={`text-[10px] uppercase mt-0.5 ${isNight ? 'text-neutral-500' : 'text-zinc-500'}`}>Specialist Personas</div>
-                </motion.div>
-
-                <motion.div
-                  initial={{ opacity: 0, x: 25 }}
-                  whileInView={{ opacity: 1, x: 0 }}
-                  viewport={{ once: true, amount: 0.25 }}
-                  transition={{ duration: 0.6, delay: 0.4, ease: [0.16, 1, 0.3, 1] }}
-                  className={`p-3 rounded-xl border backdrop-blur-md ${
-                    isNight ? 'border-white/10 bg-[#0A0A0A]/80' : 'border-zinc-200 bg-white/90 shadow-sm'
-                  }`}
-                >
-                  <div className={`text-xl sm:text-2xl font-black ${isNight ? 'text-white' : 'text-zinc-950'}`}>0%</div>
-                  <div className={`text-[10px] uppercase mt-0.5 ${isNight ? 'text-neutral-500' : 'text-zinc-500'}`}>False Positives</div>
-                </motion.div>
-              </div>
-            </motion.div>
-
-            {/* Right Hero Column: Interactive Threat Radar & Diagnostic Console */}
-            <motion.div
-              initial={{ opacity: 0, x: 45, scale: 0.95 }}
-              animate={{ opacity: 1, x: 0, scale: 1 }}
-              transition={{ duration: 0.85, delay: 0.2, ease: [0.16, 1, 0.3, 1] }}
-              className="lg:col-span-5"
-            >
-              <SpotlightCard className="p-5 sm:p-6">
-                {/* Header */}
-                <div className={`flex items-center justify-between pb-3.5 border-b ${
-                  isNight ? 'border-white/10' : 'border-zinc-200'
-                }`}>
-                  <div className="flex items-center gap-2.5">
-                    <div className={`p-1.5 rounded-lg border ${
-                      isNight ? 'border-white/20 bg-white/5 text-white' : 'border-zinc-300 bg-black/5 text-black'
-                    }`}>
-                      <InspectorLogo size={22} variant="base" className={isNight ? 'text-white' : 'text-black'} />
-                    </div>
-                    <div>
-                      <h2 className={`text-xs font-mono font-bold flex items-center gap-1.5 ${
-                        isNight ? 'text-white' : 'text-zinc-950'
-                      }`}>
-                        <span>THREAT RADAR // MATRIX</span>
-                        <span className={`text-[9px] px-1.5 py-0.2 rounded border ${
-                          isNight ? 'border-white/20 bg-white/10 text-neutral-300' : 'border-zinc-300 bg-zinc-100 text-zinc-700'
-                        }`}>
-                          v2.4
-                        </span>
-                      </h2>
-                      <p className={`text-[10px] font-mono flex items-center gap-1 ${
-                        isNight ? 'text-neutral-400' : 'text-zinc-500'
-                      }`}>
-                        <span className={`w-1.5 h-1.5 rounded-full animate-pulse ${isNight ? 'bg-white' : 'bg-black'}`} />
-                        Subprocess Engine Active
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* Interactive Switcher */}
-                  <div className={`flex items-center gap-1 p-0.5 rounded-lg border font-mono text-[10px] ${
-                    isNight ? 'border-white/10 bg-black/60' : 'border-zinc-300 bg-zinc-100'
-                  }`}>
-                    <button
-                      type="button"
-                      onClick={() => setHeroTab('radar')}
-                      className={`px-2 py-1 rounded font-bold transition-all cursor-pointer ${
-                        heroTab === 'radar'
-                          ? isNight ? 'bg-white text-black' : 'bg-black text-white'
-                          : isNight ? 'text-neutral-400 hover:text-white' : 'text-zinc-600 hover:text-black'
-                      }`}
-                    >
-                      Radar
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setHeroTab('terminal')}
-                      className={`px-2 py-1 rounded font-bold transition-all cursor-pointer ${
-                        heroTab === 'terminal'
-                          ? isNight ? 'bg-white text-black' : 'bg-black text-white'
-                          : isNight ? 'text-neutral-400 hover:text-white' : 'text-zinc-600 hover:text-black'
-                      }`}
-                    >
-                      CLI
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setHeroTab('mesh')}
-                      className={`px-2 py-1 rounded font-bold transition-all cursor-pointer ${
-                        heroTab === 'mesh'
-                          ? isNight ? 'bg-white text-black' : 'bg-black text-white'
-                          : isNight ? 'text-neutral-400 hover:text-white' : 'text-zinc-600 hover:text-black'
-                      }`}
-                    >
-                      Mesh
-                    </button>
-                  </div>
-                </div>
-
-                {/* TAB 1: RADAR */}
-                {heroTab === 'radar' && (
-                  <div className="my-4 space-y-4 font-mono text-xs">
-                    <div className={`p-4 rounded-xl border flex flex-col sm:flex-row items-center gap-4 ${
-                      isNight ? 'border-white/10 bg-black/60' : 'border-zinc-200 bg-zinc-50'
-                    }`}>
-                      {/* Animated Radar Circle */}
-                      <div className="relative w-28 h-28 shrink-0 flex items-center justify-center">
-                        <div className={`absolute inset-0 rounded-full border ${isNight ? 'border-white/15' : 'border-black/15'}`} />
-                        <div className={`absolute inset-2.5 rounded-full border border-dashed ${isNight ? 'border-white/20' : 'border-black/20'}`} />
-                        <div className={`absolute inset-6 rounded-full border ${isNight ? 'border-white/30' : 'border-black/30'}`} />
-                        <div className={`absolute inset-9 rounded-full border ${isNight ? 'border-white/40' : 'border-black/40'}`} />
-                        <div className={`absolute inset-x-0 top-1/2 h-px ${isNight ? 'bg-white/15' : 'bg-black/15'}`} />
-                        <div className={`absolute inset-y-0 left-1/2 w-px ${isNight ? 'bg-white/15' : 'bg-black/15'}`} />
-                        <div
-                          className="absolute inset-0 rounded-full pointer-events-none"
-                          style={{
-                            background: isNight
-                              ? 'conic-gradient(from 0deg, transparent 0deg, transparent 270deg, rgba(255, 255, 255, 0.4) 360deg)'
-                              : 'conic-gradient(from 0deg, transparent 0deg, transparent 270deg, rgba(0, 0, 0, 0.25) 360deg)',
-                            animation: 'spin 3s linear infinite',
-                          }}
-                        />
-                        <div className={`relative z-10 w-3 h-3 rounded-full ${
-                          isNight ? 'bg-white shadow-[0_0_10px_rgba(255,255,255,1)]' : 'bg-black shadow-[0_0_8px_rgba(0,0,0,0.5)]'
-                        }`} />
-                      </div>
-
-                      {/* Telemetry info */}
-                      <div className="flex-1 min-w-0 space-y-1.5 text-[11px] w-full">
-                        <div className={`text-[10px] uppercase ${isNight ? 'text-neutral-500' : 'text-zinc-500'}`}>ACTIVE TARGET</div>
-                        <div className={`font-bold truncate ${isNight ? 'text-white' : 'text-zinc-950'}`}>https://demo.sentinelai.local</div>
-                        <div className={`p-2 rounded border space-y-1 text-[10px] ${
-                          isNight ? 'bg-black/80 border-white/10 text-neutral-300' : 'bg-white border-zinc-200 text-zinc-700'
-                        }`}>
-                          <div className="flex justify-between">
-                            <span className={isNight ? 'text-neutral-500' : 'text-zinc-500'}>Host IP:</span>
-                            <span className={`font-semibold ${isNight ? 'text-white' : 'text-zinc-950'}`}>192.168.68.132</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className={isNight ? 'text-neutral-500' : 'text-zinc-500'}>Services:</span>
-                            <span className={`font-semibold ${isNight ? 'text-white' : 'text-zinc-950'}`}>80, 443, 22</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className={isNight ? 'text-neutral-500' : 'text-zinc-500'}>TLS:</span>
-                            <span className={`font-semibold ${isNight ? 'text-white' : 'text-zinc-950'}`}>TLS 1.3 / OpenSSL</span>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Quick diagnostic row */}
-                    <div className="grid grid-cols-3 gap-2 text-center text-[10px]">
-                      <div className={`p-2 rounded-lg border ${isNight ? 'bg-black/60 border-white/10' : 'bg-zinc-50 border-zinc-200'}`}>
-                        <div className={`uppercase ${isNight ? 'text-neutral-500' : 'text-zinc-500'}`}>DAST PROBES</div>
-                        <div className={`text-sm font-bold mt-0.5 ${isNight ? 'text-white' : 'text-zinc-950'}`}>142</div>
-                        <div className={isNight ? 'text-neutral-400' : 'text-zinc-500'}>100% Passed</div>
-                      </div>
-                      <div className={`p-2 rounded-lg border ${isNight ? 'bg-black/60 border-white/10' : 'bg-zinc-50 border-zinc-200'}`}>
-                        <div className={`uppercase ${isNight ? 'text-neutral-500' : 'text-zinc-500'}`}>VULN MATCHES</div>
-                        <div className={`text-sm font-bold mt-0.5 ${isNight ? 'text-white' : 'text-zinc-950'}`}>2 High</div>
-                        <div className={isNight ? 'text-neutral-400' : 'text-zinc-500'}>0 Critical</div>
-                      </div>
-                      <div className={`p-2 rounded-lg border ${isNight ? 'bg-black/60 border-white/10' : 'bg-zinc-50 border-zinc-200'}`}>
-                        <div className={`uppercase ${isNight ? 'text-neutral-500' : 'text-zinc-500'}`}>RAG PAYLOADS</div>
-                        <div className={`text-sm font-bold mt-0.5 ${isNight ? 'text-white' : 'text-zinc-950'}`}>10,482</div>
-                        <div className={isNight ? 'text-neutral-400' : 'text-zinc-500'}>FTS5 Indexed</div>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* TAB 2: TERMINAL CLI STDOUT */}
-                {heroTab === 'terminal' && (
-                  <div className="my-4 rounded-xl bg-black border border-white/10 p-3 font-mono text-[11px] leading-relaxed space-y-1.5 h-[190px] overflow-y-auto text-white">
-                    <p className="text-white font-bold">$ nmap -sV -sC -p 80,443 demo.sentinelai.local</p>
-                    <p className="text-neutral-400">[+] Nmap: 2 open service banners identified in 1.42s</p>
-                    <p className="text-white font-bold">$ nuclei -u https://demo.sentinelai.local -t cves/</p>
-                    <p className="text-white bg-white/10 px-1 py-0.5 rounded font-extrabold">
-                      [!] [CRITICAL] Matched CVE-2024-27198 auth bypass
-                    </p>
-                    <p className="text-white font-bold">$ sqlmap -u "/api/search?q=1" --batch</p>
-                    <p className="text-neutral-400">[+] AI Persona #07 verifying boolean blind response delay...</p>
-                    <p className="text-white font-semibold">[✓] Persona #01 'Web Hunter' synthesized patch diff</p>
-                  </div>
-                )}
-
-                {/* TAB 3: AI MESH CONSENSUS */}
-                {heroTab === 'mesh' && (
-                  <div className="my-4 space-y-2 font-mono text-xs h-[190px] overflow-y-auto">
-                    <div className={`p-2.5 rounded-lg border space-y-1 ${
-                      isNight ? 'bg-black border-white/10' : 'bg-zinc-50 border-zinc-200'
-                    }`}>
-                      <div className="flex items-center justify-between text-[11px]">
-                        <span className={`font-bold ${isNight ? 'text-white' : 'text-zinc-950'}`}>Persona #01 &bull; Web Hunter</span>
-                        <span className={`text-[10px] px-1.5 py-0.2 rounded border ${
-                          isNight ? 'border-white/20 bg-white/10 text-white' : 'border-zinc-300 bg-zinc-200 text-black'
-                        }`}>
-                          99.4% Confidence
-                        </span>
-                      </div>
-                      <p className={`text-[10px] font-sans ${isNight ? 'text-neutral-400' : 'text-zinc-600'}`}>
-                        Analyzes AST code tokens &amp; OWASP Top 10 vulnerabilities via DeepSeek-V4 consensus.
-                      </p>
-                    </div>
-
-                    <div className={`p-2.5 rounded-lg border space-y-1 ${
-                      isNight ? 'bg-black border-white/10' : 'bg-zinc-50 border-zinc-200'
-                    }`}>
-                      <div className="flex items-center justify-between text-[11px]">
-                        <span className={`font-bold ${isNight ? 'text-white' : 'text-zinc-950'}`}>Persona #07 &bull; Database Attacker</span>
-                        <span className={`text-[10px] px-1.5 py-0.2 rounded border ${
-                          isNight ? 'border-white/20 bg-white/10 text-white' : 'border-zinc-300 bg-zinc-200 text-black'
-                        }`}>
-                          98.8% Verified
-                        </span>
-                      </div>
-                      <p className={`text-[10px] font-sans ${isNight ? 'text-neutral-400' : 'text-zinc-600'}`}>
-                        Synthesizes Boolean Blind and Time-Based SQLi payloads from PayloadsAllTheThings RAG.
-                      </p>
-                    </div>
-                  </div>
-                )}
-
-                {/* Footer Telemetry */}
-                <div className={`pt-3 border-t flex items-center justify-between text-[11px] font-mono ${
-                  isNight ? 'border-white/10 text-neutral-400' : 'border-zinc-200 text-zinc-500'
-                }`}>
-                  <span>3 Free Scans Available</span>
-                  <span className={`font-bold ${isNight ? 'text-white' : 'text-black'}`}>[ SUBPROCESS READY ]</span>
-                </div>
-              </SpotlightCard>
             </motion.div>
           </div>
         </div>

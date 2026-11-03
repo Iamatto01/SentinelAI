@@ -97,24 +97,14 @@ export default function HeroNodeGraph() {
           baseY: y,
           x,
           y,
-          vx: (Math.random() - 0.5) * 0.45,
-          vy: (Math.random() - 0.5) * 0.45,
+          vx: (Math.random() - 0.5) * 0.15,
+          vy: (Math.random() - 0.5) * 0.15,
           radius: isCore ? 6 : isVuln ? 4.5 : isAgent ? 4 : 2.5,
           label: NODE_LABELS[i % NODE_LABELS.length],
           isCore,
           isVuln,
           isAgent,
           pulse: Math.random() * Math.PI * 2,
-        })
-      }
-
-      // Initialize packets that travel between connected nodes
-      for (let p = 0; p < 8; p++) {
-        packets.push({
-          fromIndex: Math.floor(Math.random() * nodes.length),
-          toIndex: Math.floor(Math.random() * nodes.length),
-          progress: Math.random(),
-          speed: 0.006 + Math.random() * 0.008,
         })
       }
     }
@@ -148,32 +138,6 @@ export default function HeroNodeGraph() {
             ctx.lineWidth = nodes[i].isCore || nodes[j].isCore ? 1.2 : 0.7
             ctx.stroke()
           }
-        }
-      }
-
-      // Update & render traveling packets
-      for (let k = 0; k < packets.length; k++) {
-        const p = packets[k]
-        p.progress += p.speed
-        if (p.progress >= 1) {
-          p.progress = 0
-          p.fromIndex = p.toIndex
-          p.toIndex = Math.floor(Math.random() * nodes.length)
-        }
-
-        const nodeA = nodes[p.fromIndex]
-        const nodeB = nodes[p.toIndex]
-        if (nodeA && nodeB) {
-          const px = nodeA.x + (nodeB.x - nodeA.x) * p.progress
-          const py = nodeA.y + (nodeB.y - nodeA.y) * p.progress
-
-          ctx.beginPath()
-          ctx.arc(px, py, 1.8, 0, Math.PI * 2)
-          ctx.fillStyle = isDark ? '#ffffff' : '#000000'
-          ctx.shadowColor = isDark ? 'rgba(255, 255, 255, 0.9)' : 'rgba(0, 0, 0, 0.5)'
-          ctx.shadowBlur = 6
-          ctx.fill()
-          ctx.shadowBlur = 0
         }
       }
 
