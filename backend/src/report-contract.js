@@ -40,6 +40,16 @@ export const NON_ARTIFACT_EVIDENCE_KEYS = new Set([
   // read as "artifact observed".
   'pocSource', 'pocPayload', 'payload', 'attackCommand', 'pocSteps', 'steps',
   'exploitSteps', 'verificationCommand', 'concreteVerification', 'explanation',
+  // Labels and explanations the pipeline writes *about* the claim. These are the
+  // worst offenders because the more honestly a finding is marked unproven, the
+  // more of these it carries — so `classification: 'discovery-only'` and an
+  // `unconfirmedReason` explaining the missing artifact were certifying the
+  // finding as "artifact-observed". A field describing the claim can never be
+  // proof of it.
+  'classification', 'unconfirmedReason', 'discoveryOnly',
+  // Probe bookkeeping: the hosts we compared against, the URLs we queued, and
+  // the name of the detection routine that ran. All locators, no captures.
+  'primaryHost', 'findingHost', 'scannedUrls', 'detection',
 ])
 
 /**
@@ -106,6 +116,18 @@ export function classifyFinding(v) {
   const tier = String(v.aiEvidenceTier || v.validationTier || '').toLowerCase()
   const conf = normalizeConfidence(v.aiConfidence)
 
+  // `needs-validation` is the pipeline's explicit "exploitability is NOT proven"
+  // marker, not a weak confirmation. The AI engine writes it for every rejection,
+  // for every undecided heuristic ("no exploitability claim is made"), for a
+  // version-fingerprint gap, and for the directory-hit reclassification whose
+  // entire point is that no SQL artifact was ever observed. Treating it as a
+  // confirmation made the caveat itself the proof: the finding rendered as
+  // "Confirmed / artifact-observed" because `classification` and
+  // `unconfirmedReason` — bookkeeping describing the claim — counted as captured
+  // artifacts. That let a discovery-only lead reach the executive summary and the
+  // attack chain as a verified vulnerability.
+  const tierUnproven = tier === 'needs-validation'
+
   let status
   if (v.aiVerification === false) {
     // Exploit-relevant rejections with high model confidence are dropped
@@ -114,8 +136,9 @@ export function classifyFinding(v) {
     status = conf >= 0.6 ? VERIFY_STATUS.REJECTED : VERIFY_STATUS.UNVERIFIED
   } else if (v.aiVerification === true) {
     status = VERIFY_STATUS.CONFIRMED
-  } else if (artifact.hasArtifact) {
-    // No model verdict, but the scanner captured something concrete.
+  } else if (artifact.hasArtifact && !tierUnproven) {
+    // No model verdict, but the scanner captured something concrete — and no
+    // stage of the pipeline has recorded the claim as still unproven.
     status = VERIFY_STATUS.CONFIRMED
   } else {
     status = VERIFY_STATUS.UNVERIFIED

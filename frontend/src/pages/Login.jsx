@@ -180,9 +180,7 @@ export default function Login() {
               isNight
                 ? 'border-white/20 bg-white/10 text-neutral-300'
                 : 'border-zinc-300 bg-zinc-100 text-zinc-700'
-            }`}>
-              v2.4
-            </span>
+            }`}>FYP 2</span>
           </div>
           <p className={`text-xs font-mono mt-1.5 ${isNight ? 'text-neutral-400' : 'text-zinc-500'}`}>
             {mode === 'login'

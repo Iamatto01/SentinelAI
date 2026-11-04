@@ -272,9 +272,6 @@ export default function Shell() {
             {showLabels && (
               <div className="min-w-0 animate-in fade-in duration-200">
                 <p className="text-sm font-extrabold text-white tracking-tight truncate">SentinelAI</p>
-                <p className="text-[9px] uppercase tracking-widest text-zinc-400 font-bold truncate flex items-center gap-1">
-                  <Sparkles size={10} className="animate-spin" /> {isAdmin ? 'Admin Portal' : isClient ? 'Client Portal' : 'Analyst Portal'}
-                </p>
               </div>
             )}
           </div>
@@ -450,7 +447,7 @@ export default function Shell() {
         {/* Desktop Top Header Bar (Vision UI Style) */}
         <header className="hidden lg:flex items-center justify-between px-6 pt-5 pb-2">
           <div className="flex items-center gap-2 text-xs font-semibold px-3 py-1.5 rounded-xl bg-slate-900/80 border border-white/15 text-slate-200 shadow-md backdrop-blur-md">
-            <span className="text-slate-300 font-medium">Portal</span>
+            <span className="text-slate-300 font-medium">Console</span>
             <span className="text-slate-500 font-bold">/</span>
             <span className="text-white font-extrabold tracking-wide">
               {currentNav.label}

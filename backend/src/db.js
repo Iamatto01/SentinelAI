@@ -591,7 +591,7 @@ function migrate(d) {
  * data/default-custom-scripts.json change so existing installations pick the
  * fixes up on boot (see seedDefaultScripts).
  */
-const CUSTOM_SCRIPTS_REVISION = 4
+const CUSTOM_SCRIPTS_REVISION = 8  // rev 8: catch-all/soft-404 hardening — all path-probing scripts now validate body content
 
 /** sha256 of a shipped script body — used to tell "stale bundle" from "operator edit". */
 function bodyHash(text) {

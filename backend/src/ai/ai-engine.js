@@ -946,7 +946,7 @@ Respond ONLY with JSON:
    */
   async summarize(scanStats) {
     if (!this.llm.isConfigured()) return null
-    const { target, totalFindings, severityCounts, topFindings, owaspCategories, isWhitebox, modules } = scanStats
+    const { target, totalFindings, severityCounts, topFindings, verifiedFindings, promptGuard, owaspCategories, isWhitebox, modules } = scanStats
     const prompt = `You are an elite security consultant writing an executive summary for a ${isWhitebox ? 'source code security audit' : 'penetration test'} report.
 
 ASSESSMENT TARGET: ${target || 'Unknown'}
@@ -964,6 +964,11 @@ FINDINGS BREAKDOWN:
 
 TOP FINDINGS:
 ${(topFindings || []).map((f, i) => `${i + 1}. [${f.severity.toUpperCase()}] ${f.title}${f.owaspCategory ? ' (' + f.owaspCategory + ')' : ''}`).join('\n')}
+
+VERIFIED FINDINGS LIST (the only findings permitted in the attack chain or business impact):
+${(verifiedFindings || []).map((f, i) => `${i + 1}. [${f.severity.toUpperCase()}] ${f.title} (${f.evidenceGrade || 'none'})`).join('\n') || 'No verified findings.'}
+
+${promptGuard || 'Use only the verified findings list above. Do not speculate beyond it.'}
 
 Write a comprehensive executive summary (4-6 paragraphs) that:
 1. Opens with a blunt assessment of the overall security posture (is this system secure or not?)
@@ -1006,6 +1011,8 @@ Write in professional but accessible language. Do NOT use generic templates. Be 
 
 VERIFIED VULNERABILITIES:
 ${findingList}
+
+ONLY compose the attack chain and business impact using the verified findings provided in the verified list. NEVER speculate on e-commerce, payment theft, or database breaches unless an explicit, validated vulnerability in that category is present in the list.
 
 Analyze how an attacker could CHAIN these vulnerabilities together to achieve maximum impact. Think like a real attacker:
 

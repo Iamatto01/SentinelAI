@@ -20,14 +20,20 @@ export function ThemeProvider({ children }) {
   const [config, setConfig] = useState(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY)
-      if (saved) return JSON.parse(saved)
+      if (saved) {
+        const parsed = JSON.parse(saved)
+        return {
+          ...parsed,
+          isNight: parsed.isNight === true && localStorage.getItem('theme') === 'dark',
+        }
+      }
     } catch {}
     return {
       theme: 'static_dark', // strict minimalism default
       blur: 0,              // no blur
       opacity: 35,          // 20%, 35%, 50%, 75%
       isStatic: true,       // static background
-      isNight: true,        // default dark mode
+      isNight: false,       // default light mode
     }
   })
 

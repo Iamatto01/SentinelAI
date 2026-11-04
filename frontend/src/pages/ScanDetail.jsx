@@ -3,7 +3,7 @@ import { useParams, Link } from 'react-router-dom'
 import {
   Loader2, Square, FileDown, ArrowLeft, Terminal, Bug, Pause, Play,
   Network, FileCode2, Clock, CheckCircle2, XCircle, ChevronDown, ChevronRight,
-  RefreshCw, Volume2
+  RefreshCw, Volume2, Copy, Check, FileText, Download
 } from 'lucide-react'
 import { api } from '../lib/api.js'
 import { useScanContext } from '../lib/ScanContext.jsx'
@@ -32,6 +32,77 @@ export default function ScanDetail() {
   const [showFiles, setShowFiles] = useState(false)
   const [owaspExpandedKey, setOwaspExpandedKey] = useState(null)
   const termRef = useRef(null)
+  const [logsCopied, setLogsCopied] = useState(false)
+
+  function formatLogsForExport() {
+    if (!logs || logs.length === 0) return 'No logs recorded for this scan session.\n'
+    const targetName = scan?.target || scan?.repo_name || 'N/A'
+    const divider = '='.repeat(80)
+    const header = [
+      divider,
+      'SentinelAI Scanner Live Engine Output Log',
+      'Target: ' + targetName,
+      'Scan ID: ' + (scan?.id || id),
+      'Status: ' + (scan?.status || 'N/A'),
+      'Exported: ' + new Date().toISOString(),
+      'Total Log Entries: ' + logs.length,
+      divider,
+      '',
+    ].join('\n')
+
+    const body = logs.map((l) => {
+      const time = l.ts ? new Date(l.ts).toISOString() : new Date().toISOString()
+      const lvl = (l.level || 'INFO').toUpperCase().padEnd(7)
+      return '[' + time + '] [' + lvl + '] ' + (l.message || '')
+    }).join('\n')
+
+    return header + body + '\n'
+  }
+
+  async function handleCopyLogs() {
+    if (!logs || logs.length === 0) return
+    const text = formatLogsForExport()
+    try {
+      await navigator.clipboard.writeText(text)
+      setLogsCopied(true)
+      setTimeout(() => setLogsCopied(false), 2000)
+    } catch {
+      const ta = document.createElement('textarea')
+      ta.value = text
+      document.body.appendChild(ta)
+      ta.select()
+      document.execCommand('copy')
+      document.body.removeChild(ta)
+      setLogsCopied(true)
+      setTimeout(() => setLogsCopied(false), 2000)
+    }
+  }
+
+  function handleSaveLogs(extension = 'log') {
+    if (!logs || logs.length === 0) return
+    const text = formatLogsForExport()
+    const targetSafe = (scan?.target || scan?.repo_name || 'scan')
+      .replace(/^https?:\/\//i, '')
+      .replace(/[^a-zA-Z0-9.-]/g, '-')
+      .replace(/-+/g, '-')
+      .replace(/^[-.]+|[-.]+$/g, '') || 'scan'
+    const dateStr = scan?.created_at
+      ? new Date(scan.created_at).toISOString().slice(0, 10)
+      : new Date().toISOString().slice(0, 10)
+    const filename = targetSafe + '-' + (scan?.id || id) + '-engine-output.' + extension
+
+    const blob = new Blob([text], { type: 'text/plain;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    document.body.appendChild(a)
+    a.click()
+    setTimeout(() => {
+      URL.revokeObjectURL(url)
+      document.body.removeChild(a)
+    }, 1000)
+  }
 
   // AI Audio Briefing player state (Fish Audio via OpenRouter)
   const [audioState, setAudioState] = useState({ loading: false, playing: false, text: '', audio: null, error: '' })
@@ -391,15 +462,87 @@ export default function ScanDetail() {
         {/* Live Output Terminal */}
         <div className="card p-5 flex flex-col justify-between shadow-xl">
           <div>
-            <div className="flex items-center justify-between mb-3">
-              <h3 className={`flex items-center gap-2 text-sm font-bold ${isNight ? 'text-white' : 'text-slate-900'}`}>
-                <Terminal size={16} className="text-cyan-400" /> Live Engine Output
-              </h3>
-              {running && (
-                <span className="chip bg-cyan-500/20 text-cyan-300 border-cyan-500/40 text-[11px] font-bold animate-pulse">
-                  streaming
-                </span>
-              )}
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+              <div className="flex items-center gap-2">
+                <h3 className={`flex items-center gap-2 text-sm font-bold ${isNight ? 'text-white' : 'text-slate-900'}`}>
+                  <Terminal size={16} className="text-cyan-400" /> Live Engine Output
+                </h3>
+                {logs.length > 0 && (
+                  <span className={`text-[11px] font-mono px-2 py-0.5 rounded-full border ${
+                    isNight
+                      ? 'bg-slate-800/80 text-slate-300 border-slate-700'
+                      : 'bg-slate-100 text-slate-700 border-slate-200'
+                  }`}>
+                    {logs.length}
+                  </span>
+                )}
+                {running && (
+                  <span className="chip bg-cyan-500/20 text-cyan-300 border-cyan-500/40 text-[11px] font-bold animate-pulse">
+                    streaming
+                  </span>
+                )}
+              </div>
+
+              {/* Action Buttons: Copy All, Save as .txt, Save as .log */}
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={handleCopyLogs}
+                  disabled={logs.length === 0}
+                  className={`inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-lg border transition-all cursor-pointer disabled:cursor-not-allowed ${
+                    logsCopied
+                      ? isNight
+                        ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                        : 'bg-emerald-50 text-emerald-700 border-emerald-300'
+                      : isNight
+                        ? 'bg-slate-900/90 hover:bg-slate-800 text-slate-300 hover:text-white border-white/10 disabled:opacity-40 disabled:hover:bg-slate-900/90'
+                        : 'bg-white hover:bg-slate-100 text-slate-700 hover:text-slate-900 border-slate-200 shadow-xs disabled:opacity-40 disabled:hover:bg-white'
+                  }`}
+                  title="Copy all live engine output to clipboard"
+                >
+                  {logsCopied ? (
+                    <>
+                      <Check size={12} className="text-emerald-400" />
+                      <span>Copied!</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy size={12} className={isNight ? 'text-slate-400' : 'text-slate-500'} />
+                      <span>Copy All</span>
+                    </>
+                  )}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleSaveLogs('txt')}
+                  disabled={logs.length === 0}
+                  className={`inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-lg border transition-all cursor-pointer disabled:cursor-not-allowed ${
+                    isNight
+                      ? 'bg-slate-900/90 hover:bg-slate-800 text-slate-300 hover:text-white border-white/10 disabled:opacity-40 disabled:hover:bg-slate-900/90'
+                      : 'bg-white hover:bg-slate-100 text-slate-700 hover:text-slate-900 border-slate-200 shadow-xs disabled:opacity-40 disabled:hover:bg-white'
+                  }`}
+                  title="Download live engine output as .txt file"
+                >
+                  <FileText size={12} className={isNight ? 'text-cyan-400' : 'text-cyan-600'} />
+                  <span>Save .txt</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleSaveLogs('log')}
+                  disabled={logs.length === 0}
+                  className={`inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-lg border transition-all cursor-pointer disabled:cursor-not-allowed ${
+                    isNight
+                      ? 'bg-slate-900/90 hover:bg-slate-800 text-slate-300 hover:text-white border-white/10 disabled:opacity-40 disabled:hover:bg-slate-900/90'
+                      : 'bg-white hover:bg-slate-100 text-slate-700 hover:text-slate-900 border-slate-200 shadow-xs disabled:opacity-40 disabled:hover:bg-white'
+                  }`}
+                  title="Download live engine output as .log file"
+                >
+                  <Download size={12} className={isNight ? 'text-purple-400' : 'text-purple-600'} />
+                  <span>Save .log</span>
+                </button>
+              </div>
             </div>
 
             {/* High-Contrast Cyber Console */}

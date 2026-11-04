@@ -1140,6 +1140,15 @@ function riskRating(findings) {
   return riskRatingFromScore(computeRiskScore(counts, maxCvss))
 }
 
+export function filterActionableFindings(findings = []) {
+  return findings.filter(f =>
+    f.verifyStatus === VERIFY_STATUS.CONFIRMED &&
+    f.evidenceGrade !== 'none' &&
+    !f.evidence?.soft404 &&
+    f.severity !== 'info'
+  )
+}
+
 function duration(start, end) {
   if (!start) return 'N/A'
   const s = new Date(start).getTime()
@@ -1471,17 +1480,25 @@ function summarizeTechStack(ordered = []) {
 
 function findingEvidenceContext(v) {
   const evidence = v.evidence || {}
-  const endpoint = evidence.url || v.asset || null
-  const status = evidence.status ?? evidence.statusCode ?? evidence.httpStatus
+  const endpoint = evidence.url || evidence.reverified?.url || v.asset || null
+  const status = evidence.status ?? evidence.statusCode ?? evidence.httpStatus ?? evidence.reverified?.status
   const parameter = evidence.parameter || evidence.param || evidence.field
-  const observed = evidence.matched || evidence.detectedFrom || evidence.header || evidence.output || evidence.raw
+  const reverified = evidence.reverified && typeof evidence.reverified === 'object' ? evidence.reverified : null
+  const observedHeaders = reverified?.observedHeaders && typeof reverified.observedHeaders === 'object'
+    ? Object.entries(reverified.observedHeaders).map(([key, value]) => `${key}: ${value}`).join(', ')
+    : null
+  const observed = evidence.bodyPreview || evidence.bodySnippet || evidence.body || evidence.matched ||
+    evidence.detectedFrom || evidence.header || evidence.output || evidence.server ||
+    reverified?.sample || reverified?.reflection || observedHeaders || evidence.raw
   const location = evidence.file ? `${evidence.file}${evidence.line ? `:${evidence.line}` : ''}` : null
   return {
     evidence,
     endpoint: typeof endpoint === 'string' ? endpoint : null,
     status: status != null ? String(status) : null,
     parameter: parameter ? String(parameter) : null,
-    observed: observed ? String(observed).replace(/\s+/g, ' ').slice(0, 260) : null,
+    observed: observed ? String(observed).replace(/\s+/g, ' ').slice(0, 260) : (
+      evidence.contentLength != null ? `${evidence.contentLength} bytes returned` : null
+    ),
     location,
   }
 }
@@ -1528,7 +1545,7 @@ function describeCapturedProof(v) {
   }
   if (status != null) bits.push(`-> HTTP ${status}`)
   if (ev.contentType) bits.push(String(ev.contentType))
-  const bytes = ev.bytes ?? ev.size ?? ev.contentLengthHeader
+  const bytes = ev.bytes ?? ev.size ?? ev.contentLengthHeader ?? ev.contentLength ?? reverified?.bytes
   if (bytes != null) bits.push(`${bytes} bytes`)
   if (ev.sourceCount != null) bits.push(`${ev.sourceCount} sources`)
   if (observed) bits.push(String(observed).replace(/\s+/g, ' ').trim().slice(0, 200))
@@ -1551,13 +1568,15 @@ function describeCapturedProof(v) {
  */
 function buildProofPanel(v, endpoint, reconciled) {
   const ev = v?.evidence || {}
+  const reverified = ev.reverified && typeof ev.reverified === 'object' ? ev.reverified : null
   const url = (typeof ev.url === 'string' && ev.url)
     || (typeof ev.endpoint === 'string' && ev.endpoint)
     || (typeof ev.path === 'string' && ev.path)
+    || (typeof reverified?.url === 'string' && reverified.url)
     || endpoint
     || null
-  const status = ev.status ?? ev.statusCode ?? ev.httpStatus
-  const method = String(ev.method || 'GET').toUpperCase()
+  const status = ev.status ?? ev.statusCode ?? ev.httpStatus ?? reverified?.status
+  const method = String(ev.method || reverified?.method || 'GET').toUpperCase()
 
   const markers = []
   // Only tokens that could plausibly appear in a response: a CWE id, a file
@@ -1572,7 +1591,7 @@ function buildProofPanel(v, endpoint, reconciled) {
 
   // Only strings that came off the wire. `raw` is accepted solely when it is not
   // the finding's own JSON echoed back.
-  const rawBody = [ev.body, ev.bodyPreview, ev.bodySnippet, ev.response, ev.output]
+  const rawBody = [ev.body, ev.bodyPreview, ev.bodySnippet, ev.response, ev.output, reverified?.sample, reverified?.body]
     .find(x => typeof x === 'string' && x.trim())
     || (typeof ev.raw === 'string' && !/^\{[\s\S]*"(title|severity|description|cweId)"\s*:/.test(ev.raw.trim()) ? ev.raw : null)
 
@@ -1593,14 +1612,19 @@ function buildProofPanel(v, endpoint, reconciled) {
   const observed = typeof ev.header === 'string' ? ev.header
     : typeof ev.banner === 'string' ? ev.banner
       : typeof ev.observed === 'string' ? ev.observed
-        : null
+        : reverified?.observedHeaders && typeof reverified.observedHeaders === 'object'
+          ? Object.entries(reverified.observedHeaders).map(([key, value]) => `${key}: ${value}`).join(', ')
+          : reverified?.reflection || null
   if (observed) headers.push(['Observed', String(observed).replace(/\s+/g, ' ').trim().slice(0, 90)])
+  if (Array.isArray(reverified?.missing) && reverified.missing.length) {
+    headers.push(['Missing', reverified.missing.join(', ')])
+  }
   const times = Array.isArray(ev.times) ? ev.times : null
   if (times?.length) headers.push(['Response times', `${times.length} samples, ${Math.min(...times)}-${Math.max(...times)} ms`])
   const statuses = Array.isArray(ev.statuses) ? ev.statuses : null
   if (statuses?.length) headers.push(['Status sequence', statuses.slice(0, 10).join(' ')])
   const sources = Array.isArray(ev.sources) ? ev.sources.filter(s => typeof s === 'string') : []
-  if (sources.length) headers.push(['Corroborating modules', sources.slice(0, 4).join(', ')])
+  if (sources.length) headers.push(['Scanner sources', sources.slice(0, 4).join(', ')])
 
   const hasRequest = Boolean(url || status != null)
   const hasFindings = headers.length > 0 || Boolean(excerpt)
@@ -2006,7 +2030,16 @@ function toView(f, scanTarget) {
     // Truth status of the claim. `true` = an artifact confirmed it, `false` = the
     // evidence contradicted it, `null`/absent = nobody settled it, so the reader
     // must treat it as a lead rather than a finding.
-    aiVerification: typeof verdict?.is_true_positive === 'boolean' ? verdict.is_true_positive : null,
+    //
+    // The stored `evidence.aiVerification` is the fallback on purpose: the
+    // deterministic paths (observational attribution, the directory-hit overrule,
+    // the post-verification downgrade) reject a finding without ever creating an
+    // `agent_verdict` row, so reading only the verdict discarded the pipeline's
+    // own rejection and the classifier below fell through to the artifact branch
+    // — printing "Confirmed" over a finding the pipeline had marked false.
+    aiVerification: typeof verdict?.is_true_positive === 'boolean'
+      ? verdict.is_true_positive
+      : (typeof evidence?.aiVerification === 'boolean' ? evidence.aiVerification : null),
     aiEvidenceTier: verdict?.evidence_tier || evidence?.aiEvidenceTier || null,
     // Provenance: every verification action the pipeline recorded for this
     // finding, so a reader can distinguish a model verdict from a deterministic
@@ -2718,7 +2751,7 @@ function renderTechInventory(doc, { techStack }) {
     doc.fontSize(8.5).font('Helvetica-Bold').fillColor(BRAND.textDark)
       .text(sanitizePdfText(row.product).slice(0, 40), px, ry, { width: cols[0].w - 6, ellipsis: true })
     px += cols[0].w
-    doc.fontSize(8.5).font(row.versionUnverified ? 'Helvetica-Oblique' : 'Courier')
+    doc.fontSize(8.5).font('Helvetica')
       .fillColor(row.versionUnverified ? '#94A3B8' : BRAND.textDark)
       .text(row.version ? sanitizePdfText(row.version).slice(0, 18) : 'not disclosed', px, ry, { width: cols[1].w - 6, ellipsis: true })
     px += cols[1].w
@@ -3728,6 +3761,7 @@ export async function generateReport(scanId, minSeverity = 'info', statusFilter 
   // claims never reach a page, and unverified leads are called out separately
   // instead of being mixed in with reproduced findings.
   const reportFindings = activeFindings
+  const actionableFindings = filterActionableFindings(activeFindings)
   const counts = { critical: 0, high: 0, medium: 0, low: 0, info: 0 }
   for (const v of reportFindings) counts[v.severity] = (counts[v.severity] || 0) + 1
   const owaspCategories = [...new Set(reportFindings.map(v => v.owaspCategory).filter(Boolean))]
@@ -3810,10 +3844,21 @@ export async function generateReport(scanId, minSeverity = 'info', statusFilter 
 
   const enrichment = await withAiEnrichment(aiBudgetMs, {
     narrative: () => aiEngine.summarize({
-      target: scan.target, totalFindings: reportFindings.length,
-      severityCounts: counts, topFindings, owaspCategories, isWhitebox, modules,
+      target: scan.target,
+      totalFindings: actionableFindings.length,
+      severityCounts: Object.fromEntries(Object.entries(counts).filter(([severity]) => severity !== 'info')),
+      topFindings: actionableFindings.filter(v => ['critical', 'high'].includes(v.severity)).slice(0, 10)
+        .map(v => ({ title: v.title, severity: v.severity, owaspCategory: v.owaspCategory })),
+      verifiedFindings: actionableFindings.map(v => ({
+        title: v.title, severity: v.severity, owaspCategory: v.owaspCategory,
+        evidence: v.evidence, evidenceGrade: v.evidenceGrade,
+      })),
+      promptGuard: 'ONLY compose the attack chain and business impact using the verified findings provided in the verified list. NEVER speculate on e-commerce, payment theft, or database breaches unless an explicit, validated vulnerability in that category is present in the list.',
+      owaspCategories: [...new Set(actionableFindings.map(v => v.owaspCategory).filter(Boolean))],
+      modules: [...new Set(actionableFindings.map(v => v.module).filter(Boolean))],
+      isWhitebox,
     }),
-    attackChain: () => aiEngine.generateAttackChain(reportFindings, scan.target),
+    attackChain: () => aiEngine.generateAttackChain(actionableFindings, scan.target),
     pocs: generatePocs,
     guide: () => {
       // Feed the guide only reproduced findings: it echoes what it is given back
@@ -3934,14 +3979,26 @@ export async function generateProjectReport(projectId) {
 
   let aiNarrative = null
   let aiAttackChain = null
+  const actionableFindings = filterActionableFindings(activeFindings)
   try {
     aiNarrative = await aiEngine.summarize({
-      target: project.name, totalFindings: activeFindings.length,
-      severityCounts: counts, topFindings, owaspCategories, isWhitebox, modules,
+      target: project.name,
+      totalFindings: actionableFindings.length,
+      severityCounts: Object.fromEntries(Object.entries(counts).filter(([severity]) => severity !== 'info')),
+      topFindings: actionableFindings.filter(v => ['critical', 'high'].includes(v.severity)).slice(0, 10)
+        .map(v => ({ title: v.title, severity: v.severity, owaspCategory: v.owaspCategory })),
+      verifiedFindings: actionableFindings.map(v => ({
+        title: v.title, severity: v.severity, owaspCategory: v.owaspCategory,
+        evidence: v.evidence, evidenceGrade: v.evidenceGrade,
+      })),
+      promptGuard: 'ONLY compose the attack chain and business impact using the verified findings provided in the verified list. NEVER speculate on e-commerce, payment theft, or database breaches unless an explicit, validated vulnerability in that category is present in the list.',
+      owaspCategories: [...new Set(actionableFindings.map(v => v.owaspCategory).filter(Boolean))],
+      modules: [...new Set(actionableFindings.map(v => v.module).filter(Boolean))],
+      isWhitebox,
     })
   } catch { /* non-fatal */ }
   try {
-    aiAttackChain = await aiEngine.generateAttackChain(activeFindings, project.name)
+    aiAttackChain = await aiEngine.generateAttackChain(actionableFindings, project.name)
   } catch { /* non-fatal */ }
 
   const file = path.join(config.outputDir, `report-project-${projectId}.pdf`)
@@ -4065,7 +4122,11 @@ function buildSimplifiedActionItem(v, index, detectedTech = []) {
   let difficulty = 'medium'
   let estimatedMinutes = 30
   const context = findingEvidenceContext(v)
-  let symptom = sanitizePdfText(v.description || '')
+  let symptom = makeEvidenceDrivenProblem(
+    v,
+    sanitizePdfText(v.description || 'The scanner reported a security condition that requires review.'),
+    context,
+  )
   // Boilerplate removed. "impact depends on the access and data reachable from
   // the affected component" is true of every finding and therefore tells the
   // reader nothing; it was printed on cards whose severity badge said CRITICAL.
@@ -4524,7 +4585,7 @@ async function renderSimplifiedPdf({ file, reportTitle, scans = [], project = nu
         doc.strokeColor('#F1F5F9').lineWidth(0.6).moveTo(leftX + 12, ry - 2).lineTo(rightX - 12, ry - 2).stroke()
         doc.fontSize(8).font('Helvetica-Bold').fillColor(BRAND.textDark)
           .text(sanitizePdfText(row.product).slice(0, 32), cProd, ry, { width: 145, ellipsis: true })
-        doc.fontSize(8).font(row.versionUnverified ? 'Helvetica-Oblique' : 'Courier')
+        doc.fontSize(8).font('Helvetica')
           .fillColor(row.versionUnverified ? '#94A3B8' : BRAND.textDark)
           .text(row.version ? sanitizePdfText(row.version).slice(0, 14) : 'not disclosed', cVer, ry, { width: 66, ellipsis: true })
         doc.fontSize(7).font('Helvetica').fillColor(BRAND.textMuted)
@@ -4910,8 +4971,8 @@ async function renderSimplifiedPdf({ file, reportTitle, scans = [], project = nu
         // as a wrapped row instead of owning a second framed box. Two frames per
         // card holding the same evidence was pure page growth.
         if (proofPanel && proofLine) proofPanel.note = proofLine
-        const proofH = proofLine && !proofPanel ? Math.max(12, doc.fontSize(8).font('Courier').heightOfString(proofLine, { width: w - 48, lineGap: 2 })) + 26 : 0
-        const reproH = reproCmd ? Math.max(12, doc.fontSize(8).font('Courier').heightOfString(reproCmd, { width: w - 48, lineGap: 2 })) + 26 : 0
+        const proofH = proofLine && !proofPanel ? Math.max(12, doc.fontSize(8).font('Helvetica').heightOfString(proofLine, { width: w - 48, lineGap: 2 })) + 26 : 0
+        const reproH = reproCmd ? Math.max(12, doc.fontSize(8).font('Helvetica').heightOfString(reproCmd, { width: w - 48, lineGap: 2 })) + 26 : 0
 
         // Height of the drawn proof panel, built from the exact offsets the render
         // loop uses below: title bar, key/value rows, then optional blocks that
@@ -4925,13 +4986,13 @@ async function renderSimplifiedPdf({ file, reportTitle, scans = [], project = nu
         let gapH = 0
         if (proofPanel) {
           panelNoteH = proofPanel.note
-            ? doc.fontSize(6.5).font('Courier').heightOfString(sanitizePdfText(proofPanel.note), { width: w - 48, lineGap: 2 })
+            ? doc.fontSize(6.5).font('Helvetica').heightOfString(sanitizePdfText(proofPanel.note), { width: w - 48, lineGap: 2 })
             : 0
           panelExcerptH = proofPanel.excerpt
-            ? doc.fontSize(7).font('Courier').heightOfString(sanitizePdfText(proofPanel.excerpt), { width: w - 48, lineGap: 2 })
+            ? doc.fontSize(7).font('Helvetica').heightOfString(sanitizePdfText(proofPanel.excerpt), { width: w - 48, lineGap: 2 })
             : 0
           panelVerbatimH = proofPanel.verbatim
-            ? doc.fontSize(6.5).font('Courier').heightOfString(sanitizePdfText(proofPanel.verbatim), { width: w - 48, lineGap: 2 })
+            ? doc.fontSize(6.5).font('Helvetica').heightOfString(sanitizePdfText(proofPanel.verbatim), { width: w - 48, lineGap: 2 })
             : 0
           panelVerbatimNoteH = proofPanel.verbatimNote
             ? doc.fontSize(6).font('Helvetica-Oblique').heightOfString(`\u2191 ${proofPanel.verbatimNote}`, { width: w - 48, lineGap: 1 })
@@ -4956,12 +5017,12 @@ async function renderSimplifiedPdf({ file, reportTitle, scans = [], project = nu
           )) + 22
         }
 
-        // Measure Courier font for code/prescription accurately. The meta block
+        // Measure the same body font used for the rendered prescription.
         // below the prescription stacks three lines (severity/confidence, the
         // CVSS vector, and — when a stored rating was overruled — the audit note),
         // so its height must be measured rather than assumed.
         const auditNote = item.auditNote ? sanitizePdfText(item.auditNote) : null
-        const prescH = Math.max(14, doc.fontSize(8.5).font('Courier').heightOfString(item.prescription || 'N/A', { width: w - 48, lineGap: 2.5 }))
+        const prescH = Math.max(14, doc.fontSize(8.5).font('Helvetica').heightOfString(item.prescription || 'N/A', { width: w - 48, lineGap: 2.5 }))
         const auditNoteH = auditNote
           ? doc.fontSize(6.5).font('Helvetica-Bold').heightOfString(`Note: ${auditNote}`, { width: w - 48, lineGap: 1 })
           : 0
@@ -5045,11 +5106,11 @@ async function renderSimplifiedPdf({ file, reportTitle, scans = [], project = nu
         doc.roundedRect(leftX + 14, contentY, w - 28, prescBoxH, 3).fillAndStroke('#F8FAFC', BRAND.cardBorder)
         doc.rect(leftX + 14, contentY, 3, prescBoxH).fill('#16A34A')
         doc.fontSize(8).font('Helvetica-Bold').fillColor('#16A34A').text('HOW TO FIX (RECOMMENDED REMEDIATION):', leftX + 24, contentY + 7)
-        doc.fontSize(8.5).font('Courier').fillColor(BRAND.primary).text(item.prescription || 'N/A', leftX + 24, contentY + 22, { width: w - 48, lineGap: 2.5, height: prescH + 4 })
+        doc.fontSize(8.5).font('Helvetica').fillColor(BRAND.primary).text(item.prescription || 'N/A', leftX + 24, contentY + 22, { width: w - 48, lineGap: 2.5, height: prescH + 4 })
         doc.fontSize(7.5).font('Helvetica').fillColor(BRAND.textMuted)
           .text(`Severity: ${sevKey.toUpperCase()} (CVSS ${score.toFixed(1)})  |  AI Confidence: ${confVal}% (evidence certainty, separate from CVSS impact)`,
             leftX + 24, contentY + metaTop, { width: w - 48 })
-        doc.fontSize(6.5).font('Courier').fillColor('#94A3B8')
+        doc.fontSize(6.5).font('Helvetica').fillColor('#94A3B8')
           .text(sanitizePdfText(vectorLine), leftX + 24, contentY + metaTop + 11, { width: w - 48, ellipsis: true })
         if (auditNote) {
           // Never silently disagree with the stored rating: print the correction.
@@ -5065,7 +5126,7 @@ async function renderSimplifiedPdf({ file, reportTitle, scans = [], project = nu
           doc.rect(leftX + 14, contentY, 3, proofH).fill('#2563EB')
           doc.fontSize(8).font('Helvetica-Bold').fillColor('#2563EB')
             .text('SCAN CONTEXT:', leftX + 24, contentY + 7)
-          doc.fontSize(8).font('Courier').fillColor(BRAND.textDark).text(proofLine, leftX + 24, contentY + 21, { width: w - 48, lineGap: 2, height: proofH - 24 })
+          doc.fontSize(8).font('Helvetica').fillColor(BRAND.textDark).text(proofLine, leftX + 24, contentY + 21, { width: w - 48, lineGap: 2, height: proofH - 24 })
           contentY += proofH + 8
         }
 
@@ -5079,12 +5140,12 @@ async function renderSimplifiedPdf({ file, reportTitle, scans = [], project = nu
 
           // Title bar: METHOD + URL on the left, status chip on the right.
           doc.rect(px, contentY, pw, 16).fill('#1E293B')
-          const statusText = proofPanel.status ? `HTTP ${proofPanel.status}` : 'OBSERVED'
+          const statusText = proofPanel.status ? `HTTP ${proofPanel.status}` : 'RESPONSE'
           const statusOk = proofPanel.status && /^[23]/.test(proofPanel.status)
           const statusWarn = proofPanel.status && /^[45]/.test(proofPanel.status)
           doc.fontSize(6.5).font('Helvetica-Bold').fillColor(statusOk ? '#4ADE80' : statusWarn ? '#F87171' : '#FBBF24')
             .text(statusText, px + 8, contentY + 4, { width: 70 })
-          doc.fontSize(6.5).font('Courier').fillColor('#E2E8F0')
+          doc.fontSize(6.5).font('Helvetica').fillColor('#E2E8F0')
             .text(
               sanitizePdfText(`${proofPanel.method} ${compactUrlForLabel(proofPanel.url || 'the endpoint')}`),
               px + 82, contentY + 4, { width: pw - 92, ellipsis: true, lineBreak: false },
@@ -5095,7 +5156,7 @@ async function renderSimplifiedPdf({ file, reportTitle, scans = [], project = nu
           let rowY = contentY + 6
           for (const [label, value] of proofPanel.headers) {
             doc.fontSize(6.5).font('Helvetica-Bold').fillColor('#94A3B8').text(`${label}:`, px + 10, rowY, { width: 96 })
-            doc.fontSize(6.5).font('Courier').fillColor('#E2E8F0').text(sanitizePdfText(value), px + 110, rowY, { width: pw - 122, ellipsis: true, lineBreak: false })
+            doc.fontSize(6.5).font('Helvetica').fillColor('#E2E8F0').text(sanitizePdfText(value), px + 110, rowY, { width: pw - 122, ellipsis: true, lineBreak: false })
             rowY += 10
           }
 
@@ -5113,7 +5174,7 @@ async function renderSimplifiedPdf({ file, reportTitle, scans = [], project = nu
           if (panelNoteH) {
             doc.fontSize(6).font('Helvetica-Bold').fillColor('#7DD3FC').text('SCAN CONTEXT', px + 10, rowY + 4, { width: pw - 20 })
             rowY += 12
-            doc.fontSize(6.5).font('Courier').fillColor('#CBD5E1')
+            doc.fontSize(6.5).font('Helvetica').fillColor('#CBD5E1')
               .text(sanitizePdfText(proofPanel.note), px + 10, rowY, { width: pw - 20, lineGap: 2, height: panelNoteH })
             rowY += panelNoteH + 6
           }
@@ -5122,14 +5183,14 @@ async function renderSimplifiedPdf({ file, reportTitle, scans = [], project = nu
           if (panelExcerptH) {
             doc.fontSize(6).font('Helvetica-Bold').fillColor('#7DD3FC').text('CAPTURED RESPONSE BODY', px + 10, rowY + 4, { width: pw - 20 })
             rowY += 12
-            doc.fontSize(7).font('Courier').fillColor('#CBD5E1')
+            doc.fontSize(7).font('Helvetica').fillColor('#CBD5E1')
               .text(sanitizePdfText(proofPanel.excerpt), px + 10, rowY, { width: pw - 20, lineGap: 2, height: panelExcerptH })
             if (proofPanel.hit) {
               // Underline the matched marker so the eye lands on the proof.
               const before = proofPanel.excerpt.slice(0, proofPanel.hit.at)
-              const lineIdx = Math.floor(doc.fontSize(7).font('Courier').widthOfString(before, { width: pw - 20 }) / (pw - 20))
+              const lineIdx = Math.floor(doc.fontSize(7).font('Helvetica').widthOfString(before, { width: pw - 20 }) / (pw - 20))
               const lineText = proofPanel.excerpt.slice(0, proofPanel.hit.at).split(/\s+/).pop() || ''
-              const xOff = px + 10 + Math.min(doc.fontSize(7).font('Courier').widthOfString(lineText.slice(-40), { width: pw - 20 }), pw - 40)
+              const xOff = px + 10 + Math.min(doc.fontSize(7).font('Helvetica').widthOfString(lineText.slice(-40), { width: pw - 20 }), pw - 40)
               const uy = rowY + lineIdx * 9 + 8
               doc.rect(xOff, uy + 1, Math.min(60, pw - 20), 0.6).fill('#38BDF8')
             }
@@ -5140,7 +5201,7 @@ async function renderSimplifiedPdf({ file, reportTitle, scans = [], project = nu
           if (panelVerbatimH) {
             doc.fontSize(6).font('Helvetica-Bold').fillColor('#7DD3FC').text('VERBATIM SCANNER OUTPUT', px + 10, rowY + 4, { width: pw - 20 })
             rowY += 12
-            doc.fontSize(6.5).font('Courier').fillColor('#CBD5E1')
+            doc.fontSize(6.5).font('Helvetica').fillColor('#CBD5E1')
               .text(sanitizePdfText(proofPanel.verbatim), px + 10, rowY, { width: pw - 20, lineGap: 2, height: panelVerbatimH })
             rowY += panelVerbatimH
             // The raw payload carries the rating the scanner guessed. If that differs
@@ -5177,7 +5238,7 @@ async function renderSimplifiedPdf({ file, reportTitle, scans = [], project = nu
           doc.roundedRect(leftX + 14, contentY, w - 28, reproH, 3).fillAndStroke('#FFFBEB', '#FDE68A')
           doc.rect(leftX + 14, contentY, 3, reproH).fill('#D97706')
           doc.fontSize(8).font('Helvetica-Bold').fillColor('#B45309').text('REPRODUCE / VERIFY THE FIX:', leftX + 24, contentY + 7)
-          doc.fontSize(8).font('Courier').fillColor(BRAND.textDark).text(reproCmd, leftX + 24, contentY + 21, { width: w - 48, lineGap: 2, height: reproH - 24 })
+          doc.fontSize(8).font('Helvetica').fillColor(BRAND.textDark).text(reproCmd, leftX + 24, contentY + 21, { width: w - 48, lineGap: 2, height: reproH - 24 })
           contentY += reproH + 8
         }
 

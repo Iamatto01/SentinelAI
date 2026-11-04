@@ -293,13 +293,16 @@ body.day-mode .card {
 }
 
 /* Adapt hardcoded dark container classes gracefully in Day Mode */
-body.day-mode [class*="bg-slate-950"]:not(.terminal):not([class*="btn-"]):not([class*="icon-box-"]):not([class*="chip"]):not([class*="badge"]),
-body.day-mode [class*="bg-slate-900"]:not(.terminal):not([class*="btn-"]):not([class*="icon-box-"]):not([class*="chip"]):not([class*="badge"]),
-body.day-mode [class*="bg-ink-800"]:not(.terminal):not([class*="btn-"]):not([class*="icon-box-"]):not([class*="chip"]):not([class*="badge"]),
-body.day-mode [class*="bg-ink-900"]:not(.terminal):not([class*="btn-"]):not([class*="icon-box-"]):not([class*="chip"]):not([class*="badge"]),
-body.day-mode [class*="bg-[#111111]"]:not(.terminal):not([class*="btn-"]):not([class*="icon-box-"]):not([class*="chip"]):not([class*="badge"]),
-body.day-mode [class*="bg-[#161616]"]:not(.terminal):not([class*="btn-"]):not([class*="icon-box-"]):not([class*="chip"]):not([class*="badge"]),
-body.day-mode [class*="bg-[#1c1c1c]"]:not(.terminal):not([class*="btn-"]):not([class*="icon-box-"]):not([class*="chip"]):not([class*="badge"]) {
+body.day-mode [class*="bg-slate-950"]:not(.terminal):not([class*="btn-"]):not([class*="icon-box-"]):not([class*="chip"]):not([class*="badge"]):not(.fixed):not([class*="fixed"]),
+body.day-mode [class*="bg-slate-900"]:not(.terminal):not([class*="btn-"]):not([class*="icon-box-"]):not([class*="chip"]):not([class*="badge"]):not(.fixed):not([class*="fixed"]),
+body.day-mode [class*="bg-ink-950"]:not(.terminal):not([class*="btn-"]):not([class*="icon-box-"]):not([class*="chip"]):not([class*="badge"]):not(.fixed):not([class*="fixed"]),
+body.day-mode [class*="bg-ink-900"]:not(.terminal):not([class*="btn-"]):not([class*="icon-box-"]):not([class*="chip"]):not([class*="badge"]):not(.fixed):not([class*="fixed"]),
+body.day-mode [class*="bg-ink-850"]:not(.terminal):not([class*="btn-"]):not([class*="icon-box-"]):not([class*="chip"]):not([class*="badge"]):not(.fixed):not([class*="fixed"]),
+body.day-mode [class*="bg-ink-800"]:not(.terminal):not([class*="btn-"]):not([class*="icon-box-"]):not([class*="chip"]):not([class*="badge"]):not(.fixed):not([class*="fixed"]),
+body.day-mode [class*="bg-ink-700"]:not(.terminal):not([class*="btn-"]):not([class*="icon-box-"]):not([class*="chip"]):not([class*="badge"]):not(.fixed):not([class*="fixed"]),
+body.day-mode [class*="bg-[#111111]"]:not(.terminal):not([class*="btn-"]):not([class*="icon-box-"]):not([class*="chip"]):not([class*="badge"]):not(.fixed):not([class*="fixed"]),
+body.day-mode [class*="bg-[#161616]"]:not(.terminal):not([class*="btn-"]):not([class*="icon-box-"]):not([class*="chip"]):not([class*="badge"]):not(.fixed):not([class*="fixed"]),
+body.day-mode [class*="bg-[#1c1c1c]"]:not(.terminal):not([class*="btn-"]):not([class*="icon-box-"]):not([class*="chip"]):not([class*="badge"]):not(.fixed):not([class*="fixed"]) {
   background-color: #ffffff !important;
   border-color: #e2e8f0 !important;
   color: #0f172a !important;
@@ -323,7 +326,7 @@ body.day-mode [class*="to-slate-8"]:not(.terminal):not(.terminal *):not([class*=
 }
 
 /* Remove backdrop-blur in day mode — cards are opaque white, blur is irrelevant */
-body.day-mode [class*="backdrop-blur"]:not(.terminal):not(.terminal *) {
+body.day-mode [class*="backdrop-blur"]:not(.terminal):not(.terminal *):not(.fixed):not([class*="fixed"]) {
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
 }
@@ -368,9 +371,17 @@ body.day-mode [class*="bg-white/"]:not(.btn-primary):not([class*="badge"]),
 body.day-mode [class*="bg-white\\["]:not(.btn-primary):not([class*="badge"]) {
   background-color: #f1f5f9 !important;
 }
-body.day-mode [class*="bg-black/"]:not(.terminal *),
-body.day-mode [class*="bg-black\\["]:not(.terminal *) {
+body.day-mode [class*="bg-black/"]:not(.terminal *):not(.fixed):not([class*="fixed"]),
+body.day-mode [class*="bg-black\\["]:not(.terminal *):not(.fixed):not([class*="fixed"]) {
   background-color: #f1f5f9 !important;
+}
+
+/* Modal and drawer overlay backdrops in Day Mode */
+body.day-mode .fixed.inset-0[class*="bg-black"],
+body.day-mode .fixed[class*="inset-0"][class*="bg-black"] {
+  background-color: rgba(15, 23, 42, 0.55) !important;
+  backdrop-filter: blur(4px) !important;
+  -webkit-backdrop-filter: blur(4px) !important;
 }
 
 /* Light Mode: Primary Headings & Bold Text */
@@ -491,6 +502,13 @@ body.day-mode [class*="bg-indigo-9"]:not(.terminal):not([class*="btn-"]):not([cl
   background-color: #f5f3ff !important;
   background-image: none !important;
   border-color: #ddd6fe !important;
+}
+
+body.day-mode [class*="bg-cyan-9"]:not(.terminal):not([class*="btn-"]):not([class*="badge"]):not(svg):not(span.w-),
+body.day-mode [class*="bg-teal-9"]:not(.terminal):not([class*="btn-"]):not([class*="badge"]):not(svg):not(span.w-) {
+  background-color: #f0fdfa !important;
+  background-image: none !important;
+  border-color: #a5f3fc !important;
 }
 /* Same for semi-opaque dark color containers: bg-[#0c...], bg-[#11...] etc */
 body.day-mode [class*="bg-[#0"]:not(.terminal):not([class*="btn-"]):not([class*="badge"]),

@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto'
+import crypto, { randomUUID } from 'node:crypto'
 import net from 'node:net'
 import { payloadsRag } from './integrations/index.js'
 import { runNativeTool, previewNativeCommand, nativeToolsStatus, NATIVE_TOOLS } from './integrations/native-tools.js'
@@ -19,6 +19,7 @@ import {
   defaultVectorForFinding,
   severityFromCvss4Score,
   evaluateFindingCvss,
+  CVSS4_TEMPLATES,
 } from './cvss4.js'
 import * as db from './db.js'
 
@@ -38,6 +39,65 @@ import * as db from './db.js'
  * `evaluateFindingCvss()` — see the design contract in cvss4.js.
  */
 const SEVERITY_RANK = { info: 0, low: 1, medium: 2, high: 3, critical: 4 }
+
+function extractHtmlTitle(body) {
+  return String(body || '').match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1]?.replace(/\s+/g, ' ').trim().slice(0, 200) || null
+}
+
+/**
+ * Proof detector for "this is a real SQL injection" claims.
+ *
+ * The naive form of this check was the single worst bug in the misclassification
+ * path: `/sql\s*(?:error|syntax)/` matched the phrase "no SQL error was observed"
+ * — a DENIAL — and therefore reported that proof existed. Because the whole point
+ * of the overrule is to catch findings whose evidence *admits* it has no artifact,
+ * a negation-blind detector disables the overrule on exactly the findings it
+ * exists to correct. Every indicator is now checked against a preceding
+ * negation, and scanned line-by-line so a denial on one line cannot mask a
+ * confirmation on the next.
+ */
+function hasSqlInjectionProof(text) {
+  // Phrasings that only appear once an injection has actually been DEMONSTRATED.
+  // Written to allow intervening words (`error-based SQL injection` must match
+  // `error[- ]based ... injection`) — a detector that misses real proof is just
+  // as harmful as one that invents it, because it downgrades a genuine finding.
+  const indicators = [
+    /sql\s*(?:error|syntax)/i,
+    /database\s+error/i,
+    /injectable\s+parameter/i,
+    /parameter\s+is\s+injectable/i,
+    /parameter\s+is\s+vulnerable/i,
+    /vulnerable\s+to\s+(?:sql|blind\s+sql)/i,
+    /sqlmap\s+(?:confirmed|identified)/i,
+    /error[- ]based[^.\n]{0,40}injection/i,
+    /(?:boolean|time|union)[- ]based[^.\n]{0,40}(?:injection|inference|proved|confirmed)/i,
+    /sql\s+injection[^.\n]{0,30}(?:confirmed|verified|demonstrated|present|reproduced)/i,
+    /confirmed[^.\n]{0,20}sql\s+injection/i,
+  ]
+  const negated = /(?:\bno\b|\bnot\b|\bnever\b|\bwithout\b|\babsence\s+of|\black(?:s|ing)?\b|\bmissing\b|\bunproven\b|\bunsupported\b|\bunconfirmed\b|\bfailed\s+to|\bcannot\b|\bcan't\b|\bunable\s+to|\bno\s+evidence\b)\W*(?:\w+\W+){0,3}$/i
+  return String(text || '')
+    .split(/\r?\n/)
+    .some(line => indicators.some(re => {
+      const hit = re.exec(line)
+      return Boolean(hit) && !negated.test(line.slice(0, hit.index))
+    }))
+}
+
+function responseEvidence(evidence = {}) {
+  const body = evidence.body || evidence.responseBody || evidence.output || ''
+  const contentLength = Number(evidence.contentLength ?? evidence.responseSize ?? evidence.size ?? (typeof body === 'string' ? body.length : NaN))
+  const bodyHash = evidence.bodyHash || (typeof body === 'string' && body
+    ? crypto.createHash('sha256').update(body.slice(0, 4096)).digest('hex')
+    : null)
+  return {
+    status: Number(evidence.status ?? evidence.statusCode ?? NaN),
+    contentLength: Number.isFinite(contentLength) ? contentLength : null,
+    bodyHash,
+    isHtml: Boolean(evidence.isHtml) || /^(?:text\/html|application\/xhtml\+xml)\b/i.test(String(evidence.contentType || '')) ||
+      /<(!doctype|html|head|body)\b/i.test(String(body).trim()),
+    claim: `${evidence.claim || ''} ${evidence.type || ''}`,
+  }
+}
 
 /**
  * Stages that describe the same underlying fact ("this product/version is
@@ -213,6 +273,8 @@ export class UnifiedPipeline {
     // budget is spent the finding still gets an artifact-backed attribution —
     // only the paid tier is skipped, so nothing is dropped and nothing is faked.
     this._llmBudget = new Map()
+    // scanId -> randomized response baseline used to suppress catch-all pages
+    this._catchAllBaselines = new Map()
   }
 
   /** Max paid verifications per scan (override with SENTINEL_LLM_BUDGET). */
@@ -264,6 +326,112 @@ export class UnifiedPipeline {
     this._urlPool?.delete(scanId)
     this._loginForms?.delete(scanId)
     this._blackboxMeta?.delete(scanId)
+    this._catchAllBaselines?.delete(scanId)
+  }
+
+  async detectCatchAllBaseline(scanId, targetUrl) {
+    const base = /^https?:\/\//i.test(targetUrl) ? targetUrl.replace(/\/+$/, '') : `https://${targetUrl}`
+    const url = `${base}/${crypto.randomBytes(10).toString('hex')}-probe-404`
+    try {
+      const res = await fetch(url, { method: 'GET', redirect: 'manual', signal: AbortSignal.timeout(10000) })
+      const body = await res.text()
+      if ([200, 301, 302].includes(res.status)) {
+        const baseline = {
+          isCatchAll: true,
+          status: res.status,
+          contentLength: body.length,
+          bodyHash: crypto.createHash('sha256').update(body.slice(0, 4096)).digest('hex'),
+          isHtml: /<(!doctype|html|head|body)/i.test(body),
+          title: extractHtmlTitle(body),
+        }
+        this._catchAllBaselines.set(scanId, baseline)
+        this.log(scanId, 'info', `Catch-all baseline detected: HTTP ${res.status}, ${body.length} bytes${baseline.title ? `, title="${baseline.title}"` : ''}`)
+        return baseline
+      }
+    } catch (err) {
+      this.log(scanId, 'warn', `Catch-all baseline probe failed: ${err.message}`)
+    }
+    return null
+  }
+
+  _isSoft404Finding(scanId, finding) {
+    const source = String(finding.module || '').toLowerCase()
+    if (!source.startsWith('custom-script:') && source !== 'path-enum' && !/^native:(?:ffuf|gobuster)$/.test(source)) return false
+    const baseline = this._catchAllBaselines.get(scanId)
+    if (!baseline?.isCatchAll) return false
+    const evidence = responseEvidence(finding.evidence)
+    // `status` is the anchor: when a probe emits no status the finding carries no
+    // response metadata at all, and suppressing on a claim keyword alone would
+    // drop genuine findings. The shipped probes therefore emit status explicitly.
+    if (evidence.status !== baseline.status) return false
+    const sizeMatches = evidence.contentLength != null && evidence.contentLength > 0 && baseline.contentLength > 0 &&
+      Math.abs(evidence.contentLength - baseline.contentLength) / baseline.contentLength <= 0.02
+    const hashMatches = Boolean(evidence.bodyHash && evidence.bodyHash === baseline.bodyHash)
+    // Third branch: the response we actually received WAS the catch-all HTML
+    // lander while the finding claims a machine-readable artifact (config, JSON,
+    // upload, API payload). Those two facts cannot both be true, so the claim is
+    // an artefact of the catch-all. This previously read `!evidence.isHtml && …
+    // && evidence.isHtml`, a conjunction that is unsatisfiable by construction —
+    // so every size-less finding sailed straight through this guard.
+    const nonHtmlClaim = /json|config|secret|upload|api|sql|database|file/i.test(
+      `${finding.title || ''} ${finding.description || ''} ${evidence.claim}`,
+    )
+    return Boolean(sizeMatches || hashMatches || (baseline.isHtml && nonHtmlClaim && evidence.isHtml))
+  }
+
+  /**
+   * Extract a fetchable URL from a custom-script finding.
+   * Scripts typically embed the probed path in the title, e.g.:
+   *   "Editor/temp file exposed: /index.php~"
+   *   "Admin panel discovered: /admin (HTTP 200)"
+   *   "Potential IDOR/BOLA: /api/v1/users/2 accessible without auth"
+   */
+  _extractProbeUrl(finding, target) {
+    const base = /^https?:\/\//i.test(target) ? target.replace(/\/+$/, '') : `https://${target}`
+    const title = finding.title || ''
+    // Try to extract path from title patterns like ": /some/path" or ": /path (HTTP xxx)"
+    const m = title.match(/:\s*(\/\S+?)(?:\s+\(|$|\s+accessible|\s+is\s|\s+returns|\s+without)/) ||
+              title.match(/:\s*(\/\S+)/)
+    if (m) {
+      const path = m[1].replace(/[()]+$/, '')  // clean trailing parens
+      try { return new URL(path, base).href } catch { /* invalid path */ }
+    }
+    // Fallback: check evidence for url/path fields
+    const ev = finding.evidence || {}
+    if (ev.url) return ev.url
+    if (ev.path) {
+      try { return new URL(ev.path, base).href } catch { /* skip */ }
+    }
+    return null
+  }
+
+  _targetFingerprint(scanId) {
+    // `http-headers` carries the Server banner (e.g. "Apache/2.4.6 (CentOS)
+    // PHP/7.4.33") and is ingested before both the custom-script gate and the
+    // native path audit run, so the stack is known even when whatweb/httpx
+    // were unavailable or produced nothing.
+    const rows = db.all(`SELECT title, description, evidence FROM findings WHERE scan_id = ? AND module IN ('native:whatweb', 'native:httpx', 'http-headers')`, scanId)
+    return rows.map(row => `${row.title || ''} ${row.description || ''} ${row.evidence || ''}`).join(' ')
+  }
+
+  _shouldSkipCustomScript(scanId, script) {
+    const name = String(script.name || '')
+    const fingerprint = this._targetFingerprint(scanId)
+    const isLinuxPhp = /\b(?:linux|unix|centos|ubuntu|debian|apache|nginx|php)\b/i.test(fingerprint)
+    const isCmsFramework = /\b(?:moodle|wordpress|drupal)\b/i.test(fingerprint)
+    // Both name AND command are inspected: the shipped ASP.NET probe is titled
+    // "ASP.NET Security Checks" and only names elmah.axd / web.config / trace.axd
+    // inside its command, so matching the name alone silently ran it on PHP hosts.
+    if (isLinuxPhp && /elmah|web\.config|trace\.axd|\.aspx/i.test(`${name} ${script.command}`)) return true
+    if (isLinuxPhp && /\b(?:actuator|spring boot|java)\b/i.test(`${name} ${script.command}`)) return true
+    // Name-only for Laravel on purpose: the generic "Log File Exposure" probe
+    // walks ~26 log paths, mentioning laravel.log once among them, and is
+    // hardened + useful on this host class. Matching its command would suppress
+    // it wholesale. Only the genuinely Laravel-only probes are skipped.
+    if (isCmsFramework && /laravel/i.test(name)) return true
+    if (/(?:price|amount|coupon|e-commerce|cart|checkout|order|buy|payment)/i.test(name) &&
+      !/(woocommerce|magento|shopify|opencart|prestashop|wordpress ecommerce)/i.test(fingerprint)) return true
+    return false
   }
 
   emit(scanId, event, data) {
@@ -349,6 +517,11 @@ export class UnifiedPipeline {
       const scan = db.get(`SELECT target FROM scans WHERE id = ?`, scanId)
       rawFinding.target = scan?.target || rawFinding.evidence?.url || ''
     }
+    if (this._isSoft404Finding(scanId, rawFinding)) {
+      rawFinding.evidence = { ...(rawFinding.evidence || {}), soft404: true, verification: 'soft-404-suppressed' }
+      this.log(scanId, 'info', `Suppressed catch-all response for "${rawFinding.title}"`)
+      return null
+    }
 
       // ── OUT-OF-SCOPE TAGGING ──
       // Compare the finding's hostname to the primary scan target hostname.
@@ -405,6 +578,44 @@ export class UnifiedPipeline {
     let verdict = null
     const isAiGenerated = (f.module || '').startsWith('code-audit') || (f.module || '') === 'ai-audit'
 
+    // ── Misclassification overrule ───────────────────────────────────────────
+    // A directory discovery tool reports a PATH, never an exploit. Upstream
+    // escalation turned the ffuf wordlist hit `/ezsqliteadmin` into
+    // "SQL Injection (CRITICAL 9.3)" on a scan where no SQL error was ever
+    // observed and no parameter was ever proven injectable.
+    //
+    // This runs BEFORE the verification branch dispatch on purpose. The
+    // reclassification used to live inside the observational (`else if (verify)`)
+    // branch, but a finding titled "SQL Injection" matches the `ownsDomain`
+    // keyword list, which routes it to the LLM branch instead — so the overrule
+    // never executed for exactly the findings it exists to correct.
+    const directorySource = /(?:ffuf|gobuster|dirsearch|feroxbuster|path-enum|dirb)/i.test(String(f.module || ''))
+    // Adjudicate on the *claim*, never on the absence of a keyword. `sqlProof`
+    // must be able to tell "an error-based injection was confirmed" apart from
+    // "no SQL error was observed" — the negation-blind version read the denial
+    // as proof and switched this overrule off on the very findings it targets.
+    const sqlProof = hasSqlInjectionProof(`${f.title || ''}\n${f.description || ''}\n${JSON.stringify(f.evidence || {})}`)
+    if (/sql injection/i.test(f.title || '') && directorySource && !sqlProof) {
+      const misclassified = f.title
+      f.title = 'Admin / Discovery Surface'
+      f.description = `Directory discovery found this path, but no SQL error, injectable parameter, or database response was observed — it is an exposed surface, not a proven injection. ${f.description || ''}`.trim()
+      f.severity = SEVERITY_RANK[f.severity] > SEVERITY_RANK.medium ? 'medium' : f.severity
+      f.cvss = null
+      f.cvssVector = null
+      f.discoveryOnly = true
+      // Drop the exploit playbooks attached at step 2b. They were matched on the
+      // ORIGINAL "SQL Injection" title, so they survive a reclassification that
+      // has just declared the claim unproven — leaving a runnable
+      // `sqlmap --dbs/--dump/--os-shell` recipe on a path where no SQL error was
+      // ever seen. Measured: re-matching the corrected claim against the registry
+      // returns [] (the old wording returned ["sqli-exploit"]), so clearing is
+      // lossless here — nothing the new claim legitimately justifies.
+      f.exploitPlaybooks = []
+      const { exploitPlaybooks: _stalePlaybooks, ...restEvidence } = f.evidence || {}
+      f.evidence = { ...restEvidence, classification: 'discovery-only', validationTier: 'needs-validation' }
+      this.log(scanId, 'info', `⚖️  reclassified directory hit "${misclassified}" — a wordlist path is a discovery surface, not an injection (no SQL artifact in evidence)`)
+    }
+
     // Factual modules: the finding IS the evidence (nmap saw an open port,
     // HTTP response lacked a header, DNS resolved a subdomain, etc.)
     const factualModules = ['http-headers', 'path-enum', 'native:nmap',
@@ -439,6 +650,7 @@ export class UnifiedPipeline {
       this.log(scanId, 'info', `🤖 [AI] verification budget spent for this scan — attributing "${f.title}" deterministically instead of calling the model`)
     }
 
+    const runVerification = async () => {
     if (gate && !budgetBlocked) {
       try {
         this.log(scanId, 'info', `🤖 [AI] verifying finding: "${f.title}" (severity=${f.severity}, module=${f.module})\n🤖 [AI] input evidence: ${JSON.stringify(f.evidence || {}).slice(0, 800)}`)
@@ -490,7 +702,44 @@ export class UnifiedPipeline {
       } catch (e) {
         this.log(scanId, 'warn', `🔎 [AI] attribution error for "${f.title}": ${e.message}`)
       }
+
+      const verdictText = String(verdict?.verdict || '').toLowerCase()
+      const rejectsFinding = Boolean(verdict) && (
+        verdict.isTruePositive === false ||
+        /(?:evidence|artifact)[^.]{0,60}(?:lack|missing|insufficient)|not\s+(?:a\s+)?(?:true\s+positive|exploitable)/i.test(verdictText)
+      )
+      if (rejectsFinding) {
+        f.severity = 'info'
+        f.evidence = { ...(f.evidence || {}), verification: 'needs-validation', aiEvidenceTier: 'needs-validation', aiVerification: false }
+      }
     }
+    } // end runVerification
+
+    await runVerification()
+
+    // A finding the reviewer judged to lack the artifacts its claim requires is
+    // NOT verified, whatever severity upstream asserted, and must not reach the
+    // Confirmed list. (The SQL-injection reclassification itself already ran
+    // above, before dispatch, so this only has to adjudicate severity.)
+    {
+      const verdictText = String(verdict?.verdict || '').toLowerCase()
+      const lacksArtifacts = /(?:evidence|artifact)[^.]{0,60}(?:lack|missing|insufficient|unsupported|absent)|no\s+(?:sql\s+)?(?:error|artifact|proof|evidence|artifact)[^.]{0,40}(?:observed|found|present|captured)|unproven|not\s+(?:been\s+)?(?:confirmed|validated|verified)|cannot\s+(?:be\s+)?confirm/i.test(verdictText)
+      if (verdict && (verdict.isTruePositive === false || lacksArtifacts)) {
+        const before = f.severity
+        f.severity = 'info'
+        f.cvss = null
+        f.cvssVector = null
+        f.evidence = {
+          ...(f.evidence || {}),
+          verification: 'needs-validation',
+          aiEvidenceTier: 'needs-validation',
+          aiVerification: false,
+          unconfirmedReason: String(verdict.verdict || '').slice(0, 400) || 'AI reviewer found no artifact supporting the claim.',
+        }
+        this.log(scanId, 'info', `⚖️  AI verdict overrules upstream severity: "${f.title}" ${before} → info (claim has no supporting artifact; filed under unverified leads)`)
+      }
+    }
+
     // 4. (sanitize removed — raw evidence preserved)
 
     // 5. Record a verification action so the finding's provenance is auditable
@@ -532,12 +781,29 @@ export class UnifiedPipeline {
     // Trusting an inbound `f.cvss` let a tool's guess (10.0 on a log file) become
     // permanent, and `Math.max()` in the merge below then made it unremovable —
     // that is exactly how the report ended up ranking CRITICAL 9.3 below HIGH 10.0.
+    //
+    // The declared severity is a FLOOR, never a ceiling to be quietly raised.
+    // `classifyFinding` `info`s findings up to 6.3 as soon as the title matches a
+    // semantic class (an "exposed admin directory" scores admin_surface/medium),
+    // so a deliberate downgrade to info was silently undone here — the mechanism
+    // that let rejected findings stay Critical in the report.
     {
+      const declaredSeverity = f.severity ? String(f.severity).toLowerCase() : null
+      const declaredRank = SEVERITY_RANK[declaredSeverity]
       const evaluated = evaluateFindingCvss(f)
-      f.cvssVector = evaluated.vector
-      f.cvss = evaluated.score
-      f.severity = evaluated.severity
-      if (evaluated.reconciled) {
+      const evaluatedRank = SEVERITY_RANK[evaluated.severity]
+      if (declaredRank != null && evaluatedRank != null && evaluatedRank > declaredRank) {
+        f.cvssVector = CVSS4_TEMPLATES.recon_info
+        f.cvss = 0
+        f.severity = declaredSeverity
+        this.log(scanId, 'info',
+          `🎯 CVSS held at ${declaredSeverity}: class template would have promoted it to ${evaluated.score}/${evaluated.severity} (declared severity is a floor)`)
+      } else {
+        f.cvssVector = evaluated.vector
+        f.cvss = evaluated.score
+        f.severity = evaluated.severity
+      }
+      if (evaluated.reconciled && f.severity === evaluated.severity) {
         this.log(scanId, 'info',
           `🎯 CVSS reconciled "${f.title}": declared ${evaluated.declaredScore ?? '—'}/${evaluated.declaredSeverity ?? '—'} → ${evaluated.score}/${evaluated.severity} (${evaluated.vector})`)
       }
@@ -681,6 +947,7 @@ export class UnifiedPipeline {
     const scanId = scan.id
     const target = scan.target
     this._beginScan(scanId)
+    await this.detectCatchAllBaseline(scanId, target)
     aiEngine.llm.resetUsageTotals()
     const catLabel = owaspCategories.length ? ` [OWASP: ${owaspCategories.join(',')}]` : ''
     this.log(scanId, 'info', `▶ Blackbox scan started on ${target} (depth=offensive — all probes active)${catLabel}`)
@@ -847,20 +1114,51 @@ export class UnifiedPipeline {
     this.log(scanId, 'info', `Custom scripts: running ${scripts.length} script(s)`)
     for (const script of scripts) {
       try {
+        if (this._shouldSkipCustomScript(scanId, script)) {
+          this.log(scanId, 'info', `⏭ Skipping custom script "${script.name}" — target technology context is not applicable`)
+          continue
+        }
         this.log(scanId, 'info', `Custom script "${script.name}" starting`)
-        const { result, findings } = await runCustomScript(script, { target, scanId, depth: this.depth || 'standard' })
+        const baseline = this._catchAllBaselines.get(scanId) || null
+        const { result, findings } = await runCustomScript(script, { target, scanId, depth: this.depth || 'standard', baseline })
         if (!result.success) {
           this.log(scanId, 'warn', `Custom script "${script.name}" exited ${result.code}: ${String(result.stderr || '').slice(0, 200)}`)
         }
+        let ingested = 0
         for (const f of findings) {
-          await this.ingestFinding(scanId, {
+          // ── CATCH-ALL EVIDENCE ENRICHMENT ──
+          // Custom scripts typically only emit {title, severity, ...} without
+          // response metadata (status, contentLength, bodyHash).  Without those
+          // fields, _isSoft404Finding() cannot compare the finding against the
+          // catch-all baseline and every 200 catch-all landing page sails through.
+          //
+          // Fix: when a catch-all baseline exists and the finding lacks response
+          // metadata, re-fetch the claimed URL and attach the response fingerprint
+          // so _isSoft404Finding() can correctly suppress catch-all matches.
+          if (baseline?.isCatchAll && f.evidence && f.evidence.status == null) {
+            const probeUrl = this._extractProbeUrl(f, target)
+            if (probeUrl) {
+              try {
+                const res = await fetch(probeUrl, { method: 'GET', redirect: 'manual', signal: AbortSignal.timeout(8000) })
+                const body = await res.text()
+                f.evidence.status = res.status
+                f.evidence.contentLength = body.length
+                f.evidence.bodyHash = crypto.createHash('sha256').update(body.slice(0, 4096)).digest('hex')
+                f.evidence.isHtml = /<(!doctype|html|head|body)/i.test(body)
+                f.evidence.contentType = res.headers.get('content-type') || ''
+              } catch { /* non-fatal — finding proceeds without enrichment */ }
+            }
+          }
+          const stored = await this.ingestFinding(scanId, {
             ...f,
             module: `custom-script:${script.name}`,
             target,
             poc: result.success ? `Script: ${script.name} (${script.language})` : undefined,
           }, { verify, targetType: 'url' })
+          if (stored) ingested++
         }
-        this.log(scanId, 'info', `Custom script "${script.name}" → ${findings.length} finding(s)`)
+        const suppressed = findings.length - ingested
+        this.log(scanId, 'info', `Custom script "${script.name}" → ${findings.length} finding(s)${suppressed ? ` (${suppressed} suppressed as catch-all)` : ''}`)
       } catch (err) {
         this.log(scanId, 'warn', `Custom script "${script.name}" failed: ${err.message}`)
       }
@@ -1693,7 +1991,7 @@ export class UnifiedPipeline {
         const res = await runNativeTool('dalfox', url)
         const out = `${res.stdout || ''}\n${res.stderr || ''}`.trim()
         if (out) {
-          const { findings } = extractFindingsFromOutput('dalfox', out, url)
+          const { findings } = extractFindingsFromOutput('dalfox', out, url, this._catchAllBaselines.get(scanId) || null)
           for (const f of findings) {
             const stored = await this.ingestFinding(scanId, { ...f, module: `chain:dalfox` }, { verify, targetType })
             // Always attach session-hijack PoC for each confirmed XSS
@@ -1724,7 +2022,7 @@ export class UnifiedPipeline {
           const res = await runNativeTool('sqlmap', url)
           const out = `${res.stdout || ''}\n${res.stderr || ''}`.trim()
           if (out) {
-            const { findings } = extractFindingsFromOutput('sqlmap', out, url)
+            const { findings } = extractFindingsFromOutput('sqlmap', out, url, this._catchAllBaselines.get(scanId) || null)
             for (const f of findings) {
               await this.ingestFinding(scanId, { ...f, module: `chain:sqlmap` }, { verify, targetType })
             }
@@ -2164,7 +2462,7 @@ export class UnifiedPipeline {
       return
     }
     this.log(scanId, 'info', `📤 [${tool}] raw output (${nativeOut.split('\n').length} lines):\n${nativeOut.slice(0, 2000)}${nativeOut.length > 2000 ? '\n… (truncated)' : ''}`)
-    const { findings, discoveredUrls } = extractFindingsFromOutput(tool, nativeOut, target || '')
+    const { findings, discoveredUrls } = extractFindingsFromOutput(tool, nativeOut, target || '', this._catchAllBaselines.get(scanId) || null)
     this._collectUrls(scanId, discoveredUrls)
     if (!findings.length) {
       this.log(scanId, 'info', `🔍 [${tool}] parser extracted 0 findings${discoveredUrls.length ? ` (${discoveredUrls.length} URLs queued for chaining)` : ''}`)
@@ -2850,13 +3148,27 @@ function cleanText(txt) {
 }
 
 /** Heuristic extraction of findings from raw tool output. Grounded, no hallucination. */
-function extractFindingsFromOutput(tool, output, target = '') {
+/**
+ * Parse a native tool's stdout/stderr into findings.
+ *
+ * Exported because the catch-all suppression for `ffuf`/`gobuster` lives here:
+ * a wordlist hit on a server that 200s every path is not a discovery, and that
+ * rule is only trustworthy if it can be exercised directly.
+ *
+ * @param {string} tool          native tool name
+ * @param {string} output        combined stdout+stderr
+ * @param {string} target        scan target (used to build chaining URLs)
+ * @param {object|null} baseline catch-all baseline from `detectCatchAllBaseline`
+ */
+export function extractFindingsFromOutput(tool, output, target = '', baseline = null) {
   const findings = []
   const cleanOutput = cleanText(output)
   const lines = cleanOutput.split('\n')
   const discoveredUrls = [] // collected for chaining into dalfox/sqlmap
   const push = (title, severity, evidence, extra = {}) => findings.push({
-    title: cleanText(title).replace(/\s+/g, ' ').trim().slice(0, 160), severity, description: cleanText(evidence).slice(0, 400), evidence: { tool, raw: cleanText(evidence).slice(0, 800) }, ...extra,
+    title: cleanText(title).replace(/\s+/g, ' ').trim().slice(0, 160), severity, description: cleanText(evidence).slice(0, 400),
+    ...extra,
+    evidence: { tool, raw: cleanText(evidence).slice(0, 800), ...(extra.evidence || {}) },
   })
 
   // ── nmap: open ports + service versions + script findings ──
@@ -3184,32 +3496,38 @@ function extractFindingsFromOutput(tool, output, target = '') {
     for (const line of lines) {
       // ffuf -s output: just the path (one per line)
       // ffuf normal output: [Status: 200, Size: 1234, ...] /path
-      const ffufMatch = line.match(/^\[Status:\s*(\d+).*?\]\s+(\S+)/i)
+      const ffufMatch = line.match(/^\[Status:\s*(\d+).*?(?:Size:\s*(\d+).*?)?\]\s+(\S+)/i)
       if (ffufMatch) {
         const status = ffufMatch[1]
-        const path = ffufMatch[2]
+        const size = ffufMatch[2] ? Number(ffufMatch[2]) : null
+        const path = ffufMatch[3]
         if (path && path.length > 1 && !path.includes('FUZZ')) {
-          ffufPaths.push({ path, status })
+          ffufPaths.push({ path, status, size })
         }
         continue
       }
       // gobuster output: /path (Status: 200) [Size: 1234]
-      const gobusterMatch = line.match(/^(\/\S+)\s+\(Status:\s*(\d+)\)/i)
+      const gobusterMatch = line.match(/^(\/\S+)\s+\(Status:\s*(\d+)\)(?:\s*\[Size:\s*(\d+))?/i)
       if (gobusterMatch) {
         const path = gobusterMatch[1]
         const status = gobusterMatch[2]
+        const size = gobusterMatch[3] ? Number(gobusterMatch[3]) : null
         if (path && path.length > 1) {
-          ffufPaths.push({ path, status })
+          ffufPaths.push({ path, status, size })
         }
         continue
       }
       // gobuster v2 output: /path           [Status: 200, Size: 1234, Words: 456]
-      const gobusterV2 = line.match(/^(\/[^\s]+)\s+\[Status:\s*(\d+)/i)
+      // Size matters: the catch-all guard compares response length against the
+      // baseline, so a directory listing recorded without its size cannot be
+      // recognised as a soft-404.
+      const gobusterV2 = line.match(/^(\/[^\s]+)\s+\[Status:\s*(\d+)(?:,\s*Size:\s*(\d+))?/i)
       if (gobusterV2) {
         const path = gobusterV2[1]
         const status = gobusterV2[2]
+        const size = gobusterV2[3] ? Number(gobusterV2[3]) : null
         if (path && path.length > 1) {
-          ffufPaths.push({ path, status })
+          ffufPaths.push({ path, status, size })
         }
         continue
       }
@@ -3222,6 +3540,30 @@ function extractFindingsFromOutput(tool, output, target = '') {
         }
       }
     }
+  }
+  if (ffufPaths.length) {
+    // Soft-404 suppression at the SOURCE. A single wordlist hit on a catch-all
+    // host is indistinguishable from a real one by status alone — the server
+    // answers 200 with the same landing page for every path. When the caller
+    // supplies the baseline, drop those hits before they are even emitted, so
+    // `/ezsqliteadmin  [Status: 200, Size: 143476]` never becomes a finding.
+    const baselineStatus = baseline?.isCatchAll ? String(baseline.status) : null
+    const isCatchAllHit = (p) => {
+      if (!baselineStatus || p.status !== baselineStatus) return false
+      if (baseline.contentLength > 0 && p.size != null && p.size > 0) {
+        return Math.abs(p.size - baseline.contentLength) / baseline.contentLength <= 0.02
+      }
+      return false
+    }
+    const rawCount = ffufPaths.length
+    const catchAllHits = baselineStatus ? ffufPaths.filter(isCatchAllHit) : []
+    const realPaths = baselineStatus ? ffufPaths.filter(p => !isCatchAllHit(p)) : ffufPaths
+    if (catchAllHits.length) {
+      push(`Directory enumeration contaminated by catch-all responses (${catchAllHits.length}/${rawCount} paths suppressed)`, 'info',
+        `${tool} returned HTTP ${baseline.status} with ~${baseline.contentLength} bytes for ${catchAllHits.length} of ${rawCount} enumerated paths — the server answers the same page for non-existent paths${baseline.title ? ` (title "${baseline.title}")` : ''}. Those hits are not real resources and were dropped: ${catchAllHits.slice(0, 8).map(p => p.path).join(', ')}${catchAllHits.length > 8 ? '…' : ''}`)
+    }
+    ffufPaths.length = 0
+    ffufPaths.push(...realPaths)
   }
   if (ffufPaths.length) {
     // SPA catch-all detection: if >90% of results are 200 with similar size, it's a catch-all
@@ -3249,7 +3591,9 @@ function extractFindingsFromOutput(tool, output, target = '') {
     const blocked = ffufPaths.filter(p => !ACCESSIBLE.test(p.status) && /admin|backup|config|\.git|\.env|api|dashboard|login|phpmyadmin|debug|internal/i.test(p.path))
     const others = ffufPaths.filter(p => !/admin|backup|config|\.git|\.env|api|dashboard|login|phpmyadmin|debug|internal/i.test(p.path))
     for (const p of interesting.slice(0, 10)) {
-      push(`${tool}: Discovered ${p.path} (HTTP ${p.status})`, /admin|backup|\.git|\.env|config/i.test(p.path) && p.status !== '401' ? 'medium' : 'low', `${tool} discovered ${p.path} with HTTP status ${p.status}`)
+      push(`${tool}: Discovered ${p.path} (HTTP ${p.status})`, /admin|backup|\.git|\.env|config/i.test(p.path) && p.status !== '401' ? 'medium' : 'low', `${tool} discovered ${p.path} with HTTP status ${p.status}`, {
+        evidence: { status: Number(p.status), contentLength: p.size },
+      })
     }
     if (blocked.length) {
       push(`${tool}: ${blocked.length} sensitive paths exist but are NOT accessible (HTTP 403/404)`, 'info',

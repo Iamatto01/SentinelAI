@@ -24,10 +24,23 @@
     <link rel="manifest" href="/site.webmanifest" />
 
     <!-- Theme & Caching -->
-    <meta name="theme-color" content="#06080f" />
+    <meta name="theme-color" content="#ffffff" />
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
     <meta http-equiv="Pragma" content="no-cache" />
     <meta http-equiv="Expires" content="0" />
+    <script>
+      (function() {
+        try {
+          var t = localStorage.getItem('theme');
+          var isDark = t === 'dark';
+          if (isDark) {
+            document.documentElement.classList.add('dark');
+          } else {
+            document.documentElement.classList.remove('dark');
+          }
+        } catch(e) {}
+      })();
+    </script>
 
     <!-- Open Graph (Facebook, LinkedIn, Discord previews) -->
     <meta property="og:type" content="website" />

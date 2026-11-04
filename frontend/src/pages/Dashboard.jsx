@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import {
   Radar, Bug, FolderKanban, Activity, Cpu,
   ArrowUpRight, CheckCircle2, GitBranch, Crosshair, UserCheck,
-  Shield, ArrowRight, Sparkles, Terminal, Zap, ShieldCheck, Server
+  Shield, ArrowRight, Sparkles, Terminal, Zap, ShieldCheck, Server, Clock
 } from 'lucide-react'
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts'
 import { api } from '../lib/api.js'
@@ -11,6 +11,7 @@ import { useAuth } from '../lib/AuthContext.jsx'
 import { useQuery } from '../lib/cache.js'
 import StatCard from '../components/StatCard.jsx'
 import { DashboardSkeleton } from '../components/SkeletonLoader.jsx'
+import { useTheme } from '../lib/ThemeContext.jsx'
 
 const SEV_CONFIG = [
   { key: 'critical', label: 'Critical', color: '#f43f5e', barBg: 'from-rose-500 to-rose-600', shadow: 'shadow-rose-500/30' },
@@ -23,6 +24,8 @@ const SEV_CONFIG = [
 export default function Dashboard() {
   const { user } = useAuth()
   const isClient = user?.role === 'client'
+  const { isNight } = useTheme()
+  const { data: sysInfo } = useQuery('kaliSysInfo', () => api.kaliSystemInfo().catch(() => null), [], 30_000, !isClient)
   const { data, loading, error } = useQuery('dashboard', () => api.dashboard(), [], 30_000)
   const { data: subData } = useQuery('billingSub', () => api.billingSubscription().catch(() => null), [], 30_000)
 
@@ -59,6 +62,12 @@ export default function Dashboard() {
             <span className="text-[11px] text-slate-500 font-mono">•</span>
             <span className="text-[11px] text-slate-400 font-medium">
               {isClient ? (user?.email || user?.username) : 'Kali N100 Autonomous Mesh'}
+            </span>
+            <span className="text-[11px] text-slate-500 font-mono">•</span>
+            <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold tracking-wider border ${
+              isNight ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400' : 'border-emerald-300 bg-emerald-50 text-emerald-700'
+            }`}>
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> Latest Update: 04 Nov 2026
             </span>
           </div>
           <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight">
@@ -404,7 +413,7 @@ export default function Dashboard() {
               <div className="mt-5 pt-3 border-t border-white/10 relative z-10 flex gap-2">
                 <Link
                   to="/app/billing"
-                  className="flex-1 py-2 px-3 rounded-full bg-white hover:bg-zinc-200 text-zinc-950 font-black text-white font-extrabold text-xs text-center shadow-[0_0_15px_rgba(168,85,247,0.3)] transition-all"
+                  className="flex-1 py-2 px-3 rounded-full bg-white hover:bg-zinc-200 text-zinc-950 font-black font-extrabold text-xs text-center shadow-[0_0_15px_rgba(168,85,247,0.3)] transition-all"
                 >
                   Top-Up / Upgrade Plan
                 </Link>
@@ -433,36 +442,64 @@ export default function Dashboard() {
 
                 {/* Subsystem Health Status Rows (Curved Pill Strips) */}
                 <div className="space-y-2.5 pt-1 text-xs">
-                  <div className="flex items-center justify-between p-3 rounded-2xl bg-white/[0.02] border border-white/5">
-                    <span className="flex items-center gap-2 text-slate-300 font-medium">
-                      <CheckCircle2 size={15} className="text-emerald-400 shrink-0" /> Kali N100 Engine
+                  <div className={`flex items-center justify-between p-3 rounded-2xl border transition-colors ${
+                    isNight ? 'bg-white/[0.02] border-white/5' : 'bg-slate-50 border-slate-200'
+                  }`}>
+                    <span className={`flex items-center gap-2 font-medium ${isNight ? 'text-slate-300' : 'text-slate-700'}`}>
+                      <CheckCircle2 size={15} className="text-emerald-500 shrink-0" /> Kali N100 Engine
                     </span>
-                    <span className="text-emerald-400 font-bold text-[11px] px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30">
-                      Connected
+                    <span className={`font-bold text-[11px] px-2 py-0.5 rounded-full border ${
+                      isNight ? 'text-emerald-400 bg-emerald-500/15 border-emerald-500/30' : 'text-emerald-700 bg-emerald-50 border-emerald-200'
+                    }`}>
+                      {sysInfo?.uptimeSec ? `Online (${Math.floor(sysInfo.uptimeSec / 86400)}d uptime)` : 'Connected'}
                     </span>
                   </div>
-                  <div className="flex items-center justify-between p-3 rounded-2xl bg-white/[0.02] border border-white/5">
-                    <span className="flex items-center gap-2 text-slate-300 font-medium">
-                      <Crosshair size={15} className="text-rose-400 shrink-0" /> MSF RPC Bridge
+                  <div className={`flex items-center justify-between p-3 rounded-2xl border transition-colors ${
+                    isNight ? 'bg-white/[0.02] border-white/5' : 'bg-slate-50 border-slate-200'
+                  }`}>
+                    <span className={`flex items-center gap-2 font-medium ${isNight ? 'text-slate-300' : 'text-slate-700'}`}>
+                      <Crosshair size={15} className="text-rose-500 shrink-0" /> MSF RPC Bridge
                     </span>
-                    <span className="text-rose-300 font-bold text-[11px] px-2 py-0.5 rounded-full bg-rose-500/15 border border-rose-500/30">
+                    <span className={`font-bold text-[11px] px-2 py-0.5 rounded-full border ${
+                      isNight ? 'text-rose-300 bg-rose-500/15 border-rose-500/30' : 'text-rose-700 bg-rose-50 border-rose-200'
+                    }`}>
                       Port 55553
                     </span>
                   </div>
-                  <div className="flex items-center justify-between p-3 rounded-2xl bg-white/[0.02] border border-white/5">
-                    <span className="flex items-center gap-2 text-slate-300 font-medium">
-                      <Terminal size={15} className="text-cyan-400 shrink-0" /> Zero Trust Tunnel
+                  <div className={`flex items-center justify-between p-3 rounded-2xl border transition-colors ${
+                    isNight ? 'bg-white/[0.02] border-white/5' : 'bg-slate-50 border-slate-200'
+                  }`}>
+                    <span className={`flex items-center gap-2 font-medium ${isNight ? 'text-slate-300' : 'text-slate-700'}`}>
+                      <Terminal size={15} className="text-cyan-500 shrink-0" /> Zero Trust Tunnel
                     </span>
-                    <span className="text-cyan-400 font-bold text-[11px] px-2 py-0.5 rounded-full bg-cyan-500/15 border border-cyan-500/30">
+                    <span className={`font-bold text-[11px] px-2 py-0.5 rounded-full border ${
+                      isNight ? 'text-cyan-400 bg-cyan-500/15 border-cyan-500/30' : 'text-cyan-700 bg-cyan-50 border-cyan-200'
+                    }`}>
                       Encrypted
                     </span>
                   </div>
-                  <div className="flex items-center justify-between p-3 rounded-2xl bg-white/[0.02] border border-white/5">
-                    <span className="flex items-center gap-2 text-slate-300 font-medium">
-                      <Cpu size={15} className="text-zinc-400 shrink-0" /> Toolchain Suite
+                  <div className={`flex items-center justify-between p-3 rounded-2xl border transition-colors ${
+                    isNight ? 'bg-white/[0.02] border-white/5' : 'bg-slate-50 border-slate-200'
+                  }`}>
+                    <span className={`flex items-center gap-2 font-medium ${isNight ? 'text-slate-300' : 'text-slate-700'}`}>
+                      <Cpu size={15} className={isNight ? 'text-zinc-400' : 'text-slate-500'} /> Toolchain Suite
                     </span>
-                    <span className="text-white font-bold text-[11px] px-2 py-0.5 rounded-full bg-white/10 border border-white/20">
+                    <span className={`font-bold text-[11px] px-2 py-0.5 rounded-full border transition-colors ${
+                      isNight ? 'text-white bg-white/10 border-white/20' : 'text-slate-900 bg-slate-200/90 border-slate-300'
+                    }`}>
                       25 Active Tools
+                    </span>
+                  </div>
+                  <div className={`flex items-center justify-between p-3 rounded-2xl border transition-colors ${
+                    isNight ? 'bg-white/[0.02] border-white/5' : 'bg-slate-50 border-slate-200'
+                  }`}>
+                    <span className={`flex items-center gap-2 font-medium ${isNight ? 'text-slate-300' : 'text-slate-700'}`}>
+                      <Clock size={15} className="text-amber-500 shrink-0" /> Server Build & Update
+                    </span>
+                    <span className={`font-bold text-[11px] px-2 py-0.5 rounded-full border ${
+                      isNight ? 'text-amber-300 bg-amber-500/15 border-amber-500/30' : 'text-amber-700 bg-amber-50 border-amber-200'
+                    }`}>
+                      04 Nov 2026 (Live v2.0)
                     </span>
                   </div>
                 </div>
@@ -471,7 +508,7 @@ export default function Dashboard() {
               <div className="mt-5 pt-3 border-t border-white/10 relative z-10 flex gap-2">
                 <Link
                   to="/app/kali-control"
-                  className="flex-1 py-2 px-3 rounded-full bg-white hover:bg-zinc-200 text-zinc-950 font-black text-white font-extrabold text-xs text-center shadow-[0_0_15px_rgba(168,85,247,0.3)] transition-all flex items-center justify-center gap-1.5"
+                  className="flex-1 py-2 px-3 rounded-full bg-white hover:bg-zinc-200 text-zinc-950 font-black font-extrabold text-xs text-center shadow-[0_0_15px_rgba(168,85,247,0.3)] transition-all flex items-center justify-center gap-1.5"
                 >
                   <Terminal size={13} /> Kali Terminal
                 </Link>

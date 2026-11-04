@@ -252,10 +252,9 @@ export default function Landing() {
                 {/* Creator Bio & Links */}
                 <div className="flex-1 text-center sm:text-left space-y-2 min-w-0">
                   <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2">
-                    <span className={`text-[10px] font-mono px-2.5 py-0.5 rounded-full border font-bold uppercase tracking-wide flex items-center gap-1 ${
+                    <span className={`text-[10px] font-mono px-2.5 py-0.5 rounded-full border font-bold uppercase tracking-wide ${
                       isNight ? 'border-white/20 bg-white/5 text-neutral-300' : 'border-zinc-300 bg-zinc-100 text-zinc-700'
                     }`}>
-                      <Sparkles size={11} className={isNight ? 'text-white' : 'text-black'} />
                       Final Year Project 2 Showcase
                     </span>
                     <span className={`text-[10px] font-mono px-2.5 py-0.5 rounded-full border ${

@@ -3,11 +3,11 @@ import { motion, useScroll, useSpring } from 'framer-motion'
 import { useTheme } from '../../lib/ThemeContext.jsx'
 
 const SECTIONS = [
-  { id: 'platform', label: '01 RECON' },
-  { id: 'terminal', label: '02 PIPELINE' },
-  { id: 'models', label: '03 AI MESH' },
+  { id: 'platform', label: '01 PLATFORM' },
+  { id: 'terminal', label: '02 LIVE PENTEST' },
+  { id: 'models', label: '03 AI MODELS' },
   { id: 'matrix', label: '04 MATRIX' },
-  { id: 'architecture', label: '05 BLUEPRINT' },
+  { id: 'architecture', label: '05 ARCHITECTURE' },
   { id: 'pricing', label: '06 PRICING' },
   { id: 'faq', label: '07 FAQ' },
 ]
@@ -25,7 +25,8 @@ export default function ScrollProgressHUD() {
       for (let i = SECTIONS.length - 1; i >= 0; i--) {
         const el = document.getElementById(SECTIONS[i].id)
         if (el) {
-          const top = el.offsetTop
+          const rect = el.getBoundingClientRect()
+          const top = rect.top + window.scrollY
           if (scrollPos >= top) {
             setActiveSection(SECTIONS[i].id)
             break
@@ -34,6 +35,7 @@ export default function ScrollProgressHUD() {
       }
     }
 
+    handleScroll()
     window.addEventListener('scroll', handleScroll, { passive: true })
     return () => window.removeEventListener('scroll', handleScroll)
   }, [])

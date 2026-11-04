@@ -36,9 +36,12 @@ emit() {
 # --- Core PoC Execution ---
 emit() { printf '%s\n' "$1"; }
 T="$TARGET"
-R=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "$T/.hg/store")
+HG_URL="$T/.hg/store"
+R=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "$HG_URL")
 if [ "$R" = "200" ] || [ "$R" = "403" ]; then
-  emit "{\"title\":\"Exposed .hg repository\",\"severity\":\"high\",\"description\":\"Mercurial metadata found at /.hg/. Repository contents may be recoverable.\",\"remediation\":\"Block access to .hg directory.\",\"cweId\":\"CWE-548\",\"owaspCategory\":\"A05:2025-Security Misconfiguration\"}"
+  BODY=$(curl -s --max-time 10 "$HG_URL" | head -c 400)
+  BODY_JSON=$(printf '%s' "$BODY" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')
+  emit "{\"title\":\"Exposed .hg repository\",\"severity\":\"high\",\"description\":\"Mercurial metadata found at /.hg/. Repository contents may be recoverable.\",\"remediation\":\"Block access to .hg directory.\",\"cweId\":\"CWE-548\",\"owaspCategory\":\"A05:2025-Security Misconfiguration\",\"evidence\":{\"url\":\"$HG_URL\",\"method\":\"GET\",\"status\":$R,\"bodyPreview\":$BODY_JSON,\"contentLength\":${#BODY}}}"
 fi
 
 echo ""

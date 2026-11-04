@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react'
 import { FileDown, X, ShieldAlert, AlertTriangle, Info, Check, Flag, Eye, Edit3, Sliders, Sparkles, ShieldCheck } from 'lucide-react'
 import { api } from '../lib/api.js'
+import { useTheme } from '../lib/ThemeContext.jsx'
 
 const SEVERITY_OPTIONS = [
   { id: 'info', label: 'All Findings (Info+)', desc: 'Includes Informational, Low, Medium, High & Critical findings', color: 'border-slate-700 hover:border-slate-500 text-slate-300' },
@@ -62,6 +63,7 @@ export function extractTargetName(scanObj) {
 }
 
 export default function ReportModal({ isOpen, onClose, scanId, scan: propScan }) {
+  const { isNight } = useTheme()
   const [activeTab, setActiveTab] = useState('settings') // 'settings' | 'preview'
   const [minSeverity, setMinSeverity] = useState('info')
   const [statusFilter, setStatusFilter] = useState('all')
@@ -177,33 +179,60 @@ export default function ReportModal({ isOpen, onClose, scanId, scan: propScan })
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-3 sm:p-4 animate-in fade-in duration-200">
-      <div className="relative w-full max-w-2xl max-h-[92vh] flex flex-col rounded-2xl border border-slate-800 bg-ink-900 shadow-2xl overflow-hidden">
+    <div className={`fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 animate-in fade-in duration-200 ${
+      isNight ? 'bg-black/80 backdrop-blur-md' : 'bg-slate-900/50 backdrop-blur-sm'
+    }`}>
+      <div className={`relative w-full max-w-2xl max-h-[92vh] flex flex-col rounded-2xl border shadow-2xl overflow-hidden transition-colors ${
+        isNight
+          ? 'border-slate-800 bg-ink-900 text-slate-100'
+          : 'border-slate-200 bg-white text-slate-800 shadow-xl'
+      }`}>
         
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-slate-800 p-4 sm:p-5 shrink-0 bg-ink-900">
+        <div className={`flex items-center justify-between border-b p-4 sm:p-5 shrink-0 transition-colors ${
+          isNight ? 'border-slate-800 bg-ink-900' : 'border-slate-200 bg-slate-50/80'
+        }`}>
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-accent/15 text-accent border border-accent/30">
+            <div className={`flex h-10 w-10 items-center justify-center rounded-xl border ${
+              isNight ? 'bg-accent/15 text-accent border-accent/30' : 'bg-purple-100 text-purple-700 border-purple-200'
+            }`}>
               <FileDown size={22} />
             </div>
             <div>
-              <h2 className="text-base sm:text-lg font-bold text-slate-100">Export & Customise PDF Report</h2>
-              <p className="text-xs text-slate-400">Configure filters, preview, & edit report details before download</p>
+              <h2 className={`text-base sm:text-lg font-bold ${isNight ? 'text-slate-100' : 'text-slate-900'}`}>
+                Export & Customise PDF Report
+              </h2>
+              <p className={`text-xs ${isNight ? 'text-slate-400' : 'text-slate-500'}`}>
+                Configure filters, preview, & edit report details before download
+              </p>
             </div>
           </div>
-          <button onClick={onClose} className="rounded-xl p-1.5 text-slate-400 hover:bg-slate-800 hover:text-slate-200">
+          <button
+            onClick={onClose}
+            className={`rounded-xl p-1.5 transition-colors ${
+              isNight
+                ? 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
+                : 'text-slate-500 hover:bg-slate-200/70 hover:text-slate-800'
+            }`}
+          >
             <X size={18} />
           </button>
         </div>
 
         {/* Navigation Tabs */}
-        <div className="flex border-b border-slate-800 bg-ink-950 px-4 pt-2 gap-2 shrink-0">
+        <div className={`flex border-b px-4 pt-2 gap-2 shrink-0 transition-colors ${
+          isNight ? 'border-slate-800 bg-ink-950' : 'border-slate-200 bg-slate-100/70'
+        }`}>
           <button
             onClick={() => setActiveTab('settings')}
             className={`flex items-center gap-2 px-4 py-2.5 text-xs font-semibold rounded-t-xl border-t border-x transition-all ${
               activeTab === 'settings'
-                ? 'border-slate-700 bg-ink-900 text-accent font-bold'
-                : 'border-transparent text-slate-400 hover:text-slate-200'
+                ? isNight
+                  ? 'border-slate-700 bg-ink-900 text-accent font-bold'
+                  : 'border-slate-300 bg-white text-purple-700 font-bold shadow-xs'
+                : isNight
+                  ? 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-ink-900/40'
+                  : 'border-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-200/50'
             }`}
           >
             <Sliders size={14} /> Report Filters & Format
@@ -212,8 +241,12 @@ export default function ReportModal({ isOpen, onClose, scanId, scan: propScan })
             onClick={() => setActiveTab('preview')}
             className={`flex items-center gap-2 px-4 py-2.5 text-xs font-semibold rounded-t-xl border-t border-x transition-all ${
               activeTab === 'preview'
-                ? 'border-slate-700 bg-ink-900 text-cyan-400 font-bold'
-                : 'border-transparent text-slate-400 hover:text-slate-200'
+                ? isNight
+                  ? 'border-slate-700 bg-ink-900 text-cyan-400 font-bold'
+                  : 'border-slate-300 bg-white text-cyan-700 font-bold shadow-xs'
+                : isNight
+                  ? 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-ink-900/40'
+                  : 'border-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-200/50'
             }`}
           >
             <Eye size={14} /> Live Text Preview & Editor
@@ -221,9 +254,11 @@ export default function ReportModal({ isOpen, onClose, scanId, scan: propScan })
         </div>
 
         {/* Scrollable Body */}
-        <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-5">
+        <div className={`flex-1 overflow-y-auto p-4 sm:p-5 space-y-5 ${isNight ? 'bg-ink-900' : 'bg-white'}`}>
           {error && (
-            <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-3.5 text-xs text-red-400 font-medium">
+            <div className={`rounded-xl border p-3.5 text-xs font-medium ${
+              isNight ? 'border-red-500/30 bg-red-500/10 text-red-400' : 'border-red-200 bg-red-50 text-red-700'
+            }`}>
               {error}
             </div>
           )}
@@ -232,9 +267,11 @@ export default function ReportModal({ isOpen, onClose, scanId, scan: propScan })
             <>
               {/* Report Version / Format */}
               <div className="space-y-2.5">
-                <div className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center justify-between">
+                <div className={`text-xs font-bold uppercase tracking-wider flex items-center justify-between ${
+                  isNight ? 'text-slate-400' : 'text-slate-600'
+                }`}>
                   <span>Report Version</span>
-                  <span className="text-[10px] text-accent font-bold">Select Simplified or Full</span>
+                  <span className={`text-[10px] font-bold ${isNight ? 'text-accent' : 'text-purple-600'}`}>Select Simplified or Full</span>
                 </div>
                 {REPORT_TYPES.map((opt) => {
                   const isSelected = reportType === opt.id
@@ -244,15 +281,33 @@ export default function ReportModal({ isOpen, onClose, scanId, scan: propScan })
                       type="button"
                       onClick={() => setReportType(opt.id)}
                       className={`w-full flex items-start gap-3 rounded-xl border p-3 text-left transition-all ${
-                        isSelected ? 'border-accent bg-accent/10 ring-1 ring-accent' : 'border-slate-800/80 bg-ink-950/60 hover:bg-ink-800/50'
+                        isSelected
+                          ? isNight
+                            ? 'border-accent bg-accent/10 ring-1 ring-accent'
+                            : 'border-purple-500 bg-purple-50/70 ring-1 ring-purple-500/50 shadow-xs'
+                          : isNight
+                            ? 'border-slate-800/80 bg-ink-950/60 hover:bg-ink-800/50'
+                            : 'border-slate-200 bg-slate-50/60 hover:bg-slate-100 hover:border-slate-300'
                       }`}
                     >
-                      <div className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border ${isSelected ? 'border-accent bg-accent text-slate-950' : 'border-slate-700'}`}>
+                      <div className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border ${
+                        isSelected
+                          ? isNight
+                            ? 'border-accent bg-accent text-slate-950'
+                            : 'border-purple-600 bg-purple-600 text-white'
+                          : isNight
+                            ? 'border-slate-700'
+                            : 'border-slate-300 bg-white'
+                      }`}>
                         {isSelected && <Check size={11} strokeWidth={3} />}
                       </div>
                       <div className="flex-1">
-                        <span className="text-xs sm:text-sm font-semibold text-slate-100">{opt.label}</span>
-                        <p className="mt-0.5 text-[11px] text-slate-400">{opt.desc}</p>
+                        <span className={`text-xs sm:text-sm font-semibold ${
+                          isSelected
+                            ? isNight ? 'text-slate-100' : 'text-slate-900 font-bold'
+                            : isNight ? 'text-slate-200' : 'text-slate-700'
+                        }`}>{opt.label}</span>
+                        <p className={`mt-0.5 text-[11px] ${isNight ? 'text-slate-400' : 'text-slate-500'}`}>{opt.desc}</p>
                       </div>
                     </button>
                   )
@@ -260,20 +315,26 @@ export default function ReportModal({ isOpen, onClose, scanId, scan: propScan })
               </div>
 
               {/* Report Output Filename & Identification */}
-              <div className="rounded-xl border border-slate-800 bg-slate-950/70 p-3.5 space-y-3">
+              <div className={`rounded-xl border p-3.5 space-y-3 transition-colors ${
+                isNight ? 'border-slate-800 bg-slate-950/70' : 'border-slate-200 bg-slate-50/70 shadow-xs'
+              }`}>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <FileDown size={14} className="text-cyan-400" />
-                    <span className="text-xs font-bold text-slate-200">Report Download Filename</span>
+                    <FileDown size={14} className={isNight ? 'text-cyan-400' : 'text-cyan-600'} />
+                    <span className={`text-xs font-bold ${isNight ? 'text-slate-200' : 'text-slate-800'}`}>Report Download Filename</span>
                   </div>
-                  <span className="text-[10px] text-cyan-400/80 font-mono bg-cyan-950/40 px-2 py-0.5 rounded border border-cyan-800/40">
+                  <span className={`text-[10px] font-mono px-2 py-0.5 rounded border ${
+                    isNight
+                      ? 'text-cyan-400/80 bg-cyan-950/40 border-cyan-800/40'
+                      : 'text-cyan-700 bg-cyan-100/70 border-cyan-200'
+                  }`}>
                     (scanner-target-full/simplify-date)
                   </span>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
-                    <label className="text-[11px] font-semibold text-slate-400 block mb-1">
+                    <label className={`text-[11px] font-semibold block mb-1 ${isNight ? 'text-slate-400' : 'text-slate-600'}`}>
                       Scanner Name
                     </label>
                     <input
@@ -281,12 +342,16 @@ export default function ReportModal({ isOpen, onClose, scanId, scan: propScan })
                       value={scannerName}
                       onChange={(e) => setScannerName(e.target.value)}
                       placeholder="e.g. sentinelai, nuclei, nmap"
-                      className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs text-slate-100 font-mono focus:border-cyan-400 focus:outline-none"
+                      className={`w-full rounded-lg border px-3 py-1.5 text-xs font-mono focus:outline-none transition-colors ${
+                        isNight
+                          ? 'border-slate-700 bg-slate-900 text-slate-100 focus:border-cyan-400'
+                          : 'border-slate-300 bg-white text-slate-900 focus:border-cyan-600 focus:ring-1 focus:ring-cyan-500/30'
+                      }`}
                     />
                   </div>
 
                   <div>
-                    <label className="text-[11px] font-semibold text-slate-400 block mb-1">
+                    <label className={`text-[11px] font-semibold block mb-1 ${isNight ? 'text-slate-400' : 'text-slate-600'}`}>
                       Target Name
                     </label>
                     <input
@@ -294,15 +359,25 @@ export default function ReportModal({ isOpen, onClose, scanId, scan: propScan })
                       value={targetName}
                       onChange={(e) => setTargetName(e.target.value)}
                       placeholder="e.g. example.com, 192.168.1.1"
-                      className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs text-slate-100 font-mono focus:border-cyan-400 focus:outline-none"
+                      className={`w-full rounded-lg border px-3 py-1.5 text-xs font-mono focus:outline-none transition-colors ${
+                        isNight
+                          ? 'border-slate-700 bg-slate-900 text-slate-100 focus:border-cyan-400'
+                          : 'border-slate-300 bg-white text-slate-900 focus:border-cyan-600 focus:ring-1 focus:ring-cyan-500/30'
+                      }`}
                     />
                   </div>
                 </div>
 
                 {/* Live Filename Preview Banner */}
-                <div className="flex items-center gap-2 pt-2 border-t border-slate-800/80 text-xs">
-                  <span className="text-[11px] text-slate-400 shrink-0 font-medium">Download file:</span>
-                  <span className="font-mono font-bold text-cyan-300 bg-cyan-950/60 px-2.5 py-1 rounded-md border border-cyan-500/30 truncate max-w-full">
+                <div className={`flex items-center gap-2 pt-2 border-t text-xs ${
+                  isNight ? 'border-slate-800/80' : 'border-slate-200'
+                }`}>
+                  <span className={`text-[11px] shrink-0 font-medium ${isNight ? 'text-slate-400' : 'text-slate-500'}`}>Download file:</span>
+                  <span className={`font-mono font-bold px-2.5 py-1 rounded-md border truncate max-w-full ${
+                    isNight
+                      ? 'text-cyan-300 bg-cyan-950/60 border-cyan-500/30'
+                      : 'text-cyan-800 bg-cyan-50 border-cyan-200 shadow-xs'
+                  }`}>
                     {computedFilename}
                   </span>
                 </div>
@@ -310,11 +385,15 @@ export default function ReportModal({ isOpen, onClose, scanId, scan: propScan })
 
               {/* Simplified mode: hide all filters — only important stuff shown */}
               {reportType === 'simple' ? (
-                <div className="rounded-xl border border-accent/30 bg-accent/5 p-4 text-xs text-slate-300 space-y-2">
-                  <div className="flex items-center gap-2 font-bold text-accent">
+                <div className={`rounded-xl border p-4 text-xs space-y-2 ${
+                  isNight
+                    ? 'border-accent/30 bg-accent/5 text-slate-300'
+                    : 'border-purple-200 bg-purple-50/80 text-purple-900'
+                }`}>
+                  <div className={`flex items-center gap-2 font-bold ${isNight ? 'text-accent' : 'text-purple-700'}`}>
                     <Sparkles size={14} /> Simplified Mode Active
                   </div>
-                  <p className="text-slate-400 leading-relaxed">
+                  <p className={`leading-relaxed ${isNight ? 'text-slate-400' : 'text-slate-600'}`}>
                     The simplified report automatically filters out noise (INFO/low findings) and shows only actionable critical, high, and medium issues with plain-language fix cards. No additional configuration needed — just download.
                   </p>
                 </div>
@@ -322,7 +401,7 @@ export default function ReportModal({ isOpen, onClose, scanId, scan: propScan })
                 <>
               {/* Severity Options */}
               <div className="space-y-2.5">
-                <div className="text-xs font-bold uppercase tracking-wider text-slate-400">
+                <div className={`text-xs font-bold uppercase tracking-wider ${isNight ? 'text-slate-400' : 'text-slate-600'}`}>
                   Minimum Severity Filter
                 </div>
                 {SEVERITY_OPTIONS.map((opt) => {
@@ -334,20 +413,34 @@ export default function ReportModal({ isOpen, onClose, scanId, scan: propScan })
                       onClick={() => setMinSeverity(opt.id)}
                       className={`w-full flex items-start gap-3 rounded-xl border p-3 text-left transition-all ${
                         isSelected
-                          ? 'border-accent bg-accent/10 ring-1 ring-accent'
-                          : 'border-slate-800/80 bg-ink-950/60 hover:bg-ink-800/50'
+                          ? isNight
+                            ? 'border-accent bg-accent/10 ring-1 ring-accent'
+                            : 'border-purple-500 bg-purple-50/70 ring-1 ring-purple-500/50 shadow-xs'
+                          : isNight
+                            ? 'border-slate-800/80 bg-ink-950/60 hover:bg-ink-800/50'
+                            : 'border-slate-200 bg-slate-50/60 hover:bg-slate-100 hover:border-slate-300'
                       }`}
                     >
                       <div className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border ${
-                        isSelected ? 'border-accent bg-accent text-slate-950' : 'border-slate-700'
+                        isSelected
+                          ? isNight
+                            ? 'border-accent bg-accent text-slate-950'
+                            : 'border-purple-600 bg-purple-600 text-white'
+                          : isNight
+                            ? 'border-slate-700'
+                            : 'border-slate-300 bg-white'
                       }`}>
                         {isSelected && <Check size={11} strokeWidth={3} />}
                       </div>
                       <div className="flex-1">
-                        <span className={`text-xs sm:text-sm font-semibold ${isSelected ? 'text-slate-100' : 'text-slate-200'}`}>
+                        <span className={`text-xs sm:text-sm font-semibold ${
+                          isSelected
+                            ? isNight ? 'text-slate-100' : 'text-slate-900 font-bold'
+                            : isNight ? 'text-slate-200' : 'text-slate-700'
+                        }`}>
                           {opt.label}
                         </span>
-                        <p className="mt-0.5 text-[11px] text-slate-400">{opt.desc}</p>
+                        <p className={`mt-0.5 text-[11px] ${isNight ? 'text-slate-400' : 'text-slate-500'}`}>{opt.desc}</p>
                       </div>
                     </button>
                   )
@@ -356,8 +449,10 @@ export default function ReportModal({ isOpen, onClose, scanId, scan: propScan })
 
               {/* Status Filter */}
               <div className="space-y-2.5">
-                <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-slate-400">
-                  <Flag size={13} className="text-accent" /> Status Filter
+                <div className={`flex items-center gap-2 text-xs font-bold uppercase tracking-wider ${
+                  isNight ? 'text-slate-400' : 'text-slate-600'
+                }`}>
+                  <Flag size={13} className={isNight ? 'text-accent' : 'text-purple-600'} /> Status Filter
                 </div>
                 <div className="flex flex-col gap-2">
                   {STATUS_OPTIONS.map((opt) => {
@@ -369,20 +464,34 @@ export default function ReportModal({ isOpen, onClose, scanId, scan: propScan })
                         onClick={() => setStatusFilter(opt.id)}
                         className={`flex items-start gap-3 rounded-xl border p-3 text-left transition-all ${
                           isSelected
-                            ? 'border-accent bg-accent/10 ring-1 ring-accent'
-                            : 'border-slate-800/80 bg-ink-950/60 hover:bg-ink-800/50'
+                            ? isNight
+                              ? 'border-accent bg-accent/10 ring-1 ring-accent'
+                              : 'border-purple-500 bg-purple-50/70 ring-1 ring-purple-500/50 shadow-xs'
+                            : isNight
+                              ? 'border-slate-800/80 bg-ink-950/60 hover:bg-ink-800/50'
+                              : 'border-slate-200 bg-slate-50/60 hover:bg-slate-100 hover:border-slate-300'
                         }`}
                       >
                         <div className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border ${
-                          isSelected ? 'border-accent bg-accent text-slate-950' : 'border-slate-700'
+                          isSelected
+                            ? isNight
+                              ? 'border-accent bg-accent text-slate-950'
+                            : 'border-purple-600 bg-purple-600 text-white'
+                          : isNight
+                            ? 'border-slate-700'
+                            : 'border-slate-300 bg-white'
                         }`}>
                           {isSelected && <Check size={11} strokeWidth={3} />}
                         </div>
                         <div className="flex-1">
-                          <span className={`text-xs sm:text-sm font-semibold ${isSelected ? 'text-slate-100' : 'text-slate-200'}`}>
+                          <span className={`text-xs sm:text-sm font-semibold ${
+                            isSelected
+                              ? isNight ? 'text-slate-100' : 'text-slate-900 font-bold'
+                              : isNight ? 'text-slate-200' : 'text-slate-700'
+                          }`}>
                             {opt.label}
                           </span>
-                          <p className="mt-0.5 text-[11px] text-slate-400">{opt.desc}</p>
+                          <p className={`mt-0.5 text-[11px] ${isNight ? 'text-slate-400' : 'text-slate-500'}`}>{opt.desc}</p>
                         </div>
                       </button>
                     )
@@ -391,16 +500,20 @@ export default function ReportModal({ isOpen, onClose, scanId, scan: propScan })
               </div>
 
               {/* Noise Filter Toggle */}
-              <div className="rounded-xl border border-slate-800 bg-ink-950/60 p-3.5 flex items-center justify-between">
+              <div className={`rounded-xl border p-3.5 flex items-center justify-between ${
+                isNight ? 'border-slate-800 bg-ink-950/60' : 'border-slate-200 bg-slate-50/70 shadow-xs'
+              }`}>
                 <div>
-                  <span className="text-xs font-semibold text-slate-200">Noise Reduction Filter</span>
-                  <p className="text-[11px] text-slate-400 mt-0.5">Exclude unverified version findings and out-of-scope notices</p>
+                  <span className={`text-xs font-semibold ${isNight ? 'text-slate-200' : 'text-slate-800'}`}>Noise Reduction Filter</span>
+                  <p className={`text-[11px] mt-0.5 ${isNight ? 'text-slate-400' : 'text-slate-500'}`}>Exclude unverified version findings and out-of-scope notices</p>
                 </div>
                 <button
                   type="button"
                   onClick={() => setFilterNoise(!filterNoise)}
                   className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
-                    filterNoise ? 'bg-accent' : 'bg-slate-700'
+                    filterNoise
+                      ? isNight ? 'bg-accent' : 'bg-purple-600'
+                      : isNight ? 'bg-slate-700' : 'bg-slate-300'
                   }`}
                 >
                   <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
@@ -414,26 +527,36 @@ export default function ReportModal({ isOpen, onClose, scanId, scan: propScan })
           ) : (
             /* Live Text Editor Tab */
             <div className="space-y-4">
-              <div className="flex items-center gap-2 rounded-xl border border-cyan-500/20 bg-cyan-500/5 p-3 text-xs text-cyan-300">
+              <div className={`flex items-center gap-2 rounded-xl border p-3 text-xs ${
+                isNight
+                  ? 'border-cyan-500/20 bg-cyan-500/5 text-cyan-300'
+                  : 'border-cyan-200 bg-cyan-50/80 text-cyan-800'
+              }`}>
                 <Edit3 size={15} className="shrink-0" />
                 <span>You can edit the report title, executive summary, and recommendations before downloading the PDF.</span>
               </div>
 
               {/* Report Output Filename & Identification */}
-              <div className="rounded-xl border border-slate-800 bg-slate-950/70 p-3.5 space-y-3">
+              <div className={`rounded-xl border p-3.5 space-y-3 transition-colors ${
+                isNight ? 'border-slate-800 bg-slate-950/70' : 'border-slate-200 bg-slate-50/70 shadow-xs'
+              }`}>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <FileDown size={14} className="text-cyan-400" />
-                    <span className="text-xs font-bold text-slate-200">Report Download Filename</span>
+                    <FileDown size={14} className={isNight ? 'text-cyan-400' : 'text-cyan-600'} />
+                    <span className={`text-xs font-bold ${isNight ? 'text-slate-200' : 'text-slate-800'}`}>Report Download Filename</span>
                   </div>
-                  <span className="text-[10px] text-cyan-400/80 font-mono bg-cyan-950/40 px-2 py-0.5 rounded border border-cyan-800/40">
+                  <span className={`text-[10px] font-mono px-2 py-0.5 rounded border ${
+                    isNight
+                      ? 'text-cyan-400/80 bg-cyan-950/40 border-cyan-800/40'
+                      : 'text-cyan-700 bg-cyan-100/70 border-cyan-200'
+                  }`}>
                     (scanner-target-full/simplify-date)
                   </span>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
-                    <label className="text-[11px] font-semibold text-slate-400 block mb-1">
+                    <label className={`text-[11px] font-semibold block mb-1 ${isNight ? 'text-slate-400' : 'text-slate-600'}`}>
                       Scanner Name
                     </label>
                     <input
@@ -441,12 +564,16 @@ export default function ReportModal({ isOpen, onClose, scanId, scan: propScan })
                       value={scannerName}
                       onChange={(e) => setScannerName(e.target.value)}
                       placeholder="e.g. sentinelai, nuclei, nmap"
-                      className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs text-slate-100 font-mono focus:border-cyan-400 focus:outline-none"
+                      className={`w-full rounded-lg border px-3 py-1.5 text-xs font-mono focus:outline-none transition-colors ${
+                        isNight
+                          ? 'border-slate-700 bg-slate-900 text-slate-100 focus:border-cyan-400'
+                          : 'border-slate-300 bg-white text-slate-900 focus:border-cyan-600 focus:ring-1 focus:ring-cyan-500/30'
+                      }`}
                     />
                   </div>
 
                   <div>
-                    <label className="text-[11px] font-semibold text-slate-400 block mb-1">
+                    <label className={`text-[11px] font-semibold block mb-1 ${isNight ? 'text-slate-400' : 'text-slate-600'}`}>
                       Target Name
                     </label>
                     <input
@@ -454,26 +581,40 @@ export default function ReportModal({ isOpen, onClose, scanId, scan: propScan })
                       value={targetName}
                       onChange={(e) => setTargetName(e.target.value)}
                       placeholder="e.g. example.com, 192.168.1.1"
-                      className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs text-slate-100 font-mono focus:border-cyan-400 focus:outline-none"
+                      className={`w-full rounded-lg border px-3 py-1.5 text-xs font-mono focus:outline-none transition-colors ${
+                        isNight
+                          ? 'border-slate-700 bg-slate-900 text-slate-100 focus:border-cyan-400'
+                          : 'border-slate-300 bg-white text-slate-900 focus:border-cyan-600 focus:ring-1 focus:ring-cyan-500/30'
+                      }`}
                     />
                   </div>
                 </div>
 
                 {/* Live Filename Preview Banner */}
-                <div className="flex items-center gap-2 pt-2 border-t border-slate-800/80 text-xs">
-                  <span className="text-[11px] text-slate-400 shrink-0 font-medium">Download file:</span>
-                  <span className="font-mono font-bold text-cyan-300 bg-cyan-950/60 px-2.5 py-1 rounded-md border border-cyan-500/30 truncate max-w-full">
+                <div className={`flex items-center gap-2 pt-2 border-t text-xs ${
+                  isNight ? 'border-slate-800/80' : 'border-slate-200'
+                }`}>
+                  <span className={`text-[11px] shrink-0 font-medium ${isNight ? 'text-slate-400' : 'text-slate-500'}`}>Download file:</span>
+                  <span className={`font-mono font-bold px-2.5 py-1 rounded-md border truncate max-w-full ${
+                    isNight
+                      ? 'text-cyan-300 bg-cyan-950/60 border-cyan-500/30'
+                      : 'text-cyan-800 bg-cyan-50 border-cyan-200 shadow-xs'
+                  }`}>
                     {computedFilename}
                   </span>
                 </div>
               </div>
 
               {reportType === 'simple' ? (
-                <div className="rounded-xl border border-accent/30 bg-accent/5 p-4 text-xs text-slate-300 space-y-2">
-                  <div className="flex items-center gap-2 font-bold text-accent">
+                <div className={`rounded-xl border p-4 text-xs space-y-2 ${
+                  isNight
+                    ? 'border-accent/30 bg-accent/5 text-slate-300'
+                    : 'border-purple-200 bg-purple-50/80 text-purple-900'
+                }`}>
+                  <div className={`flex items-center gap-2 font-bold ${isNight ? 'text-accent' : 'text-purple-700'}`}>
                     <Sparkles size={14} /> Simplified Mode Active
                   </div>
-                  <p className="text-slate-400 leading-relaxed">
+                  <p className={`leading-relaxed ${isNight ? 'text-slate-400' : 'text-slate-600'}`}>
                     The simplified report is fully auto-generated from your scan results. It filters out noise and shows only actionable findings with plain-language fix cards. No manual editing needed — just download.
                   </p>
                 </div>
@@ -481,89 +622,131 @@ export default function ReportModal({ isOpen, onClose, scanId, scan: propScan })
                 <>
               {/* Custom Report Title */}
               <div className="space-y-1.5">
-                <label className="text-xs font-bold uppercase tracking-wider text-slate-300">Custom Report Title</label>
+                <label className={`text-xs font-bold uppercase tracking-wider ${isNight ? 'text-slate-300' : 'text-slate-700'}`}>Custom Report Title</label>
                 <input
                   type="text"
                   value={customTitle}
                   onChange={(e) => setCustomTitle(e.target.value)}
                   placeholder="e.g. Executive Penetration Testing & Vulnerability Assessment Report"
-                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3.5 py-2.5 text-xs text-slate-100 placeholder-slate-500 focus:border-cyan-400 focus:outline-none"
+                  className={`w-full rounded-xl border px-3.5 py-2.5 text-xs focus:outline-none transition-colors ${
+                    isNight
+                      ? 'border-slate-700 bg-slate-950 text-slate-100 placeholder-slate-500 focus:border-cyan-400'
+                      : 'border-slate-300 bg-white text-slate-900 placeholder-slate-400 focus:border-cyan-600 focus:ring-1 focus:ring-cyan-500/30'
+                  }`}
                 />
               </div>
 
               {/* Target / Scope Notes */}
               <div className="space-y-1.5">
-                <label className="text-xs font-bold uppercase tracking-wider text-slate-300">Assessment Scope Notes</label>
+                <label className={`text-xs font-bold uppercase tracking-wider ${isNight ? 'text-slate-300' : 'text-slate-700'}`}>Assessment Scope Notes</label>
                 <input
                   type="text"
                   value={customScope}
                   onChange={(e) => setCustomScope(e.target.value)}
-                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3.5 py-2.5 text-xs text-slate-100 placeholder-slate-500 focus:border-cyan-400 focus:outline-none"
+                  className={`w-full rounded-xl border px-3.5 py-2.5 text-xs focus:outline-none transition-colors ${
+                    isNight
+                      ? 'border-slate-700 bg-slate-950 text-slate-100 placeholder-slate-500 focus:border-cyan-400'
+                      : 'border-slate-300 bg-white text-slate-900 placeholder-slate-400 focus:border-cyan-600 focus:ring-1 focus:ring-cyan-500/30'
+                  }`}
                 />
               </div>
 
               {/* Executive Summary */}
               <div className="space-y-1.5">
-                <label className="text-xs font-bold uppercase tracking-wider text-slate-300">Executive Summary Text</label>
+                <label className={`text-xs font-bold uppercase tracking-wider ${isNight ? 'text-slate-300' : 'text-slate-700'}`}>Executive Summary Text</label>
                 <textarea
                   rows={3}
                   value={customSummary}
                   onChange={(e) => setCustomSummary(e.target.value)}
-                  className="w-full rounded-xl border border-slate-700 bg-slate-950 p-3 text-xs text-slate-100 focus:border-cyan-400 focus:outline-none"
+                  className={`w-full rounded-xl border p-3 text-xs focus:outline-none transition-colors ${
+                    isNight
+                      ? 'border-slate-700 bg-slate-950 text-slate-100 focus:border-cyan-400'
+                      : 'border-slate-300 bg-white text-slate-900 focus:border-cyan-600 focus:ring-1 focus:ring-cyan-500/30'
+                  }`}
                 />
               </div>
 
               {/* Conclusion & Recommendations */}
               <div className="space-y-1.5">
-                <label className="text-xs font-bold uppercase tracking-wider text-slate-300">Conclusion & Remediation Notes</label>
+                <label className={`text-xs font-bold uppercase tracking-wider ${isNight ? 'text-slate-300' : 'text-slate-700'}`}>Conclusion & Remediation Notes</label>
                 <textarea
                   rows={3}
                   value={customConclusion}
                   onChange={(e) => setCustomConclusion(e.target.value)}
-                  className="w-full rounded-xl border border-slate-700 bg-slate-950 p-3 text-xs text-slate-100 focus:border-cyan-400 focus:outline-none"
+                  className={`w-full rounded-xl border p-3 text-xs focus:outline-none transition-colors ${
+                    isNight
+                      ? 'border-slate-700 bg-slate-950 text-slate-100 focus:border-cyan-400'
+                      : 'border-slate-300 bg-white text-slate-900 focus:border-cyan-600 focus:ring-1 focus:ring-cyan-500/30'
+                  }`}
                 />
               </div>
               </>
               )}
 
               {/* Live Formatted PDF Card Preview */}
-              <div className="space-y-2 border-t border-slate-800 pt-4">
-                <div className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center justify-between">
+              <div className={`space-y-2 border-t pt-4 ${isNight ? 'border-slate-800' : 'border-slate-200'}`}>
+                <div className={`text-xs font-bold uppercase tracking-wider flex items-center justify-between ${
+                  isNight ? 'text-slate-400' : 'text-slate-600'
+                }`}>
                   <span className="flex items-center gap-1.5">
-                    <Sparkles size={13} className="text-accent" /> Live PDF Cover & Summary Preview
+                    <Sparkles size={13} className={isNight ? 'text-accent' : 'text-purple-600'} /> Live PDF Cover & Summary Preview
                   </span>
-                  <span className="font-mono text-[10px] text-cyan-400 truncate max-w-[260px]">
+                  <span className={`font-mono text-[10px] truncate max-w-[260px] ${
+                    isNight ? 'text-cyan-400' : 'text-cyan-700 font-semibold'
+                  }`}>
                     {computedFilename}
                   </span>
                 </div>
-                <div className="rounded-2xl border border-slate-700 bg-slate-950 p-5 space-y-3 font-sans text-left shadow-inner">
-                  <div className="border-b border-slate-800 pb-3">
-                    <span className="text-[10px] uppercase font-bold text-accent tracking-widest">
+                <div className={`rounded-2xl border p-5 space-y-3 font-sans text-left transition-colors ${
+                  isNight
+                    ? 'border-slate-700 bg-slate-950 shadow-inner'
+                    : 'border-slate-200 bg-slate-50/70 shadow-xs'
+                }`}>
+                  <div className={`border-b pb-3 ${isNight ? 'border-slate-800' : 'border-slate-200'}`}>
+                    <span className={`text-[10px] uppercase font-bold tracking-widest ${
+                      isNight ? 'text-accent' : 'text-purple-700'
+                    }`}>
                       {reportType === 'simple' ? 'SIMPLIFIED REPORT PREVIEW' : 'FULL TECHNICAL REPORT PREVIEW'}
                     </span>
-                    <h3 className="text-sm font-extrabold text-white mt-1">
+                    <h3 className={`text-sm font-extrabold mt-1 ${isNight ? 'text-white' : 'text-slate-900'}`}>
                       {reportType === 'simple' ? 'Simplified Security Assessment Summary' : (customTitle.trim() || 'Full Vulnerability Assessment & Penetration Test')}
                     </h3>
-                    <p className="text-[11px] text-slate-400 mt-0.5">Scope: {reportType === 'simple' ? 'Auto-detected from scan' : (customScope || 'Default Scan Target')}</p>
+                    <p className={`text-[11px] mt-0.5 ${isNight ? 'text-slate-400' : 'text-slate-500'}`}>
+                      Scope: {reportType === 'simple' ? 'Auto-detected from scan' : (customScope || 'Default Scan Target')}
+                    </p>
                   </div>
                   {reportType === 'simple' ? (
                     <div className="space-y-1.5">
-                      <span className="text-[11px] font-bold text-emerald-400 uppercase tracking-wider">Action Items Preview</span>
-                      <p className="text-xs text-slate-300 leading-relaxed italic bg-slate-900/60 p-3 rounded-xl border border-white/5">
+                      <span className={`text-[11px] font-bold uppercase tracking-wider ${
+                        isNight ? 'text-emerald-400' : 'text-emerald-700'
+                      }`}>Action Items Preview</span>
+                      <p className={`text-xs leading-relaxed italic p-3 rounded-xl border ${
+                        isNight
+                          ? 'text-slate-300 bg-slate-900/60 border-white/5'
+                          : 'text-slate-700 bg-white border-slate-200 shadow-xs'
+                      }`}>
                         Auto-generated fix cards will appear here based on scan findings. Only critical, high, and medium issues are shown — noise is filtered out automatically.
                       </p>
                     </div>
                   ) : (
                     <>
                   <div className="space-y-1.5">
-                    <span className="text-[11px] font-bold text-cyan-400 uppercase tracking-wider">Executive Summary</span>
-                    <p className="text-xs text-slate-300 leading-relaxed italic bg-slate-900/60 p-3 rounded-xl border border-white/5">
+                    <span className={`text-[11px] font-bold uppercase tracking-wider ${
+                      isNight ? 'text-cyan-400' : 'text-cyan-700'
+                    }`}>Executive Summary</span>
+                    <p className={`text-xs leading-relaxed italic p-3 rounded-xl border ${
+                      isNight
+                        ? 'text-slate-300 bg-slate-900/60 border-white/5'
+                        : 'text-slate-700 bg-white border-slate-200 shadow-xs'
+                    }`}>
                       "{customSummary}"
                     </p>
                   </div>
                   <div className="space-y-1">
-                    <span className="text-[11px] font-bold text-emerald-400 uppercase tracking-wider">Conclusion</span>
-                    <p className="text-[11px] text-slate-400">{customConclusion}</p>
+                    <span className={`text-[11px] font-bold uppercase tracking-wider ${
+                      isNight ? 'text-emerald-400' : 'text-emerald-700'
+                    }`}>Conclusion</span>
+                    <p className={`text-[11px] ${isNight ? 'text-slate-400' : 'text-slate-600'}`}>{customConclusion}</p>
                   </div>
                     </>
                   )}
@@ -574,11 +757,19 @@ export default function ReportModal({ isOpen, onClose, scanId, scan: propScan })
         </div>
 
         {/* Footer Actions — Sticky & Always Accessible */}
-        <div className="flex items-center justify-between border-t border-slate-800 p-4 shrink-0 bg-ink-950/90 backdrop-blur-md">
+        <div className={`flex items-center justify-between border-t p-4 shrink-0 transition-colors ${
+          isNight
+            ? 'border-slate-800 bg-ink-950/90 backdrop-blur-md'
+            : 'border-slate-200 bg-slate-50/90 backdrop-blur-md'
+        }`}>
           <button
             type="button"
             onClick={() => setActiveTab(activeTab === 'settings' ? 'preview' : 'settings')}
-            className="flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-semibold text-cyan-400 hover:bg-cyan-500/10 transition-colors"
+            className={`flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-semibold transition-colors ${
+              isNight
+                ? 'text-cyan-400 hover:bg-cyan-500/10'
+                : 'text-cyan-700 hover:bg-cyan-100 hover:text-cyan-900'
+            }`}
           >
             {activeTab === 'settings' ? (
               <> <Eye size={14} /> Preview & Edit Text </>
@@ -592,7 +783,11 @@ export default function ReportModal({ isOpen, onClose, scanId, scan: propScan })
               type="button"
               onClick={onClose}
               disabled={loading}
-              className="rounded-xl px-4 py-2.5 text-xs font-semibold text-slate-400 hover:bg-slate-800 hover:text-slate-200 transition-colors"
+              className={`rounded-xl px-4 py-2.5 text-xs font-semibold transition-colors ${
+                isNight
+                  ? 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
+                  : 'text-slate-600 hover:bg-slate-200/80 hover:text-slate-900'
+              }`}
             >
               Cancel
             </button>
@@ -600,11 +795,17 @@ export default function ReportModal({ isOpen, onClose, scanId, scan: propScan })
               type="button"
               onClick={handleDownload}
               disabled={loading}
-              className="flex items-center gap-2 rounded-xl bg-accent px-5 py-2.5 text-xs font-bold text-slate-950 hover:bg-accent/90 disabled:opacity-50 shadow-glow transition-all"
+              className={`flex items-center gap-2 rounded-xl px-5 py-2.5 text-xs font-bold disabled:opacity-50 transition-all ${
+                isNight
+                  ? 'bg-accent text-slate-950 hover:bg-accent/90 shadow-glow'
+                  : 'bg-purple-600 text-white hover:bg-purple-700 shadow-sm active:scale-95'
+              }`}
             >
               {loading ? (
                 <>
-                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-slate-950 border-t-transparent" />
+                  <div className={`h-4 w-4 animate-spin rounded-full border-2 border-t-transparent ${
+                    isNight ? 'border-slate-950' : 'border-white'
+                  }`} />
                   Generating PDF...
                 </>
               ) : (
