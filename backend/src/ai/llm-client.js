@@ -51,7 +51,7 @@ export class LLMClient {
         id: 'openrouter',
         name: 'OpenRouter AI',
         role: '3. Fallback 1',
-        model: this.openrouter?.model || 'inclusionai/ling-3.0-flash-sante:free',
+        model: this.openrouter?.model || 'openrouter/free',
         baseUrl: this.openrouter?.baseUrl || 'https://openrouter.ai/api/v1',
         hasKey: Boolean(this.openrouter?.key),
         key: this.openrouter?.key,
@@ -584,13 +584,21 @@ close it. Answer factually and concisely, as technical documentation.`
     // last month returns HTTP 404 "no longer free", and a router alias such as
     // `openrouter/free` resolves to a model that answers a different question.
     // Both are permanent for the process lifetime, so each one is only retried
-    // once — otherwise every AI call pays three dead round-trips before the
+    // once — otherwise every AI call pays several dead round-trips before the
     // chain reaches a provider that actually works.
+    //
+    // The fallback slugs below were each confirmed to answer a completion
+    // (HTTP 200 with non-empty content) against the live API. Any `:free` slug
+    // is volatile — if one starts returning 404, replace it by probing
+    // `GET /api/v1/models` for entries priced 0/0 and issuing a real completion
+    // request. Do not add a slug that has only been listed, never exercised.
     const modelsToTry = Array.from(new Set([
       this.openrouter.model,
       'openrouter/free',
-      'minimax/minimax-m3.1-flash:free',
-      'nvidia/nemotron-3-super-120b-a12b:free',
+      'nvidia/nemotron-3.5-lightning:free',
+      'nvidia/nemotron-3-ultra-550b-a55b:free',
+      'recursive/flint-v1.0:free',
+      'cohere/north-mini-code:free',
     ].filter(Boolean))).filter((m) => this.#isLive(`openrouter:${m}`))
 
     let lastErr = null

@@ -1645,7 +1645,7 @@ app.post('/api/settings/ai', requireAuth, (req, res) => {
   config.ai.groq.key = process.env.GROQ_API_KEY || ''
   config.ai.groq.model = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile'
   config.ai.openrouter.key = process.env.OPENROUTER_API_KEY || ''
-  config.ai.openrouter.model = process.env.OPENROUTER_MODEL || 'deepseek/deepseek-r1-distill-qwen-32b:free'
+  config.ai.openrouter.model = process.env.OPENROUTER_MODEL || 'openrouter/free'
   config.ai.bandelbanget.key = process.env.BANDELBANGET_API_KEY || ''
   config.ai.bandelbanget.model = process.env.BANDELBANGET_MODEL || 'deepseek-v4-pro'
 

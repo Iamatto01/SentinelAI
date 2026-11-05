@@ -408,7 +408,7 @@ DEFAULT_ADMIN_PASSWORD=kali
 AI_PROVIDER=hybrid
 GROQ_API_KEY=your_groq_api_key_here
 OPENROUTER_API_KEY=your_openrouter_api_key_here
-OPENROUTER_MODEL=deepseek/deepseek-r1-distill-qwen-32b:free
+OPENROUTER_MODEL=openrouter/free
 
 # Knowledge Base & Database Paths
 DB_PATH=output/fyp2.db
