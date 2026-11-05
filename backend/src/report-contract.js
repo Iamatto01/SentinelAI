@@ -26,7 +26,12 @@ const SEV_ORDER = ['critical', 'high', 'medium', 'low', 'info']
 /** Evidence keys that are pipeline bookkeeping, not proof of the claim. */
 export const NON_ARTIFACT_EVIDENCE_KEYS = new Set([
   'actions', 'exploitPlaybooks', 'aiEvidenceTier', 'validationTier',
-  'out_of_scope', 'version_unverified', 'sources', 'references', 'knownCves',
+  'out_of_scope',
+  // Both spellings are live: the pipeline writes `version_unverified` in one
+  // path and `versionUnverified` in another. Matching only one let the other
+  // read as a capture.
+  'version_unverified', 'versionUnverified',
+  'sources', 'references', 'knownCves',
   // Pipeline bookkeeping written after verification. Recording "we asked a model
   // and it could not decide" must never be read back as evidence of the bug.
   'verification', 'aiUndecided', 'aiReasoning', 'aiAgent', 'aiConfidence',
@@ -47,10 +52,87 @@ export const NON_ARTIFACT_EVIDENCE_KEYS = new Set([
   // finding as "artifact-observed". A field describing the claim can never be
   // proof of it.
   'classification', 'unconfirmedReason', 'discoveryOnly',
+  // The detector narrating itself: which routine ran, what it keyed off, and
+  // which bucket the product was filed under. `kind: 'cms'` and
+  // `detectionSource: 'live-http-response'` describe how the finding was
+  // produced, not what the target returned.
+  'kind', 'detectionSource', 'reason',
   // Probe bookkeeping: the hosts we compared against, the URLs we queued, and
   // the name of the detection routine that ran. All locators, no captures.
   'primaryHost', 'findingHost', 'scannedUrls', 'detection',
+  // The dedup key built during ingestion (`cwe-1004|||cookie without httponly|
+  // 127.0.0.1`). It identifies the finding; it is not something the target said.
+  // The renderer already strips it before printing the evidence dump.
+  'fingerprint',
 ])
+
+/**
+ * PoC keys that record where the payload came from, not what the target did.
+ *
+ * `extractArtifact` tests the BARE key inside the `poc` store and only prefixes
+ * `poc.` afterwards, so the top-level `pocSource` exclusion above never applied
+ * to a nested `poc: { source: 'PayloadsAllTheThings', retrieval: 'fts5' }`. The
+ * result was that every finding carrying a knowledge-base lookup — which is
+ * nearly all of them, whether or not anything was captured — read as
+ * "artifact observed" in the executive summary.
+ */
+export const POC_BOOKKEEPING_KEYS = new Set([
+  'source', 'retrieval', 'matchedCategories',
+])
+
+/** Keys that make a serialised object recognisably the finding's own record. */
+const FINDING_ECHO_KEYS = ['title', 'severity', 'description', 'cweId', 'owaspCategory']
+
+/**
+ * `raw` is written by the ingestion layer as `cleanText(evidence)` — the very
+ * same string it also stores as `description` (see `extractFindingsFromOutput`
+ * in pipeline.js). When a producer serialised the finding record into `raw`,
+ * the JSON that comes back is the finding's own columns echoed at us, which can
+ * never confirm the finding. Because it is stored as a *string*, the
+ * `isPrimitiveArtifact` type test accepts it, so 718 of 796 findings in the live
+ * database were certifying themselves with it and the "no artifact" disclosure
+ * became unreachable.
+ *
+ * The renderer already refuses these — `describeCapturedProof` and
+ * `buildProofPanel` in report.js both test this exact shape, with the comment
+ * "only strings that came off the wire". This is that rule, not a new
+ * heuristic: across all 718 stored values the regex and a plain "is it JSON at
+ * all" test agree exactly (718 hits each, zero disagreements), so nothing is
+ * gained or lost by matching the renderer byte for byte.
+ */
+export function looksLikeFindingEcho(val) {
+  if (typeof val === 'string') {
+    return /^\{[\s\S]*"(title|severity|description|cweId|owaspCategory)"\s*:/.test(val.trim())
+  }
+  if (val && typeof val === 'object' && !Array.isArray(val)) {
+    return Object.keys(val).some((k) => FINDING_ECHO_KEYS.includes(k))
+  }
+  return false
+}
+
+function isFindingEcho(key, val) {
+  if (key !== 'raw') return false
+  return looksLikeFindingEcho(val)
+}
+
+/**
+ * The nuclei JSONL branch stored the whole template wrapper as the finding's
+ * `description` and `evidence.raw`, so those values are mid-JSON truncations of
+ * that blob, not prose. Across all 956 stored descriptions this matches 22 rows
+ * and every one of them begins `{"template`, so the precision is identical to a
+ * plain "starts with a brace" test while remaining specific to the shape that
+ * caused the defect. A wrapper longer than the 400-char description clip loses
+ * its interior keys, which is why `looksLikeFindingEcho` only catches 9 of them.
+ */
+export function looksLikeTemplateWrapper(val) {
+  if (typeof val === 'string') {
+    return /^\{[\s\S]*"template(-id|-url|-path)?"\s*:/.test(val.trim())
+  }
+  if (val && typeof val === 'object' && !Array.isArray(val)) {
+    return typeof val.template === 'string' || typeof val.templateID === 'string'
+  }
+  return false
+}
 
 /**
  * Keys that only locate the probe. "HSTS header missing at /admin" with nothing
@@ -84,12 +166,15 @@ export function extractArtifact(v) {
   const found = []
   for (const [k, val] of Object.entries(ev)) {
     if (!isEvidenceField(k)) continue
+    if (isFindingEcho(k, val)) continue
     if (!isPrimitiveArtifact(val)) continue
     found.push(k)
   }
   const poc = v.poc && typeof v.poc === 'object' ? v.poc : {}
   for (const [k, val] of Object.entries(poc)) {
     if (!isEvidenceField(k)) continue
+    // The bare key is tested here; `poc.` is only prefixed onto the result.
+    if (POC_BOOKKEEPING_KEYS.has(k)) continue
     if (!isPrimitiveArtifact(val)) continue
     found.push(`poc.${k}`)
   }

@@ -9,7 +9,15 @@ import { computeRiskScore, riskRatingFromScore } from './pipeline.js'
 import { calculateCvss4, defaultVectorForFinding, evaluateFindingCvss } from './cvss4.js'
 import { extractVersions } from './version-audit.js'
 import { findVersionVulnerabilities } from './cve.js'
-import { VERIFY_STATUS, classifyFinding, aggregateFindings, normalizeConfidence } from './report-contract.js'
+import {
+  VERIFY_STATUS,
+  classifyFinding,
+  aggregateFindings,
+  normalizeConfidence,
+  NON_ARTIFACT_EVIDENCE_KEYS,
+  looksLikeFindingEcho,
+  looksLikeTemplateWrapper,
+} from './report-contract.js'
 
 /**
  * FYP2 Report Generator - Modern, High-Visual PDF Pentest Report.
@@ -109,6 +117,36 @@ const MODULE_DESCRIPTIONS = {
 }
 
 // == Text Sanitization Helpers ================================================
+
+// Fit a single-line label to a column, in this order of preference:
+//   1. return it untouched when it already fits,
+//   2. drop trailing words at a separator (`No rate limiting on login form /login`
+//      -> `No rate limiting on login form`) and mark the cut with an ellipsis,
+//   3. hard-cut mid-token only if a single token is wider than the whole column.
+// A blind `slice(0, n)` is what produced `... /login - br`: it cut inside a word
+// and printed a fragment that reads as a typo rather than as an abbreviation.
+function fitText(doc, text, maxWidth, font = 'Helvetica', fontSize = 8) {
+  const clean = sanitizePdfText(text)
+  if (!clean) return ''
+  doc.fontSize(fontSize).font(font)
+  if (doc.widthOfString(clean) <= maxWidth) return clean
+
+  const ell = '...'
+  const fits = s => doc.widthOfString(s + ell) <= maxWidth
+
+  // Prefer the last word/segment boundary that still leaves room for the
+  // ellipsis, so the label ends on a whole word instead of a fragment.
+  for (let i = clean.length - 1; i > 0; i--) {
+    if (!/[\s/,:;|>()-]/.test(clean[i])) continue
+    const head = clean.slice(0, i).replace(/[\s/,:;|>()-]+$/, '')
+    if (head && fits(head)) return head + ell
+  }
+
+  // No boundary fits: trim character by character as a last resort.
+  let cut = clean
+  while (cut.length > 1 && !fits(cut)) cut = cut.slice(0, -1)
+  return fits(cut) ? cut + ell : ell
+}
 
 function cleanPdfText(str) {
   if (!str) return ''
@@ -1250,7 +1288,8 @@ function recoverVersionDisclosures(v) {
     if (typeof val === 'string' && val) blobs.push(val)
   }
   if (typeof v.title === 'string') blobs.push(v.title)
-  if (typeof v.description === 'string') blobs.push(v.description.slice(0, 600))
+  // A template wrapper is not a disclosure: it describes the probe, not the target.
+  if (typeof v.description === 'string' && !looksLikeTemplateWrapper(v.description)) blobs.push(v.description.slice(0, 600))
 
   for (const blob of blobs) {
     // Server headers are the single richest source; extractVersions already
@@ -1520,11 +1559,15 @@ function findingEvidenceContext(v) {
  */
 function describeCapturedProof(v) {
   const ev = v.evidence || {}
-  const status = ev.status ?? ev.statusCode ?? ev.httpStatus
+  // Same shape as buildProofPanel/findingEvidenceContext. Kept local: this
+  // function is the one-line summary and must not depend on caller state.
+  const reverified = ev.reverified && typeof ev.reverified === 'object' ? ev.reverified : null
+  const status = ev.status ?? ev.statusCode ?? ev.httpStatus ?? reverified?.status
   const url = typeof ev.url === 'string' ? ev.url
     : typeof ev.endpoint === 'string' ? ev.endpoint
       : typeof ev.path === 'string' ? ev.path
-        : null
+        : typeof reverified?.url === 'string' ? reverified.url
+          : null
   // `header`, `banner` and `server` are observations about the target.
   // `matched` (dedup key) and `fingerprint` (internal correlation key) are
   // scanner bookkeeping and are excluded on purpose.
@@ -1532,8 +1575,8 @@ function describeCapturedProof(v) {
     : typeof ev.banner === 'string' ? ev.banner
       : typeof ev.server === 'string' ? `server: ${ev.server}`
         : typeof ev.observed === 'string' ? ev.observed
-          : null
-  const bodyCandidates = [ev.body, ev.bodyPreview, ev.bodySnippet, ev.response, ev.output]
+          : reverified?.sample || reverified?.reflection || null
+  const bodyCandidates = [ev.body, ev.bodyPreview, ev.bodySnippet, ev.response, ev.output, reverified?.body]
     .filter(x => typeof x === 'string' && x.trim())
   const raw = typeof ev.raw === 'string' ? ev.raw.trim() : null
   const looksLikeOwnJson = raw && /^\{[\s\S]*"(title|severity|description|cweId|owaspCategory)"\s*:/.test(raw)
@@ -1969,6 +2012,50 @@ function beautifyFindingTitle(raw) {
   return t
 }
 
+/**
+ * Read a string value out of a JSON blob that was truncated mid-document, so it
+ * cannot be `JSON.parse`d. Walks the quoted value honouring escapes and stops at
+ * the first unescaped quote or the end of the blob.
+ */
+function extractJsonString(blob, key) {
+  const needle = `"${key}":"`
+  const at = blob.indexOf(needle)
+  if (at < 0) return ''
+  let i = at + needle.length
+  let out = ''
+  while (i < blob.length) {
+    const ch = blob[i]
+    if (ch === '\\') {
+      const nx = blob[i + 1]
+      if (nx === 'u') { out += String.fromCharCode(parseInt(blob.slice(i + 2, i + 6), 16) || 32); i += 6; continue }
+      out += nx === 'n' ? '\n' : nx === 't' ? '\t' : nx === 'r' ? '\r' : nx
+      i += 2
+      continue
+    }
+    if (ch === '"') break
+    out += ch
+    i += 1
+  }
+  return out.trim()
+}
+
+/**
+ * Recover the prose the template wrapper was carrying. The nuclei CLI writes the
+ * template's own `info.description` to stdout, so the text exists even when the
+ * stored `description` was clipped before reaching it. `info.name` is the fallback
+ * for wrappers whose 800-char `raw` window is consumed by `template-path` first.
+ * Returns '' when neither survives, so the caller can degrade to a fixed sentence
+ * rather than print a blob or a blank.
+ */
+function recoverProseFromTemplateBlob(raw) {
+  if (typeof raw !== 'string' || !raw) return ''
+  for (const key of ['description', 'name']) {
+    const val = extractJsonString(raw, key)
+    if (val.length > 12 && !looksLikeTemplateWrapper(val)) return val
+  }
+  return ''
+}
+
 /** Normalize stored finding row into view model. */
 function toView(f, scanTarget) {
   let evidence = f.evidence
@@ -1978,7 +2065,23 @@ function toView(f, scanTarget) {
   try { poc = typeof poc === 'string' ? JSON.parse(poc) : poc } catch { /* keep */ }
   try { verdict = typeof verdict === 'string' ? JSON.parse(verdict) : verdict } catch { /* keep */ }
   const context = findingEvidenceContext({ ...f, evidence })
-  const baseDescription = cleanPdfText(f.description) || 'Scanner-reported indicator. See the technical evidence below for the verified tool output.'
+  // `description` is not author-written prose: for nuclei findings it is a clipped
+  // copy of the template wrapper. Replace it with the prose that wrapper carried so
+  // the field reports on the target instead of on the scanner's own JSON. Every
+  // downstream consumer (the Vulnerability Description block, the card Problem
+  // line, the simplified action items) reads this same view, so reconciling here
+  // is what keeps display and classification from disagreeing.
+  const storedDescription = cleanPdfText(f.description)
+  let resolvedDescription = looksLikeTemplateWrapper(storedDescription)
+    ? recoverProseFromTemplateBlob(evidence?.raw)
+    : storedDescription
+  // A wrapper whose prose was clipped away can only fall back to `info.name`,
+  // which is the finding's own title — restating it adds nothing, so degrade to
+  // the generic sentence rather than printing the title twice.
+  if (!resolvedDescription || resolvedDescription.toLowerCase() === String(f.title || '').trim().toLowerCase()) {
+    resolvedDescription = 'Scanner-reported indicator. See the technical evidence below for the verified tool output.'
+  }
+  const baseDescription = resolvedDescription
   const evidencePrefix = [
     context.endpoint && `Observed URL: ${context.endpoint}.`,
     context.status && `HTTP status: ${context.status}.`,
@@ -2887,7 +2990,7 @@ function renderClassificationTable(doc, { vulnerabilities }) {
 function renderUnverifiedAppendix(doc, { unverifiedFindings = [], rejectedFindings = [] }) {
   if (!unverifiedFindings.length && !rejectedFindings.length) return
   doc.addPage()
-  drawSectionTitle(doc, 'Appendix A.  Unverified & Rejected Observations', 'Not counted as findings. Reproduce before treating any of these as a defect.')
+  drawSectionTitle(doc, 'Appendix A.  Unverified & Rejected Observations', 'Not counted as findings. Reproduce before treating it as a defect.')
   const x = doc.page.margins.left
   const w = doc.page.width - doc.page.margins.left - doc.page.margins.right
 
@@ -3230,16 +3333,29 @@ function renderDetailedFindings(doc, { vulnerabilities, isWhitebox }) {
         else if (ev && typeof ev === 'object') {
           if (ev.url) evText += `URL: ${ev.url}\n`
           if (ev.file) evText += `File: ${ev.file}${ev.line ? ` (Line ${ev.line})` : ''}\n`
-          const primaryEvidence = ev.raw || ev.code || ev.output || ev.snippet || ev.body || ev.server
+          // An artifact has to have come off the wire. `raw` is usually the
+          // tool's captured output, which qualifies — but the ingestion layer
+          // sometimes serialises the finding's own record (or the nuclei
+          // template definition) into it, and neither is a capture. Both the
+          // echo test and the bookkeeping key list are the contract's, so the
+          // box and the classification can never disagree about what proves
+          // the claim.
+          const isEcho = looksLikeFindingEcho(ev.raw)
+          const primaryEvidence = !isEcho
+            && (ev.raw || ev.code || ev.output || ev.snippet || ev.body || ev.server)
           if (primaryEvidence) evText += String(primaryEvidence)
           else if (ev.missing) evText += `Missing: ${[].concat(ev.missing).join(', ')}`
           else if (ev.count && ev.subdomains) evText += `Discovered ${ev.count} subdomains for ${ev.rootDomain || 'target'}:\n${ev.subdomains.slice(0, 15).join('\n')}`
           else {
-            const cleanEv = { ...ev }
-            delete cleanEv.validationTier
-            delete cleanEv.fingerprint
-            delete cleanEv.sources
-            delete cleanEv.aiEvidenceTier
+            const cleanEv = {}
+            for (const [k, val] of Object.entries(ev)) {
+              // Same blocklist the classifier uses, plus the echo shape. A key
+              // that cannot certify the finding must not be printed as though
+              // it were the finding's evidence.
+              if (NON_ARTIFACT_EVIDENCE_KEYS.has(k)) continue
+              if (looksLikeFindingEcho(val)) continue
+              cleanEv[k] = val
+            }
             if (Object.keys(cleanEv).length > 0) {
               evText += Object.entries(cleanEv).map(([k, val]) => `${k}: ${typeof val === 'object' ? JSON.stringify(val) : val}`).join('\n')
             }
@@ -4698,7 +4814,7 @@ async function renderSimplifiedPdf({ file, reportTitle, scans = [], project = nu
       const ledgerH = 28 + ledgerTextH + 12
       doc.roundedRect(leftX, ledgerY, w, ledgerH, 4).fillAndStroke('#F0F9FF', '#BAE6FD')
       doc.fontSize(9).font('Helvetica-Bold').fillColor(BRAND.primary)
-        .text('Evidence Validation', leftX + 16, ledgerY + 12)
+        .text('Evidence validation', leftX + 16, ledgerY + 12)
       doc.fontSize(8.5).font('Helvetica').fillColor(BRAND.textDark)
         .text(sanitizePdfText(ledgerText), leftX + 16, ledgerY + 28, { width: w - 32, lineGap: 2 })
     }
@@ -5006,7 +5122,7 @@ async function renderSimplifiedPdf({ file, reportTitle, scans = [], project = nu
             panelVerbatimH ? 12 + panelVerbatimH + (panelVerbatimNoteH ? 8 + panelVerbatimNoteH : 0) : 0,
             panelSubjectNoteH ? 4 + panelSubjectNoteH : 0,
           ]
-          panelH = 16 + 6 + proofPanel.headers.filter(([label]) => !(label === 'Screenshot')).length * 10
+          panelH = 16 + 6 + 12 + proofPanel.headers.filter(([label]) => !(label === 'Screenshot')).length * 10
             + blocks.reduce((a, b) => a + b, 0) + 10
         } else {
           // Reserve the "no response captured" callout so the card height is
@@ -5046,7 +5162,7 @@ async function renderSimplifiedPdf({ file, reportTitle, scans = [], project = nu
         // paper. Reclaim the excess from the panel's optional blocks, largest
         // first, so the text heights the render uses shrink with the frame.
         if (proofPanel && panelH > panelBudget) {
-          const floor = 16 + 6 + 10 + 12
+          const floor = 16 + 6 + 12 + 10 + 12
           let excess = panelH - Math.max(floor, panelBudget)
           const shrinkVerbatim = Math.min(excess, Math.max(0, panelVerbatimH - 12))
           panelVerbatimH = panelVerbatimH ? panelVerbatimH - shrinkVerbatim : 0
@@ -5064,7 +5180,7 @@ async function renderSimplifiedPdf({ file, reportTitle, scans = [], project = nu
             panelExcerptH ? 12 + panelExcerptH + 6 : 0,
             panelVerbatimH ? 12 + panelVerbatimH + (panelVerbatimNoteH ? 8 + panelVerbatimNoteH : 0) : 0,
           ]
-          panelH = 16 + 6 + proofPanel.headers.filter(([label]) => !(label === 'Screenshot')).length * 10
+          panelH = 16 + 6 + 12 + proofPanel.headers.filter(([label]) => !(label === 'Screenshot')).length * 10
             + blocks.reduce((a, b) => a + b, 0) + 10
         }
 
@@ -5152,6 +5268,13 @@ async function renderSimplifiedPdf({ file, reportTitle, scans = [], project = nu
             )
           contentY += 16
 
+          // Name the exchange before the reader sees it. A terminal blob with no
+          // heading reads as chrome; the same blob under "WHAT WE CAPTURED" reads
+          // as the proof it is. Costs 12pt, counted in every panelH measurement.
+          doc.fontSize(6).font('Helvetica-Bold').fillColor('#7DD3FC')
+            .text('WHAT WE CAPTURED', px + 10, contentY + 2, { width: pw - 20 })
+          contentY += 12
+
           // Key/value rows
           let rowY = contentY + 6
           for (const [label, value] of proofPanel.headers) {
@@ -5183,16 +5306,92 @@ async function renderSimplifiedPdf({ file, reportTitle, scans = [], project = nu
           if (panelExcerptH) {
             doc.fontSize(6).font('Helvetica-Bold').fillColor('#7DD3FC').text('CAPTURED RESPONSE BODY', px + 10, rowY + 4, { width: pw - 20 })
             rowY += 12
+            const excerptText = sanitizePdfText(proofPanel.excerpt)
             doc.fontSize(7).font('Helvetica').fillColor('#CBD5E1')
-              .text(sanitizePdfText(proofPanel.excerpt), px + 10, rowY, { width: pw - 20, lineGap: 2, height: panelExcerptH })
+              .text(excerptText, px + 10, rowY, { width: pw - 20, lineGap: 2, height: panelExcerptH })
             if (proofPanel.hit) {
               // Underline the matched marker so the eye lands on the proof.
-              const before = proofPanel.excerpt.slice(0, proofPanel.hit.at)
-              const lineIdx = Math.floor(doc.fontSize(7).font('Helvetica').widthOfString(before, { width: pw - 20 }) / (pw - 20))
-              const lineText = proofPanel.excerpt.slice(0, proofPanel.hit.at).split(/\s+/).pop() || ''
-              const xOff = px + 10 + Math.min(doc.fontSize(7).font('Helvetica').widthOfString(lineText.slice(-40), { width: pw - 20 }), pw - 40)
-              const uy = rowY + lineIdx * 9 + 8
-              doc.rect(xOff, uy + 1, Math.min(60, pw - 20), 0.6).fill('#38BDF8')
+              //
+              // Geometry must replay the SAME wrap pdfkit just performed, using the
+              // same text (post-sanitize), the same font/size and the same width.
+              // Measured against pdfkit 0.17.2 at fontSize 7 / Helvetica / lineGap 2:
+              //   heightOfString(s, { width, lineGap: 2 }) === lines * 10.0920 exactly
+              // so the line index comes from that, NOT from a width ratio.
+              //
+              // Two earlier expressions were wrong and are recorded here so they are
+              // not reintroduced:
+              //   1. `widthOfString(before, { width }) / (pw - 20)` is not a line count
+              //      -- `width` is silently ignored by widthOfString, so the quotient is
+              //      (points of text) / (points of column), an arbitrary ratio. It only
+              //      coincides with a line index for uniformly-packed text and diverges
+              //      as soon as a long unbreakable token forces an early break.
+              //   2. `lineIdx * 9` used a literal pitch. The real advance is 10.0920pt,
+              //      so the underline drifted ~1.1pt per line and landed on the wrong
+              //      line entirely for excerpts longer than a few lines.
+              // currentLineHeight() (+ lineGap) is also NOT the right value here: it
+              // returns 8.4750, not 10.0920.
+              //
+              // The pitch alone is not enough: a line's rendered band does not start at
+              // rowY + i*pitch. Measuring the rendered spans of a 4-line excerpt drawn
+              // at rowY (span tops 197.50 / 207.59 / 217.69 / 227.78 for rowY 200) gives
+              // a constant band offset of -2.496pt, so the band top of line i is
+              // rowY + i*10.092 - 2.496 and the underline belongs just under the glyphs.
+              // EXCERPT_BAND is that offset; do not replace it with a round number.
+              const EXCERPT_PITCH = 10.092
+              const EXCERPT_BAND = -2.496
+              const hitAt = Math.min(proofPanel.hit.at, excerptText.length)
+              // Line accounting. A bisection for "the largest i whose prefix uses <= n
+              // lines" is NOT equivalent to finding the wrap point: the prefix count only
+              // increments once the TRUNCATED string itself overflows, which lags the real
+              // wrap by the length of the partial next line (on a space-delimited excerpt
+              // the truth is 138 while that bisection returns 143). So reproduce pdfkit's
+              // layout directly from the measured glyph widths; heightOfString remains the
+              // authority for the line COUNT.
+              const excerptLines = (s) => Math.max(1, Math.round(doc.heightOfString(s, { width: pw - 20, lineGap: 2 }) / EXCERPT_PITCH))
+              // pdfkit wraps by measured WIDTH: each line is filled to the box edge and a
+              // token that cannot fit is split mid-token, then the whitespace at the break
+              // is consumed. Walking back to the last space unconditionally (the previous
+              // rule) over-breaks any line whose tail is a token too wide to relocate --
+              // long unbroken runs and repeated URLs -- and yields one line too many.
+              // A walk-back is still right for ordinary prose, so allow it only when the
+              // text it would relocate is short enough to sit on a fresh line; a wide tail
+              // means pdfkit would have split mid-token instead.
+              const EXCERPT_WRAP_SLACK = 8
+              const excerptLineStarts = (s) => {
+                const boxW = pw - 20
+                const starts = [0]
+                let pos = 0
+                while (pos < s.length) {
+                  let lo = pos
+                  let hi = s.length
+                  while (lo < hi) {
+                    const mid = Math.ceil((lo + hi) / 2)
+                    if (doc.widthOfString(s.slice(pos, mid)) <= boxW) lo = mid
+                    else hi = mid - 1
+                  }
+                  if (lo >= s.length) break
+                  let next = lo
+                  const sp = s.lastIndexOf(' ', lo)
+                  if (sp > pos && lo - sp <= EXCERPT_WRAP_SLACK) next = sp
+                  while (next < s.length && s[next] === ' ') next++
+                  if (next <= pos) next = pos + 1
+                  starts.push(next)
+                  pos = next
+                }
+                return starts
+              }
+              const lineIdx = Math.max(0, excerptLines(excerptText.slice(0, hitAt)) - 1)
+              const starts = excerptLineStarts(excerptText)
+              const lineStart = starts[lineIdx] ?? 0
+              // x: distance from the line's own origin to the marker. Measured with the
+              // same width/lineGap the text was drawn with, so it matches the glyph
+              // positions pdfkit actually emits.
+              const xOff = px + 10 + doc.widthOfString(excerptText.slice(lineStart, hitAt))
+              const uy = rowY + lineIdx * EXCERPT_PITCH + EXCERPT_BAND
+              // Sit the rule just below the line's baseline: band height is 7pt of text
+              // plus 2pt of lineGap, so +6.6 clears the descenders without reaching the
+              // next line's band.
+              doc.rect(xOff, uy + 6.6, Math.max(6, Math.min(60, pw - 20 - (xOff - px - 10))), 0.6).fill('#38BDF8')
             }
             rowY += panelExcerptH + 6
           }
@@ -5228,7 +5427,7 @@ async function renderSimplifiedPdf({ file, reportTitle, scans = [], project = nu
           const gapText = `No HTTP response was captured for this check. To confirm it yourself: ${reproCmd || 're-request the endpoint and inspect the response.'}`
           doc.roundedRect(leftX + 14, contentY, w - 28, gapH, 3).fillAndStroke('#FFF7ED', '#FED7AA')
           doc.rect(leftX + 14, contentY, 3, gapH).fill('#EA580C')
-          doc.fontSize(8).font('Helvetica-Bold').fillColor('#C2410C').text('NO RESPONSE CAPTURED:', leftX + 24, contentY + 7)
+          doc.fontSize(8).font('Helvetica-Bold').fillColor('#C2410C').text('WHAT WE CAPTURED: nothing', leftX + 24, contentY + 7)
           doc.fontSize(8).font('Helvetica').fillColor(BRAND.textDark).text(gapText, leftX + 24, contentY + 20, { width: w - 48, lineGap: 2, height: gapH - 24 })
           contentY += gapH + 8
         }
@@ -5311,7 +5510,7 @@ async function renderSimplifiedPdf({ file, reportTitle, scans = [], project = nu
 
         doc.fontSize(8).font('Helvetica-Bold').fillColor(BRAND.primary).text(String(rowNumber + 1), leftX + 10, rowY + 6, { width: 20 })
         doc.fontSize(8).font('Helvetica').fillColor(BRAND.textDark).text(
-          String(itm.title).slice(0, 42),
+          fitText(doc, itm.title, 230, 'Helvetica', 8),
           leftX + 35, rowY + 6, { width: 230 },
         )
 

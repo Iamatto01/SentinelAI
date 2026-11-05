@@ -3219,7 +3219,11 @@ export function extractFindingsFromOutput(tool, output, target = '', baseline = 
         const j = JSON.parse(output.slice(start))
         const interesting = j.interesting_findings || []
         for (const f of interesting.slice(0, 10)) {
-          push(`wpscan: ${f.to_s || f.type || 'finding'}`, 'low', f.to_s || JSON.stringify(f).slice(0, 300))
+          // `to_s` is wpscan's own display prose. A JSON blob describes the probe, not
+          // the target, so it must never become the description (same rule as nuclei above).
+          const prose = typeof f.to_s === 'string' ? cleanText(f.to_s).replace(/\s+/g, ' ').trim() : ''
+          const label = prose || String(f.type || 'finding').replace(/[_-]+/g, ' ')
+          push(`wpscan: ${label}`, 'low', prose || JSON.stringify(f).slice(0, 300), { description: label.slice(0, 400) })
         }
         const vulns = [
           ...(j.version?.vulnerabilities || []),
@@ -3438,7 +3442,16 @@ export function extractFindingsFromOutput(tool, output, target = '', baseline = 
     if (line.trim().startsWith('{') && /"severity"/.test(line)) {
       try {
         const j = JSON.parse(line)
+        // The nuclei CLI prints the template's own `info.description`. Carry it as
+        // the finding's description so the stored prose describes the target; the
+        // wrapper itself stays in `evidence.raw`, where it belongs as raw output.
+        // `push()` clips any string it is handed as `evidence`, so without this the
+        // 400-char description became a mid-JSON truncation of `line`.
+        const prose = typeof j.info?.description === 'string'
+          ? cleanText(j.info.description).replace(/\s+/g, ' ').trim().slice(0, 400)
+          : ''
         push(j.info?.name || j.templateID || 'nuclei finding', (j.info?.severity || 'info').toLowerCase(), line, {
+          ...(prose ? { description: prose } : {}),
           cveId: j.info?.classification?.['cve-id']?.[0] || null,
           cweId: j.info?.classification?.['cwe-id']?.[0] || null,
         })
