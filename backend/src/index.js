@@ -1054,11 +1054,16 @@ app.post('/api/scans', requireAuth, async (req, res) => {
     target, projectId = null, mode = 'blackbox', targetType = 'url',
     template = 'standard', modules = [], objective = 'comprehensive', maxTools = 6,
     files = [], language = '', focus = '', verify = true, depth = 'standard',
-    owaspCategories = [],
+    owaspCategories = [], authorizationAcknowledged = false,
   } = req.body || {}
 
   if (mode === 'blackbox' && !target) return res.status(400).json({ error: 'target required for blackbox' })
   if (mode === 'whitebox' && (!files || !files.length)) return res.status(400).json({ error: 'files required for whitebox' })
+
+  // Authorization gate — operator must confirm they have written permission
+  if (mode === 'blackbox' && !authorizationAcknowledged) {
+    return res.status(400).json({ error: 'You must confirm that you have written authorization from the target owner before launching a scan.' })
+  }
 
   // Quota enforcement — applies to ALL scan launches (manual, whitebox-folder),
   // not just GitHub-triggered ones. Admins are exempt.
@@ -1661,6 +1666,7 @@ app.get('/api/agents', requireAuth, (req, res) => res.json(agentRegistry.list())
 app.post('/api/agents/chat', requireAuth, async (req, res) => {
   const { message, agent = 'web-hunter', history = [] } = req.body || {}
   if (!message) return res.status(400).json({ error: 'message required' })
+  audit(req.user.username, 'chat:query', `agent=${agent}, msg=${String(message).slice(0, 100)}`)
   try {
     const reply = await aiEngine.chat(message, agent, history)
     res.json({ reply, agent })

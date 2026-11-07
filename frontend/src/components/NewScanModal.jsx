@@ -156,6 +156,7 @@ export default function NewScanModal({ onClose, onStarted, initialProjectId = ''
   const [language, setLanguage] = useState('javascript')
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
+  const [authAcknowledged, setAuthAcknowledged] = useState(false)
 
   // Hybrid whitebox: dynamic verification against a live target
   const [dynamicTarget, setDynamicTarget] = useState('')
@@ -266,6 +267,7 @@ export default function NewScanModal({ onClose, onStarted, initialProjectId = ''
       let res
       if (mode === 'blackbox') {
         if (!target.trim()) throw new Error('Enter a target URL or host')
+        if (!authAcknowledged) throw new Error('You must confirm authorization before launching the scan')
         body = {
           mode,
           projectId: projectId || null,
@@ -277,6 +279,7 @@ export default function NewScanModal({ onClose, onStarted, initialProjectId = ''
           owaspCategories,
           verify,
           depth,
+          authorizationAcknowledged: authAcknowledged,
         }
         res = await api.startScan(body)
       } else if (whiteboxMode === 'folder') {
@@ -296,6 +299,7 @@ export default function NewScanModal({ onClose, onStarted, initialProjectId = ''
           maxBytes: sd.maxBytes,
           dynamicTarget: dynamicTarget.trim(),
           dynamicModules: dynamicTarget.trim() ? dynamicModules : [],
+          authorizationAcknowledged: authAcknowledged,
         }
         res = await api.startWhiteboxFolder(body)
       } else {
@@ -746,6 +750,30 @@ export default function NewScanModal({ onClose, onStarted, initialProjectId = ''
             </>
           )}
 
+          {/* Authorization Acknowledgment Gate */}
+          {(mode === 'blackbox' || (mode === 'whitebox' && dynamicTarget.trim())) && (
+            <div className={`p-4 rounded-2xl border transition-all ${authAcknowledged ? 'bg-emerald-950/30 border-emerald-500/40' : 'bg-amber-950/30 border-amber-500/40'}`}>
+              <label className="flex items-start gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={authAcknowledged}
+                  onChange={(e) => setAuthAcknowledged(e.target.checked)}
+                  className="mt-0.5 rounded border-white/20 text-emerald-500 focus:ring-0"
+                />
+                <div className="space-y-1">
+                  <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                    <ShieldAlert size={13} className={authAcknowledged ? 'text-emerald-400' : 'text-amber-400'} />
+                    Authorization Confirmation Required
+                  </span>
+                  <p className="text-[11px] text-slate-400 leading-relaxed">
+                    I confirm that I have <span className="text-white font-semibold">explicit written authorization</span> from the target system owner to perform this security assessment.
+                    Unauthorized scanning is illegal under the Computer Crimes Act 1997 (Malaysia) and international cyber legislation.
+                  </p>
+                </div>
+              </label>
+            </div>
+          )}
+
           {/* AI Verification Checkbox */}
           <label className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer pt-1">
             <input
@@ -774,7 +802,7 @@ export default function NewScanModal({ onClose, onStarted, initialProjectId = ''
           <button
             type="submit"
             form="new-scan-form"
-            disabled={busy}
+            disabled={busy || ((mode === 'blackbox' || (mode === 'whitebox' && dynamicTarget.trim())) && !authAcknowledged)}
             className="btn-primary text-xs py-2 px-6 cursor-pointer shadow-lg shadow-cyan-500/25 bg-gradient-to-r from-cyan-500 via-cyan-400 to-blue-600 text-slate-950 font-black hover:scale-105 transition-transform flex items-center gap-2"
           >
             {busy ? <Loader2 size={14} className="animate-spin" /> : <Zap size={14} />}

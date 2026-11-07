@@ -73,6 +73,82 @@ function isSelfSerializedFinding(value) {
   return /^\{[\s\S]*"(?:title|severity|description|cweId|owaspCategory)"\s*:/.test(text)
 }
 
+/**
+ * Stage 4 — PII / Secret Sanitization.
+ * Scrubs sensitive credential material from finding evidence and PoC fields
+ * before they are persisted to the database and broadcast via WebSocket.
+ * Preserves vulnerability descriptions, OWASP categories, CWE IDs, tool names,
+ * and other legitimate finding content.
+ */
+const REDACTED = '***REDACTED***'
+
+// Keys whose values are always fully redacted
+const SENSITIVE_KEYS = /^(pass|password|passwd|secret|api_key|apikey|token|authorization|session_id|sessionid|cookie_value|access_token|refresh_token|private_key|client_secret)$/i
+
+// Patterns redacted inside string values
+const SENSITIVE_PATTERNS = [
+  // JWT tokens
+  { re: /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b/g, rep: 'eyJ***REDACTED_JWT***' },
+  // Bearer tokens
+  { re: /Bearer\s+[A-Za-z0-9._~+/=-]{8,}/gi, rep: `Bearer ${REDACTED}` },
+  // AWS access keys
+  { re: /AKIA[0-9A-Z]{16}/g, rep: `AKIA${REDACTED}` },
+  // Generic API keys (sk-..., pk-...)
+  { re: /\b(sk|pk)[-_][A-Za-z0-9]{16,}\b/g, rep: `$1-${REDACTED}` },
+  // Session cookie values (PHPSESSID=xxx, session=xxx, connect.sid=xxx)
+  { re: /((?:PHPSESSID|session|connect\.sid|JSESSIONID|ASP\.NET_SessionId|ci_session)\s*=\s*)[^\s;,]{6,}/gi, rep: `$1${REDACTED}` },
+]
+
+// Partial-redact email: keep first 2 chars + @domain
+function redactEmail(email) {
+  return email.replace(/([a-zA-Z0-9._%+-]{2})[a-zA-Z0-9._%+-]*(@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/g, '$1***$2')
+}
+
+
+function sanitizeValue(value) {
+  if (typeof value !== 'string') return value
+  let v = value
+  for (const { re, rep } of SENSITIVE_PATTERNS) {
+    v = v.replace(re, rep)
+  }
+  v = redactEmail(v)
+  return v
+}
+
+function sanitizeObject(obj) {
+  if (obj === null || obj === undefined) return obj
+  if (typeof obj === 'string') return sanitizeValue(obj)
+  if (Array.isArray(obj)) return obj.map(sanitizeObject)
+  if (typeof obj !== 'object') return obj
+  const out = {}
+  for (const [k, v] of Object.entries(obj)) {
+    if (SENSITIVE_KEYS.test(k) && typeof v === 'string') {
+      out[k] = REDACTED
+    } else {
+      out[k] = sanitizeObject(v)
+    }
+  }
+  return out
+}
+
+function sanitizeFinding(finding) {
+  if (!finding) return finding
+  const f = { ...finding }
+  // Sanitize evidence object
+  if (f.evidence && typeof f.evidence === 'object') {
+    f.evidence = sanitizeObject(f.evidence)
+  } else if (typeof f.evidence === 'string') {
+    f.evidence = sanitizeValue(f.evidence)
+  }
+  // Sanitize PoC field (may contain raw payloads with embedded secrets)
+  if (f.poc && typeof f.poc === 'object') {
+    f.poc = sanitizeObject(f.poc)
+  } else if (typeof f.poc === 'string') {
+    f.poc = sanitizeValue(f.poc)
+  }
+  return f
+}
+
 function removeNonEvidenceEchoes(finding) {
   const evidence = finding?.evidence && typeof finding.evidence === 'object'
     ? { ...finding.evidence }
@@ -238,8 +314,11 @@ function findingFingerprint(finding) {
   const cwe = String(finding.cweId || finding.cwe || '').toLowerCase()
   // Include host so the same finding on different hosts isn't deduplicated away
   const host = (() => {
-    const raw = finding.target || evidence.url || ''
-    try { return new URL(raw).hostname.toLowerCase() } catch { return String(raw).toLowerCase() }
+    // Prefer the concrete probe URL over the scan's root target: every blackbox
+    // finding on a scan carries the same `target`, so keying on it first would
+    // collapse them all onto one host bucket.
+    const raw = String(evidence.url || finding.target || '')
+    try { return new URL(ensureScheme(raw)).hostname.toLowerCase() } catch { return raw.toLowerCase() }
   })()
   // Product/version records are keyed on the PRODUCT, not the wording of the
   // title, so the EOL stage and the CVE-audit stage collapse into one record
@@ -256,8 +335,11 @@ function findingFingerprint(finding) {
   // collapse above, which is keyed on product and never reaches this branch.
   if (!file && !line) {
     const route = (() => {
-      const raw = String(finding.target || evidence.url || '')
-      try { return new URL(raw).pathname.toLowerCase() } catch { return '' }
+      // evidence.url is the actual probed path (/search?id=1); finding.target
+      // is only the scan root, so it must be the fallback — otherwise every
+      // blackbox finding collapses to route '/' and gets deduplicated away.
+      const raw = String(evidence.url || finding.target || '')
+      try { return new URL(ensureScheme(raw)).pathname.toLowerCase() } catch { return '' }
     })()
     return `${cwe}|||${category}|${host}|${route}`
   }
@@ -334,6 +416,9 @@ export class UnifiedPipeline {
     // Custom scripts read this; without the assignment every scan silently
     // ran at 'standard' regardless of what was requested.
     this.depth = 'standard'
+    // scanId -> depth requested by the caller, so depth survives until the
+    // stage that reads it (custom scripts run after finish() clears this.depth).
+    this._scanDepth = new Map()
     // scanId -> Set of discovered URLs queued for injection chaining
     this._urlPool = new Map()
     // scanId -> Array of harvested login forms {url, userField, passField, extra}
@@ -421,6 +506,11 @@ export class UnifiedPipeline {
     this._llmBudget?.delete(scanId)
     this._lastProgressEmit?.delete(scanId)
     this._urlPool?.delete(scanId)
+    this._scanDepth?.delete(scanId)
+    // The deferral only spans the whitebox->blackbox handoff. index.js releases
+    // it via releaseDeferredFinish() before the final finish(); clearing it here
+    // guarantees a re-run of the same scanId is never silently muted.
+    this._deferredFinish?.delete(scanId)
     this._loginForms?.delete(scanId)
     this._blackboxMeta?.delete(scanId)
     this._catchAllBaselines?.delete(scanId)
@@ -928,7 +1018,10 @@ export class UnifiedPipeline {
       }
     }
 
-    // 4. (sanitize removed — raw evidence preserved)
+    // 4. Stage 4 — PII / Secret Sanitization (scrub credentials, tokens, private IPs from evidence)
+    const sanitized = sanitizeFinding(f)
+    if (sanitized.evidence) f.evidence = sanitized.evidence
+    if (sanitized.poc) f.poc = sanitized.poc
 
     // 5. Record a verification action so the finding's provenance is auditable
     // even when the pipeline is invoked with `verify: false`.
@@ -1173,6 +1266,11 @@ export class UnifiedPipeline {
     const scanId = scan.id
     const target = scan.target
     this._beginScan(scanId)
+    // Remember the requested depth for later stages. runBlackbox is entered
+    // once, but custom scripts run after finish() has already reset this.depth,
+    // so the caller's value has to survive in a per-scan slot.
+    if (!(this._scanDepth instanceof Map)) this._scanDepth = new Map()
+    this._scanDepth.set(scanId, depth)
     await this.detectCatchAllBaseline(scanId, target)
     aiEngine.llm.resetUsageTotals()
     const catLabel = owaspCategories.length ? ` [OWASP: ${owaspCategories.join(',')}]` : ''
@@ -1324,7 +1422,7 @@ export class UnifiedPipeline {
         // Runs last so scripts can leverage any state gathered earlier.
         this.log(scanId, 'info', '▶ Starting custom scripts stage')
         try {
-          await this._runCustomScripts(scanId, target, { verify })
+          await this._runCustomScripts(scanId, target, { verify, depth })
         } catch (err) {
       this.log(scanId, 'warn', `Custom scripts stage warning: ${err.message}`)
     }
@@ -1338,7 +1436,7 @@ export class UnifiedPipeline {
    * (or 'post-recon' — both run here, at the end of the pipeline, when the
    * most context is available). Scripts emit JSONL findings on stdout.
    */
-  async _runCustomScripts(scanId, target, { verify } = {}) {
+  async _runCustomScripts(scanId, target, { verify, depth } = {}) {
     let scripts
     try {
       scripts = getScriptsForTrigger('post-scan').concat(getScriptsForTrigger('post-recon'))
@@ -1354,7 +1452,7 @@ export class UnifiedPipeline {
         }
         this.log(scanId, 'info', `Custom script "${script.name}" starting`)
         const baseline = this._catchAllBaselines.get(scanId) || null
-        const { result, findings } = await runCustomScript(script, { target, scanId, depth: this.depth || 'standard', baseline })
+        const { result, findings } = await runCustomScript(script, { target, scanId, depth: depth || this._scanDepth?.get(scanId) || this.depth || 'standard', baseline })
         if (!result.success) {
           this.log(scanId, 'warn', `Custom script "${script.name}" exited ${result.code}: ${String(result.stderr || '').slice(0, 200)}`)
         }
@@ -1837,6 +1935,16 @@ export class UnifiedPipeline {
     }
     const throttled = statuses.some(s => s === 429 || s === 503)
     const statusChanged = new Set(statuses).size > 1
+    // Reaching any conclusion requires at least a few real HTTP responses. On a
+    // dead host, refused connection, or DNS failure every attempt records
+    // status 0 — without this gate that is misreported as "no rate limiting —
+    // brute-force possible", which is a false positive against an unreachable
+    // target.
+    const reached = statuses.filter(s => s > 0).length
+    if (reached < 3) {
+      this.log(scanId, 'warn', `🚦 Rate-limit test inconclusive for ${url.slice(0, 80)} — only ${reached}/${BURST} attempts got a response (server unreachable or blocking)`);
+      return
+    }
     // Response-time drift: if later responses are dramatically slower, a
     // tarpit/delay-based limiter is active
     const firstHalf = times.slice(0, 5).filter(t => t > 0)
@@ -1889,7 +1997,10 @@ export class UnifiedPipeline {
       for (const f of rows) {
         try {
           const enriched = payloadsRag.crossReference({ title: f.title, severity: f.severity, description: f.description })
-          if (enriched?.poc && Object.keys(enriched.poc).length) {
+          // Never clobber a PoC that a targeted stage already proved (e.g. the
+        // session-hijack PoC attached by chainInjectionTests). The RAG template
+        // is a generic suggestion, not evidence — it only fills a blank slot.
+        if (!f.poc && enriched?.poc && Object.keys(enriched.poc).length) {
             db.run(`UPDATE findings SET poc = ? WHERE id = ?`, JSON.stringify(enriched.poc), f.id)
             matched++
           }
@@ -2165,7 +2276,7 @@ export class UnifiedPipeline {
               || f.inputs.find(i => i.type === 'text')
             if (!userInput) continue
             const isAbsolute = /^https?:\/\//i.test(f.action)
-            const formUrl = f.action ? (isAbsolute ? f.action : new URL(f.action, requestBase).href) : base
+            const formUrl = f.action ? (isAbsolute ? f.action : new URL(f.action, requestBase).href) : requestBase
             // Carry hidden fields (CSRF tokens etc.) so the POST is accepted
             const extra = Object.fromEntries(f.inputs.filter(i => i.type === 'hidden' && i.value).map(i => [i.name, i.value]))
             loginForms.push({ url: formUrl, userField: userInput.name, passField: passInput.name, extra })
@@ -2179,9 +2290,8 @@ export class UnifiedPipeline {
 
           // Queue form actions for injection chaining
           const formUrls = forms.map(f => {
-            const action = f.action || base
-            const isAbsolute = /^https?:\/\//i.test(action)
-            const formUrl = isAbsolute ? action : new URL(action, requestBase).href
+            const isAbsolute = /^https?:\/\//i.test(f.action)
+            const formUrl = f.action ? (isAbsolute ? f.action : new URL(f.action, requestBase).href) : requestBase
             const params = f.inputs.map((n, i) => `${n.name}=${i + 1}`).join('&')
             return `${formUrl}${formUrl.includes('?') ? '&' : '?'}${params}`
           })
@@ -2745,7 +2855,11 @@ export class UnifiedPipeline {
     }
   }
 
-  /** Get + clear the URL pool for a scan (used before dalfox/sqlmap chaining). */
+  /**
+   * Get a snapshot of the URL pool for a scan (used before dalfox/sqlmap chaining).
+   * Intentionally does NOT clear the pool: the error-differential fuzzers run
+   * before _discoverLoginSurfaces(), which still needs the collected URLs.
+   */
   _drainUrls(scanId) {
     const pool = this._urlPool?.get(scanId)
     return pool ? [...pool] : []
@@ -3262,7 +3376,7 @@ export class UnifiedPipeline {
   }
 
   /** Compute final risk score + persist status. */
-  finish(scanId, status) {
+  finish(scanId, status, scan = null) {
     const findings = db.all(`SELECT severity, cvss FROM findings WHERE scan_id = ?`, scanId)
     const counts = { critical: 0, high: 0, medium: 0, low: 0, info: 0 }
     for (const f of findings) counts[f.severity] = (counts[f.severity] || 0) + 1
@@ -3281,35 +3395,41 @@ export class UnifiedPipeline {
         `🤖 [AI] model usage: ${usage.calls} call(s), ${usage.total_tokens} token(s)` +
         (usage.calls === 0 ? ' — no model was reached; every verdict came from evidence heuristics' : ''))
     } catch { /* non-critical */ }
-    db.run(`UPDATE scans SET status = ?, risk_score = ?, progress = 100, finished_at = ? WHERE id = ?`,
-      status, score, new Date().toISOString(), scanId)
-    const scan = db.get(`SELECT * FROM scans WHERE id = ?`, scanId)
-    this.log(scanId, status === 'completed' ? 'info' : 'warn',
-      `■ Scan ${status}. Findings: ${JSON.stringify(counts)}. Risk score: ${score}/10`)
-    this.progress(scanId, 100, status)
-    this.emit(scanId, 'scan:done', { scanId, status, scan, counts, riskScore: score })
+    const scanRow = scan || db.get(`SELECT * FROM scans WHERE id = ?`, scanId)
+    // Hybrid/whitebox-folder runs stage whitebox then blackbox on one scanId.
+    // The intermediate finish() must not publish a terminal state: its finding
+    // set is partial, so the UI would flip the row to completed/100% (and the
+    // email/alert would carry no blackbox results) before blackbox resets the
+    // progress back to 2%. The caller releases the deferral before the final
+    // finish(), which then persists and notifies exactly once.
+    // A failed first phase keeps its deferral set (the caller aborts before
+    // releasing it), so only defer on 'completed' — otherwise a crashed hybrid
+    // scan would stay 'running' in the DB forever.
+    const deferred = status === 'completed' && this._deferredFinish.has(scanId)
+    if (deferred) {
+      this.log(scanId, 'info', '⏸ Intermediate phase finished — holding terminal status until the remaining phase completes')
+    } else {
+      db.run(`UPDATE scans SET status = ?, risk_score = ?, progress = 100, finished_at = ? WHERE id = ?`,
+        status, score, new Date().toISOString(), scanId)
+      this.progress(scanId, 100, status)
+      this.emit(scanId, 'scan:done', { scanId, status, scan: scanRow, counts, riskScore: score })
+    }
     // Release per-scan runtime state so Maps don't grow unbounded.
     // releaseScanState covers _loginForms/_blackboxMeta too, which finish()
     // previously never removed.
     this.releaseScanState(scanId)
     this._markFinished(scanId)
-
-    // Hybrid/whitebox-folder runs stage whitebox then blackbox on one scanId.
-    // The intermediate finish() must not notify: its finding set is partial, so
-    // the email/alert would carry no blackbox results and the operator sees the
-    // same scan "complete" twice. The caller releases the deferral before the
-    // final finish(), which then notifies exactly once.
-    if (this._deferredFinish.has(scanId)) return
+    if (deferred) return
 
     // ── TELEGRAM & DISCORD REAL-TIME SCAN NOTIFICATION ──
     if (status === 'completed') {
       import('./channels/index.js').then(({ channelGateway }) => {
-        channelGateway.notifyScanCompleted(scan, counts, score).catch(() => {})
+        channelGateway.notifyScanCompleted(scanRow, counts, score).catch(() => {})
       }).catch(() => {})
     }
 
     // ── AUTOMATED PDF REPORT & EMAIL DISPATCH ──
-    if (status === 'completed' && (scan?.email_notify || scan?.trigger_source?.startsWith('github'))) {
+    if (status === 'completed' && (scanRow?.email_notify || scanRow?.trigger_source?.startsWith('github'))) {
       setImmediate(async () => {
         try {
           const { generateReport } = await import('./report.js')
@@ -3322,18 +3442,18 @@ export class UnifiedPipeline {
           const { config } = await import('./config.js')
           const pdfPath = repResult?.file || path.join(config.outputDir, `report-${scanId}.pdf`)
           
-          const userEmail = scan.email_notify || process.env.NOTIFICATION_EMAIL || 'muhammadsaifudinmj@gmail.com'
+          const userEmail = scanRow.email_notify || process.env.NOTIFICATION_EMAIL || 'muhammadsaifudinmj@gmail.com'
           this.log(scanId, 'info', `📧 Dispatching audit report email to ${userEmail}...`)
           
           await sendScanAuditReportEmail({
             userEmail,
-            scan,
+            scan: scanRow,
             findings: scanFindings,
             pdfPath,
             pdfFilename: repResult?.filename,
-            repoName: scan.repo_name || scan.target,
-            triggerSource: scan.trigger_source || 'automation',
-            commitHash: scan.commit_hash,
+            repoName: scanRow.repo_name || scanRow.target,
+            triggerSource: scanRow.trigger_source || 'automation',
+            commitHash: scanRow.commit_hash,
           })
           this.log(scanId, 'info', `✅ Audit report email successfully delivered to ${userEmail}`)
         } catch (err) {
