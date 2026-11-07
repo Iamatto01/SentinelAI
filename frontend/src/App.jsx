@@ -13,6 +13,10 @@ import Services from './pages/Services.jsx'
 import Pricing from './pages/Pricing.jsx'
 import Contact from './pages/Contact.jsx'
 import Login from './pages/Login.jsx'
+import Terms from './pages/Terms.jsx'
+import Privacy from './pages/Privacy.jsx'
+import CookieConsentBanner from './components/CookieConsentBanner.jsx'
+import { initAntiDebugGuard } from './lib/anti-re/antiDebugGuard.js'
 import Dashboard from './pages/Dashboard.jsx'
 import Scans from './pages/Scans.jsx'
 import ScanDetail from './pages/ScanDetail.jsx'
@@ -90,9 +94,13 @@ function Protected({ children }) {
 }
 
 export default function App() {
+  React.useEffect(() => {
+    initAntiDebugGuard()
+  }, [])
   return (
     <ErrorBoundary>
       <ThemeProvider>
+        <CookieConsentBanner />
         <Routes>
           <Route path="/" element={<Landing />} />
           <Route path="/about" element={<About />} />
@@ -101,6 +109,8 @@ export default function App() {
           <Route path="/pricing" element={<Pricing />} />
           <Route path="/contact" element={<Contact />} />
           <Route path="/login" element={<Login />} />
+          <Route path="/terms" element={<Terms />} />
+          <Route path="/privacy" element={<Privacy />} />
           
           {/* Top-level aliases for direct URL navigation */}
           <Route path="/dashboard" element={<Navigate to="/app/dashboard" replace />} />

@@ -199,6 +199,7 @@ function migrate(d) {
     last_status TEXT,
     last_risk REAL,
     next_run TEXT,
+    user_id TEXT,
     created_at TEXT NOT NULL
   );
 
@@ -482,6 +483,7 @@ function migrate(d) {
   try { d.exec(`ALTER TABLE scans ADD COLUMN user_id TEXT`) } catch (e) { if (!/duplicate column name/i.test(String(e))) throw e }
   try { d.exec(`ALTER TABLE scans ADD COLUMN client TEXT`) } catch (e) { if (!/duplicate column name/i.test(String(e))) throw e }
   try { d.exec(`ALTER TABLE scans ADD COLUMN owasp_categories TEXT`) } catch (e) { if (!/duplicate column name/i.test(String(e))) throw e }
+  try { d.exec(`ALTER TABLE monitors ADD COLUMN user_id TEXT`) } catch (e) { if (!/duplicate column name/i.test(String(e))) throw e }
   try { d.exec(`ALTER TABLE projects ADD COLUMN user_id TEXT`) } catch (e) { if (!/duplicate column name/i.test(String(e))) throw e }
   try { d.exec(`ALTER TABLE projects ADD COLUMN client_id TEXT`) } catch (e) { if (!/duplicate column name/i.test(String(e))) throw e }
   try { d.exec(`ALTER TABLE projects ADD COLUMN cover TEXT`) } catch (e) { if (!/duplicate column name/i.test(String(e))) throw e }

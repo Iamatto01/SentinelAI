@@ -7,6 +7,7 @@
   "scripts": {
     "dev": "node --env-file=../.env src/index.js",
     "start": "node --env-file=../.env src/index.js",
+    "test": "node src/report-contract.test.js && node src/catch-all.test.js && node src/report-helpers.test.js",
     "index:payloads": "node --env-file=../.env scripts/index-payloads.js"
   },
   "dependencies": {

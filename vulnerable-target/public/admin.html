@@ -3,70 +3,112 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>RCE & Command Injection Console — AbuseLab</title>
+  <title>MEPS ATM Switch & Regional Network Diagnostics — Maybank2u</title>
   <link rel="stylesheet" href="/style.css">
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220%22><text y=%2226%22 font-size=%2226%22>⚡</text></svg>">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🐯</text></svg>">
 </head>
 <body>
-  <header>
-    <a href="/" class="logo">🔥 ABUSE<span>LAB</span> <small>RCE</small></a>
-    <nav>
-      <a href="/">Matrix</a>
-      <a href="/admin.html" class="active">⚡ RCE Terminal</a>
-      <a href="/login.html">💉 SQLi Hub</a>
-      <a href="/upload.html">📤 Web Shells</a>
-      <a href="/documents.html">📁 LFI Vault</a>
-      <a href="/ssrf.html">🌐 SSRF Probe</a>
-      <a href="/profile.html">👤 IDOR</a>
-      <a href="/feedback.html">☣️ XSS</a>
+  <!-- Top Scam Notice -->
+  <div class="scam-alert-bar">
+    <div class="alert-text">
+      <span>⚠️</span>
+      <span><strong>PERINGATAN KESELAMATAN:</strong> Konsol diagnostik suis ATM ini dikhaskan untuk jurutera rangkaian Maybank sahaja.</span>
+    </div>
+    <div>
+      <span class="pidm-badge">Ahli PIDM</span>
+    </div>
+  </div>
+
+  <!-- Main Maybank Header -->
+  <header class="maybank-header">
+    <a href="/" class="maybank-logo">
+      <div class="maybank-tiger-badge">🐯</div>
+      <div class="maybank-logo-text">
+        <span class="maybank-logo-title">Maybank<span>2u</span></span>
+        <span class="maybank-logo-sub">MALAYAN BANKING BERHAD</span>
+      </div>
+    </a>
+    <nav class="maybank-nav">
+      <a href="/">Home</a>
+      <a href="/profile.html">My Accounts</a>
+      <a href="/login.html">Pay & Transfer</a>
+      <a href="/documents.html">e-Statements</a>
+      <a href="/upload.html">MyKad KYC</a>
+      <a href="/ssrf.html">Forex Rates</a>
+      <a href="/feedback.html">Customer Care</a>
+      <a href="/admin.html" class="active">MEPS ATM</a>
     </nav>
   </header>
 
-  <div class="container" style="max-width: 900px;">
+  <div class="container" style="max-width: 960px; margin-top: 36px;">
     <div class="card">
-      <div class="badges">
-        <span class="badge badge-crit">CWE-78: OS Command Injection</span>
-        <span class="badge badge-high">CVSS 9.8 Critical</span>
+      <div class="card-header">
+        <div>
+          <h2 class="card-title">⚡ MEPS ATM Switch & Interbank Routing Diagnostics</h2>
+          <p style="color: var(--text-secondary); font-size: 13px; margin-top: 4px;">
+            Maybank IT Infrastructure Utility: Test ICMP packet round-trip time, route health, and gateway continuity to regional branch ATM switches and PayNet routers.
+          </p>
+        </div>
+        <span class="badge badge-yellow">IT NOC Restricted</span>
       </div>
-      <h2 style="margin-bottom: 6px;">⚡ Remote Code Execution (RCE) Console</h2>
-      <p style="color: var(--text-muted); font-size: 14px; margin-bottom: 20px;">
-        This diagnostic tool executes system ping commands via a raw subshell. Inject delimiters (<code>;</code>, <code>&&</code>, <code>|</code>) to compromise the underlying Kali Linux server.
-      </p>
 
-      <!-- Quick Exploit Chips -->
-      <div style="margin-bottom: 16px;">
-        <span style="font-size: 12px; color: var(--text-dim); text-transform: uppercase; font-weight: bold;">Quick Exploit Payloads:</span>
-        <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px;">
+      <!-- Security Testing Helper -->
+      <div style="background: #fff9e6; border: 1px solid #fcd34d; border-radius: 6px; padding: 12px; margin-bottom: 20px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+          <span style="font-size: 11px; text-transform: uppercase; font-weight: 800; color: #92400e;">
+            🛡️ Audit Mode: Remote Command Execution (RCE)
+          </span>
+          <span class="badge badge-crit" style="font-size: 10px;">CWE-78 Command Injection</span>
+        </div>
+        <p style="color: var(--text-secondary); font-size: 12px; line-height: 1.5; margin-bottom: 10px;">
+          The ping tool directly interpolates the <code>host</code> parameter into the underlying system shell without input filtering. Inject shell separators (<code>;</code>, <code>&&</code>, <code>|</code>) to execute arbitrary commands on the Maybank server.
+        </p>
+        <div style="display: flex; gap: 6px; flex-wrap: wrap;">
           <button class="btn-secondary" onclick="setPayload('127.0.0.1; whoami')"><code>127.0.0.1; whoami</code></button>
           <button class="btn-secondary" onclick="setPayload('127.0.0.1; id')"><code>127.0.0.1; id</code></button>
           <button class="btn-secondary" onclick="setPayload('127.0.0.1; uname -a')"><code>127.0.0.1; uname -a</code></button>
           <button class="btn-secondary" onclick="setPayload('127.0.0.1; cat /etc/passwd | head -n 8')"><code>cat /etc/passwd</code></button>
-          <button class="btn-secondary" onclick="setPayload('127.0.0.1; ls -la /home/kali')"><code>ls -la /home/kali</code></button>
+          <button class="btn-secondary" onclick="setPayload('127.0.0.1; ls -la')"><code>ls -la</code></button>
         </div>
       </div>
 
-      <div style="display: flex; gap: 10px; margin-top: 12px;">
-        <input type="text" id="target-host" value="127.0.0.1; whoami" style="flex: 1; background: #090c15; border: 1px solid var(--card-border); color: #fff; padding: 12px 16px; border-radius: 6px; font-family: monospace; font-size: 14px;">
-        <button id="ping-btn" class="btn-primary" onclick="executePing()">EXECUTE PAYLOAD</button>
+      <!-- Host Input Form -->
+      <div style="display: flex; gap: 10px; margin-bottom: 16px;">
+        <input type="text" id="target-host" value="127.0.0.1; whoami" style="flex: 1; font-family: monospace; font-size: 14px;" placeholder="Node IP or ATM switch identifier (e.g. 10.0.4.15)...">
+        <button id="ping-btn" class="btn-primary" onclick="executePing()">EXECUTE DIAGNOSTIC &rarr;</button>
       </div>
 
-      <div id="flag-alert" style="display: none; margin-top: 18px; padding: 14px; background: rgba(16, 185, 129, 0.15); border: 1px solid var(--success); border-radius: 8px; color: #fff;">
-        🎉 <strong>PWNED! Flag Discovered:</strong> <code id="flag-code" style="color: var(--success); font-weight: bold; font-size: 14px; margin-left: 8px;"></code>
-        <a href="/" style="color: var(--cyan); margin-left: 14px; font-size: 12px; text-decoration: underline;">Submit on Board &rarr;</a>
+      <!-- Flag Alert Box -->
+      <div id="flag-alert" class="flag-alert-box">
+        🎉 <strong>COMMAND INJECTION PWNED! Host Shell Exploit Flag:</strong> 
+        <code id="flag-code"></code>
+        <a href="/" style="color: #2563eb; margin-left: 14px; font-size: 12px; font-weight: 700; text-decoration: underline;">Submit on Security Board &rarr;</a>
       </div>
 
-      <!-- Hacker Terminal Window -->
-      <div class="terminal-window">
+      <!-- NOC Terminal Window -->
+      <div class="terminal-window" style="margin-top: 18px;">
         <div class="terminal-header">
           <span class="term-dot red"></span>
           <span class="term-dot yellow"></span>
           <span class="term-dot green"></span>
-          <span style="color: var(--text-muted); font-size: 12px; margin-left: 10px;">bash — kali@sentinelai-server:~</span>
+          <span style="color: #9ca3af; font-size: 12px; margin-left: 10px;">Maybank MEPS Network Diagnostic Console</span>
         </div>
-        <div id="output-box" class="terminal-body">$ Ready. Select or type a payload and click Execute Payload...</div>
+        <div id="output-box" class="terminal-body">$ Select or type an ATM switch target IP and click Execute Diagnostic...</div>
       </div>
     </div>
   </div>
+
+  <!-- Maybank Footer -->
+  <footer class="maybank-footer" style="margin-top: 40px;">
+    <div class="footer-bottom">
+      <div>
+        © 2026 Malayan Banking Berhad (Co. Reg. No. 196001000142). All rights reserved.
+      </div>
+      <div>
+        Maybank Network Operations Center (NOC) • Menara Maybank Infrastructure Division
+      </div>
+    </div>
+  </footer>
 
   <script>
     function setPayload(payload) {
@@ -77,21 +119,24 @@
     async function executePing() {
       const host = document.getElementById('target-host').value
       const box = document.getElementById('output-box')
-      box.innerText = `$ ping ${host}\n[+] Executing payload against subshell...\n[+] Waiting for process output...`
+      box.innerText = `$ ping -c 2 ${host}\n[+] Pinging destination MEPS ATM gateway node...\n[+] Awaiting round-trip ICMP latency metrics...`
 
       try {
         const res = await fetch(`/api/tools/ping?host=${encodeURIComponent(host)}`)
         const data = await res.json()
         box.innerText = `$ ${data.command}\n\n${data.output}`
-        
+
         if (data.flag) {
           document.getElementById('flag-alert').style.display = 'block'
           document.getElementById('flag-code').innerText = data.flag
         }
       } catch (err) {
-        box.innerText = `$ Error: Failed to communicate with server: ${err.message}`
+        box.innerText = `$ Error: Failed to communicate with diagnostic node: ${err.message}`
       }
     }
+
+    // Run initial ping
+    executePing()
   </script>
 </body>
 </html>

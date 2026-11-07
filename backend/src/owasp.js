@@ -72,7 +72,7 @@ const KEYWORD_MAP = [
   // A08 Software or Data Integrity Failures
   [/deserialization|pickle|yaml\.load|prototype pollution|unserialize|integrity/i, 'A08'],
   // A03 Software Supply Chain Failures
-  [/outdated|known vulnerab|cve-|vulnerable component|dependency|package\.json|npm audit|composer/i, 'A03'],
+  [/software supply chain|supply-chain|outdated|known vulnerab|cve-|vulnerable component|dependency|package\.json|npm audit|composer/i, 'A03'],
   // A02 Security Misconfiguration
   [/misconfig|cors|security header|header|directory listing|debug|default config|information disclosure|verbose error|xxe|xml external entity|file upload|server.*banner/i, 'A02'],
   // A09 Security Logging and Alerting Failures

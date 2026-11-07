@@ -3,71 +3,151 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>IDOR & Broken Object Auth — AbuseLab</title>
+  <title>My Accounts & Transfer Statements — Maybank2u</title>
   <link rel="stylesheet" href="/style.css">
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220%22><text y=%2226%22 font-size=%2226%22>👤</text></svg>">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🐯</text></svg>">
 </head>
 <body>
-  <header>
-    <a href="/" class="logo">🔥 ABUSE<span>LAB</span> <small>IDOR</small></a>
-    <nav>
-      <a href="/">Matrix</a>
-      <a href="/admin.html">⚡ RCE Terminal</a>
-      <a href="/login.html">💉 SQLi Hub</a>
-      <a href="/upload.html">📤 Web Shells</a>
-      <a href="/documents.html">📁 LFI Vault</a>
-      <a href="/ssrf.html">🌐 SSRF Probe</a>
-      <a href="/profile.html" class="active">👤 IDOR</a>
-      <a href="/feedback.html">☣️ XSS</a>
+  <!-- Top Scam Notice -->
+  <div class="scam-alert-bar">
+    <div class="alert-text">
+      <span>⚠️</span>
+      <span><strong>PERINGATAN KESELAMATAN:</strong> Sentiasa semak penyata transaksi akaun anda. Hubungi 1-300-88-6688 sekiranya terdapat sebarang aktiviti meragukan.</span>
+    </div>
+    <div>
+      <span class="pidm-badge">Ahli PIDM</span>
+    </div>
+  </div>
+
+  <!-- Main Maybank Header -->
+  <header class="maybank-header">
+    <a href="/" class="maybank-logo">
+      <div class="maybank-tiger-badge">🐯</div>
+      <div class="maybank-logo-text">
+        <span class="maybank-logo-title">Maybank<span>2u</span></span>
+        <span class="maybank-logo-sub">MALAYAN BANKING BERHAD</span>
+      </div>
+    </a>
+    <nav class="maybank-nav">
+      <a href="/">Home</a>
+      <a href="/profile.html" class="active">My Accounts</a>
+      <a href="/login.html">Pay & Transfer</a>
+      <a href="/documents.html">e-Statements</a>
+      <a href="/upload.html">MyKad KYC</a>
+      <a href="/ssrf.html">Forex Rates</a>
+      <a href="/feedback.html">Customer Care</a>
+      <a href="/admin.html">MEPS ATM</a>
     </nav>
   </header>
 
-  <div class="container" style="max-width: 900px;">
+  <div class="container" style="max-width: 980px; margin-top: 36px;">
     <div class="card">
-      <div class="badges">
-        <span class="badge badge-crit">CWE-639: Broken Object Level Authorization (IDOR)</span>
-        <span class="badge badge-high">Sensitive Data Leak</span>
+      <div class="card-header">
+        <div>
+          <h2 class="card-title">💳 My Accounts & DuitNow Transfer Statements</h2>
+          <p style="color: var(--text-secondary); font-size: 13px; margin-top: 4px;">
+            View e-Statements, recent DuitNow transfer receipts, and customer profile details.
+          </p>
+        </div>
+        <span class="badge badge-yellow">Maybank2u Accounts</span>
       </div>
-      <h2>👤 IDOR: Order Invoices & Customer Profiles</h2>
-      <p style="color: var(--text-muted); font-size: 14px; margin-top: 6px; margin-bottom: 20px;">
-        The application accepts direct object identifiers (<code>/api/orders/:id</code> and <code>/api/users/:id</code>) without validating if the current session owns the resource. Enumerate IDs to exfiltrate VIP orders, flags, and plaintext credit cards.
-      </p>
 
-      <div style="margin-bottom: 16px;">
-        <span style="font-size: 12px; color: var(--text-dim); text-transform: uppercase; font-weight: bold;">Quick Object Enumeration:</span>
-        <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px;">
-          <button class="btn-secondary" onclick="fetchResource('order', 1)">Order #1 (Secret Quantum Server)</button>
-          <button class="btn-secondary" onclick="fetchResource('order', 2)">Order #2 (Regular Order)</button>
-          <button class="btn-secondary" onclick="fetchResource('user', 1)">User #1 (Admin Credit Card & Token)</button>
-          <button class="btn-secondary" onclick="fetchResource('user', 2)">User #2 (Alice)</button>
+      <!-- Account Summary Card -->
+      <div style="background: linear-gradient(135deg, #111827, #1f2937); border-radius: 8px; padding: 22px; color: #fff; margin-bottom: 24px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px;">
+        <div>
+          <span style="font-size: 11px; text-transform: uppercase; color: #9ca3af; font-weight: 700; letter-spacing: 1px;">Primary Account</span>
+          <div style="font-size: 18px; font-weight: 900; color: #fff; margin-top: 2px;">Maybank Premier 1 Current Account-i</div>
+          <div style="font-family: monospace; font-size: 14px; color: var(--mb-yellow); margin-top: 4px;">1140 1234 5678 (MYR)</div>
+        </div>
+        <div style="text-align: right;">
+          <span style="font-size: 11px; text-transform: uppercase; color: #9ca3af; font-weight: 700; letter-spacing: 1px;">Available Balance</span>
+          <div style="font-size: 26px; font-weight: 900; color: var(--mb-yellow); margin-top: 2px;">RM 452,890.50</div>
         </div>
       </div>
 
-      <div style="display: flex; gap: 10px; margin-top: 12px;">
-        <select id="resource-type" style="background: #090c15; border: 1px solid var(--card-border); color: #fff; padding: 12px; border-radius: 6px; font-weight: bold;">
-          <option value="order">Order ID (/api/orders/)</option>
-          <option value="user">User ID (/api/users/)</option>
+      <!-- Security Auditor Helper -->
+      <div style="background: #fff9e6; border: 1px solid #fcd34d; border-radius: 6px; padding: 12px; margin-bottom: 20px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+          <span style="font-size: 11px; text-transform: uppercase; font-weight: 800; color: #92400e;">
+            🛡️ Audit Mode: Broken Object Level Authorization (IDOR)
+          </span>
+          <span class="badge badge-crit" style="font-size: 10px;">CWE-639 IDOR</span>
+        </div>
+        <p style="color: var(--text-secondary); font-size: 12px; line-height: 1.5; margin-bottom: 10px;">
+          Direct object references (<code>/api/orders/:id</code> and <code>/api/users/:id</code>) lack session validation. Query arbitrary ID numbers to access confidential high-value wire transfers and customer credit card numbers.
+        </p>
+        <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+          <button class="btn-secondary" onclick="fetchResource('order', 1)">Transfer #1 (Swiss Custody Settlement RM15.4M)</button>
+          <button class="btn-secondary" onclick="fetchResource('order', 2)">Transfer #2 (Menara Maybank Bonus Payroll)</button>
+          <button class="btn-secondary" onclick="fetchResource('user', 1)">Customer #1 (Chief Officer Visa Debit Card)</button>
+          <button class="btn-secondary" onclick="fetchResource('user', 2)">Customer #2 (Alice Chen)</button>
+        </div>
+      </div>
+
+      <!-- Resource Lookup Form -->
+      <div style="display: flex; gap: 10px; margin-bottom: 18px; flex-wrap: wrap;">
+        <select id="resource-type" style="width: 300px; font-weight: 700;">
+          <option value="order">DuitNow Transfer Receipt (/api/orders/)</option>
+          <option value="user">Customer Profile Record (/api/users/)</option>
         </select>
-        <input type="number" id="resource-id" value="1" style="width: 120px; background: #090c15; border: 1px solid var(--card-border); color: #fff; padding: 12px; border-radius: 6px; font-family: monospace; font-size: 14px;">
-        <button class="btn-primary" onclick="handleLookup()">FETCH RESOURCE &rarr;</button>
+        <input type="number" id="resource-id" value="1" style="width: 110px; font-family: monospace; font-size: 14px;" min="1">
+        <button class="btn-primary" onclick="handleLookup()">RETRIEVE STATEMENT &rarr;</button>
       </div>
 
-      <div id="flag-alert" style="display: none; margin-top: 18px; padding: 14px; background: rgba(16, 185, 129, 0.15); border: 1px solid var(--success); border-radius: 8px; color: #fff;">
-        🎉 <strong>IDOR EXPLOITED! Flag Unlocked:</strong> <code id="flag-code" style="color: var(--success); font-weight: bold; font-size: 14px; margin-left: 8px;"></code>
-        <a href="/" style="color: var(--cyan); margin-left: 14px; font-size: 12px; text-decoration: underline;">Submit on Board &rarr;</a>
+      <!-- Flag Alert Box -->
+      <div id="flag-alert" class="flag-alert-box">
+        🎉 <strong>IDOR EXPLOITED! Confidential Maybank Statement Unlocked:</strong> 
+        <code id="flag-code"></code>
+        <a href="/" style="color: #2563eb; margin-left: 14px; font-size: 12px; font-weight: 700; text-decoration: underline;">Submit on Security Board &rarr;</a>
       </div>
 
-      <div class="terminal-window">
+      <!-- Structured Maybank Transfer Voucher Card -->
+      <div id="record-card" style="margin-top: 18px; background: #ffffff; border: 2px solid var(--mb-yellow); border-radius: 8px; padding: 22px; box-shadow: var(--shadow-sm);">
+        <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--mb-border); padding-bottom: 12px; margin-bottom: 14px;">
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <div style="width: 32px; height: 32px; background: var(--mb-yellow); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 16px;">
+              🐯
+            </div>
+            <div>
+              <span style="font-size: 11px; text-transform: uppercase; color: var(--text-muted); font-weight: 700;">Transaction Status</span>
+              <div style="color: var(--accent-green); font-weight: 800; font-size: 14px;">✓ SUCCESSFUL / BERJAYA</div>
+            </div>
+          </div>
+          <div style="text-align: right;">
+            <span style="font-size: 11px; text-transform: uppercase; color: var(--text-muted); font-weight: 700;">Payment Channel</span>
+            <div style="color: #000; font-weight: 700; font-size: 13px;">DuitNow / RENTAS RTGS</div>
+          </div>
+        </div>
+
+        <div id="record-content-view" style="font-size: 13px; line-height: 1.8;">
+          Loading statement voucher...
+        </div>
+      </div>
+
+      <!-- Raw JSON Terminal Inspector -->
+      <div class="terminal-window" style="margin-top: 20px;">
         <div class="terminal-header">
           <span class="term-dot red"></span>
           <span class="term-dot yellow"></span>
           <span class="term-dot green"></span>
-          <span style="color: var(--text-muted); font-size: 12px; margin-left: 10px;">Direct Object Response (JSON)</span>
+          <span style="color: #9ca3af; font-size: 12px; margin-left: 10px;">Maybank Core Host Response Stream (JSON)</span>
         </div>
-        <div id="order-box" class="terminal-body">Loading resource...</div>
+        <div id="order-box" class="terminal-body">Loading direct resource...</div>
       </div>
     </div>
   </div>
+
+  <!-- Maybank Footer -->
+  <footer class="maybank-footer" style="margin-top: 40px;">
+    <div class="footer-bottom">
+      <div>
+        © 2026 Malayan Banking Berhad (Co. Reg. No. 196001000142). All rights reserved.
+      </div>
+      <div>
+        Maybank2u Electronic Transfer Ledger System • Member of PIDM
+      </div>
+    </div>
+  </footer>
 
   <script>
     function fetchResource(type, id) {
@@ -80,14 +160,44 @@
       const type = document.getElementById('resource-type').value
       const id = document.getElementById('resource-id').value
       const box = document.getElementById('order-box')
+      const view = document.getElementById('record-content-view')
       const endpoint = type === 'order' ? `/api/orders/${id}` : `/api/users/${id}`
 
       box.innerText = `[+] Fetching GET ${endpoint} ...`
+      view.innerHTML = '<span style="color: var(--text-muted);">Retrieving official Maybank voucher...</span>'
 
       try {
         const res = await fetch(endpoint)
         const data = await res.json()
         box.innerText = JSON.stringify(data, null, 2)
+
+        if (res.status === 404) {
+          view.innerHTML = `<span style="color: var(--accent-red);">Transaction ID #${id} not found in Maybank system.</span>`
+          return
+        }
+
+        if (type === 'order') {
+          view.innerHTML = `
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px;">
+              <div><strong>Reference No:</strong> <span style="font-family: monospace; color: #2563eb;">MB2U-TX-00${data.id}</span></div>
+              <div><strong>From Account No:</strong> <span style="font-family: monospace;">1140 0000 00${data.user_id}</span></div>
+              <div><strong>Recipient / Transfer Memo:</strong> <span style="color: #000; font-weight: 700;">${data.item}</span></div>
+              <div><strong>Transfer Amount:</strong> <span style="color: #059669; font-weight: 900; font-size: 16px;">RM ${Number(data.total).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span></div>
+              <div style="grid-column: 1 / -1;"><strong>Beneficiary Institution & Address:</strong> <span style="color: var(--text-secondary);">${data.shipping_address}</span></div>
+              ${data.flag ? `<div style="grid-column: 1 / -1; color: #047857; font-weight: bold; background: #ecfdf5; padding: 10px; border-radius: 6px; border: 1px solid #a7f3d0;">🎯 Vault Flag: ${data.flag}</div>` : ''}
+            </div>
+          `
+        } else {
+          view.innerHTML = `
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px;">
+              <div><strong>Account Holder:</strong> <span style="color: #000; font-weight: 900;">${data.username}</span></div>
+              <div><strong>Access Clearance:</strong> <span class="badge badge-green">${data.role}</span></div>
+              <div><strong>Registered Email:</strong> <span style="color: #2563eb;">${data.email}</span></div>
+              <div><strong>Maybank Debit Card:</strong> <span style="font-family: monospace; color: #b45309; font-weight: 900; font-size: 15px;">${data.credit_card || 'None on file'}</span></div>
+              <div style="grid-column: 1 / -1;"><strong>Secure2u Master Token:</strong> <code style="font-size: 12px; background: #f3f4f6; padding: 4px 8px; border-radius: 4px;">${data.secret_token || '—'}</code></div>
+            </div>
+          `
+        }
 
         if (data.flag || JSON.stringify(data).includes('FLAG{idor')) {
           const flag = data.flag || (JSON.stringify(data).match(/FLAG\{idor[^}]+\}/) || [])[0]
@@ -98,9 +208,11 @@
         }
       } catch (err) {
         box.innerText = 'Error: ' + err.message
+        view.innerHTML = `<span style="color: var(--accent-red);">Failed to fetch record: ${err.message}</span>`
       }
     }
 
+    // Run initial lookup
     handleLookup()
   </script>
 </body>

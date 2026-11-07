@@ -29,15 +29,15 @@ export function monitorEvents(id, limit = 100) {
 
 const cleanTarget = (t) => t ? String(t).trim().replace(/#.*$/, '').replace(/\/+$/, '') : ''
 
-export function createMonitor(pipeline, { name, target, targetType = 'url', intervalMin = 60, modules = [] }) {
+export function createMonitor(pipeline, { name, target, targetType = 'url', intervalMin = 60, modules = [], userId = null, client = null }) {
   const id = `mon_${randomUUID()}`
   const now = new Date().toISOString()
   const cleaned = cleanTarget(target)
   db.run(
-    `INSERT INTO monitors (id, name, target, target_type, interval_min, modules, enabled, status, created_at, next_run)
-     VALUES (?,?,?,?,?,?,?,?,?,?)`,
+    `INSERT INTO monitors (id, name, target, target_type, interval_min, modules, enabled, status, user_id, created_at, next_run)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
     id, name, cleaned, targetType, Math.max(5, intervalMin | 0), JSON.stringify(modules), 1, 'idle', now,
-    new Date(Date.now() + Math.max(5, intervalMin | 0) * 60000).toISOString()
+    userId, new Date(Date.now() + Math.max(5, intervalMin | 0) * 60000).toISOString()
   )
   addEvent(id, null, 'info', `Monitor created for ${cleaned} (every ${intervalMin}m)`)
   schedule(id, pipeline)
@@ -90,10 +90,12 @@ async function tick(id, pipeline) {
   // Launch a normal scan through the unified pipeline
   const scanId = `scan_${randomUUID()}`
   const modules = JSON.parse(m.modules || '[]')
+  const owner = m.user_id ? db.get(`SELECT username, email FROM users WHERE id = ?`, m.user_id) : null
   db.run(
-    `INSERT INTO scans (id, project_id, target, target_type, mode, status, template, modules, progress, created_at, started_at)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
-    scanId, null, target, m.target_type, 'blackbox', 'running', 'monitor', JSON.stringify(modules), 0, now, now
+    `INSERT INTO scans (id, project_id, target, target_type, mode, status, template, modules, progress, created_at, started_at, user_id, client)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    scanId, null, target, m.target_type, 'blackbox', 'running', 'monitor', JSON.stringify(modules), 0, now, now,
+    m.user_id || null, owner?.username || owner?.email || null
   )
   const scan = db.get(`SELECT * FROM scans WHERE id = ?`, scanId)
   addEvent(id, scanId, 'info', `Scheduled scan started (${scanId})`)

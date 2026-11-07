@@ -30,6 +30,7 @@ export default function Login() {
   const [plans, setPlans] = useState([])
   const [showPassword, setShowPassword] = useState(false)
   const [busy, setBusy] = useState(false)
+  const [agreeTerms, setAgreeTerms] = useState(true)
   const [err, setErr] = useState('')
 
   useEffect(() => {
@@ -66,6 +67,11 @@ export default function Login() {
         sessionStorage.setItem('sentinel_gate_trigger', 'true')
         nav(loc.state?.from?.pathname || '/app/dashboard', { replace: true })
       } else {
+        if (!agreeTerms) {
+          setErr('Please agree to the Terms of Service & Anti-Reverse Engineering Policy to continue.')
+          setBusy(false)
+          return
+        }
         const res = await api.register({
           username: username.trim(),
           email: email.trim(),
@@ -409,6 +415,27 @@ export default function Login() {
                 <AlertCircle size={14} className="shrink-0 text-rose-400" />
                 <span>{err}</span>
               </div>
+            )}
+
+            {mode === 'register' && (
+              <label className="flex items-start gap-2.5 pt-1 text-left cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={agreeTerms}
+                  onChange={(e) => setAgreeTerms(e.target.checked)}
+                  className="mt-0.5 h-3.5 w-3.5 rounded border-white/20 bg-white/5 text-cyan-400 focus:ring-0 cursor-pointer shrink-0"
+                />
+                <span className={`text-[11px] leading-tight font-sans ${isNight ? 'text-neutral-400' : 'text-zinc-600'}`}>
+                  I agree to the{' '}
+                  <Link to="/terms" target="_blank" rel="noopener noreferrer" className={`underline font-bold ${isNight ? 'text-neutral-200 hover:text-white' : 'text-zinc-900 hover:text-black'}`}>
+                    Terms of Service &amp; Anti-RE Policy
+                  </Link>
+                  {' '}and{' '}
+                  <Link to="/privacy" target="_blank" rel="noopener noreferrer" className={`underline font-bold ${isNight ? 'text-neutral-200 hover:text-white' : 'text-zinc-900 hover:text-black'}`}>
+                    Privacy Policy
+                  </Link>.
+                </span>
+              </label>
             )}
 
             {/* Submit Button */}

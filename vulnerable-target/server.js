@@ -84,34 +84,34 @@ db.exec(`
 
   -- Seed users (Passwd MD5 & plaintext for testing)
   INSERT INTO users (username, password, role, credit_card, email, secret_token) VALUES
-    ('admin', '21232f297a57a5a743894a0e4a801fc3', 'admin', '4532-1234-8901-9921', 'admin@vulncorp.com', 'tok_super_admin_sec_${FLAGS.sqli_auth}'),
-    ('alice', '5f4dcc3b5aa765d61d8327deb882cf99', 'analyst', '4111-2222-3333-4444', 'alice@example.com', 'tok_alice_user_3391'),
-    ('bob', 'password123', 'user', '4916-9999-8888-7777', 'bob@example.com', 'tok_bob_client_4812');
+    ('admin', '21232f297a57a5a743894a0e4a801fc3', 'admin', '4532-1234-8901-9921', 'admin@maybank2u.com.my', 'tok_super_admin_sec_${FLAGS.sqli_auth}'),
+    ('alice', '5f4dcc3b5aa765d61d8327deb882cf99', 'analyst', '4111-2222-3333-4444', 'alice.chen@maybank2u.com.my', 'tok_alice_user_3391'),
+    ('bob', 'password123', 'user', '4916-9999-8888-7777', 'bob.razak@maybank2u.com.my', 'tok_bob_client_4812');
 
-  -- Seed products
+  -- Seed banking products (Maybank retail, fixed deposits, SME loans, corporate treasury)
   INSERT INTO products (name, price, description, category) VALUES
-    ('Quantum Secure Laptop', 1299.99, 'Next-gen encrypted hardware workstation', 'Hardware'),
-    ('Neural Network Firewall Appliance', 849.50, 'Edge threat detection hardware box', 'Network'),
-    ('Zero-Trust Gateway License', 299.00, 'Enterprise annual subscription token', 'Software'),
-    ('Tactical Rubber Ducky USB', 45.00, 'Automated keyboard payload injector', 'Tools'),
-    ('Hardware Security Module (HSM)', 1999.00, 'Cryptographic key storage vault', 'Hardware');
+    ('Maybank Islamic Fixed Deposit-i (3.85% p.a.)', 1000.00, 'Syariah-compliant savings term deposit with guaranteed monthly profit distribution', 'Fixed Deposit'),
+    ('Maybank Premier 1 Account (High-Yield Savings)', 500.00, 'Tier-1 PIDM-insured high-yield savings account with daily interest crediting', 'Savings Account'),
+    ('Maybank SME Clean Business Financing', 50000.00, 'Collateral-free working capital loan up to RM1.5 million for registered businesses', 'Commercial Lending'),
+    ('Maybank Global Custody & SWIFT RENTAS Suite', 12500.00, 'Direct Bank Negara RENTAS and SWIFT RTGS cross-border corporate clearing', 'Corporate Treasury'),
+    ('Maybank Secure2u Hardware Token (HSM)', 199.00, 'FIPS 140-3 Level 4 physical cryptographic token for corporate transaction authorization', 'Security Devices');
 
-  -- Seed orders (for IDOR)
+  -- Seed orders (bank wire transactions & DuitNow transfer receipts for IDOR)
   INSERT INTO orders (user_id, item, total, shipping_address, flag) VALUES
-    (1, 'Top Secret Quantum Server', 15400.00, 'Executive Floor 42, Suite A, Silicon Valley', '${FLAGS.idor_order}'),
-    (2, 'Quantum Secure Laptop', 1299.99, '124 Maple Street, Springfield', 'N/A'),
-    (3, 'Tactical Rubber Ducky USB', 45.00, '742 Evergreen Terrace, Springfield', 'N/A');
+    (1, 'DuitNow Interbank Transfer: Swiss Private Custody Settlement', 15400000.00, 'Zurich Interbank Clearing Station, Bahnhofstrasse 45, Switzerland', '${FLAGS.idor_order}'),
+    (2, 'Corporate Payroll Disbursement - Q3 Staff Bonus', 129990.00, 'Menara Maybank, 100 Jalan Tun Perak, 50050 Kuala Lumpur', 'N/A'),
+    (3, 'MAE DuitNow QR Merchant Batch Settlement #8491', 4500.00, 'Mid Valley Megamall, Lingkaran Syed Putra, Kuala Lumpur', 'N/A');
 
-  -- Seed feedback (for Stored XSS)
+  -- Seed feedback (customer testimonials & branch reviews for Stored XSS)
   INSERT INTO feedback (author, comment, created_at) VALUES
-    ('SecurityAuditor', 'Great portal interface, but please ensure input sanitization is strictly enforced!', '2026-10-20 10:15:00'),
-    ('John Doe', 'Fast delivery on the hardware dongles.', '2026-10-21 14:30:00');
+    ('Dato Seri Azman (Corporate Client)', 'Maybank2u corporate bulk payment is very smooth. RENTAS and DuitNow transfers cleared instantly.', '2026-10-20 10:15:00'),
+    ('Tan Sri Michelle (Premier Wealth)', 'Great service by the Menara Maybank Premier branch relationship team.', '2026-10-21 14:30:00');
 
   -- Seed secrets (for SQLi Union dump)
   INSERT INTO secrets (title, secret_value) VALUES
     ('Vault Flag', '${FLAGS.sqli_union}'),
-    ('Root SSH Key Backup', 'ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQC8vK...'),
-    ('Master DB Passphrase', 'Sentinel_Master_Root_2026_Uncrackable!');
+    ('RENTAS / PayNet Interbank Clearing Root Key', 'paynet-my-rsa-rentas-clearing-auth-2026-AAAAB3NzaC1yc2E...'),
+    ('Maybank Core Mainframe Master Passphrase', 'Maybank_Menara_KL_Vault_2026_Uncrackable!');
 `)
 
 // Multer storage: Intentionally unrestricted file upload (accepts any extension: .php, .js, .sh, .html)
@@ -261,18 +261,51 @@ app.get('/search', (req, res) => {
     <html lang="en">
     <head>
       <meta charset="UTF-8">
-      <title>Search Results — AbuseLab</title>
+      <title>Search Results — Maybank2u</title>
       <link rel="stylesheet" href="/style.css">
+      <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🐯</text></svg>">
     </head>
     <body>
-      <div class="container" style="max-width: 800px; margin-top: 60px;">
-        <div class="card">
-          <h2>🔍 Catalog Search Results</h2>
-          <p style="color: var(--text-muted); margin-top: 8px;">Reflected parameter: <code>q</code></p>
-          <div class="search-banner" style="margin: 20px 0; padding: 16px; background: rgba(239, 68, 68, 0.1); border: 1px solid var(--danger); border-radius: 8px;">
-            You searched for: <strong>${query}</strong>
+      <div class="scam-alert-bar">
+        <div class="alert-text">
+          <span>⚠️</span>
+          <span><strong>SECURITY ALERT:</strong> Maybank will never send SMS or emails with links requesting your username, password, or TAC/OTP.</span>
+        </div>
+        <div>
+          <span class="pidm-badge">Ahli PIDM</span>
+        </div>
+      </div>
+      <header class="maybank-header">
+        <a href="/" class="maybank-logo">
+          <div class="maybank-tiger-badge">🐯</div>
+          <div class="maybank-logo-text">
+            <span class="maybank-logo-title">Maybank<span>2u</span></span>
+            <span class="maybank-logo-sub">MALAYAN BANKING BERHAD</span>
           </div>
-          <p><a href="/" class="btn-primary">&larr; Return to Lab Matrix</a></p>
+        </a>
+        <nav class="maybank-nav">
+          <a href="/">Home</a>
+          <a href="/login.html">Maybank2u Login</a>
+          <a href="/profile.html">My Accounts</a>
+          <a href="/documents.html">Product Disclosures</a>
+        </nav>
+      </header>
+      <div class="container" style="max-width: 860px; margin-top: 36px;">
+        <div class="card">
+          <div class="card-header">
+            <h2 class="card-title">🔍 Search Results: Products & Services</h2>
+            <span class="badge badge-yellow">Maybank Search</span>
+          </div>
+          <p style="color: var(--text-secondary); font-size: 14px; margin-bottom: 16px;">
+            Showing results for banking products, savings accounts, and fixed deposits matching your search query:
+          </p>
+          <div style="margin: 20px 0; padding: 18px; background: #fff9e6; border: 1px solid #fcd34d; border-radius: 8px;">
+            Search Query Parameter: <strong>${query}</strong>
+          </div>
+          <div style="margin-top: 24px; display: flex; gap: 12px;">
+            <a href="/" class="btn-primary">&larr; Return to Maybank2u Home</a>
+            <a href="/login.html" class="btn-secondary">Online Banking Login</a>
+          </div>
         </div>
       </div>
     </body>
@@ -515,7 +548,7 @@ app.post('/api/jwt/verify', (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 app.get('/.env', (req, res) => {
   res.type('text/plain').send(`
-# AbuseLab Live Production Secrets
+# Maybank2u Live Production Secrets & API Keys
 NODE_ENV=production
 APP_SECRET=super_secret_jwt_key_99410194819
 DB_HOST=127.0.0.1
@@ -524,15 +557,16 @@ DB_PASS=P@ssw0rdAdmin2026!
 AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE
 AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
 STRIPE_LIVE_KEY=sk_test_dummy_mock_vulnerable_key_123456
+RENTAS_ROUTING_KEY=RENTAS-PAYNET-PROD-AUTH-99120
 FLAG_ENV=FLAG{env_credentials_exposed_secret_99a}
 `)
 })
 
 app.get('/backup.sql', (req, res) => {
   res.type('text/plain').send(`
--- AbuseLab Database Dump 2026-10-22
-INSERT INTO users VALUES (1, 'admin', '21232f297a57a5a743894a0e4a801fc3', 'admin', '4532-1234-8901-9921', 'admin@vulncorp.com');
-INSERT INTO users VALUES (2, 'ceo', 'c4ca4238a0b923820dcc509a6f75849b', 'executive', '4916-1111-2222-3333', 'ceo@vulncorp.com');
+-- Maybank Core Accounts Database Dump 2026-10-22
+INSERT INTO users VALUES (1, 'admin', '21232f297a57a5a743894a0e4a801fc3', 'admin', '4532-1234-8901-9921', 'admin@maybank2u.com.my');
+INSERT INTO users VALUES (2, 'ceo', 'c4ca4238a0b923820dcc509a6f75849b', 'executive', '4916-1111-2222-3333', 'ceo@maybank.com.my');
 -- FLAG: FLAG{sql_backup_dump_unmasked_11b}
 `)
 })
@@ -541,7 +575,7 @@ app.get('/actuator/env', (req, res) => {
   res.json({
     activeProfiles: ['production', 'internal'],
     propertySources: [
-      { name: 'systemEnvironment', properties: { USER: 'abuselab-svc', PATH: '/usr/local/bin:/usr/bin' } },
+      { name: 'systemEnvironment', properties: { USER: 'maybank-svc', PATH: '/usr/local/bin:/usr/bin' } },
       { name: 'applicationConfig', properties: { 'server.port': 8080, 'spring.datasource.password': 'ProdSecret2026' } }
     ]
   })
@@ -563,15 +597,15 @@ Disallow: /uploads/
 // Start server
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`\n=================================================================`)
-  console.log(`🔥 AbuseLab Cybersecurity Vulnerability Playground running on: http://0.0.0.0:${PORT}`)
+  console.log(`🐯 Maybank2u — Malayan Banking Online Portal on: http://0.0.0.0:${PORT}`)
   console.log(`   - Public Domain:     https://abuse.sentinelai.studio`)
-  console.log(`   - Matrix & Board:    http://localhost:${PORT}/`)
-  console.log(`   - Terminal (RCE):    http://localhost:${PORT}/admin.html`)
-  console.log(`   - SQLi Login:        http://localhost:${PORT}/login.html`)
-  console.log(`   - LFI Vault:         http://localhost:${PORT}/documents.html`)
-  console.log(`   - Web Shell Upload:  http://localhost:${PORT}/upload.html`)
-  console.log(`   - SSRF Proxy:        http://localhost:${PORT}/ssrf.html`)
-  console.log(`   - IDOR Profiles:     http://localhost:${PORT}/profile.html`)
-  console.log(`   - XSS Feedback:      http://localhost:${PORT}/feedback.html`)
+  console.log(`   - Maybank Home:      http://localhost:${PORT}/`)
+  console.log(`   - Online Sign-In:    http://localhost:${PORT}/login.html`)
+  console.log(`   - My Accounts:       http://localhost:${PORT}/profile.html`)
+  console.log(`   - PDS Disclosures:   http://localhost:${PORT}/documents.html`)
+  console.log(`   - MyKad KYC Uploads: http://localhost:${PORT}/upload.html`)
+  console.log(`   - Forex Rate Proxy:  http://localhost:${PORT}/ssrf.html`)
+  console.log(`   - Branch Reviews:    http://localhost:${PORT}/feedback.html`)
+  console.log(`   - MEPS ATM Switch:   http://localhost:${PORT}/admin.html`)
   console.log(`=================================================================\n`)
 })

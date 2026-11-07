@@ -1,7 +1,7 @@
 import crypto, { randomUUID } from 'node:crypto'
 import net from 'node:net'
 import { payloadsRag } from './integrations/index.js'
-import { runNativeTool, previewNativeCommand, nativeToolsStatus, NATIVE_TOOLS } from './integrations/native-tools.js'
+import { runNativeTool, cancelNativeTools, previewNativeCommand, nativeToolsStatus, NATIVE_TOOLS } from './integrations/native-tools.js'
 import { aiEngine } from './ai/ai-engine.js'
 import { enrichWithOwasp } from './owasp.js'
 import { getScriptsForTrigger, runCustomScript } from './custom-scripts.js'
@@ -21,7 +21,9 @@ import {
   evaluateFindingCvss,
   CVSS4_TEMPLATES,
 } from './cvss4.js'
+import { projectHost } from './exploits/probe-utils.js'
 import * as db from './db.js'
+import { findCaptures } from './report-contract.js'
 
 /**
  * UnifiedPipeline — ONE orchestration flow for both blackbox and whitebox.
@@ -42,6 +44,43 @@ const SEVERITY_RANK = { info: 0, low: 1, medium: 2, high: 3, critical: 4 }
 
 function extractHtmlTitle(body) {
   return String(body || '').match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1]?.replace(/\s+/g, ' ').trim().slice(0, 200) || null
+}
+
+function splitSetCookieHeader(value) {
+  return String(value || '').split(/,(?=\s*[^;,=\s]+=[^;,]*)/).map(v => v.trim()).filter(Boolean)
+}
+
+async function fetchWithHttpFallback(target, options = {}) {
+  const raw = String(target || '').trim()
+  const hasScheme = /^https?:\/\//i.test(raw)
+  const urls = hasScheme
+    ? [raw]
+    : [`https://${raw}`, `http://${raw}`]
+  let lastError
+  for (const url of urls) {
+    try {
+      return { response: await fetch(url, options), url }
+    } catch (err) {
+      lastError = err
+    }
+  }
+  throw lastError || new Error('request failed')
+}
+
+function isSelfSerializedFinding(value) {
+  if (typeof value !== 'string') return false
+  const text = value.trim()
+  return /^\{[\s\S]*"(?:title|severity|description|cweId|owaspCategory)"\s*:/.test(text)
+}
+
+function removeNonEvidenceEchoes(finding) {
+  const evidence = finding?.evidence && typeof finding.evidence === 'object'
+    ? { ...finding.evidence }
+    : {}
+  if (isSelfSerializedFinding(evidence.raw)) {
+    delete evidence.raw
+  }
+  return { ...finding, evidence }
 }
 
 /**
@@ -210,6 +249,18 @@ function findingFingerprint(finding) {
   }
   const category = /jwt|token|api.?key|secret|credential/i.test(finding.title || '') ? 'credential'
     : /sql injection|raw query|query interpolation/i.test(finding.title || '') ? 'sql-injection' : String(finding.title || '').toLowerCase()
+  // Blackbox findings carry no file/line, so cwe+category+host alone collapsed
+  // two genuinely different issues on the SAME host (e.g. /search?id=1 and /login
+  // both → cwe-89|sql-injection|host) and the second was dropped as a duplicate.
+  // Adding the path keeps the record distinct without weakening the EOL/CVE
+  // collapse above, which is keyed on product and never reaches this branch.
+  if (!file && !line) {
+    const route = (() => {
+      const raw = String(finding.target || evidence.url || '')
+      try { return new URL(raw).pathname.toLowerCase() } catch { return '' }
+    })()
+    return `${cwe}|||${category}|${host}|${route}`
+  }
   return `${cwe}|${file}|${line}|${category}|${host}`
 }
 
@@ -245,8 +296,23 @@ export function getRootDomain(hostname) {
   return parts.slice(-2).join('.')
 }
 
+/**
+ * Ensure a URL string carries an explicit scheme.
+ * Blackbox targets may be typed as a bare host ("example.com"). Every downstream
+ * consumer (new URL, the /^https?:\/\// gate in _collectUrls, fetch) needs a
+ * scheme, so discovery-derived URLs built by string concatenation silently
+ * vanished when the operator omitted it.
+ */
+export function ensureScheme(url) {
+  const s = String(url || '').trim()
+  if (!s) return s
+  if (/^https?:\/\//i.test(s)) return s
+  if (/^[a-z][a-z0-9+.-]*:/i.test(s)) return s // ftp:, mailto:, … leave alone
+  return `https://${s.replace(/^\/+/, '')}`
+}
+
 export function joinUrl(base, p) {
-  const b = (base || '').replace(/\/+$/, '')
+  const b = ensureScheme(base).replace(/\/+$/, '')
   const cleanPath = (p || '').replace(/^\/+/, '')
   return `${b}/${cleanPath}`
 }
@@ -258,6 +324,16 @@ export class UnifiedPipeline {
     this.control = new Map()
     // scanId -> blackbox metadata (tools/urls/subdomains) used by retry logic
     this._blackboxMeta = new Map()
+    // scanIds whose terminal notification (WS 'scan:done', PDF email, Telegram/
+    // Discord alert) must be suppressed because another stage of the same scan
+    // is still queued — e.g. hybrid runs whitebox then blackbox on one scanId.
+    // Without this, finish() after whitebox fired 'completed' at 100%, the bar
+    // reset to 2% for blackbox, and every notification/email was sent twice
+    // (the first one carrying no blackbox findings).
+    // Scan depth selected by the caller ('quick' | 'standard' | 'deep').
+    // Custom scripts read this; without the assignment every scan silently
+    // ran at 'standard' regardless of what was requested.
+    this.depth = 'standard'
     // scanId -> Set of discovered URLs queued for injection chaining
     this._urlPool = new Map()
     // scanId -> Array of harvested login forms {url, userField, passField, extra}
@@ -305,6 +381,24 @@ export class UnifiedPipeline {
   }
 
   /**
+   * Keep terminal notification side effects deferred for a scanId.
+   *
+   * Used by hybrid/whitebox-folder runs, which execute whitebox and blackbox
+   * sequentially on a single scanId. Call before the first stage so its
+   * finish() only writes the DB status; call releaseDeferredFinish() after the
+   * last stage so the notification goes out exactly once — with the complete
+   * finding set.
+   */
+  deferFinish(scanId) {
+    this._deferredFinish.add(scanId)
+  }
+
+  /** Lift the deferral installed by deferFinish() so finish() notifies normally. */
+  releaseDeferredFinish(scanId) {
+    this._deferredFinish.delete(scanId)
+  }
+
+  /**
    * Reset per-scan state before a run starts.
    *
    * Required because re-run / retry-failed operate on the SAME scan id. Without
@@ -330,10 +424,10 @@ export class UnifiedPipeline {
   }
 
   async detectCatchAllBaseline(scanId, targetUrl) {
-    const base = /^https?:\/\//i.test(targetUrl) ? targetUrl.replace(/\/+$/, '') : `https://${targetUrl}`
-    const url = `${base}/${crypto.randomBytes(10).toString('hex')}-probe-404`
+    const base = String(targetUrl || '').replace(/\/+$/, '')
+    const path = `/${crypto.randomBytes(10).toString('hex')}-probe-404`
     try {
-      const res = await fetch(url, { method: 'GET', redirect: 'manual', signal: AbortSignal.timeout(10000) })
+      const { response: res } = await fetchWithHttpFallback(`${base}${path}`, { method: 'GET', redirect: 'manual', signal: AbortSignal.timeout(10000) })
       const body = await res.text()
       if ([200, 301, 302].includes(res.status)) {
         const baseline = {
@@ -368,11 +462,17 @@ export class UnifiedPipeline {
       Math.abs(evidence.contentLength - baseline.contentLength) / baseline.contentLength <= 0.02
     const hashMatches = Boolean(evidence.bodyHash && evidence.bodyHash === baseline.bodyHash)
     // Third branch: the response we actually received WAS the catch-all HTML
-    // lander while the finding claims a machine-readable artifact (config, JSON,
+    // lander while the finding claims a machine-readable artefact (config, JSON,
     // upload, API payload). Those two facts cannot both be true, so the claim is
-    // an artefact of the catch-all. This previously read `!evidence.isHtml && …
-    // && evidence.isHtml`, a conjunction that is unsatisfiable by construction —
-    // so every size-less finding sailed straight through this guard.
+    // an artefact of the catch-all.
+    //
+    // NOTE: this branch is deliberately NOT `evidence.isHtml === false`. The
+    // probe reaching here already has no size/hash match against the baseline, so
+    // a non-HTML body is a genuinely DIFFERENT response — suppressing it would
+    // discard real machine-readable findings on catch-all targets. `isHtml` is a
+    // strict boolean from responseEvidence(), and the outer `baseline.isHtml`
+    // conjunct already holds, so the honest test is "HTML came back, yet the
+    // finding claims a machine-readable artefact".
     const nonHtmlClaim = /json|config|secret|upload|api|sql|database|file/i.test(
       `${finding.title || ''} ${finding.description || ''} ${evidence.claim}`,
     )
@@ -473,6 +573,7 @@ export class UnifiedPipeline {
     if (!ctl) return
     ctl.stopped = true
     ctl.paused = false // unblock any pause waiter so the loop exits
+    cancelNativeTools(scanId)
   }
 
   isPaused(scanId) { return this._ctl(scanId)?.paused === true }
@@ -517,6 +618,13 @@ export class UnifiedPipeline {
       const scan = db.get(`SELECT target FROM scans WHERE id = ?`, scanId)
       rawFinding.target = scan?.target || rawFinding.evidence?.url || ''
     }
+    // Normalise the target once, at the boundary. Playbook builders interpolate
+    // `${target}/.env`, so a target that already ends in `/` (a bare host root,
+    // which is the common case for a site scan) produced `//.env` and `//.git` —
+    // commands that target a protocol-relative path rather than the site root.
+    if (typeof rawFinding.target === 'string' && rawFinding.target.length > 1) {
+      rawFinding.target = rawFinding.target.replace(/\/+$/, '')
+    }
     if (this._isSoft404Finding(scanId, rawFinding)) {
       rawFinding.evidence = { ...(rawFinding.evidence || {}), soft404: true, verification: 'soft-404-suppressed' }
       this.log(scanId, 'info', `Suppressed catch-all response for "${rawFinding.title}"`)
@@ -542,7 +650,11 @@ export class UnifiedPipeline {
       } catch { /* non-fatal */ }
 
       // 1. OWASP enrich
-    let f = enrichWithOwasp(rawFinding)
+    // A custom script may serialize its own finding into evidence.raw. That is
+    // bookkeeping, not target output; retaining it makes the verifier treat a
+    // repeated title/description as proof of the claim.
+    let f = removeNonEvidenceEchoes(enrichWithOwasp(rawFinding))
+    let matchedExploitPlaybooks = []
     // 2. RAG PoC cross-reference
     try { f = payloadsRag.crossReference(f) } catch { /* non-fatal */ }
       // 2b. Attach matching exploit playbooks so every finding carries a
@@ -550,7 +662,7 @@ export class UnifiedPipeline {
       try {
         const matched = matchExploits(f)
         if (matched.length) {
-          f.exploitPlaybooks = matched.slice(0, 5).map(p => ({
+          matchedExploitPlaybooks = matched.slice(0, 5).map(p => ({
             id: p.id,
             risk: p.risk,
             techniques: (p.techniques || []).map(t => ({
@@ -561,10 +673,7 @@ export class UnifiedPipeline {
               needsApproval: needsApproval(t, classifyRisk(f)),
             })),
           }))
-          f.evidence = {
-            ...(f.evidence || {}),
-            exploitPlaybooks: f.exploitPlaybooks,
-          }
+          f.exploitPlaybooks = matchedExploitPlaybooks
         }
       } catch { /* non-fatal */ }
     // 3. AI verification (specialist-routed) — SKIP for AI-generated findings
@@ -637,10 +746,18 @@ export class UnifiedPipeline {
     // Missing security headers, server banner, robots.txt, subdomain, open port — always factual
     const factualTitles = /missing.*security.*header|server.*header.*information|robots\.txt|subdomain|open port|httpx:|ffuf:|discovered/i
     // Some modules record a fact whose *security impact* still needs adversarial
-    // reasoning (e.g. `cors-audit` can be a benign wildcard or a credentialed
+    // reasoning (a `cors-audit` result can be a benign wildcard or a credentialed
     // session hijack). Those are the owning agent's domain, so they keep the full
     // LLM tier; everything else factual gets deterministic attribution below.
-    const ownsDomain = /cors|auth|session|credential|token|injection|upload|traversal|smuggl|deserializ/i.test(`${f.module || ''} ${f.title || ''}`)
+    //
+    // The regex is deliberately narrow. It once matched the bare module or title
+    // text, which meant `cors-audit` — a listed factual module — was captured by
+    // its own name and could never take the self-evidencing path. The modules
+    // whose facts are most security-relevant were therefore the exact ones always
+    // forced through the model gate, and a model that declined to rule turned
+    // them into unverified leads.
+    const domainText = `${f.module || ''} ${f.title || ''}`
+    const ownsDomain = /cors|auth|session|credential|token|injection|upload|traversal|smuggl|deserializ/i.test(domainText)
     const isFactualFinding = (!ownsDomain && isFactual) || (!ownsDomain && factualTitles.test(f.title || ''))
 
     const gate = verify && !isAiGenerated && !isFactualFinding
@@ -650,6 +767,13 @@ export class UnifiedPipeline {
       this.log(scanId, 'info', `🤖 [AI] verification budget spent for this scan — attributing "${f.title}" deterministically instead of calling the model`)
     }
 
+    // Discard and retention must be mutually exclusive. `runVerification()` used to
+    // signal two different outcomes with one `return null` (a hard discard), while
+    // the low-confidence branch signalled "keep" by mutating severity in place —
+    // so a caller could not tell a dropped finding from a kept one without
+    // re-deriving it from severity. That ambiguity is what let the block below
+    // re-classify an already-discarded finding. The verdict is now explicit.
+    let discarded = false
     const runVerification = async () => {
     if (gate && !budgetBlocked) {
       try {
@@ -676,11 +800,29 @@ export class UnifiedPipeline {
             f.severity = 'info'
           } else {
             this.log(scanId, 'info', `🤖 [${v.agent}] discarded false positive (conf=${v.confidence}): ${f.title}`)
+            discarded = true
             return null
           }
         }
+        // `refined` is built as { ...finding } in ai-engine.js, so it carries the
+        // PRE-verification evidence object and the PRE-verification severity. Letting
+        // it replace `f` wholesale threw away every verdict stamp written above it in
+        // this block — `aiUndecided` and the needs-validation tier — and let the
+        // spread's stale severity silently undo a deliberate `f.severity = 'info'`
+        // from the low-confidence rejection branch. Capture the verifier-owned fields
+        // first, then re-assert them over the merge so the model's refinements and the
+        // verifier's verdict coexist instead of the model overwriting the verdict.
+        const verifierSeverity = discarded || f.severity === 'info' ? 'info' : null
+        const verifierEvidence = { ...(f.evidence || {}) }
         if (v.refined) f = v.refined
-        if (v.evidenceTier) f.evidence = { ...(f.evidence || {}), aiEvidenceTier: v.evidenceTier }
+        if (verifierSeverity) f.severity = verifierSeverity
+        f.evidence = { ...(f.evidence || {}), ...verifierEvidence }
+        // Only adopt the model's tier when the verifier has not already set one. A
+        // needs-validation stamp is the verifier's own judgement and must not be
+        // upgraded to `observed`/`validated` by a model that never saw the artifact.
+        if (v.evidenceTier && !verifierEvidence.aiEvidenceTier) {
+          f.evidence = { ...f.evidence, aiEvidenceTier: v.evidenceTier }
+        }
       } catch (e) {
         this.log(scanId, 'warn', `🤖 [AI] verification error for "${f.title}": ${e.message} — keeping original finding`)
       }
@@ -704,7 +846,11 @@ export class UnifiedPipeline {
       }
 
       const verdictText = String(verdict?.verdict || '').toLowerCase()
-      const rejectsFinding = Boolean(verdict) && (
+      // Prose may only reject a finding when the scanner captured nothing. Where a
+      // response exists it is the stronger evidence, and a model's opinion about
+      // wording must not delete what the target actually returned.
+      const hasLiveCapture = findCaptures(f).length > 0
+      const rejectsFinding = Boolean(verdict) && !hasLiveCapture && (
         verdict.isTruePositive === false ||
         /(?:evidence|artifact)[^.]{0,60}(?:lack|missing|insufficient)|not\s+(?:a\s+)?(?:true\s+positive|exploitable)/i.test(verdictText)
       )
@@ -717,14 +863,42 @@ export class UnifiedPipeline {
 
     await runVerification()
 
+    // A finding the verifier rejected outright owns the outcome; the downgrade
+    // block below must not resurrect it as a "needs-validation" lead.
+    if (discarded) return null
+
+    // Keep playbooks available for the persisted finding and the guarded
+    // auto-exploit hook, but do not expose them to the AI verifier as evidence.
+    // They describe possible actions; they are never proof that the target is
+    // vulnerable.
+    if (matchedExploitPlaybooks.length) {
+      f.evidence = { ...(f.evidence || {}), exploitPlaybooks: matchedExploitPlaybooks }
+    }
+
     // A finding the reviewer judged to lack the artifacts its claim requires is
     // NOT verified, whatever severity upstream asserted, and must not reach the
     // Confirmed list. (The SQL-injection reclassification itself already ran
     // above, before dispatch, so this only has to adjudicate severity.)
     {
       const verdictText = String(verdict?.verdict || '').toLowerCase()
+      // This block is the single largest source of discarded proof in the
+      // codebase. It fires on prose alone, and the heuristic's own undecided
+      // fallback used to read "no artifact in the finding evidence settles this
+      // claim" — literally matching `lacksArtifacts` below — so the pipeline
+      // stripped severity, nulled CVSS and stamped aiVerification:false on
+      // findings that had a photographed HTTP response attached. 707 rows in the
+      // production database carry both a capture and this stamp.
+      //
+      // Two guards now stand between prose and a real capture:
+      //   1. a capture means there is an artifact, so "lacks artifact" is false by
+      //      construction and this block must not run at all;
+      //   2. an undecided verdict is not a rejection — it says exploitability was
+      //      not determined, which is a reason to keep the lead, not to bury it.
+      const captures = findCaptures(f)
+      const hasLiveCapture = captures.length > 0
+      const undecidedVerdict = verdict && (verdict.isTruePositive === null || verdict.isTruePositive === undefined)
       const lacksArtifacts = /(?:evidence|artifact)[^.]{0,60}(?:lack|missing|insufficient|unsupported|absent)|no\s+(?:sql\s+)?(?:error|artifact|proof|evidence|artifact)[^.]{0,40}(?:observed|found|present|captured)|unproven|not\s+(?:been\s+)?(?:confirmed|validated|verified)|cannot\s+(?:be\s+)?confirm/i.test(verdictText)
-      if (verdict && (verdict.isTruePositive === false || lacksArtifacts)) {
+      if (verdict && !hasLiveCapture && !undecidedVerdict && (verdict.isTruePositive === false || lacksArtifacts)) {
         const before = f.severity
         f.severity = 'info'
         f.cvss = null
@@ -737,6 +911,17 @@ export class UnifiedPipeline {
           unconfirmedReason: String(verdict.verdict || '').slice(0, 400) || 'AI reviewer found no artifact supporting the claim.',
         }
         this.log(scanId, 'info', `⚖️  AI verdict overrules upstream severity: "${f.title}" ${before} → info (claim has no supporting artifact; filed under unverified leads)`)
+      } else if (hasLiveCapture && verdict && verdict.isTruePositive === false) {
+        // The scanner captured a response the model then argued against. Keep the
+        // finding and its evidence, and record the disagreement instead of
+        // silently discarding the capture — the operator decides on re-check.
+        f.evidence = {
+          ...(f.evidence || {}),
+          captureRetained: true,
+          conflictingAiVerdict: String(verdict.verdict || '').slice(0, 400),
+        }
+        if (f.severity !== 'info') f.evidence.verification = 'artifact-captured'
+        this.log(scanId, 'info', `🔒 Capture retained for "${f.title}": the AI verdict contradicted a live response, so the artifact is preserved for re-check rather than discarded`)
       }
     }
 
@@ -774,7 +959,22 @@ export class UnifiedPipeline {
       } catch { /* non-fatal */ }
     }
 
-    const tier = f.evidence?.aiEvidenceTier === 'needs-validation' ? 'needs-validation' : evidenceTier(f, targetType)
+    // The tier recorded above may say "needs-validation" because the reviewer
+    // could not settle the claim — but a captured response settles it regardless
+    // of what the reviewer concluded. Re-stamping needs-validation here would
+    // erase the contract's own decision after it was already made, which is how a
+    // finding holding a photographed 200 OK still rendered as unverified.
+    //
+    // Both spellings must be honoured. The undecided branch stamps
+    // `verification: 'needs-validation'` while the artifact-less downgrade stamps
+    // `aiEvidenceTier: 'needs-validation'`; reading only the latter let an
+    // undecided review — the very case this comment describes — fall through to
+    // evidenceTier() and render as "observed", i.e. more confirmed than the
+    // verdict justified.
+    const capturedNow = findCaptures(f).length > 0
+    const tier = (!capturedNow && (f.evidence?.aiEvidenceTier === 'needs-validation' || f.evidence?.verification === 'needs-validation'))
+      ? 'needs-validation'
+      : evidenceTier(f, targetType)
     f.evidence = { ...(f.evidence || {}), validationTier: tier }
 
     // CVSS v4.0 score is DERIVED from the vector, never accepted from upstream.
@@ -929,10 +1129,33 @@ export class UnifiedPipeline {
       // Verbose: log every finding with severity, title, and module for live monitoring
       this.log(scanId, 'info', `📌 [${stored.severity}] ${stored.title} (${stored.module || 'unknown'})`)
 
-      // ── AUTO-EXPLOIT: launch campaign for verified high/critical findings ──
-      // Only auto-trigger on high-confidence verified findings to prevent noise
-      if (verdict?.isTruePositive && verdict.confidence >= 70 && ['critical', 'high'].includes(stored.severity)) {
+      // ── AUTO-EXPLOIT: exploitation IS the verification step ──
+      //
+      // The previous guard required `verdict.isTruePositive && confidence >= 70`
+      // before launching a campaign. That is a circular dependency: a finding is
+      // only *promoted* to confirmed BY the artifact that a campaign produces, and
+      // a campaign only launched once the finding was already confirmed. The net
+      // effect was that the 126 registry playbooks essentially never ran — the
+      // database shows 12 successful steps across all of recorded history — and
+      // every report degenerated into recon plus head-based heuristics.
+      //
+      // Correct model: a finding that is *claimed* (severity-bearing, not already
+      // contradicted by evidence) is a candidate for active confirmation. The
+      // campaign captures the artifact, and the artifact is what promotes the
+      // finding. Non-destructive techniques run automatically; anything
+      // destructive or requiring approval is queued by the orchestrator itself,
+      // so widening this trigger does not widen blast radius.
+      const alreadyContradicted = f.aiVerification === false || f.evidence?.aiVerification === false
+      const actionableSeverity = ['critical', 'high', 'medium'].includes(String(stored.severity || '').toLowerCase())
+      const storedEvidence = (() => {
+        try { return typeof stored.evidence === 'string' ? JSON.parse(stored.evidence) : (stored.evidence || {}) } catch { return {} }
+      })()
+      const hasTargetEvidence = findCaptures({ ...stored, evidence: storedEvidence }).length > 0
+      const hasRunnablePlaybook = Array.isArray(storedEvidence.exploitPlaybooks) && storedEvidence.exploitPlaybooks.length > 0
+      if (actionableSeverity && !alreadyContradicted && hasTargetEvidence && hasRunnablePlaybook) {
         this._autoExploit(scanId, stored)
+      } else if (actionableSeverity && !alreadyContradicted && !hasTargetEvidence) {
+        this.log(scanId, 'info', `⏭ Auto-exploit not launched for "${stored.title}": no target response artifact was captured`)
       }
 
       return stored
@@ -997,8 +1220,16 @@ export class UnifiedPipeline {
       const crawlBatch = modules.filter(m => ['katana', 'ffuf', 'gobuster', 'nuclei', 'feroxbuster', 'dirsearch', 'gau'].includes(m))
       const vulnBatch = modules.filter(m => ['nikto', 'arjun', 'dalfox', 'sqlmap', 'wpscan'].includes(m))
       const otherBatch = modules.filter(m => !['nmap', 'whatweb', 'wafw00f', 'sslscan', 'masscan', 'katana', 'ffuf', 'gobuster', 'nuclei', 'feroxbuster', 'dirsearch', 'gau', 'nikto', 'arjun', 'dalfox', 'sqlmap', 'wpscan'].includes(m))
-      const batches = [reconBatch, crawlBatch, vulnBatch, otherBatch].filter(b => b.length)
-      const batchNames = ['recon', 'crawl', 'vuln', 'other']
+      // Names travel with their batch: filtering one array independently of the
+      // other mislabelled every subsequent batch in the log (crawl reported as recon).
+      const batchSpecs = [
+        ['recon', reconBatch],
+        ['crawl', crawlBatch],
+        ['vuln', vulnBatch],
+        ['other', otherBatch],
+      ].filter(([, b]) => b.length)
+      const batches = batchSpecs.map(([, b]) => b)
+      const batchNames = batchSpecs.map(([n]) => n)
       let done = 0
       for (let bi = 0; bi < batches.length; bi++) {
         const batch = batches[bi]
@@ -1008,7 +1239,7 @@ export class UnifiedPipeline {
           batch.map(async (mod) => {
             if (!NATIVE_TOOLS[mod]) { this.log(scanId, 'warn', `Unknown module: ${mod}`); return }
             this.log(scanId, 'info', `▶ Running tool: ${mod} [native]\n$ ${previewNativeCommand(mod, target)}`)
-            const res = await runNativeTool(mod, target)
+            const res = await runNativeTool(mod, target, { owner: scanId })
             await this.processToolOutput(scanId, mod, res, { verify, targetType: scan.target_type, target })
           })
         )
@@ -1426,7 +1657,7 @@ export class UnifiedPipeline {
    */  async _probeServiceVulns(scanId, target, { verify } = {}) {
     const host = (() => {
       try { return new URL(/^https?:\/\//i.test(target) ? target : `https://${target}`).hostname }
-      catch { return target.replace(/^https?:\/\//i, '').split('/')[0] }
+      catch { return projectHost(target).host }
     })()
     this.log(scanId, 'info', `⚔️ Offensive service-vuln probing on ${host} (heartbleed / ms17-010 / ftp-anon / ssl-poodle)...`)
     const scripts = [
@@ -1440,7 +1671,7 @@ export class UnifiedPipeline {
       await this.waitIfPaused(scanId)
       try {
         this.log(scanId, 'info', `⚔️ $ nmap ${host} ${s.args.join(' ')}`)
-        const r = await runNativeTool('nmap-script', `${host} ${s.args.join(' ')}`)
+        const r = await runNativeTool('nmap-script', `${host} ${s.args.join(' ')}`, { owner: scanId })
         const out = `${r.stdout || ''}\n${r.stderr || ''}`
         if (/VULNERABLE/i.test(out)) {
           await this.ingestFinding(scanId, {
@@ -1775,20 +2006,23 @@ export class UnifiedPipeline {
    * for injection surface enumeration.
    */
   async _auditCookiesCors(scanId, target, { verify } = {}) {
-    const base = /^https?:\/\//i.test(target) ? target : `https://${target}`
+    const base = String(target || '').replace(/\/+$/, '')
     this.log(scanId, 'info', `🍪 Auditing cookie security, CORS, and harvesting forms...`)
 
     try {
-      const res = await fetch(base, { redirect: 'follow', signal: AbortSignal.timeout(10000) })
+      const { response: res, url: resolvedBase } = await fetchWithHttpFallback(base, { redirect: 'follow', signal: AbortSignal.timeout(10000) })
+      const requestBase = resolvedBase.replace(/\/+$/, '')
       const headers = Object.fromEntries(res.headers.entries())
       const body = (await res.text()).slice(0, 500000)
 
       // Cookie security
-      const setCookie = headers['set-cookie'] || ''
-      if (setCookie) {
-        const missingSecure = !/;\s*secure/i.test(setCookie)
-        const missingHttpOnly = !/;\s*httponly/i.test(setCookie)
-        const missingSameSite = !/;\s*samesite=/i.test(setCookie)
+      const setCookies = typeof res.headers.getSetCookie === 'function'
+        ? res.headers.getSetCookie()
+        : splitSetCookieHeader(res.headers.get('set-cookie'))
+      if (setCookies.length) {
+        const missingSecure = setCookies.some(cookie => !/;\s*secure(?:;|$)/i.test(cookie))
+        const missingHttpOnly = setCookies.some(cookie => !/;\s*httponly(?:;|$)/i.test(cookie))
+        const missingSameSite = setCookies.some(cookie => !/;\s*samesite=/i.test(cookie))
         if (missingSecure || missingHttpOnly || missingSameSite) {
           const issues = []
           if (missingSecure) issues.push('Secure')
@@ -1802,7 +2036,7 @@ export class UnifiedPipeline {
             description: `Cookies set by ${base} are missing ${issues.join(', ')}. Without Secure, cookies transmit over HTTP. Without HttpOnly, JS can steal them. Without SameSite, CSRF is easier.`,
             remediation: 'Set Secure, HttpOnly, and SameSite=Lax/Strict on all session cookies.',
             module: 'cookie-audit',
-            evidence: { url: base, cookie: setCookie.slice(0, 200), missing: issues },
+            evidence: { url: resolvedBase, cookies: setCookies.slice(0, 10), missing: issues },
           }, { verify })
         }
       }
@@ -1823,7 +2057,7 @@ export class UnifiedPipeline {
           description: `CORS allows any origin (*) at ${base}. While credentials won't be sent, this allows any site to read public API responses.`,
           remediation: 'Restrict ACAO to specific trusted origins. Never use * with credentials.',
           module: 'cors-audit',
-          evidence: { url: base, acao, acac },
+          evidence: { url: requestBase, acao, acac },
         }, { verify })
       } else if (acao && acao !== 'null' && acac === 'true') {
         await this.ingestFinding(scanId, {
@@ -1834,19 +2068,19 @@ export class UnifiedPipeline {
           description: `CORS allows origin "${acao}" with credentials at ${base}. If this origin is not fully trusted, it enables cross-origin authenticated requests.`,
           remediation: 'Verify the allowed origin is fully trusted. Prefer explicit origin validation over wildcards.',
           module: 'cors-audit',
-          evidence: { url: base, acao, acac },
+          evidence: { url: requestBase, acao, acac },
         }, { verify })
       }
       // ── ACTIVE CORS MATRIX: probe with hostile origins ──
       try {
         const EVIL_ORIGINS = [
           'https://evil-attacker-domain.com',
-          `https://${new URL(base).hostname}.evil-attacker-domain.com`, // subdomain spoof
+          `https://${new URL(requestBase).hostname}.evil-attacker-domain.com`, // subdomain spoof
           'null',
         ]
         for (const origin of EVIL_ORIGINS) {
           await this.waitIfPaused(scanId)
-          const probe = await fetch(base, {
+          const probe = await fetch(requestBase, {
             method: 'GET',
             headers: { Origin: origin, 'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) SentinelAI' },
             redirect: 'follow',
@@ -1864,20 +2098,20 @@ export class UnifiedPipeline {
               description: `The server REFLECTS arbitrary origins in Access-Control-Allow-Origin and sets Access-Control-Allow-Credentials: true. Proven with hostile origin "${origin}": the server responded ACAO: ${pAcao}, ACAC: true. Any malicious website can make authenticated cross-origin requests in a victim's browser and READ the responses — full session hijack of any authenticated endpoint.`,
               remediation: 'Never reflect the Origin header. Maintain an explicit allowlist of trusted origins; reject all others without CORS headers.',
               module: 'cors-audit',
-              evidence: { url: base, probedOrigin: origin, reflectedAcao: pAcao, acac: pAcac },
+              evidence: { url: requestBase, probedOrigin: origin, reflectedAcao: pAcao, acac: pAcac },
             }, { verify })
             this.log(scanId, 'warn', `🌐 CORS reflection + credentials @ ${base} (origin ${origin})`)
             break // one proof is enough
           } else if (reflected) {
             await this.ingestFinding(scanId, {
-              title: `CORS origin reflection (no credentials) — ${new URL(base).hostname}`,
+              title: `CORS origin reflection (no credentials) — ${new URL(requestBase).hostname}`,
               severity: 'low',
               cweId: 'CWE-942',
               owaspCategory: 'A02:2025-Security Misconfiguration',
               description: `The server reflects arbitrary origins in Access-Control-Allow-Origin (probed with "${origin}" → ACAO: ${pAcao}) but does NOT set Access-Control-Allow-Credentials. Cross-origin reads are possible for unauthenticated endpoints only — session hijack is NOT possible, but public API data can be scraped cross-origin.`,
               remediation: 'Use an explicit origin allowlist instead of reflection.',
               module: 'cors-audit',
-              evidence: { url: base, probedOrigin: origin, reflectedAcao: pAcao, acac: pAcac },
+              evidence: { url: requestBase, probedOrigin: origin, reflectedAcao: pAcao, acac: pAcac },
             }, { verify })
             break
           }
@@ -1913,7 +2147,7 @@ export class UnifiedPipeline {
             description: `${forms.length} HTML forms with ${totalInputs} input fields found at ${base}. Field types: ${Object.entries(typeCounts).map(([t, n]) => `${t}×${n}`).join(', ')}. Every form field is a potential injection vector.`,
             remediation: 'Ensure all form inputs are validated and sanitized server-side.',
             module: 'form-harvest',
-            evidence: { url: base, forms: forms.slice(0, 5).map(f => ({ action: f.action, method: f.method, inputs: f.inputs.map(i => ({ name: i.name, type: i.type })) })) },
+            evidence: { url: requestBase, forms: forms.slice(0, 5).map(f => ({ action: f.action, method: f.method, inputs: f.inputs.map(i => ({ name: i.name, type: i.type })) })) },
           }, { verify })
 
           // ── LOGIN FORM DETECTION ──
@@ -1928,7 +2162,7 @@ export class UnifiedPipeline {
               || f.inputs.find(i => i.type === 'text')
             if (!userInput) continue
             const isAbsolute = /^https?:\/\//i.test(f.action)
-            const formUrl = f.action ? (isAbsolute ? f.action : new URL(f.action, base).href) : base
+            const formUrl = f.action ? (isAbsolute ? f.action : new URL(f.action, requestBase).href) : base
             // Carry hidden fields (CSRF tokens etc.) so the POST is accepted
             const extra = Object.fromEntries(f.inputs.filter(i => i.type === 'hidden' && i.value).map(i => [i.name, i.value]))
             loginForms.push({ url: formUrl, userField: userInput.name, passField: passInput.name, extra })
@@ -1944,7 +2178,7 @@ export class UnifiedPipeline {
           const formUrls = forms.map(f => {
             const action = f.action || base
             const isAbsolute = /^https?:\/\//i.test(action)
-            const formUrl = isAbsolute ? action : new URL(action, base).href
+            const formUrl = isAbsolute ? action : new URL(action, requestBase).href
             const params = f.inputs.map((n, i) => `${n.name}=${i + 1}`).join('&')
             return `${formUrl}${formUrl.includes('?') ? '&' : '?'}${params}`
           })
@@ -1988,7 +2222,7 @@ export class UnifiedPipeline {
       // dalfox (XSS)
       try {
         this.log(scanId, 'info', `  🎯 dalfox → ${url.slice(0, 90)}\n$ ${previewNativeCommand('dalfox', url)}`)
-        const res = await runNativeTool('dalfox', url)
+        const res = await runNativeTool('dalfox', url, { owner: scanId })
         const out = `${res.stdout || ''}\n${res.stderr || ''}`.trim()
         if (out) {
           const { findings } = extractFindingsFromOutput('dalfox', out, url, this._catchAllBaselines.get(scanId) || null)
@@ -2019,7 +2253,7 @@ export class UnifiedPipeline {
       if (/\?[^=]+=/.test(url)) {
         try {
           this.log(scanId, 'info', `  🎯 sqlmap → ${url.slice(0, 90)}\n$ ${previewNativeCommand('sqlmap', url)}`)
-          const res = await runNativeTool('sqlmap', url)
+          const res = await runNativeTool('sqlmap', url, { owner: scanId })
           const out = `${res.stdout || ''}\n${res.stderr || ''}`.trim()
           if (out) {
             const { findings } = extractFindingsFromOutput('sqlmap', out, url, this._catchAllBaselines.get(scanId) || null)
@@ -2045,15 +2279,14 @@ export class UnifiedPipeline {
   }
 
   /**
-   * Subdomain discovery: passive (subfinder/amass) then
-   * active DNS brute-force (gobuster dns). Wildcard DNS results are filtered by
-   * comparing against a random non-existent subdomain.
+   * Subdomain discovery: passive (subfinder/amass) then active DNS brute-force
+   * (gobuster dns).
    * Each live subdomain is then probed for Swagger/OpenAPI docs.
    */
   async _runSubdomainDiscovery(scanId, target, { verify } = {}) {
     const host = (() => {
       try { return new URL(/^https?:\/\//i.test(target) ? target : `https://${target}`).hostname }
-      catch { return target.replace(/^https?:\/\//i, '').split('/')[0] }
+      catch { return projectHost(target).host }
     })()
     const rootDomain = getRootDomain(host)   // e.g. imaluum.iium.edu.my -> iium.edu.my
     if (!rootDomain || !rootDomain.includes('.')) return
@@ -2064,7 +2297,7 @@ export class UnifiedPipeline {
     // Passive: subfinder
     try {
       this.log(scanId, 'info', `🔎 $ subfinder -d ${rootDomain}`)
-      const r = await runNativeTool('subfinder', rootDomain)
+      const r = await runNativeTool('subfinder', rootDomain, { owner: scanId })
       for (const line of (r.stdout || '').split('\n')) {
         const h = line.trim().toLowerCase()
         if (/^[a-z0-9.-]+\.[a-z]{2,}$/.test(h) && (h === rootDomain || h.endsWith('.' + rootDomain))) {
@@ -2073,14 +2306,17 @@ export class UnifiedPipeline {
       }
     } catch { /* optional */ }
 
-    // Active: gobuster dns brute-force (with wildcard filter)
+    // Active: gobuster dns brute-force
+    // The random-subdomain wildcard probe that used to run here was inert:
+    // dnsbrute.args normalises its input through toRootDomain, so both calls hit
+    // the identical target and `probe` was never compared against `brute`.
+    // Wildcard DNS is handled downstream by the subdomain-takeover checks.
     // Skip if rootDomain looks like a bare TLD (e.g., edu.my, co.uk) — gobuster fails on these
     const domainParts = rootDomain.split('.')
     if (domainParts.length >= 2 && rootDomain.match(/^[a-z0-9-]+\./) && !rootDomain.match(/^(com?|org|net|edu|gov|mil|ac|co|sch|go|or|ne|re)\./)) {
       try {
         this.log(scanId, 'info', `🔎 $ dnsrecon -d ${rootDomain} -D /usr/share/seclists/Discovery/DNS/subdomains-top1million-5000.txt -t brt --threads 30`)
-        const probe = await runNativeTool('dnsbrute', `nonexistent-${randomUUID().slice(0, 8)}.${rootDomain}`)
-        const brute = await runNativeTool('dnsbrute', rootDomain)
+        const brute = await runNativeTool('dnsbrute', rootDomain, { owner: scanId })
         for (const line of (brute.stdout || '').split('\n')) {
           const m = line.match(/([a-z0-9.-]+\.[a-z]{2,})/i)
           if (m) {
@@ -2213,17 +2449,23 @@ export class UnifiedPipeline {
    * Baseline web audit: HTTP security headers + common sensitive paths.
    * Always executed for URL targets — engine-agnostic and high-signal.
    */
-  async auditHttpBaseline(scanId, target, { verify, targetType = 'url' } = {}) {
-    const targetUrl = /^https?:\/\//i.test(target) ? target : `https://${target}`
+  async auditHttpBaseline(scanId, target, { verify, targetType = 'url', fastMode = false } = {}) {
+    let targetUrl = String(target || '').trim()
 
     // 1. Audit HTTP Security Headers (deduplicated per scan: one consolidated finding)
     try {
       this.log(scanId, 'info', `▶ Auditing Security Headers on ${targetUrl}...`)
       let res
       try {
-        res = await fetch(targetUrl, { method: 'HEAD', redirect: 'follow', signal: AbortSignal.timeout(15000) })
+        const result = await fetchWithHttpFallback(targetUrl, { method: 'HEAD', redirect: 'follow', signal: AbortSignal.timeout(15000) })
+        res = result.response
+        targetUrl = result.url.replace(/\/+$/, '')
       } catch {
-        try { res = await fetch(targetUrl, { method: 'GET', signal: AbortSignal.timeout(15000) }) } catch { res = null }
+        try {
+          const result = await fetchWithHttpFallback(targetUrl, { method: 'GET', redirect: 'follow', signal: AbortSignal.timeout(15000) })
+          res = result.response
+          targetUrl = result.url.replace(/\/+$/, '')
+        } catch { res = null }
       }
       if (res && res.headers) {
         const headers = Object.fromEntries(res.headers.entries())
@@ -2280,8 +2522,11 @@ export class UnifiedPipeline {
     } catch { /* non-fatal */ }
 
     // 3. Audit Sensitive Paths (expanded for offensive coverage) — skip if SPA
+    // fastMode is used when cascading to subdomains: the parent host already
+    // received the full 50-path sweep, so subdomains only get high-signal paths
+    // instead of repeating all 50 (each with an 8s timeout) per subdomain.
     if (!isSpaCatchAll) {
-      const paths = ['/robots.txt', '/.git/HEAD', '/.env', '/sitemap.xml',
+      const allPaths = ['/robots.txt', '/.git/HEAD', '/.env', '/sitemap.xml',
         '/.git/config', '/.svn/entries', '/backup.zip', '/backup.tar.gz', '/db.sql', '/dump.sql',
         '/phpinfo.php', '/server-status', '/actuator', '/actuator/env', '/actuator/heapdump',
         '/.well-known/security.txt', '/wp-config.php.bak', '/config.php.bak', '/web.config',
@@ -2292,6 +2537,8 @@ export class UnifiedPipeline {
         '/WEB-INF/web.xml', '/META-INF/maven', '/package.json', '/composer.json',
         '/console', '/admin/login', '/administrator', '/wp-admin', '/user/login',
         '/api/users', '/graphql', '/graphiql', '/.vscode/sftp.json', '/.idea/workspace.xml']
+      const fastPaths = allPaths.filter(p => /^\/\.(env|git\/HEAD|git\/config|aws|dockercfg)$|^\/robots\.txt$|^\/backup\.(zip|tar\.gz)$|^\/db\.sql$|^\/dump\.sql$|^\/phpinfo\.php$|^\/server-status$|^\/admin\/login$|^\/wp-admin$|^\/api\/\.env$/.test(p))
+      const paths = fastMode ? fastPaths : allPaths
       for (const p of paths) {
         await this.waitIfPaused(scanId)
         try {
@@ -2782,7 +3029,10 @@ export class UnifiedPipeline {
     // 2. Also check logs for regex matches like "Tool X failed natively" or "Tool X failed"
     const logs = db.all(`SELECT message FROM logs WHERE scan_id = ? ORDER BY id`, scanId)
     for (const l of logs) {
-      const m = l.message.match(/Tool (\S+)\s+(?:failed|errored)/i)
+      // Batch failures are logged as "Tool X error: …" (Promise.allSettled) and
+      // native failures as "Tool X failed …", so both wordings must match here —
+      // previously only the latter did, hiding every rejected-batch tool from retry.
+      const m = l.message.match(/Tool (\S+)\s+(?:failed|errored|error)/i)
       if (m && m[1]) failedTools.add(m[1])
     }
 
@@ -2796,9 +3046,18 @@ export class UnifiedPipeline {
     this.log(scanId, 'info', `Found ${tools.length} failed tool(s) to retry: ${tools.join(', ')}`)
 
     try {
-      // Re-initialize blackboxMeta object for tracking status
+      // Re-initialize blackboxMeta object for tracking status. The persisted blob
+      // is the source of truth for names/subdomains/urls; the literal above is only
+      // the fallback when the column is empty, otherwise a retry that ran before any
+      // scan-stage write would overwrite the real inventory with an empty schema.
       let meta = { tools: [], subdomains: [], urls: [], totalUrls: 0 }
-      try { if (scan.blackbox_meta) meta = JSON.parse(scan.blackbox_meta) } catch { }
+      try {
+        if (scan.blackbox_meta) meta = Object.assign(meta, JSON.parse(scan.blackbox_meta))
+      } catch { }
+      if (!Array.isArray(meta.tools)) meta.tools = []
+      if (!Array.isArray(meta.subdomains)) meta.subdomains = []
+      if (!Array.isArray(meta.urls)) meta.urls = []
+      if (typeof meta.totalUrls !== 'number') meta.totalUrls = meta.urls.length
       this._blackboxMeta.set(scanId, meta)
 
       let done = 0
@@ -2806,7 +3065,7 @@ export class UnifiedPipeline {
         await this.waitIfPaused(scanId)
         this.log(scanId, 'info', `▶ Retrying: ${tool}\n$ ${previewNativeCommand(tool, target)}`)
         try {
-          const res = await runNativeTool(tool, target)
+          const res = await runNativeTool(tool, target, { owner: scanId })
           // Update status in metadata
           if (Array.isArray(meta.tools)) {
             const idx = meta.tools.findIndex(t => t.tool === tool)
@@ -2867,7 +3126,11 @@ export class UnifiedPipeline {
       { re: /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/, sev: 'critical', cwe: 'CWE-798', title: 'Private key committed to source', owasp: 'A07:2025-Authentication Failures', impact: 'A private cryptographic key is stored in the source code. This key can decrypt all communications, sign malicious software as trusted, or authenticate as the server to steal data. Anyone with this key can impersonate the application.', ext: ALL },
       // SQL Injection patterns (only on files that actually do DB queries)
       { re: /(?:query|execute|raw|queryRunner|getConnection|createQuery|createQueryBuilder)\s*\(\s*[`'"].*\$[\{\(]/, sev: 'high', cwe: 'CWE-89', title: 'SQL query built with string interpolation (SQLi risk)', owasp: 'A05:2025-Injection', impact: 'Database queries are built by directly inserting user input into the SQL string. An attacker can close the quote and add their own SQL commands — reading the entire database, modifying records, or deleting all data. This is the #1 most dangerous web vulnerability.', ext: ALL },
-      { re: /\.query\s*\(\s*(?!['"][^'"]*['"]\s*,\s*\[)/, sev: 'medium', cwe: 'CWE-89', title: 'Database query without parameterized binding', owasp: 'A05:2025-Injection', impact: 'The query does not appear to use parameterized/placeholder binding. If user input reaches this query, it is vulnerable to SQL injection — attackers can extract, modify, or destroy database contents.', ext: ALL },
+      // Only taint-tracking-based DB/query call. A bare `.query(` is far too
+      // generic — it also matches GraphQL clients (client.query({ query: … })),
+      // TanStack/React Query, and knex-style builders — so require a known DB
+      // receiver, or the raw/execute/queryRunner family used for raw SQL.
+      { re: /(?:\.|\b)(?:db|conn|connection|pool|client|knex|sequelize|prisma|mysql|pg|sqlite|sql|database)\.query\s*\(\s*(?!['"][^'"]*['"]\s*,\s*\[)|(?:\.|\b)(?:raw|execute|queryRunner|createQuery|createQueryBuilder)\s*\(\s*(?!['"][^'"]*['"]\s*,\s*\[)/, sev: 'medium', cwe: 'CWE-89', title: 'Database query without parameterized binding', owasp: 'A05:2025-Injection', impact: 'The query does not appear to use parameterized/placeholder binding. If user input reaches this query, it is vulnerable to SQL injection — attackers can extract, modify, or destroy database contents.', ext: ALL },
       { re: /mysql_query\s*\(\s*['"][^'"]*\$_(?:GET|POST|REQUEST)/, sev: 'critical', cwe: 'CWE-89', title: 'PHP SQL injection (mysql_query with superglobal)', owasp: 'A05:2025-Injection', impact: 'PHP code directly inserts user input ($_GET/$_POST) into a MySQL query string. An attacker can craft a URL parameter that extracts the entire database, including all user passwords and private data. This is trivially exploitable.', ext: f => extMatch(f, ['.php']) },
       { re: /(?:select|insert|update|delete)\s+.*\+.*\b(?:req|request|params|query|body|input|param)\b/i, sev: 'high', cwe: 'CWE-89', title: 'SQL statement concatenated with user input', owasp: 'A05:2025-Injection', impact: 'An SQL query string is built by concatenating (+) with user-supplied data. Attackers can inject SQL commands to read all database tables, modify records, or drop the entire database.', ext: ALL },
       // Command Injection patterns
@@ -2896,7 +3159,11 @@ export class UnifiedPipeline {
       { re: /(?:readFile|readFileSync|createReadStream|fs\.read|file_get_contents|open\s*\([^)]*\.\.\/)/, sev: 'high', cwe: 'CWE-22', title: 'Path traversal — file read with user input', owasp: 'A01:2025-Broken Access Control', impact: 'An attacker can read arbitrary files from the server by manipulating file paths (e.g., ../../../etc/passwd). This can expose source code, configuration files with database passwords, SSH keys, and system files containing user data.', ext: ALL },
       // Path traversal: only flag ../ outside of import/require statements (skip TS relative imports)
       { re: /(?:\.\.\/|\.\.\\)/, sev: 'info', cwe: 'CWE-22', title: 'Path traversal sequence in source', owasp: 'A01:2025-Broken Access Control', impact: 'The code contains path traversal sequences. If this path is influenced by user input, attackers can escape the intended directory and read any file on the server.', ext: f => extMatch(f, ['.php', '.py', '.rb', '.java', '.go', '.c', '.cpp', '.sh', '.bat', '.yaml', '.yml', '.env', '.config', '.conf', '.ini', '.toml', '.xml', '.json']) },
-      { re: /(?:app\.(?:get|post|put|delete|patch|use)|router\.(?:get|post|put|delete|patch))\s*\(\s*['"`]\/[^'"`]*\/:(\w+)/, sev: 'low', cwe: 'CWE-639', title: 'IDOR risk — route parameter without authorization check', owasp: 'A01:2025-Broken Access Control', impact: 'The route accepts a resource ID from the URL (e.g., /users/:id) without visible authorization checks. An attacker can change the ID to access other users\' data, private documents, or restricted resources.', ext: ALL },
+      // IDOR: a route with a path parameter is only *risky* when no
+      // authorization middleware (or inline auth check) is present on the route.
+      // Previously every `/users/:id` route was flagged even when guarded by
+      // requireAuth, producing a flood of false positives on Express codebases.
+      { re: /(?:app|router)\.(?:get|post|put|delete|patch)\s*\(\s*['"`]\/[^'"`]*\/:(\w+)[^'"`]*['"`]\s*,(?!\s*(?:[A-Za-z_$][\w$]*[A-Za-z0-9_$]*\s*,\s*)*?(?:requireAuth|ensureAuth|isAuthenticated|isLoggedIn|authenticate|authorize|checkAuth|verifyToken|verifyJwt|requirePermission|requireRole|requireAdmin|authMiddleware|authenticated|protect|withAuth|guard)\b)/, sev: 'low', cwe: 'CWE-639', title: 'IDOR risk — route parameter without authorization check', owasp: 'A01:2025-Broken Access Control', impact: 'The route accepts a resource ID from the URL (e.g., /users/:id) without visible authorization checks. An attacker can change the ID to access other users\' data, private documents, or restricted resources.', ext: ALL },
       { re: /(?:findById|findOne|findByPk|get\s*\(\s*['"]\/\w+\/\w+['"])\s*\([^)]*req\.params/, sev: 'medium', cwe: 'CWE-639', title: 'IDOR — database lookup by URL param without ownership check', owasp: 'A01:2025-Broken Access Control', impact: 'The application fetches a database record based on a URL parameter without verifying the current user owns that record. An attacker can enumerate IDs to access every user\'s private data.', ext: ALL },
       { re: /(?:req\.params\.id|req\.query\.id|req\.body\.id)\s*&&\s*!(?:req\.user|req\.session|auth)/, sev: 'medium', cwe: 'CWE-639', title: 'IDOR — uses request ID without authentication guard', owasp: 'A01:2025-Broken Access Control', impact: 'The application uses a user-supplied ID without first checking authentication or authorization. An unauthenticated attacker can access any record by guessing or enumerating IDs.', ext: ALL },
       { re: /\.(?:role|isAdmin|isManager|isSuperUser)\s*===\s*['"]admin['"]/, sev: 'low', cwe: 'CWE-285', title: 'Hardcoded role check — may be bypassable', owasp: 'A01:2025-Broken Access Control', impact: 'Authorization is checked by comparing a role string. If the role can be manipulated (e.g., via JWT tampering or request modification), attackers can set their role to "admin" and gain full access.', ext: ALL },
@@ -2907,7 +3174,11 @@ export class UnifiedPipeline {
       { re: /createHash\s*\(\s*['"]md5['"]\s*\)/, sev: 'medium', cwe: 'CWE-327', title: 'MD5 used for hashing', owasp: 'A04:2025-Cryptographic Failures', impact: 'MD5 is explicitly used for hashing. MD5 collisions can be generated in under a second on modern hardware. Any password hashed with MD5 is effectively unprotected.', ext: ALL },
       { re: /Math\.random\s*\(\s*\)/, sev: 'low', cwe: 'CWE-338', title: 'Math.random() — not cryptographically secure', owasp: 'A04:2025-Cryptographic Failures', impact: 'Math.random() is predictable and should never be used for security purposes (tokens, passwords, session IDs). Attackers can predict the "random" values and hijack sessions or reset tokens.', ext: ALL },
       { re: /jwt\.(?:verify|decode)\s*\([^)]*algorithms?\s*:\s*\[[^\]]*none/i, sev: 'critical', cwe: 'CWE-347', title: 'JWT "none" algorithm accepted', owasp: 'A04:2025-Cryptographic Failures', impact: 'The JWT library accepts tokens signed with the "none" algorithm (no signature). An attacker can forge a token with any user ID and role — including admin — and the server will accept it as valid. This is a complete authentication bypass.', ext: ALL },
-      { re: /(?:http:\/\/|\bhttp\b)(?!.*localhost)/i, sev: 'low', cwe: 'CWE-319', title: 'HTTP (cleartext) used — no TLS encryption', owasp: 'A04:2025-Cryptographic Failures', impact: 'Data is transmitted over unencrypted HTTP. Anyone on the same network (coffee shop WiFi, compromised router) can read all traffic — including passwords, session tokens, and personal data — in plain text.', ext: ALL },
+      // Cleartext HTTP: only a literal http:// URL (or an explicit fetch/axios
+      // target on http:) is evidence of unencrypted transport. A bare `http`
+      // word used to match `require('http')`, `http-equiv`, `httpOnly`, and
+      // `HttpClient` — none of which are transport security issues.
+      { re: /['"`]http:\/\/(?!localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])/i, sev: 'low', cwe: 'CWE-319', title: 'HTTP (cleartext) URL hardcoded', owasp: 'A04:2025-Cryptographic Failures', impact: 'A plain http:// endpoint is hardcoded. Traffic to it — including credentials, session tokens, and personal data — travels in plain text and can be read by anyone on the same network.', ext: ALL },
       { re: /(?:crypto\.createCipher|crypto\.createCipheriv)\s*\(\s*['"](?:des|rc4|bf|blowfish)/, sev: 'high', cwe: 'CWE-327', title: 'Broken cipher (DES/RC4/Blowfish) used for encryption', owasp: 'A04:2025-Cryptographic Failures', impact: 'DES and RC4 are trivially breakable — DES keys can be brute-forced in hours. Any data encrypted with these ciphers should be considered compromised. An attacker who intercepts the encrypted data can decrypt it.', ext: ALL },
 
       // ── A06:2025 — Insecure Design ──
@@ -3036,7 +3307,7 @@ export class UnifiedPipeline {
           const scanFindings = db.all(`SELECT * FROM findings WHERE scan_id = ? ORDER BY CASE severity WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 ELSE 4 END`, scanId)
           
           this.log(scanId, 'info', `📄 Auto-generating PDF audit report for email notification...`)
-          const repResult = await generateReport(scanId, 'info', 'all', 'full')
+          const repResult = await generateReport(scanId, 'info', 'all', { reportType: 'full' })
           const path = (await import('node:path')).default
           const { config } = await import('./config.js')
           const pdfPath = repResult?.file || path.join(config.outputDir, `report-${scanId}.pdf`)
@@ -3062,20 +3333,155 @@ export class UnifiedPipeline {
     }
   }
 
-  /** Auto-exploit hook: launches a campaign for verified high/critical findings. */
+  /**
+   * Auto-exploit hook: launch a campaign to actively confirm a claimed finding.
+   *
+   * Returns the campaign result so callers can await confirmation, and promotes
+   * the finding in place when a campaign captures a real artifact. Promotion is
+   * deliberately conservative: we re-run the same evidence contract rather than
+   * trusting the campaign's own success flag, so a campaign that claims success
+   * without producing an artifact cannot self-certify.
+   */
   async _autoExploit(scanId, finding) {
     try {
       const scan = db.get(`SELECT * FROM scans WHERE id = ?`, scanId)
-      if (!scan) return
+      if (!scan) return null
       // Use the singleton ExploitOrchestrator from index.js (passed via pipeline constructor)
       const { ExploitOrchestrator } = await import('./exploits/orchestrator.js')
       const engine = this._exploitEngine || new ExploitOrchestrator({ io: this.io, pipeline: this })
       const result = await engine.launchCampaign(scan, finding)
       if (result?.campaignId) {
         this.log(scanId, 'info', `⚔️ Auto-exploit campaign launched: ${result.campaignId} (risk: ${result.risk || '?'})`)
+        result.promoted = false
+        result.capture = null
+
+        // ── Harvest the campaign artifact back into the finding ──
+        // Without this the campaign is a side-show: it proves exploitability in
+        // its own tables while the finding that prompted it stays "unverified"
+        // forever, which is the observable failure this hook exists to fix.
+        const capture = this._harvestCampaignCapture(result.campaignId, scanId)
+        if (capture) {
+          // finding.evidence arrives as a JSON STRING when it came straight from
+          // db.get(); spreading a string yields {0:'{',1:'"',...} and that
+          // corruption was then written back by _promoteFromCapture. Parse
+          // defensively so both callers (string or object) are safe.
+          let base = finding.evidence
+          if (typeof base === 'string') {
+            try { base = JSON.parse(base) } catch { base = {} }
+          }
+          const evidence = { ...(base && typeof base === 'object' ? base : {}), ...capture }
+          const promoted = this._promoteFromCapture(scanId, finding.id, evidence)
+          result.capture = capture
+          result.promoted = promoted
+        }
       }
+      return result
     } catch (e) {
       this.log(scanId, 'warn', `Auto-exploit launch failed: ${e.message}`)
+      return null
+    }
+  }
+
+  /**
+   * Pull the strongest captured artifact out of a campaign's completed steps.
+   * Returns an evidence patch, or null when the campaign produced no real capture
+   * (queued / awaiting approval / failed / all steps inconclusive).
+   */
+  _harvestCampaignCapture(campaignId, scanId = null) {
+    let steps = []
+    try {
+      // Column names are taken from the live schema (PRAGMA table_info):
+      // exploit_steps has id / campaign_id / step_order / step_type / tool_name /
+      // command / payload / status / needs_approval / output / session_ref /
+      // started_at / finished_at / created_at. There is no step_id, technique,
+      // evidence or exit_code column — querying those threw, and the catch below
+      // turned the failure into a silent "no capture", so a campaign could not
+      // report its own artifacts.
+      steps = db.all(
+        `SELECT id, step_order, step_type, tool_name, command, status, output
+           FROM exploit_steps WHERE campaign_id = ? ORDER BY step_order, rowid`,
+        campaignId
+      ) || []
+    } catch (e) {
+      this.log(scanId, 'warn', `Capture harvest query failed for campaign ${campaignId}: ${e.message}`)
+      return null
+    }
+    const succeeded = steps.filter(s => s.status === 'success')
+    if (!succeeded.length) return null
+
+    for (const step of succeeded) {
+      const technique = step.step_type || step.tool_name || step.id
+      const out = String(step.output || '').trim()
+      if (!out) continue
+
+      // A step's output is often a tool's own JSON envelope; unwrap it so the
+      // capture lands as a structured artifact the report can render, and fall
+      // back to the raw text when it is not JSON.
+      let parsed = null
+      if (out.startsWith('{') || out.startsWith('[')) {
+        try { parsed = JSON.parse(out) } catch { parsed = null }
+      }
+      const base = {
+        exploitedBy: technique,
+        campaignId,
+        stepId: step.id,
+        command: step.command ? String(step.command).slice(0, 2000) : undefined,
+        evidenceTier: 'exploited',
+        verification: 'exploited',
+      }
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed) && Object.keys(parsed).length) {
+        return { ...parsed, ...base }
+      }
+      if (Array.isArray(parsed) && parsed.length) {
+        return { ...base, output: JSON.stringify(parsed).slice(0, 4000) }
+      }
+      if (out.length > 40) {
+        return { ...base, output: out.slice(0, 4000) }
+      }
+    }
+    return null
+  }
+
+  /**
+   * Promote a finding to confirmed once a campaign has captured an artifact.
+   * Re-uses the single evidence contract so promotion and initial classification
+   * can never disagree about what counts as proof.
+   */
+  _promoteFromCapture(scanId, findingId, evidence) {
+    try {
+      const row = db.get(`SELECT * FROM findings WHERE id = ?`, findingId)
+      if (!row) return false
+      let prior = {}
+      try { prior = JSON.parse(row.evidence || '{}') } catch { prior = {} }
+      const merged = { ...prior, ...evidence }
+
+      const verdict = {
+        agent: 'exploit-campaign',
+        confidence: 95,
+        verdict: `Active confirmation succeeded via ${evidence.exploitedBy || 'campaign step'}; artifact captured and retained.`,
+        isTruePositive: true,
+        evidenceTier: 'exploited',
+      }
+      db.run(
+        `UPDATE findings SET evidence = ?, agent_verdict = ? WHERE id = ?`,
+        JSON.stringify(merged),
+        JSON.stringify({
+          agent: verdict.agent,
+          confidence: verdict.confidence,
+          reasoning: verdict.verdict,
+          is_true_positive: true,
+          evidence_tier: 'exploited',
+        }),
+        findingId
+      )
+      this.log(scanId, 'success',
+        `✅ Actively confirmed: "${row.title}" — artifact from ${evidence.exploitedBy || 'campaign'} retained (tier: exploited)`)
+      const updated = db.get(`SELECT * FROM findings WHERE id = ?`, findingId)
+      this.emit(scanId, 'scan:finding', { scanId, finding: updated })
+      return true
+    } catch (e) {
+      this.log(scanId, 'warn', `Promotion after capture failed: ${e.message}`)
+      return false
     }
   }
 }
@@ -3195,7 +3601,7 @@ export function extractFindingsFromOutput(tool, output, target = '', baseline = 
       if (/^\|.*(vulnerab|CVE-|backdoor|anonymous|weak)/i.test(cleanLine)) {
         const cveMatch = cleanLine.match(/(CVE-(\d{4})-\d+)/i)
         // Skip future-year CVEs (CVE-2026 and beyond) — these are hallucinations
-        if (cveMatch && parseInt(cveMatch[2]) >= 2026) continue
+        if (cveMatch && parseInt(cveMatch[2]) > new Date().getUTCFullYear()) continue
         // Skip negative/not-found messages
         if (/not vulnerable|not found|no (vulnerab|backdoor|issue)|couldn'?t find|state: /i.test(cleanLine)) continue
         const cvssMatch = cleanLine.match(/\b(\d+\.\d+)\b/)
@@ -3588,12 +3994,12 @@ export function extractFindingsFromOutput(tool, output, target = '', baseline = 
       push(`${tool}: SPA catch-all routing detected (${ffufPaths.length} paths all return 200)`, 'info',
         `${tool} discovered ${ffufPaths.length} paths but all return HTTP 200 — likely SPA catch-all. Individual path findings suppressed.`)
       // Still feed discovered paths into chaining pool (base URL + path)
-      const base = (target || '').replace(/\/$/, '')
+      const base = ensureScheme(target).replace(/\/$/, '')
       for (const p of ffufPaths.slice(0, 20)) discoveredUrls.push(`${base}${p.path.startsWith('/') ? '' : '/'}${p.path}`)
       return { findings, discoveredUrls }
     }
     // Feed ALL discovered paths into the chaining pool (base URL + path)
-    const base = (target || '').replace(/\/$/, '')
+    const base = ensureScheme(target).replace(/\/$/, '')
     for (const p of ffufPaths) discoveredUrls.push(`${base}${p.path.startsWith('/') ? '' : '/'}${p.path}`)
     // Deliberately exclude 'sql|db' from the interesting-path regex — a path named
     // /sql or /db is NOT a SQL Injection finding and caused false positives.
@@ -3684,7 +4090,7 @@ export function extractFindingsFromOutput(tool, output, target = '', baseline = 
       if (m && m[2] && m[2].length > 1) paths.push({ status: m[1], path: m[2] })
     }
     if (paths.length) {
-      const base = (target || '').replace(/\/$/, '')
+      const base = ensureScheme(target).replace(/\/$/, '')
       for (const p of paths) {
         const url = /^https?:/i.test(p.path) ? p.path : `${base}${p.path.startsWith('/') ? '' : '/'}${p.path}`
         discoveredUrls.push(url)

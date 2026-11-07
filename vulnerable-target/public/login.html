@@ -3,92 +3,154 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>SQL Injection Hub & Auth Bypass — AbuseLab</title>
+  <title>Maybank2u Online Banking Login</title>
   <link rel="stylesheet" href="/style.css">
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220%22><text y=%2226%22 font-size=%2226%22>💉</text></svg>">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🐯</text></svg>">
 </head>
 <body>
-  <header>
-    <a href="/" class="logo">🔥 ABUSE<span>LAB</span> <small>SQLi</small></a>
-    <nav>
-      <a href="/">Matrix</a>
-      <a href="/admin.html">⚡ RCE Terminal</a>
-      <a href="/login.html" class="active">💉 SQLi Hub</a>
-      <a href="/upload.html">📤 Web Shells</a>
-      <a href="/documents.html">📁 LFI Vault</a>
-      <a href="/ssrf.html">🌐 SSRF Probe</a>
-      <a href="/profile.html">👤 IDOR</a>
-      <a href="/feedback.html">☣️ XSS</a>
+  <!-- Top Scam Notice -->
+  <div class="scam-alert-bar">
+    <div class="alert-text">
+      <span>⚠️</span>
+      <span><strong>PERINGATAN KESELAMATAN:</strong> Pastikan frasa keselamatan anda betul sebelum memasukkan kata laluan. Maybank tidak akan meminta maklumat peribadi anda melalui pautan SMS.</span>
+    </div>
+    <div>
+      <span class="pidm-badge">Ahli PIDM</span>
+    </div>
+  </div>
+
+  <!-- Main Maybank Header -->
+  <header class="maybank-header">
+    <a href="/" class="maybank-logo">
+      <div class="maybank-tiger-badge">🐯</div>
+      <div class="maybank-logo-text">
+        <span class="maybank-logo-title">Maybank<span>2u</span></span>
+        <span class="maybank-logo-sub">MALAYAN BANKING BERHAD</span>
+      </div>
+    </a>
+    <nav class="maybank-nav">
+      <a href="/">Home</a>
+      <a href="/profile.html">My Accounts</a>
+      <a href="/login.html" class="active">Pay & Transfer</a>
+      <a href="/documents.html">e-Statements</a>
+      <a href="/upload.html">MyKad KYC</a>
+      <a href="/ssrf.html">Forex Rates</a>
+      <a href="/feedback.html">Customer Care</a>
+      <a href="/admin.html">MEPS ATM</a>
     </nav>
   </header>
 
-  <div class="container" style="max-width: 1000px;">
-    <div class="grid-3" style="grid-template-columns: 1fr 1fr; align-items: start;">
-      <!-- Part 1: Auth Bypass -->
+  <div class="container" style="max-width: 1040px; margin-top: 36px;">
+    <div class="grid-2" style="align-items: start;">
+      
+      <!-- Panel 1: Maybank2u Authentic Login Box -->
       <div class="card">
-        <div class="badges">
-          <span class="badge badge-crit">CWE-89: SQL Injection</span>
-          <span class="badge badge-high">Auth Bypass</span>
+        <div style="text-align: center; margin-bottom: 20px;">
+          <div style="width: 52px; height: 52px; background: var(--mb-yellow); border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 26px; box-shadow: var(--shadow-sm); margin-bottom: 10px;">
+            👤
+          </div>
+          <h2 style="font-size: 20px; font-weight: 900; color: #000;">Welcome to Maybank2u</h2>
+          <p style="color: var(--text-muted); font-size: 13px; margin-top: 4px;">
+            Enter your Maybank2u username and password to access your accounts.
+          </p>
         </div>
-        <h3 style="margin-bottom: 8px;">🔐 Portal Authentication Bypass</h3>
-        <p style="color: var(--text-muted); font-size: 13px; margin-bottom: 16px;">
-          The login query concatenates raw input into the SQL string. Bypass authentication without knowing the password.
-        </p>
 
-        <div style="margin-bottom: 14px;">
-          <span style="font-size: 11px; color: var(--text-dim); text-transform: uppercase; font-weight: bold;">Quick SQLi Payloads:</span>
-          <div style="display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px;">
+        <!-- Security Testing Helper (Auditor Box) -->
+        <div style="background: #fff9e6; border: 1px solid #fcd34d; border-radius: 6px; padding: 12px; margin-bottom: 18px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+            <span style="font-size: 11px; text-transform: uppercase; font-weight: 800; color: #92400e;">
+              🛡️ Audit Mode: SQL Injection Auth Bypass
+            </span>
+            <span class="badge badge-crit" style="font-size: 10px;">CWE-89 SQLi</span>
+          </div>
+          <div style="display: flex; gap: 6px; flex-wrap: wrap;">
             <button class="btn-secondary" onclick="setLogin('admin\' --', 'any')"><code>admin' --</code></button>
             <button class="btn-secondary" onclick="setLogin('\' OR \'1\'=\'1\' --', 'any')"><code>' OR '1'='1' --</code></button>
             <button class="btn-secondary" onclick="setLogin('admin\' OR 1=1 #', 'any')"><code>admin' OR 1=1</code></button>
+            <button class="btn-secondary" onclick="setLogin('alice', '5f4dcc3b5aa765d61d8327deb882cf99')">Alice (Valid PIN)</button>
           </div>
         </div>
 
-        <form id="login-form">
-          <div style="margin-bottom: 12px;">
-            <label style="font-size: 12px; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 4px;">Username</label>
-            <input type="text" id="username" value="admin' --" style="width: 100%; background: #090c15; border: 1px solid var(--card-border); color: #fff; padding: 10px; border-radius: 6px; font-family: monospace;">
+        <form id="login-form" onsubmit="handleLogin(event)">
+          <div class="form-group">
+            <label class="form-label">My Username / Access ID</label>
+            <input type="text" id="username" value="admin' --" style="font-family: monospace; font-size: 14px;" required>
           </div>
-          <div style="margin-bottom: 16px;">
-            <label style="font-size: 12px; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 4px;">Password</label>
-            <input type="password" id="password" value="anything" style="width: 100%; background: #090c15; border: 1px solid var(--card-border); color: #fff; padding: 10px; border-radius: 6px; font-family: monospace;">
+          <div class="form-group">
+            <label class="form-label">Password / Security PIN</label>
+            <input type="password" id="password" value="anything" style="font-family: monospace; font-size: 14px;" required>
           </div>
-          <button type="submit" class="btn-primary" style="width: 100%;">TEST SQLi AUTHENTICATION &rarr;</button>
+
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; font-size: 12.5px; color: var(--text-secondary);">
+            <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+              <input type="checkbox" checked> Remember My Username
+            </label>
+            <a href="#" style="color: #b45309; font-weight: 600; text-decoration: none;">Forgot Login Details?</a>
+          </div>
+
+          <button type="submit" class="btn-primary" style="width: 100%; font-size: 14px; padding: 12px;">
+            LOGIN TO MAYBANK2U &rarr;
+          </button>
         </form>
 
-        <div id="login-result" style="margin-top: 16px; font-size: 13px; display: none;"></div>
+        <div id="login-result" style="margin-top: 18px; display: none;"></div>
+
+        <div style="text-align: center; margin-top: 18px; font-size: 12.5px; color: var(--text-muted); border-top: 1px solid var(--mb-border); padding-top: 14px;">
+          First time here? <a href="#" style="color: #000; font-weight: 700;">Register for Maybank2u now</a>
+        </div>
       </div>
 
-      <!-- Part 2: Union-Based Data Exfiltration -->
+      <!-- Panel 2: Maybank Products Search & Union Data Exfiltration -->
       <div class="card">
-        <div class="badges">
-          <span class="badge badge-crit">CWE-89: Union-Based SQLi</span>
-          <span class="badge badge-high">Database Exfil</span>
+        <div class="card-header">
+          <div>
+            <h2 class="card-title">📈 Search Maybank Fixed Deposit & Investment Rates</h2>
+            <p style="color: var(--text-secondary); font-size: 12.5px; margin-top: 4px;">
+              Query Maybank Islamic deposit tiers, ASB financing, and foreign exchange accounts.
+            </p>
+          </div>
+          <span class="badge badge-yellow">Product Search</span>
         </div>
-        <h3 style="margin-bottom: 8px;">📊 Search & Data Exfiltration</h3>
-        <p style="color: var(--text-muted); font-size: 13px; margin-bottom: 16px;">
-          Product catalog query is vulnerable to <code>UNION SELECT</code> injection. Dump user credit cards or secret flags.
-        </p>
 
-        <div style="margin-bottom: 14px;">
-          <span style="font-size: 11px; color: var(--text-dim); text-transform: uppercase; font-weight: bold;">Quick Union Payloads:</span>
-          <div style="display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px;">
-            <button class="btn-secondary" onclick="setSearch('\' UNION SELECT id, username, credit_card, email, role FROM users --')">Dump Credit Cards</button>
-            <button class="btn-secondary" onclick="setSearch('\' UNION SELECT id, title, secret_value, null, null FROM secrets --')">Dump Secret Vault Flag</button>
+        <!-- Union Testing Helper -->
+        <div style="background: #fff9e6; border: 1px solid #fcd34d; border-radius: 6px; padding: 12px; margin-bottom: 16px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+            <span style="font-size: 11px; text-transform: uppercase; font-weight: 800; color: #92400e;">
+              🛡️ Audit Mode: UNION Exfiltration Payloads
+            </span>
+            <span class="badge badge-crit" style="font-size: 10px;">UNION SELECT</span>
+          </div>
+          <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+            <button class="btn-secondary" onclick="setSearch('\' UNION SELECT id, username, credit_card, email, role FROM users --')">Exfiltrate Customer Debit Cards</button>
+            <button class="btn-secondary" onclick="setSearch('\' UNION SELECT id, title, secret_value, null, null FROM secrets --')">Dump Maybank Core Passphrase</button>
+            <button class="btn-secondary" onclick="setSearch('Fixed Deposit')">Regular Query (Fixed Deposit)</button>
           </div>
         </div>
 
-        <div style="display: flex; gap: 8px;">
-          <input type="text" id="search-q" value="' UNION SELECT id, title, secret_value, null, null FROM secrets --" style="flex: 1; background: #090c15; border: 1px solid var(--card-border); color: #fff; padding: 10px; border-radius: 6px; font-family: monospace; font-size: 12px;">
-          <button class="btn-primary" onclick="executeSearch()">SEARCH</button>
+        <div style="display: flex; gap: 8px; margin-bottom: 14px;">
+          <input type="text" id="search-q" value="' UNION SELECT id, title, secret_value, null, null FROM secrets --" style="font-family: monospace; font-size: 12px; flex: 1;">
+          <button class="btn-primary" onclick="executeSearch()" style="padding: 10px 16px; font-size: 12px;">SEARCH</button>
         </div>
 
-        <div id="search-results" style="margin-top: 16px; font-size: 12px; max-height: 260px; overflow-y: auto; background: #060911; border: 1px solid var(--card-border); border-radius: 6px; padding: 12px; font-family: monospace;">
+        <div id="search-results" style="font-size: 12px; max-height: 280px; overflow-y: auto; background: #111827; color: #34d399; border: 1px solid var(--mb-border); border-radius: 6px; padding: 14px; font-family: monospace;">
           Results will be rendered here...
         </div>
       </div>
+
     </div>
   </div>
+
+  <!-- Maybank Footer -->
+  <footer class="maybank-footer" style="margin-top: 40px;">
+    <div class="footer-bottom">
+      <div>
+        © 2026 Malayan Banking Berhad (Co. Reg. No. 196001000142). All rights reserved.
+      </div>
+      <div>
+        Customer Care Hotline: 1-300-88-6688 | Overseas: +603-7844 3696
+      </div>
+    </div>
+  </footer>
 
   <script>
     function setLogin(u, p) {
@@ -101,11 +163,14 @@
       executeSearch()
     }
 
-    document.getElementById('login-form').addEventListener('submit', async (e) => {
+    async function handleLogin(e) {
       e.preventDefault()
       const u = document.getElementById('username').value
       const p = document.getElementById('password').value
-      const resEl = document.getElementById('login-result')
+      const resBox = document.getElementById('login-result')
+
+      resBox.style.display = 'block'
+      resBox.innerHTML = '<div style="color: var(--text-muted); font-size: 13px;">Authenticating with Maybank Core Banking host...</div>'
 
       try {
         const res = await fetch('/api/login', {
@@ -114,44 +179,64 @@
           body: JSON.stringify({ username: u, password: p })
         })
         const data = await res.json()
-        resEl.style.display = 'block'
+
         if (data.success) {
-          resEl.innerHTML = `
-            <div style="padding: 12px; background: rgba(16, 185, 129, 0.15); border: 1px solid var(--success); border-radius: 6px; color: #fff;">
-              <strong>🎉 Bypassed as:</strong> ${data.user.username} (Role: <code>${data.user.role}</code>)<br>
-              ${data.flag ? `<div style="margin-top: 8px; font-weight: bold; color: var(--success); font-family: monospace;">FLAG: ${data.flag}</div>` : ''}
+          let flagHtml = ''
+          if (data.flag) {
+            flagHtml = `
+              <div style="margin-top: 12px; padding: 12px; background: #ecfdf5; border: 1px solid var(--accent-green); border-radius: 6px;">
+                <span style="color: var(--accent-green); font-weight: 800;">🎉 SQLi Bypass Succeeded! Exploit Flag:</span><br>
+                <code style="color: var(--accent-green); font-weight: bold; background: #d1fae5; padding: 2px 6px; border-radius: 4px;">${data.flag}</code>
+                <div style="margin-top: 6px;"><a href="/" style="color: #2563eb; font-size: 12px; font-weight: 600;">Submit Flag on Security Board &rarr;</a></div>
+              </div>
+            `
+          }
+
+          resBox.innerHTML = `
+            <div style="background: #f0fdf4; border: 1px solid var(--accent-green); border-radius: 6px; padding: 14px;">
+              <div style="color: var(--accent-green); font-weight: 800; font-size: 14.5px;">✓ ${data.message}</div>
+              <div style="margin-top: 6px; font-size: 12.5px; color: var(--text-secondary);">
+                Username: <strong style="color: #000;">${data.user.username}</strong> | Role: <span class="badge badge-green">${data.user.role}</span><br>
+                Email: ${data.user.email}
+              </div>
+              ${flagHtml}
+              <div style="margin-top: 12px;">
+                <a href="/profile.html" class="btn-primary" style="font-size: 12px; padding: 6px 16px;">View My Accounts & Statements &rarr;</a>
+              </div>
             </div>
           `
         } else {
-          resEl.innerHTML = `
-            <div style="padding: 12px; background: rgba(239, 68, 68, 0.15); border: 1px solid var(--danger); border-radius: 6px; color: #fff;">
-              <strong>Error:</strong> ${data.error || data.message}
+          resBox.innerHTML = `
+            <div style="background: #fef2f2; border: 1px solid var(--accent-red); border-radius: 6px; padding: 12px; color: var(--accent-red); font-size: 13px;">
+              ✕ ${data.message || 'Authentication failed: Invalid username or password'}
             </div>
           `
         }
       } catch (err) {
-        resEl.style.display = 'block'
-        resEl.innerText = 'Network error: ' + err.message
+        resBox.innerHTML = `<div style="color: var(--accent-red);">Error communicating with server: ${err.message}</div>`
       }
-    })
+    }
 
     async function executeSearch() {
       const q = document.getElementById('search-q').value
-      const resBox = document.getElementById('search-results')
-      resBox.innerText = 'Executing query...'
+      const box = document.getElementById('search-results')
+      box.innerText = 'Querying Maybank SQL database with payload...'
 
       try {
         const res = await fetch(`/api/products/search?q=${encodeURIComponent(q)}`)
         const data = await res.json()
-        if (Array.isArray(data)) {
-          resBox.innerText = JSON.stringify(data, null, 2)
-        } else {
-          resBox.innerText = data.error || JSON.stringify(data)
+        if (data.error) {
+          box.innerHTML = `<span style="color: #f87171;">SQL Error:</span>\n${data.error}`
+          return
         }
+        box.innerText = JSON.stringify(data, null, 2)
       } catch (err) {
-        resBox.innerText = 'Error: ' + err.message
+        box.innerText = 'Search query failed: ' + err.message
       }
     }
+
+    // Run initial search
+    executeSearch()
   </script>
 </body>
 </html>

@@ -46,7 +46,7 @@ fi
 JAVA_PAYLOAD=$(printf '\xac\xed\x00\x05test')
 R=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 --data-urlencode "data=$JAVA_PAYLOAD" "$T/" 2>/dev/null)
 if [ "$R" = "500" ]; then
-  emit "{\"title\":\"Java deserialization error detected\",\"severity\":\"high\",\"description\":\"Server errors on Java serialized data (\xac\xed magic bytes) — potential Java deserialization gadget chain (Commons Collections, etc.).\",\"remediation\":\"Avoid native Java serialization for user data. Use JSON. Implement look-ahead deserialization filters.\",\"cweId\":\"CWE-502\",\"owaspCategory\":\"A08:2025-Software and Data Integrity Failures\"}"
+  emit "{\"title\":\"Java deserialization error detected\",\"severity\":\"high\",\"description\":\"Server errors on Java serialized data (0xACED magic bytes) — potential Java deserialization gadget chain (Commons Collections, etc.).\",\"remediation\":\"Avoid native Java serialization for user data. Use JSON. Implement look-ahead deserialization filters.\",\"cweId\":\"CWE-502\",\"owaspCategory\":\"A08:2025-Software and Data Integrity Failures\"}"
 fi
 # Python pickle probe
 PY_PAYLOAD=$(printf 'gASVtest')

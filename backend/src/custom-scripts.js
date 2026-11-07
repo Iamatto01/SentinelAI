@@ -133,16 +133,31 @@ function buildInvocation(language, command) {
 /**
  * Parse JSONL findings from script stdout. Tolerates tool chatter:
  * any line that doesn't parse as a JSON object with a title is skipped.
+ *
+ * `stats.rejected` records every line that LOOKED like a finding (starts with
+ * `{`) but was dropped, with the parse error. Those drops used to be silent,
+ * which hid a real defect for months: `\xac\xed` in one script's description is
+ * an invalid JSON escape, so bash emitted malformed JSON and the finding
+ * vanished with no trace anywhere. Callers log this so silent loss is audible.
  */
 export function parseScriptFindings(stdout, severityFloor = 'info') {
   const findings = []
+  const rejected = []
   const RANK = { info: 0, low: 1, medium: 2, high: 3, critical: 4 }
   for (const line of String(stdout || '').split('\n')) {
     const trimmed = line.trim()
     if (!trimmed.startsWith('{')) continue
     let obj
-    try { obj = JSON.parse(trimmed) } catch { continue }
-    if (!obj || typeof obj !== 'object' || !obj.title) continue
+    try {
+      obj = JSON.parse(trimmed)
+    } catch (err) {
+      rejected.push({ reason: 'invalid-json', error: err.message, sample: trimmed.slice(0, 200) })
+      continue
+    }
+    if (!obj || typeof obj !== 'object' || !obj.title) {
+      rejected.push({ reason: 'missing-title', sample: trimmed.slice(0, 200) })
+      continue
+    }
     const sev = String(obj.severity || 'info').toLowerCase()
     if (!RANK.hasOwnProperty(sev)) continue
     // severity floor: script author can suppress noisy low/info output
@@ -157,6 +172,7 @@ export function parseScriptFindings(stdout, severityFloor = 'info') {
       evidence: obj.evidence && typeof obj.evidence === 'object' ? obj.evidence : { raw: trimmed.slice(0, 2000) },
     })
   }
+  findings.rejected = rejected
   return findings
 }
 
@@ -170,12 +186,24 @@ export function parseScriptFindings(stdout, severityFloor = 'info') {
  * reject adjacent double-quoted assignments (dash, busybox ash, some shims) —
  * which silently killed the whole stage. Passing env is shell-agnostic.
  */
-export async function runCustomScript(script, { target, scanId = 'test', depth = 'standard' } = {}) {
+export async function runCustomScript(script, { target, scanId = 'test', depth = 'standard', baseline = null } = {}) {
   const invocation = buildInvocation(script.language, script.command)
   const scriptEnv = {
     TARGET: target ?? '',
     SCAN_ID: scanId ?? '',
     DEPTH: depth ?? '',
+    // ── CATCH-ALL CONTEXT ──
+    // Probes that enumerate paths (editor/temp files, web cache deception,
+    // API rate limiting) emit on `200` alone.  On a catch-all / SPA target
+    // every path returns the same landing page, so those probes emit one
+    // finding per attempted path and the pipeline has to discard all of them
+    // after the fact — pure noise, plus wasted requests.
+    //
+    // Exporting the baseline lets those probes self-check BEFORE emitting.
+    // Scripts that do not read these vars are unaffected.
+    CATCHALL_STATUS: baseline?.isCatchAll ? String(baseline.status ?? '') : '',
+    CATCHALL_LEN: baseline?.isCatchAll ? String(baseline.contentLength ?? '') : '',
+    CATCHALL_HASH: baseline?.isCatchAll ? String(baseline.bodyHash ?? '') : '',
   }
 
   const result = await runNativeCommand(invocation, { timeout: SCRIPT_TIMEOUT_MS, env: scriptEnv })
@@ -184,7 +212,7 @@ export async function runCustomScript(script, { target, scanId = 'test', depth =
   // Persist raw output for audit/debug (best-effort). The command is logged
   // without the env prefix because the prefix no longer exists on the wire.
   try {
-    const logContent = `# ${new Date().toISOString()} — ${script.name}\n# ENV: TARGET=${scriptEnv.TARGET} SCAN_ID=${scriptEnv.SCAN_ID} DEPTH=${scriptEnv.DEPTH}\n# CMD: ${invocation}\n# exit=${result.code} success=${result.success}\n\n${result.stdout}\n\n--- stderr ---\n${result.stderr}\n`
+    const logContent = `# ${new Date().toISOString()} — ${script.name}\n# ENV: TARGET=${scriptEnv.TARGET} SCAN_ID=${scriptEnv.SCAN_ID} DEPTH=${scriptEnv.DEPTH} CATCHALL_STATUS=${scriptEnv.CATCHALL_STATUS || '-'} CATCHALL_LEN=${scriptEnv.CATCHALL_LEN || '-'}\n# CMD: ${invocation}\n# exit=${result.code} success=${result.success}\n\n${result.stdout}\n\n--- stderr ---\n${result.stderr}\n`
     
     // 1. Primary: Save inside organized scan folder (output/scans/<scanId>/custom-scripts/)
     const scanDir = path.join(config.outputDir, 'scans', scanId, 'custom-scripts')

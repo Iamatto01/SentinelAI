@@ -286,6 +286,8 @@ export default function PublicLayout({ children, forceTheme, isSplitPreview = fa
                 </li>
               ))}
               <li><Link to="/login" className="hover:text-white transition-colors">Sign In / Register</Link></li>
+              <li><Link to="/terms" className="hover:text-white transition-colors">Terms &amp; Anti-RE Policy</Link></li>
+              <li><Link to="/privacy" className="hover:text-white transition-colors">Privacy &amp; Cookie Policy</Link></li>
             </ul>
           </div>
 
@@ -313,9 +315,23 @@ export default function PublicLayout({ children, forceTheme, isSplitPreview = fa
           </div>
         </div>
 
-        <div className="max-w-6xl mx-auto mt-10 pt-6 border-t border-white/10 flex flex-col sm:flex-row items-center justify-between gap-3 text-[11px] font-mono text-neutral-500">
-          <span>&copy; {new Date().getFullYear()} SentinelAI &mdash; Muhammad Saifudin. All rights reserved.</span>
-          <span className="flex items-center gap-1.5 text-neutral-400">
+        <div className="max-w-6xl mx-auto mt-10 pt-6 border-t border-white/10 flex flex-col md:flex-row items-center justify-between gap-3 text-[11px] font-mono text-neutral-500">
+          <div className="flex flex-wrap items-center justify-center md:justify-start gap-x-3 gap-y-1">
+            <span>&copy; {new Date().getFullYear()} SentinelAI &mdash; Muhammad Saifudin.</span>
+            <span className="hidden sm:inline text-neutral-600">&bull;</span>
+            <Link to="/terms" className="text-neutral-400 hover:text-white transition-colors underline-offset-2 hover:underline">Terms (Anti-RE)</Link>
+            <span className="text-neutral-600">&bull;</span>
+            <Link to="/privacy" className="text-neutral-400 hover:text-white transition-colors underline-offset-2 hover:underline">Privacy &amp; Cookies</Link>
+            <span className="text-neutral-600">&bull;</span>
+            <button
+              type="button"
+              onClick={() => window.dispatchEvent(new Event('sentinel_open_cookie_preferences'))}
+              className="text-neutral-400 hover:text-white transition-colors cursor-pointer underline-offset-2 hover:underline"
+            >
+              Cookie Settings
+            </button>
+          </div>
+          <span className="flex items-center gap-1.5 text-neutral-400 shrink-0">
             <ShieldCheck size={12} className="text-white" />
             Academic research project &mdash; IIUM KICT Final Year Project 2
           </span>

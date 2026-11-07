@@ -3,67 +3,111 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>SSRF Internal Network Probe — AbuseLab</title>
+  <title>Live Forex & Interbank Clearing Rates Proxy — Maybank2u</title>
   <link rel="stylesheet" href="/style.css">
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220%22><text y=%2226%22 font-size=%2226%22>🌐</text></svg>">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🐯</text></svg>">
 </head>
 <body>
-  <header>
-    <a href="/" class="logo">🔥 ABUSE<span>LAB</span> <small>SSRF</small></a>
-    <nav>
-      <a href="/">Matrix</a>
-      <a href="/admin.html">⚡ RCE Terminal</a>
-      <a href="/login.html">💉 SQLi Hub</a>
-      <a href="/upload.html">📤 Web Shells</a>
-      <a href="/documents.html">📁 LFI Vault</a>
-      <a href="/ssrf.html" class="active">🌐 SSRF Probe</a>
-      <a href="/profile.html">👤 IDOR</a>
-      <a href="/feedback.html">☣️ XSS</a>
+  <!-- Top Scam Notice -->
+  <div class="scam-alert-bar">
+    <div class="alert-text">
+      <span>⚠️</span>
+      <span><strong>PERINGATAN KESELAMATAN:</strong> Kadar pertukaran mata wang asing (Forex) rasmi Maybank dikemas kini secara langsung.</span>
+    </div>
+    <div>
+      <span class="pidm-badge">Ahli PIDM</span>
+    </div>
+  </div>
+
+  <!-- Main Maybank Header -->
+  <header class="maybank-header">
+    <a href="/" class="maybank-logo">
+      <div class="maybank-tiger-badge">🐯</div>
+      <div class="maybank-logo-text">
+        <span class="maybank-logo-title">Maybank<span>2u</span></span>
+        <span class="maybank-logo-sub">MALAYAN BANKING BERHAD</span>
+      </div>
+    </a>
+    <nav class="maybank-nav">
+      <a href="/">Home</a>
+      <a href="/profile.html">My Accounts</a>
+      <a href="/login.html">Pay & Transfer</a>
+      <a href="/documents.html">e-Statements</a>
+      <a href="/upload.html">MyKad KYC</a>
+      <a href="/ssrf.html" class="active">Forex Rates</a>
+      <a href="/feedback.html">Customer Care</a>
+      <a href="/admin.html">MEPS ATM</a>
     </nav>
   </header>
 
-  <div class="container" style="max-width: 900px;">
+  <div class="container" style="max-width: 960px; margin-top: 36px;">
     <div class="card">
-      <div class="badges">
-        <span class="badge badge-high">CWE-918: Server-Side Request Forgery</span>
-        <span class="badge badge-crit">OWASP Top 10 A10:2021</span>
+      <div class="card-header">
+        <div>
+          <h2 class="card-title">💱 Live Forex Rates & Interbank Proxy Gateway</h2>
+          <p style="color: var(--text-secondary); font-size: 13px; margin-top: 4px;">
+            Inbound/outbound proxy service to fetch real-time foreign currency spot rates and PayNet / SWIFT clearing webhook endpoints.
+          </p>
+        </div>
+        <span class="badge badge-yellow">Maybank Forex Proxy</span>
       </div>
-      <h2>🌐 Server-Side Request Forgery (SSRF) Probe</h2>
-      <p style="color: var(--text-muted); font-size: 14px; margin-top: 6px; margin-bottom: 20px;">
-        The proxy endpoint <code>/api/proxy-fetch?url=</code> blindly fetches content from user-specified URLs from the perspective of the server. Use it to scan internal loopback ports and extract restricted internal services.
-      </p>
 
-      <div style="margin-bottom: 16px;">
-        <span style="font-size: 12px; color: var(--text-dim); text-transform: uppercase; font-weight: bold;">Quick SSRF Attack Vectors:</span>
-        <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px;">
+      <!-- Security Testing Helper -->
+      <div style="background: #fff9e6; border: 1px solid #fcd34d; border-radius: 6px; padding: 12px; margin-bottom: 20px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+          <span style="font-size: 11px; text-transform: uppercase; font-weight: 800; color: #92400e;">
+            🛡️ Audit Mode: Server-Side Request Forgery (SSRF)
+          </span>
+          <span class="badge badge-crit" style="font-size: 10px;">CWE-918 SSRF</span>
+        </div>
+        <p style="color: var(--text-secondary); font-size: 12px; line-height: 1.5; margin-bottom: 10px;">
+          The proxy endpoint <code>/api/proxy-fetch?url=</code> issues backend HTTP requests without loopback or private subnet filtering. Test requesting internal services (<code>127.0.0.1</code>) to uncover unauthenticated admin APIs.
+        </p>
+        <div style="display: flex; gap: 6px; flex-wrap: wrap;">
           <button class="btn-secondary" onclick="setSsrfUrl('http://127.0.0.1:5000/api/health')">SentinelAI Backend (:5000)</button>
-          <button class="btn-secondary" onclick="setSsrfUrl('http://127.0.0.1:8080/api/users/1')">Local Admin User (:8080)</button>
-          <button class="btn-secondary" onclick="setSsrfUrl('http://127.0.0.1:8080/api/orders/1')">Internal Secret Orders</button>
-          <button class="btn-secondary" onclick="setSsrfUrl('http://127.0.0.1:8080/.env')">Local .env Secrets</button>
+          <button class="btn-secondary" onclick="setSsrfUrl('http://127.0.0.1:8080/api/users/1')">Maybank Admin Profile (:8080)</button>
+          <button class="btn-secondary" onclick="setSsrfUrl('http://127.0.0.1:8080/api/orders/1')">DuitNow Swiss Transfer (:8080)</button>
+          <button class="btn-secondary" onclick="setSsrfUrl('http://127.0.0.1:8080/.env')">Server Secrets (.env)</button>
         </div>
       </div>
 
-      <div style="display: flex; gap: 10px; margin-top: 12px;">
-        <input type="text" id="target-url" value="http://127.0.0.1:5000/api/health" style="flex: 1; background: #090c15; border: 1px solid var(--card-border); color: #fff; padding: 12px 16px; border-radius: 6px; font-family: monospace; font-size: 14px;">
-        <button class="btn-primary" onclick="executeSsrf()">FETCH PROXY &rarr;</button>
+      <!-- Proxy Request Form -->
+      <div style="display: flex; gap: 10px; margin-bottom: 16px;">
+        <input type="text" id="target-url" value="http://127.0.0.1:5000/api/health" style="flex: 1; font-family: monospace; font-size: 13.5px;" placeholder="https://api.forex-rates.com or http://127.0.0.1:8080/...">
+        <button class="btn-primary" onclick="executeSsrf()">FETCH FOREX PROXY &rarr;</button>
       </div>
 
-      <div id="flag-alert" style="display: none; margin-top: 18px; padding: 14px; background: rgba(16, 185, 129, 0.15); border: 1px solid var(--success); border-radius: 8px; color: #fff;">
-        🎉 <strong>SSRF EXPLOITED! Flag Unlocked:</strong> <code id="flag-code" style="color: var(--success); font-weight: bold; font-size: 14px; margin-left: 8px;"></code>
-        <a href="/" style="color: var(--cyan); margin-left: 14px; font-size: 12px; text-decoration: underline;">Submit on Board &rarr;</a>
+      <!-- Flag Alert Box -->
+      <div id="flag-alert" class="flag-alert-box">
+        🎉 <strong>SSRF EXPLOITED! Internal Banking Service Reached:</strong> 
+        <code id="flag-code"></code>
+        <a href="/" style="color: #2563eb; margin-left: 14px; font-size: 12px; font-weight: 700; text-decoration: underline;">Submit on Security Board &rarr;</a>
       </div>
 
-      <div class="terminal-window">
+      <!-- HTTP Response Viewer -->
+      <div class="terminal-window" style="margin-top: 18px;">
         <div class="terminal-header">
           <span class="term-dot red"></span>
           <span class="term-dot yellow"></span>
           <span class="term-dot green"></span>
-          <span style="color: var(--text-muted); font-size: 12px; margin-left: 10px;">HTTP Proxy Response Viewer</span>
+          <span style="color: #9ca3af; font-size: 12px; margin-left: 10px;">Maybank HTTP Proxy Response Stream</span>
         </div>
-        <div id="response-box" class="terminal-body">Response from internal target will be displayed here...</div>
+        <div id="response-box" class="terminal-body">Response from target partner URL will be displayed here...</div>
       </div>
     </div>
   </div>
+
+  <!-- Maybank Footer -->
+  <footer class="maybank-footer" style="margin-top: 40px;">
+    <div class="footer-bottom">
+      <div>
+        © 2026 Malayan Banking Berhad (Co. Reg. No. 196001000142). All rights reserved.
+      </div>
+      <div>
+        Maybank Global Markets & Foreign Exchange Operations • Member of PIDM
+      </div>
+    </div>
+  </footer>
 
   <script>
     function setSsrfUrl(url) {
@@ -74,7 +118,7 @@
     async function executeSsrf() {
       const url = document.getElementById('target-url').value
       const box = document.getElementById('response-box')
-      box.innerText = `[+] Requesting internal URL: ${url} ...\n[+] Waiting for proxy response...`
+      box.innerText = `[+] Requesting URL via Maybank Proxy: ${url} ...\n[+] Awaiting HTTP gateway response...`
 
       try {
         const res = await fetch(`/api/proxy-fetch?url=${encodeURIComponent(url)}`)
@@ -91,9 +135,12 @@
           }
         }
       } catch (err) {
-        box.innerText = `[-] Proxy request error: ${err.message}`
+        box.innerText = `[-] Gateway request error: ${err.message}`
       }
     }
+
+    // Run initial test
+    executeSsrf()
   </script>
 </body>
 </html>

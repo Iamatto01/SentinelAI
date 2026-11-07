@@ -3,101 +3,350 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>AbuseLab — Offensive Security Exploitation Range</title>
+  <title>Maybank2u — Online Banking & Financial Services</title>
   <link rel="stylesheet" href="/style.css">
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220%22><text y=%2226%22 font-size=%2226%22>🔥</text></svg>">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🐯</text></svg>">
 </head>
 <body>
-  <header>
-    <a href="/" class="logo">
-      🔥 ABUSE<span>LAB</span> <small>RANGE v2.0</small>
+  <!-- Top Scam Advisory Notice (Maybank Signature Banner) -->
+  <div class="scam-alert-bar">
+    <div class="alert-text">
+      <span>⚠️</span>
+      <span><strong>PERINGATAN KESELAMATAN:</strong> Pihak Maybank tidak akan sesekali menghantar SMS atau e-mel mengandungi pautan meminta maklumat log masuk, kata laluan, atau TAC/OTP anda.</span>
+    </div>
+    <div style="display: flex; align-items: center; gap: 10px;">
+      <span class="pidm-badge">Ahli PIDM</span>
+      <button class="btn-dark" style="padding: 4px 10px; font-size: 11px; background: #000; color: var(--mb-yellow);" onclick="toggleAuditorDrawer()">
+        🛡️ AUDIT LAB <span id="top-badge-count">(0/10)</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- Top Sub Bar -->
+  <div class="top-sub-bar">
+    <div>
+      <a href="/" style="font-weight: 700; color: #000;">Personal</a>
+      <a href="/login.html">Business</a>
+      <a href="/login.html">Islamic Banking</a>
+      <a href="/profile.html">Premier Wealth</a>
+    </div>
+    <div style="display: flex; align-items: center; gap: 16px;">
+      <span>Customer Care: <strong>1-300-88-6688</strong></span>
+      <span>•</span>
+      <span>Kuala Lumpur, Malaysia (MYT)</span>
+    </div>
+  </div>
+
+  <!-- Main Maybank Header -->
+  <header class="maybank-header">
+    <a href="/" class="maybank-logo">
+      <div class="maybank-tiger-badge">🐯</div>
+      <div class="maybank-logo-text">
+        <span class="maybank-logo-title">Maybank<span>2u</span></span>
+        <span class="maybank-logo-sub">MALAYAN BANKING BERHAD</span>
+      </div>
     </a>
-    <nav>
-      <a href="/" class="active">Matrix</a>
-      <a href="/admin.html">⚡ RCE Terminal</a>
-      <a href="/login.html">💉 SQLi Hub</a>
-      <a href="/upload.html">📤 Web Shells</a>
-      <a href="/documents.html">📁 LFI Vault</a>
-      <a href="/ssrf.html">🌐 SSRF Probe</a>
-      <a href="/profile.html">👤 IDOR</a>
-      <a href="/feedback.html">☣️ XSS</a>
+    <nav class="maybank-nav">
+      <a href="/" class="active">Home</a>
+      <a href="/profile.html">My Accounts</a>
+      <a href="/login.html">Pay & Transfer</a>
+      <a href="/documents.html">e-Statements</a>
+      <a href="/upload.html">MyKad KYC</a>
+      <a href="/ssrf.html">Forex Rates</a>
+      <a href="/feedback.html">Customer Care</a>
+      <a href="/admin.html">MEPS ATM</a>
+      <a href="/login.html" class="btn-maybank-login">LOGIN &rarr;</a>
     </nav>
   </header>
 
   <div class="container">
-    <!-- Live CTF Progress Banner -->
-    <div class="ctf-banner">
-      <div class="ctf-info">
-        <h2>🎯 AbuseLab Exploitation Range</h2>
-        <p>Interactive vulnerable target environment designed for <strong>SentinelAI</strong> automated scans & manual offensive security testing.</p>
-        <p style="margin-top: 8px; font-family: monospace; color: var(--cyan); font-size: 13px;">
-          Target URL: <strong>https://abuse.sentinelai.studio</strong>
+    <!-- Promotional Hero Banner -->
+    <div class="maybank-hero">
+      <div style="max-width: 620px;">
+        <div class="hero-tag">
+          ★ MALAYSIA'S PREMIER FINANCIAL INSTITUTION
+        </div>
+        <h1>Humanising Financial <span>Services</span></h1>
+        <p>
+          Experience smart digital banking with Maybank2u. Enjoy high returns up to <strong>3.85% p.a.</strong> with Maybank Islamic Fixed Deposit-i, instant DuitNow interbank transfers, and corporate SME financing.
         </p>
+        <div style="display: flex; gap: 12px; flex-wrap: wrap;">
+          <a href="/login.html" class="btn-yellow" style="font-size: 14px; padding: 12px 24px;">Login to Maybank2u &rarr;</a>
+          <a href="/documents.html" class="btn-secondary" style="background: rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.3); color: #fff;">Product Disclosures (PDS)</a>
+          <button class="btn-secondary" style="background: #000; color: var(--mb-yellow); border-color: var(--mb-yellow);" onclick="toggleAuditorDrawer()">Open Security Matrix</button>
+        </div>
       </div>
 
-      <div class="ctf-progress">
-        <div class="progress-box">
-          <div class="score" id="user-score">0 / 890</div>
-          <div class="label" id="user-stats">0 of 10 FLAGS UNLOCKED</div>
+      <div class="hero-stats-box">
+        <div class="hero-stat-item">
+          <div class="hero-stat-val">RM 980B+</div>
+          <div class="hero-stat-lbl">Group Assets</div>
+        </div>
+        <div class="hero-stat-item" style="border-left: 1px solid rgba(255,255,255,0.15); padding-left: 20px;">
+          <div class="hero-stat-val">3.85%</div>
+          <div class="hero-stat-lbl">Fixed Deposit-i</div>
+        </div>
+        <div class="hero-stat-item" style="border-left: 1px solid rgba(255,255,255,0.15); padding-left: 20px;">
+          <div class="hero-stat-val">15M+</div>
+          <div class="hero-stat-lbl">Active Customers</div>
         </div>
       </div>
     </div>
 
-    <!-- Flag Submission Card -->
-    <div class="card" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 14px; background: rgba(15, 21, 36, 0.7);">
-      <div>
-        <h4 style="color: #fff; font-size: 15px;">🚩 Submit Exploit Flag</h4>
-        <p style="color: var(--text-muted); font-size: 13px;">Found a flag like <code>FLAG{...}</code> during your penetration testing? Submit it here to score points!</p>
+    <!-- Quick Action Tiles (Maybank Retail Portal Style) -->
+    <div class="quick-action-bar">
+      <a href="/profile.html" class="quick-action-tile">
+        <div class="quick-action-icon">💳</div>
+        <span class="quick-action-title">My Accounts & Balance (IDOR)</span>
+      </a>
+      <a href="/login.html" class="quick-action-tile">
+        <div class="quick-action-icon">💸</div>
+        <span class="quick-action-title">Pay & Transfer (SQLi Login)</span>
+      </a>
+      <a href="#search-section" class="quick-action-tile">
+        <div class="quick-action-icon">📈</div>
+        <span class="quick-action-title">Fixed Deposit Rates (UNION SQLi)</span>
+      </a>
+      <a href="/documents.html" class="quick-action-tile">
+        <div class="quick-action-icon">📑</div>
+        <span class="quick-action-title">e-Statements & Terms (LFI)</span>
+      </a>
+      <a href="/upload.html" class="quick-action-tile">
+        <div class="quick-action-icon">🆔</div>
+        <span class="quick-action-title">MyKad KYC Upload (File Upload)</span>
+      </a>
+      <a href="/ssrf.html" class="quick-action-tile">
+        <div class="quick-action-icon">💱</div>
+        <span class="quick-action-title">Live Forex Proxy (SSRF)</span>
+      </a>
+      <a href="/feedback.html" class="quick-action-tile">
+        <div class="quick-action-icon">💬</div>
+        <span class="quick-action-title">Branch Feedback (Stored XSS)</span>
+      </a>
+      <a href="/admin.html" class="quick-action-tile">
+        <div class="quick-action-icon">🏧</div>
+        <span class="quick-action-title">MEPS ATM Switch (RCE)</span>
+      </a>
+    </div>
+
+    <!-- Malaysian Forex & Bank Rates Ticker -->
+    <div class="maybank-ticker">
+      <div class="ticker-item">
+        <span class="ticker-label">Bank Negara OPR:</span>
+        <span class="ticker-val">3.00%</span>
       </div>
-      <form id="flag-submit-form" class="flag-form" onsubmit="submitFlag(event)">
-        <input type="text" id="flag-input" placeholder="FLAG{...}" required>
-        <button type="submit" class="btn-primary">SUBMIT FLAG</button>
-      </form>
+      <div class="ticker-item">
+        <span class="ticker-label">USD / MYR:</span>
+        <span class="ticker-val">4.4120</span>
+        <span class="ticker-up">+0.15%</span>
+      </div>
+      <div class="ticker-item">
+        <span class="ticker-label">SGD / MYR:</span>
+        <span class="ticker-val">3.3280</span>
+        <span class="ticker-up">+0.08%</span>
+      </div>
+      <div class="ticker-item">
+        <span class="ticker-label">EUR / MYR:</span>
+        <span class="ticker-val">4.7850</span>
+        <span class="ticker-up">+0.12%</span>
+      </div>
+      <div class="ticker-item">
+        <span class="ticker-label">Fixed Deposit-i (12M):</span>
+        <span class="ticker-val" style="color: #b45309;">3.85% p.a.</span>
+      </div>
+      <div class="ticker-item">
+        <span class="ticker-label">DuitNow Clearing:</span>
+        <span class="ticker-val" style="color: var(--accent-green);">ONLINE</span>
+      </div>
     </div>
-    <div id="flag-msg" style="margin-top: -14px; margin-bottom: 20px; font-size: 13px; font-weight: bold; display: none;"></div>
 
-    <!-- Quick Scan Helper -->
-    <div class="card" style="border-left: 4px solid var(--cyan);">
-      <h3 style="color: var(--cyan); margin-bottom: 8px;">🚀 Ready to Abuse with SentinelAI</h3>
-      <p style="color: var(--text-muted); font-size: 14px; line-height: 1.6;">
-        Launch an automated scan directly against this target from your SentinelAI scanner dashboard:
-        <code style="background: #060911; padding: 4px 10px; border-radius: 4px; color: #fff; border: 1px solid var(--card-border); margin-left: 6px;">https://abuse.sentinelai.studio</code>
-      </p>
+    <!-- Product & Fixed Deposit Search (Vulnerable SQLi Catalog) -->
+    <div class="card" id="search-section">
+      <div class="card-header">
+        <div>
+          <h2 class="card-title">🔍 Search Maybank Products, Fixed Deposits & Financing Plans</h2>
+          <p style="color: var(--text-secondary); font-size: 13px; margin-top: 4px;">
+            Filter through Maybank Islamic deposit tiers, SME loans, commercial credit lines, and Secure2u devices.
+          </p>
+        </div>
+        <span class="badge badge-yellow">Maybank Product Catalog</span>
+      </div>
+
+      <div style="display: flex; gap: 10px; margin-bottom: 16px;">
+        <input type="text" id="home-search-q" placeholder="Search by product name or keywords (e.g. Fixed Deposit, Savings, SME, Secure2u)..." style="flex: 1;">
+        <button class="btn-primary" onclick="searchProducts()">SEARCH PRODUCTS</button>
+      </div>
+
+      <div id="search-table-container">
+        <table class="bank-table">
+          <thead>
+            <tr>
+              <th>Product / Financing Scheme</th>
+              <th>Category</th>
+              <th>Min Placement / Amount</th>
+              <th>Description / Syariah Concept</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody id="products-tbody">
+            <tr>
+              <td colspan="5" style="text-align: center; color: var(--text-muted); padding: 24px;">Loading Maybank product catalog...</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
     </div>
 
-    <!-- Attack Surface Matrix -->
-    <h2 style="margin: 30px 0 16px; font-size: 20px; font-weight: 800; letter-spacing: 0.5px; display: flex; align-items: center; gap: 8px;">
-      ⚡ VULNERABILITY ATTACK MATRIX
-    </h2>
-
-    <div class="grid-3" id="matrix-grid">
-      <!-- Injected dynamically via API -->
+    <!-- Verified Branch Feedback & Customer Reviews (Stored XSS) -->
+    <div class="card">
+      <div class="card-header">
+        <div>
+          <h2 class="card-title">💬 Maybank Branch Experience & Customer Reviews</h2>
+          <p style="color: var(--text-secondary); font-size: 13px; margin-top: 4px;">
+            Recent feedback from Maybank Premier, SME banking clients, and retail account holders.
+          </p>
+        </div>
+        <a href="/feedback.html" class="btn-secondary" style="font-size: 12px;">Submit Feedback &rarr;</a>
+      </div>
+      <div id="home-reviews-container">Loading customer reviews...</div>
     </div>
   </div>
 
-  <footer>
-    <p>AbuseLab v2.0 — Official Offensive Security Testbed for SentinelAI Platform.</p>
-    <p style="margin-top: 6px; font-family: monospace;">
-      <a href="/robots.txt">robots.txt</a> • 
-      <a href="/.env">.env (secrets)</a> • 
-      <a href="/backup.sql">backup.sql</a> • 
-      <a href="/actuator/env">actuator/env</a>
-    </p>
+  <!-- Security Auditor Drawer / CTF Overlay -->
+  <div class="auditor-drawer-backdrop" id="auditor-backdrop" onclick="toggleAuditorDrawer()"></div>
+  <aside class="auditor-drawer" id="auditor-drawer">
+    <div class="auditor-header">
+      <div>
+        <h3 style="color: #000; font-size: 16px; font-weight: 900; display: flex; align-items: center; gap: 8px;">
+          🛡️ MAYBANK2U SECURITY AUDIT OVERLAY
+        </h3>
+        <p style="color: #333; font-size: 12px; margin-top: 2px;">SentinelAI Penetration Testing & Vulnerability Assessment</p>
+      </div>
+      <button class="auditor-close-btn" onclick="toggleAuditorDrawer()">&times;</button>
+    </div>
+
+    <div class="auditor-body">
+      <!-- Score & Progress Box -->
+      <div style="background: #fff9e6; border: 1px solid #fcd34d; border-radius: 8px; padding: 16px; margin-bottom: 20px;">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <div>
+            <div style="font-size: 11px; text-transform: uppercase; color: #92400e; font-weight: 800;">Audit Score</div>
+            <div style="font-size: 26px; font-weight: 900; color: #000;" id="drawer-score">0 / 890</div>
+          </div>
+          <div style="text-align: right;">
+            <div style="font-size: 11px; text-transform: uppercase; color: #92400e; font-weight: 800;">Flags Discovered</div>
+            <div style="font-size: 18px; font-weight: 800; color: var(--accent-green);" id="drawer-stats">0 / 10</div>
+          </div>
+        </div>
+        <div style="margin-top: 10px; font-size: 12px; color: #78350f; font-family: monospace;">
+          Target: <strong>https://abuse.sentinelai.studio</strong>
+        </div>
+      </div>
+
+      <!-- Flag Submission -->
+      <div style="background: #f9fafb; border: 1px solid var(--mb-border); border-radius: 8px; padding: 16px; margin-bottom: 24px;">
+        <h4 style="color: var(--text-primary); font-size: 13.5px; margin-bottom: 8px;">🚩 Submit Exploit Flag</h4>
+        <form onsubmit="submitDrawerFlag(event)" style="display: flex; gap: 8px;">
+          <input type="text" id="drawer-flag-input" placeholder="FLAG{...}" style="flex: 1; font-family: monospace; font-size: 12px; padding: 8px;" required>
+          <button type="submit" class="btn-primary" style="padding: 8px 16px; font-size: 12px;">VERIFY</button>
+        </form>
+        <div id="drawer-flag-msg" style="margin-top: 10px; font-size: 12px; font-weight: bold; display: none;"></div>
+      </div>
+
+      <!-- Vulnerability Matrix Cards -->
+      <h4 style="color: var(--text-primary); font-size: 13.5px; margin-bottom: 12px; text-transform: uppercase; letter-spacing: 0.5px;">
+        ⚡ Vulnerability Test Vectors (10)
+      </h4>
+      <div id="drawer-matrix-list" style="display: flex; flex-direction: column; gap: 12px;">
+        <!-- Injected via JS -->
+      </div>
+    </div>
+  </aside>
+
+  <!-- Floating Sticky Auditor Pill -->
+  <button class="floating-auditor-pill" onclick="toggleAuditorDrawer()">
+    <span>🛡️</span> Audit Range (<span id="pill-score">0/10</span>)
+  </button>
+
+  <!-- Maybank Real Footer -->
+  <footer class="maybank-footer">
+    <div class="footer-grid">
+      <div class="footer-col">
+        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 12px;">
+          <div class="maybank-tiger-badge" style="width: 32px; height: 32px; font-size: 18px;">🐯</div>
+          <span style="font-size: 16px; font-weight: 900; color: #000;">Maybank2u</span>
+        </div>
+        <p style="line-height: 1.6; margin-bottom: 14px; font-size: 12px; color: var(--text-secondary);">
+          Malayan Banking Berhad (Co. Reg. No. 196001000142). Menara Maybank, 100 Jalan Tun Perak, 50050 Kuala Lumpur, Malaysia. Licensed and regulated by Bank Negara Malaysia.
+        </p>
+        <div style="font-size: 11.5px; color: var(--text-muted);">
+          Official Testbed for SentinelAI Autonomous Vulnerability Scanner Evaluation.
+        </div>
+      </div>
+
+      <div class="footer-col">
+        <h4>Retail Banking</h4>
+        <ul>
+          <li><a href="/login.html">Maybank2u Login</a></li>
+          <li><a href="/profile.html">My Accounts & Statements (IDOR)</a></li>
+          <li><a href="/upload.html">MyKad & Tax Upload (Upload)</a></li>
+          <li><a href="/ssrf.html">Forex Rates Proxy (SSRF)</a></li>
+        </ul>
+      </div>
+
+      <div class="footer-col">
+        <h4>Audit & Infrastructure</h4>
+        <ul>
+          <li><a href="/admin.html">MEPS ATM Switch Ping (RCE)</a></li>
+          <li><a href="/documents.html">Product Disclosures (LFI)</a></li>
+          <li><a href="/feedback.html">Customer Reviews (Stored XSS)</a></li>
+          <li><a href="javascript:void(0)" onclick="toggleAuditorDrawer()">Security Audit Overlay</a></li>
+        </ul>
+      </div>
+
+      <div class="footer-col">
+        <h4>System Disclosures</h4>
+        <ul>
+          <li><a href="/robots.txt">robots.txt</a></li>
+          <li><a href="/.env">.env (System Secrets)</a></li>
+          <li><a href="/backup.sql">backup.sql (Database Dump)</a></li>
+          <li><a href="/actuator/env">actuator/env (Metrics)</a></li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="footer-bottom">
+      <div>
+        © 2026 Malayan Banking Berhad. All rights reserved. Member of PIDM.
+      </div>
+      <div>
+        Eligible deposits are protected by PIDM up to RM250,000 for each depositor.
+      </div>
+    </div>
   </footer>
 
   <script>
+    function toggleAuditorDrawer() {
+      const drawer = document.getElementById('auditor-drawer')
+      const backdrop = document.getElementById('auditor-backdrop')
+      drawer.classList.toggle('open')
+      backdrop.classList.toggle('open')
+    }
+
     async function loadStatus() {
       try {
         const res = await fetch('/api/flags/status')
         const data = await res.json()
-        document.getElementById('user-score').innerText = `${data.score} / ${data.maxScore}`
-        document.getElementById('user-stats').innerText = `${data.solvedCount} of ${data.totalChallenges} FLAGS UNLOCKED`
+        document.getElementById('top-badge-count').innerText = `(${data.solvedCount}/${data.totalChallenges})`
+        document.getElementById('drawer-score').innerText = `${data.score} / ${data.maxScore}`
+        document.getElementById('drawer-stats').innerText = `${data.solvedCount} of ${data.totalChallenges}`
+        document.getElementById('pill-score').innerText = `${data.solvedCount}/${data.totalChallenges}`
 
-        const grid = document.getElementById('matrix-grid')
-        grid.innerHTML = data.challenges.map(c => {
+        const listContainer = document.getElementById('drawer-matrix-list')
+        listContainer.innerHTML = data.challenges.map(c => {
           let badgeClass = 'badge-crit'
-          if (c.points <= 70) badgeClass = 'badge-med'
-          else if (c.points <= 90) badgeClass = 'badge-high'
+          if (c.points <= 70) badgeClass = 'badge-blue'
+          else if (c.points <= 90) badgeClass = 'badge-yellow'
 
           let actionUrl = '/admin.html'
           if (c.id.includes('sqli')) actionUrl = '/login.html'
@@ -108,18 +357,18 @@
           else if (c.id.includes('xss')) actionUrl = '/feedback.html'
 
           return `
-            <div class="matrix-card ${c.solved ? 'solved' : ''}">
-              <div>
-                <div class="badges">
-                  <span class="badge ${badgeClass}">${c.cwe}</span>
-                  <span class="badge badge-med">${c.points} PTS</span>
-                </div>
-                <h3 style="color: #fff; font-size: 16px; font-weight: 700; margin-bottom: 8px;">${c.name}</h3>
-                <p style="color: var(--text-muted); font-size: 13px; line-height: 1.5;">${c.hint}</p>
+            <div style="background: #ffffff; border: 1px solid ${c.solved ? 'var(--accent-green)' : 'var(--mb-border)'}; border-radius: 8px; padding: 12px 14px; box-shadow: var(--shadow-sm);">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                <span class="badge ${badgeClass}">${c.cwe}</span>
+                <span style="font-size: 11px; font-weight: 800; color: ${c.solved ? 'var(--accent-green)' : 'var(--text-muted)'};">
+                  ${c.solved ? '✓ SOLVED' : `${c.points} PTS`}
+                </span>
               </div>
-              <div style="margin-top: 18px; display: flex; justify-content: space-between; align-items: center;">
-                <span style="font-size: 12px; color: var(--text-dim); text-transform: uppercase;">${c.category}</span>
-                <a href="${actionUrl}" class="btn-primary" style="padding: 6px 12px; font-size: 12px;">ABUSE THIS &rarr;</a>
+              <div style="font-weight: 800; color: var(--text-primary); font-size: 13.5px; margin-bottom: 4px;">${c.name}</div>
+              <div style="font-size: 12px; color: var(--text-secondary); margin-bottom: 10px; line-height: 1.4;">${c.hint}</div>
+              <div style="display: flex; justify-content: space-between; align-items: center;">
+                <span style="font-size: 11px; color: var(--text-muted); text-transform: uppercase;">${c.category}</span>
+                <a href="${actionUrl}" class="btn-secondary" style="padding: 4px 10px; font-size: 11px;">Test Vector &rarr;</a>
               </div>
             </div>
           `
@@ -129,13 +378,13 @@
       }
     }
 
-    async function submitFlag(e) {
+    async function submitDrawerFlag(e) {
       e.preventDefault()
-      const input = document.getElementById('flag-input')
-      const msg = document.getElementById('flag-msg')
+      const input = document.getElementById('drawer-flag-input')
+      const msg = document.getElementById('drawer-flag-msg')
       msg.style.display = 'block'
       msg.innerText = 'Verifying flag...'
-      msg.style.color = 'var(--text-muted)'
+      msg.style.color = 'var(--text-secondary)'
 
       try {
         const res = await fetch('/api/flags/submit', {
@@ -146,20 +395,77 @@
         const data = await res.json()
         if (data.success) {
           msg.innerText = data.message
-          msg.style.color = 'var(--success)'
+          msg.style.color = 'var(--accent-green)'
           input.value = ''
           loadStatus()
         } else {
           msg.innerText = data.message
-          msg.style.color = 'var(--danger)'
+          msg.style.color = 'var(--accent-red)'
         }
       } catch (err) {
-        msg.innerText = 'Network error while submitting flag'
-        msg.style.color = 'var(--danger)'
+        msg.innerText = 'Error submitting flag: ' + err.message
+        msg.style.color = 'var(--accent-red)'
       }
     }
 
+    async function searchProducts() {
+      const q = document.getElementById('home-search-q').value
+      const tbody = document.getElementById('products-tbody')
+      tbody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: var(--text-muted); padding: 16px;">Searching Maybank products...</td></tr>`
+
+      try {
+        const res = await fetch(`/api/products/search?q=${encodeURIComponent(q)}`)
+        const data = await res.json()
+        if (data.error) {
+          tbody.innerHTML = `<tr><td colspan="5" style="color: var(--accent-red); font-family: monospace; padding: 14px;">SQL Error: ${data.error}</td></tr>`
+          return
+        }
+        if (data.length === 0) {
+          tbody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: var(--text-muted); padding: 16px;">No products match your query.</td></tr>`
+          return
+        }
+
+        tbody.innerHTML = data.map(item => `
+          <tr>
+            <td style="font-weight: 800; color: var(--text-primary);">${item.name || item.id}</td>
+            <td><span class="badge badge-yellow">${item.category || 'General'}</span></td>
+            <td style="font-family: monospace; font-weight: 700; color: #b45309;">RM ${Number(item.price || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+            <td style="color: var(--text-secondary); font-size: 12.5px;">${item.description || item.secret_value || '—'}</td>
+            <td><a href="/login.html" class="btn-secondary" style="padding: 4px 10px; font-size: 11px;">Apply Now &rarr;</a></td>
+          </tr>
+        `).join('')
+      } catch (e) {
+        tbody.innerHTML = `<tr><td colspan="5" style="color: var(--accent-red); padding: 14px;">Failed to fetch catalog: ${e.message}</td></tr>`
+      }
+    }
+
+    async function loadReviews() {
+      const container = document.getElementById('home-reviews-container')
+      try {
+        const res = await fetch('/api/feedback')
+        const items = await res.json()
+        if (items.length === 0) {
+          container.innerHTML = '<p style="color: var(--text-muted); font-size: 13px;">No customer reviews recorded yet.</p>'
+          return
+        }
+        container.innerHTML = items.slice(0, 3).map(item => `
+          <div style="border-bottom: 1px solid var(--mb-border); padding: 12px 0;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+              <strong style="color: #000; font-size: 13.5px;">${item.author}</strong>
+              <small style="color: var(--text-muted); font-size: 11.5px;">${item.created_at}</small>
+            </div>
+            <div style="font-size: 13px; color: var(--text-secondary);">${item.comment}</div>
+          </div>
+        `).join('')
+      } catch (e) {
+        container.innerText = 'Failed to load reviews.'
+      }
+    }
+
+    // Init
     loadStatus()
+    searchProducts()
+    loadReviews()
   </script>
 </body>
 </html>

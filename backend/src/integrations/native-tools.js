@@ -16,6 +16,7 @@ import path from 'node:path'
 const TIMEOUT_MS = 600000
 const IS_WIN = process.platform === 'win32'
 const PATH_DELIM = path.delimiter
+const activeProcesses = new Map()
 
 /** Extra directories that package managers install into but that are often absent from PATH. */
 function extraToolDirs() {
@@ -154,11 +155,18 @@ function killTree(proc) {
   if (!IS_WIN) {
     try { process.kill(-proc.pid, 'SIGKILL'); return } catch { /* fall through */ }
   }
+
   try { proc.kill('SIGKILL') } catch { /* already gone */ }
 }
 
+export function cancelNativeTools(owner) {
+  const processes = activeProcesses.get(owner)
+  if (!processes) return
+  for (const proc of processes) killTree(proc)
+}
+
 /** Run a command, capture stdout/stderr, respect timeout. */
-async function run(cmd, args, { timeout = TIMEOUT_MS, env: extraEnv = null } = {}) {
+async function run(cmd, args, { timeout = TIMEOUT_MS, env: extraEnv = null, input = null, owner = null } = {}) {
   const env = extraEnv ? { ...buildEnv(), ...stringifyEnv(extraEnv) } : buildEnv()
   // Resolve to an absolute path so Windows PATHEXT/.bat shims work and so
   // we never depend on the child shell's lookup order.
@@ -171,12 +179,26 @@ async function run(cmd, args, { timeout = TIMEOUT_MS, env: extraEnv = null } = {
       // targets can't be interpreted by a shell (command-injection fix).
       // POSIX: detached + process-group kill. Windows: no process groups, so
       // detached stays off and taskkill-free proc.kill is enough for our tree.
+      // stdin stays 'pipe' so large scripts can be streamed in verbatim
+      // instead of being crammed into argv (see runNativeCommand).
       proc = spawn(executable, args, {
-        stdio: ['ignore', 'pipe', 'pipe'],
+        stdio: ['pipe', 'pipe', 'pipe'],
         env,
         detached: !IS_WIN,
         windowsHide: true,
       })
+      if (owner) {
+        if (!activeProcesses.has(owner)) activeProcesses.set(owner, new Set())
+        activeProcesses.get(owner).add(proc)
+      }
+      if (input != null) {
+        proc.stdin?.on('error', () => { /* child exited before reading stdin */ })
+        proc.stdin?.end(input)
+      } else {
+        // Nothing to feed: close stdin immediately so children waiting on EOF
+        // (e.g. `bash -s` with no input) never hang until the timeout.
+        proc.stdin?.end()
+      }
     } catch (err) {
       resolve({ success: false, error: err.message, stdout: '', stderr: '' })
       return
@@ -189,6 +211,11 @@ async function run(cmd, args, { timeout = TIMEOUT_MS, env: extraEnv = null } = {
       if (settled) return
       settled = true
       clearTimeout(timer)
+      if (owner) {
+        const processes = activeProcesses.get(owner)
+        processes?.delete(proc)
+        if (processes?.size === 0) activeProcesses.delete(owner)
+      }
       resolve(payload)
     }
 
@@ -372,9 +399,9 @@ export const NATIVE_TOOLS = {
     // stdin mode works reliably. -ct caps crawl duration, -iqp skips
     // duplicate query-param URLs (Moodle generates thousands).
     bin: 'bash',
-    args: (t) => ['-c', `echo ${JSON.stringify(toUrl(t))} | katana -silent -d 2 -ct 90 -c 20 -iqp`],
+    args: (t) => ['-c', `echo ${JSON.stringify(toUrl(t))} | katana -silent -d 2 -ct 90 -c 20 -iqp -j`],
     // Older katana builds: classic -u invocation.
-    altArgs: (t) => ['-u', toUrl(t), '-silent', '-d', '2'],
+    altArgs: (t) => ['-u', toUrl(t), '-silent', '-d', '2', '-j'],
     timeout: 150000,
     desc: 'Web crawling',
   },
@@ -563,11 +590,17 @@ export async function runNativeCommand(command, { timeout = TIMEOUT_MS, env = nu
     return { success: false, error: 'no command provided' }
   }
   const sh = posixShell()
+  // A POSIX shell takes the script on stdin (`-s`) rather than in argv (`-c`).
+  // On Windows, Node serialises argv into a single CreateProcess command line
+  // using MSVCRT quoting rules; a multi-KB script full of `\"` sequences does
+  // not survive that round-trip and bash re-parses a corrupted script (observed
+  // as `line N: unexpected EOF while looking for matching '"'`). stdin has no
+  // quoting layer, so the bytes arrive verbatim.
   const plan = sh
-    ? { cmd: sh, args: ['-c', command] }
+    ? { cmd: sh, args: ['-s'], input: command }
     : { cmd: process.env.ComSpec || 'cmd.exe', args: ['/d', '/s', '/c', toWindowsShell(command)], translated: true }
   const shellName = path.basename(plan.cmd)
-  const result = await run(plan.cmd, plan.args, { timeout, env })
+  const result = await run(plan.cmd, plan.args, { timeout, env, input: plan.input ?? null })
   return { ...result, command, shell: shellName, translated: Boolean(plan.translated) }
 }
 
@@ -589,7 +622,7 @@ export function previewNativeCommand(moduleName, target) {
 }
 
 /** Run a native tool by module name. */
-export async function runNativeTool(moduleName, target) {
+export async function runNativeTool(moduleName, target, { owner = null } = {}) {
   const def = NATIVE_TOOLS[moduleName]
   if (!def) return { success: false, error: `no-native-mapping:${moduleName}` }
 
@@ -611,7 +644,7 @@ export async function runNativeTool(moduleName, target) {
 
   const args = def.args(target)
   const toolTimeout = def.timeout || TIMEOUT_MS
-  let result = await run(plan.cmd, plan.args, { timeout: toolTimeout })
+  let result = await run(plan.cmd, plan.args, { timeout: toolTimeout, owner })
 
   // Retry once on transient network errors (connection reset / refused / DNS
   // hiccup) — tools often succeed on the second attempt. Only retry when there
@@ -619,7 +652,7 @@ export async function runNativeTool(moduleName, target) {
   const TRANSIENT = /connection (reset|refused|timed out)|econnreset|econnrefused|etimedout|network is unreachable|temporary failure|name or service not known|no route to host/i
   if (!result.success && !result.stdout && TRANSIENT.test(result.error || '')) {
     await new Promise((r) => setTimeout(r, 2000))
-    result = await run(plan.cmd, plan.args, { timeout: toolTimeout })
+    result = await run(plan.cmd, plan.args, { timeout: toolTimeout, owner })
   }
 
   // If the primary arg-set failed (unsupported flags / broken env), retry with
@@ -628,7 +661,7 @@ export async function runNativeTool(moduleName, target) {
     const alt = def.altArgs(target)
     const altPlan = planInvocation(bin, alt)
     if (altPlan) {
-      const retry = await run(altPlan.cmd, altPlan.args, { timeout: toolTimeout })
+      const retry = await run(altPlan.cmd, altPlan.args, { timeout: toolTimeout, owner })
       if (retry.success || retry.stdout) {
         return { ...retry, tool: moduleName, bin, args: alt.join(' ') }
       }
@@ -644,7 +677,7 @@ export async function runNativeTool(moduleName, target) {
       const fbArgs = fbDef.args(target)
       const fbPlan = planInvocation(fbBin, fbArgs)
       if (fbPlan && await which(fbBin === 'bash' ? posixShell() : fbBin)) {
-        const fbResult = await run(fbPlan.cmd, fbPlan.args, { timeout: fbDef.timeout || toolTimeout })
+        const fbResult = await run(fbPlan.cmd, fbPlan.args, { timeout: fbDef.timeout || toolTimeout, owner })
         if (fbResult.success || fbResult.stdout) {
           return { ...fbResult, tool: moduleName, bin: fbBin, args: fbArgs.join(' '), _fallback: def.fallbackDef }
         }
@@ -661,4 +694,4 @@ export async function runNativeTool(moduleName, target) {
   return { ...result, tool: moduleName, bin, args: args.join(' ') }
 }
 
-export default { nativeToolsStatus, runNativeTool, runNativeCommand, previewNativeCommand, NATIVE_TOOLS, resolveBinary }
+export default { nativeToolsStatus, runNativeTool, cancelNativeTools, runNativeCommand, previewNativeCommand, NATIVE_TOOLS, resolveBinary }

@@ -1842,6 +1842,71 @@ function concreteVerification(v, endpoint) {  const url = endpoint || 'https://t
   return `curl -sS -o /dev/null -w "HTTP %{http_code}\\n" "${safeUrl}" && re-run the targeted SentinelAI check`
 }
 
+function reportFindingTitle(v) {
+  const evidence = v?.evidence && typeof v.evidence === 'object' ? v.evidence : {}
+  const product = sanitizePdfText(evidence.product || '')
+  const version = sanitizePdfText(evidence.version || '')
+  const module = String(v?.module || '').toLowerCase()
+  if ((module === 'version-audit' || module === 'version-lifecycle' || product) && product && version) {
+    return `${product} ${version} Outdated or Unsupported`
+  }
+  let title = sanitizePdfText(v?.title || 'Security Finding')
+    .replace(/^\s*(?:\[[^\]]+\]\s*)+/g, '')
+    .replace(/^\s*(?:warning|error|info|critical|high|medium|low)\s*[:|-]\s*/i, '')
+    .replace(/\s+\((?:https?:\/\/)?[^)]*\)\s*$/i, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim()
+  return title || 'Security Finding'
+}
+
+function cleanReportNarrative(value, fallback = '') {
+  const text = sanitizePdfText(value)
+  if (!text) return fallback
+  const LOG_LEVEL = 'trace|debug|verbose|info|notice|warn|warning|error|fatal|critical'
+  // A level word may appear bare (`info: x`) or as a bracketed tag (`[INFO] x`).
+  // These must be matched as separate steps. A single combined pattern such as
+  // `^(?:\[[^\]]+\]\s*)?(?:${LOG_LEVEL})\b` cannot work: the optional tag group
+  // consumes `[INFO] `, and the level alternation is then required to match what
+  // follows (`chatter`), which fails — `[INFO]` *is* the level word.
+  const isLevel = (body) => new RegExp(`^(?:${LOG_LEVEL})\\b\\s*[:|\\-]?`, 'i').test(body)
+  // A bracketed tag is log noise when its inner text names a level. It is a heading
+  // when it does not (`[Overview] Ports 80 and 443 are open`) — so test the tag's
+  // own contents, and never the text that follows it. A pattern that instead places an
+  // optional `[...]` group *before* the level alternation cannot work: the group
+  // swallows `[INFO]` and leaves `chatter`, and `info` cannot match a literal `[`.
+  const tagInner = (line) => {
+    const tag = /^\[\s*([A-Za-z]+)\s*\]/.exec(line)
+    return tag ? tag[1] : null
+  }
+  const isLevelTag = (line) => {
+    const inner = tagInner(line)
+    return inner !== null && isLevel(inner)
+  }
+  // `10:00:01 [INFO] wait` and `2026-01-01 10:00:01 INFO wait` are both log lines.
+  // The clock is optional-prefix; the level may follow a tag (tested on the inner text
+  // via isLevelTag) or stand alone.
+  const CLOCK = '\\d{2}:\\d{2}:\\d{2}[.,]?\\d*(?:Z|[+-]\\d{2}:?\\d{2})?'
+  const DATE = '\\d{4}-\\d{2}-\\d{2}[T ]'
+  const isTimestampedLog = (line) => {
+    const clock = new RegExp(`^(?:${DATE})?${CLOCK}\\s*`).exec(line)
+    if (!clock) return false
+    const tail = line.slice(clock[0].length).trim()
+    return isLevel(tail) || isLevelTag(tail)
+  }
+  const lines = text.split('\n')
+    .map(line => line.trim())
+    .filter(line => {
+      if (!line) return false
+      if (isLevel(line)) return false
+      if (isLevelTag(line)) return false
+      if (isTimestampedLog(line)) return false
+      return true
+    })
+    .filter(line => !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(line))
+    .filter(line => !/^\{.*\}$/.test(line))
+  return lines.join(' ').replace(/\s+/g, ' ').trim() || fallback
+}
+
 function makeEvidenceDrivenProblem(v, fallback, context) {
   const parts = []
   if (context.endpoint) parts.push(`Observed at ${context.endpoint}.`)
@@ -4230,9 +4295,13 @@ async function renderPdf({ file, reportTitle, scans, project, vulnerabilities, i
  * Smart helper to construct rich, professional action cards even when AI is unavailable.
  */
 function buildSimplifiedActionItem(v, index, detectedTech = []) {
-  let title = sanitizePdfText(v.title || 'Security Finding')
+  let title = reportFindingTitle(v)
   const sev = (v.severity || 'medium').toLowerCase()
   const lowerTitle = title.toLowerCase()
+  const versionEvidence = v.evidence && typeof v.evidence === 'object' ? v.evidence : {}
+  const versionProduct = sanitizePdfText(versionEvidence.product || '')
+  const detectedVersion = sanitizePdfText(versionEvidence.version || '')
+  const monthsPast = Number(versionEvidence.monthsPast)
 
   let urgency = sev === 'critical' ? 'fix-today' : sev === 'high' ? 'this-week' : 'optional'
   let difficulty = 'medium'
@@ -4240,7 +4309,7 @@ function buildSimplifiedActionItem(v, index, detectedTech = []) {
   const context = findingEvidenceContext(v)
   let symptom = makeEvidenceDrivenProblem(
     v,
-    sanitizePdfText(v.description || 'The scanner reported a security condition that requires review.'),
+    cleanReportNarrative(v.description, 'The assessment identified a security condition that requires review.'),
     context,
   )
   // Boilerplate removed. "impact depends on the access and data reachable from
@@ -4248,11 +4317,28 @@ function buildSimplifiedActionItem(v, index, detectedTech = []) {
   // reader nothing; it was printed on cards whose severity badge said CRITICAL.
   // A real consequence is derived from the finding's own scored vector below.
   let risk = consequenceFromFinding(v, context)
-  let prescription = sanitizePdfText(v.remediation || '')
+  let prescription = cleanReportNarrative(v.remediation)
   let verification = concreteVerification(v, context.endpoint)
 
-  // Context-aware enrichment for common web and configuration findings
-  if (lowerTitle.includes('content-security-policy') || lowerTitle.includes('csp')) {
+  // Context-aware enrichment for version/lifecycle findings and common web
+  // configuration findings. Version risks get their own concise wording so
+  // the architecture inventory and the fix card do not repeat a long CVE dump.
+  if ((v.module === 'version-audit' || v.module === 'version-lifecycle' || versionProduct) &&
+      versionProduct && detectedVersion) {
+    const cveCount = Number(versionEvidence.totalCves)
+    const cveText = Number.isFinite(cveCount) && cveCount > 0
+      ? `${cveCount} applicable NVD CVE${cveCount === 1 ? '' : 's'}`
+      : 'published vulnerability exposure'
+    const eolText = Number.isFinite(monthsPast) && monthsPast > 0
+      ? ` It has been out of support for approximately ${monthsPast} months.`
+      : ''
+    symptom = `${versionProduct} ${detectedVersion} was exposed by the target with ${cveText}.${eolText}`
+    risk = Number.isFinite(monthsPast) && monthsPast > 0
+      ? 'End-of-life software no longer receives security patches, so newly disclosed flaws remain unaddressed and can be targeted with public scanners.'
+      : 'Attackers can identify the component and compare its exact version with public vendor advisories and exploit databases.'
+    prescription = `Upgrade ${versionProduct} from ${detectedVersion} to a currently supported release. Apply vendor security updates before exposing the service again, then keep the exact version hidden from response banners.`
+    verification = `Confirm the deployed ${versionProduct} version is supported and re-run the SentinelAI version audit.`
+  } else if (lowerTitle.includes('content-security-policy') || lowerTitle.includes('csp')) {
     difficulty = 'medium'
     estimatedMinutes = 25
     symptom = makeEvidenceDrivenProblem(v, 'The web application does not send a Content-Security-Policy (CSP) HTTP response header.', context)
@@ -4426,104 +4512,10 @@ async function renderSimplifiedPdf({ file, reportTitle, scans = [], project = nu
     const lowFindings = confirmedVulnerabilities.filter(v => (v.severity || '').toLowerCase() === 'low')
     const infoFindings = confirmedVulnerabilities.filter(v => (v.severity || '').toLowerCase() === 'info')
 
-    // Items list (from AI guide or enriched findings)
-    // The AI guide is asked about `confirmedVulnerabilities` for exactly this
-    // reason: previously it echoed the unproven leads back as fix cards, so the
-    // same report claimed "4 unverified" and then told the operator to go patch
-    // them. Matching back to the finding is what lets us prove the item is
-    // grounded; an item we cannot ground is discarded, never printed.
+    // Keep the action queue deterministic and evidence-grounded. AI prose is
+    // useful for an optional priority note, but model-generated cards repeated
+    // findings and introduced placeholders into an otherwise factual report.
     let items = []
-    if (simplifiedGuide?.actionItems && Array.isArray(simplifiedGuide.actionItems) && simplifiedGuide.actionItems.length > 0) {
-      items = simplifiedGuide.actionItems
-        .map((item, idx) => {
-          // Grounding rule: a card may only borrow a finding's evidence when the
-          // title actually names the same subject. The previous version fell back
-          // to "first finding with the same severity", so a card titled
-          // `/api/v1/admin` rendered `/swagger-ui`'s payload, path and
-          // reproduction command as its proof — evidence for a finding nobody
-          // was told about, printed under a different heading.
-          //
-          // Titles that differ only by a trailing identifier (`: /a` vs `: /b`,
-          // `nginx 1.18.0` vs `nginx 1.24.0`) share a stem, which alone is not
-          // enough: two endpoints of the same class would still cross-link. So a
-          // match on the stem is only accepted when the distinguishing
-          // identifiers also agree.
-          const titleStem = t => String(t || '').toLowerCase()
-            .replace(/\s*[:|-]\s*.*$/, '')
-            .replace(/[^a-z0-9 ]+/g, ' ')
-            .replace(/\s+/g, ' ')
-            .trim()
-          const discriminators = t => (String(t || '').toLowerCase().match(/[a-z0-9_.-]*[/\\._][a-z0-9_.\/-]*|\d+(?:\.\d+)+/g) || [])
-            .filter(s => s.length > 2)
-          const itemDisc = discriminators(item.title)
-          const matched = confirmedVulnerabilities.find(v => {
-            const a = String(item.title || '').toLowerCase().trim()
-            const b = String(v.title || '').toLowerCase().trim()
-            if (!a || !b) return false
-            if (a === b) return true
-            const overlap = a.length >= 12 && b.length >= 12 &&
-              (a.includes(b) || b.includes(a)) && Math.min(a.length, b.length) / Math.max(a.length, b.length) >= 0.6
-            if (overlap) return true
-            if (!titleStem(a) || titleStem(a) !== titleStem(b)) return false
-            // Same stem, different identifiers: only a match when the card adds no
-            // identifier the finding lacks. A card naming nothing specific may
-            // borrow; a card naming `/api/v1/admin` may not borrow `/swagger-ui`.
-            const have = new Set(discriminators(b))
-            return itemDisc.every(d => have.has(d))
-          })
-          const sev = (item.severity || matched?.severity || 'medium').toLowerCase()
-          // The AI guide proposes prose, never numbers. Its cvss/cvssVector are
-          // discarded and the item is re-scored through the authority so a card
-          // can never show a score its own vector string disagrees with.
-          // When we HAVE the finding, its own content decides the score — not the
-          // model's label.
-          const evaluation = matched
-            ? evaluateFindingCvss(matched)
-            : evaluateFindingCvss({
-              title: item.title,
-              // Allowlist the band so a hallucinated label such as "severe"
-              // cannot drag the derived severity to something undefined.
-              severity: ['critical', 'high', 'medium', 'low', 'info'].includes(sev) ? sev : 'info',
-              description: item.symptom,
-              remediation: item.prescription,
-            })
-          return {
-            title: sanitizePdfText(item.title || `Action Item #${idx + 1}`),
-            severity: evaluation.severity,
-            cvss: evaluation.score,
-            cvssVector: evaluation.vector,
-            cvssSource: evaluation.source,
-            cvssVectorSource: evaluation.vectorSource,
-            cvssFindingClass: evaluation.findingClass,
-            // Only meaningful when a stored rating was actually overruled. An
-            // item the AI proposed from scratch has no declared rating to audit.
-            auditNote: matched ? (matched.auditNote || evaluation.auditNote || null) : null,
-            finding: matched,
-            symptom: sanitizePdfText(item.symptom || 'Anomalous configuration identified on target system.'),
-            risk: sanitizePdfText(item.risk || 'Presents security risks if left unaddressed.'),
-            prescription: sanitizePdfText(item.prescription || 'Apply recommended vendor configuration hardening.'),
-            urgency: item.urgency === 'fix-today' ? 'fix-today' : item.urgency === 'this-week' ? 'this-week' : 'optional',
-            difficulty: item.difficulty === 'easy' ? 'easy' : item.difficulty === 'hard' ? 'hard' : 'medium',
-            estimatedMinutes: parseInt(item.estimatedMinutes, 10) || 25,
-            verification: sanitizePdfText(item.verification || 'Re-scan with SentinelAI after applying changes.'),
-            confidence: item.confidence != null ? Number(item.confidence) : (matched ? confidencePercent(matched) : 75),
-            references: Array.isArray(item.references) ? item.references.filter(Boolean).slice(0, 4) : [],
-          }
-        })
-        .filter(item => {
-          // "General Security Maintenance" is filler, not a fix. A card may only
-          // stay if it points at a reproduced finding and carries real prose.
-          if (item.finding) return true
-          const fillerTitle = /general security maintenance|action item|miscellaneous|other issues/i.test(item.title)
-          const fillerSymptom = /anomalous configuration|presents security risks if left/i.test(item.symptom)
-          const fillerPrescription = /apply recommended vendor configuration|vendor or framework fix/i.test(item.prescription)
-          if (fillerTitle || (fillerSymptom && fillerPrescription)) {
-            console.warn(`[Report] Dropped ungrounded action card: "${item.title}"`)
-            return false
-          }
-          return false
-        })
-    }
     if (!items.length) {
       const sortedVulnerabilities = [...confirmedVulnerabilities].sort((a, b) => {
         const ai = SEV_ORDER.indexOf((a.severity || 'info').toLowerCase())

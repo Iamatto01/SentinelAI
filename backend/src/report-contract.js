@@ -146,6 +146,73 @@ export const LOCATION_EVIDENCE_KEYS = new Set([
 
 const isEvidenceField = (k) => !NON_ARTIFACT_EVIDENCE_KEYS.has(k) && !LOCATION_EVIDENCE_KEYS.has(k)
 
+/**
+ * Keys that record what the target actually EMITTED over the wire, as opposed to
+ * a location, a flag, or the tool's own bookkeeping. A finding holding one of
+ * these has a live capture and its claim can be re-checked by anyone; a finding
+ * holding only `url`/`path` merely says where the scanner looked.
+ *
+ * This distinction is load-bearing. `needs-validation` used to blanket-demote
+ * everything it was stamped on — including findings that had photographed the
+ * target's response — because the stamp carried no notion of whether a capture
+ * existed. The database shows the cost: 707 findings with a real capture filed
+ * as unproven. The stamp must not be able to overrule a capture it cannot see.
+ *
+ * Membership rule: the key must name something the TARGET emitted. Keys that
+ * are excluded on purpose, each for a demonstrated reason:
+ *   - `payload` / `pocPayload` / `pocSource` — the exploit we intended to send.
+ *     The PoC generator fills these on every templated finding, so counting them
+ *     re-creates the self-confirmation defect documented on
+ *     NON_ARTIFACT_EVIDENCE_KEYS: a finding with nothing but `pocSource:
+ *     'template'` read as "artifact observed". Verified by reproduction.
+ *   - `requestBody` / `requestHeaders` — what WE sent, not what came back.
+ *   - `evidence` / `proof` / `artifact` — self-describing labels. A field named
+ *     "evidence" holding an assertion is still an assertion; whoever names a key
+ *     this way controls the classification.
+ *   - `location` — a redirect target also reads as a place the scanner looked;
+ *     `redirect` already covers the response-side signal.
+ *   - `missing` / `present` / `matches` / `lines` / `matchedAt` — probe
+ *     bookkeeping about the comparison, not a response.
+ */
+export const CAPTURE_EVIDENCE_KEYS = new Set([
+  'body', 'responseBody', 'httpResponse', 'response', 'raw', 'output', 'stdout',
+  'stderr', 'headers', 'responseHeaders', 'status',
+  'statusCode', 'banner', 'snippet', 'extract',
+  'setCookie',
+  'cookie', 'tls', 'certificate', 'cert', 'dns', 'ports', 'openPorts',
+  'content', 'html', 'text', 'sample',
+  'responseTime', 'redirect', 'server', 'poweredBy', 'xPoweredBy',
+])
+
+/**
+ * A capture is a key we recognise AND a value the target produced. Booleans are
+ * excluded because a flag records an assertion, never a response.
+ */
+export function findCaptures(v) {
+  const ev = v && v.evidence && typeof v.evidence === 'object' ? v.evidence : {}
+  const keys = []
+  for (const [k, val] of Object.entries(ev)) {
+    if (!CAPTURE_EVIDENCE_KEYS.has(k)) continue
+    // A flag records an assertion; never a response.
+    if (typeof val === 'boolean') continue
+    if (val == null) continue
+    if (typeof val === 'string') {
+      if (!val.trim()) continue
+    } else if (typeof val === 'number') {
+      if (!Number.isFinite(val)) continue
+    } else if (Array.isArray(val)) {
+      if (!val.length) continue
+    } else if (typeof val === 'object') {
+      if (!Object.keys(val).length) continue
+    } else {
+      continue
+    }
+    keys.push(k)
+  }
+  return keys
+}
+
+
 function isMeaningful(val) {
   if (val == null || val === '') return false
   if (Array.isArray(val)) return val.length > 0
@@ -200,6 +267,7 @@ export function classifyFinding(v) {
   const artifact = extractArtifact(v)
   const tier = String(v.aiEvidenceTier || v.validationTier || '').toLowerCase()
   const conf = normalizeConfidence(v.aiConfidence)
+  const captures = findCaptures(v)
 
   // `needs-validation` is the pipeline's explicit "exploitability is NOT proven"
   // marker, not a weak confirmation. The AI engine writes it for every rejection,
@@ -211,15 +279,30 @@ export function classifyFinding(v) {
   // `unconfirmedReason` — bookkeeping describing the claim — counted as captured
   // artifacts. That let a discovery-only lead reach the executive summary and the
   // attack chain as a verified vulnerability.
-  const tierUnproven = tier === 'needs-validation'
+  //
+  // It cannot, however, overrule a live capture. The stamp is prose-derived: the
+  // heuristic's own "no artifact settles this claim" fallback, matched by regex
+  // in the pipeline, downgrades findings that DID photograph the target's
+  // response — 707 of them in the production database. A caveat about evidence
+  // must yield to the evidence itself, so the unproven tier only applies when no
+  // response was actually captured. Where a capture exists the finding is graded
+  // `artifact-observed` and stays a confirmation with its raw response attached,
+  // which is strictly more honest than hiding it: the operator can re-check it.
+  const tierUnproven = tier === 'needs-validation' && captures.length === 0 && !artifact.hasArtifact
 
   let status
-  if (v.aiVerification === false) {
+  if (v.aiVerification === false && captures.length === 0) {
     // Exploit-relevant rejections with high model confidence are dropped
     // outright; low-confidence rejections stay visible as leads because the
-    // model may simply have lacked context.
+    // model may simply have lacked context. A rejection that contradicts a live
+    // capture is not a rejection — the scanner saw the response; the model saw
+    // prose — so it is demoted to a lead rather than deleted.
     status = conf >= 0.6 ? VERIFY_STATUS.REJECTED : VERIFY_STATUS.UNVERIFIED
   } else if (v.aiVerification === true) {
+    status = VERIFY_STATUS.CONFIRMED
+  } else if (captures.length > 0) {
+    // A captured response is self-evidencing: it is re-checkable without the
+    // model, which is precisely the standard a finding must meet.
     status = VERIFY_STATUS.CONFIRMED
   } else if (artifact.hasArtifact && !tierUnproven) {
     // No model verdict, but the scanner captured something concrete — and no
@@ -233,18 +316,26 @@ export function classifyFinding(v) {
   // is not evidence, and a registry playbook match proves the bug class is
   // exploitable in general — not that this target is. Both stay leads.
   const strongTier = tier === 'exploited' || tier === 'validated'
-  if (status === VERIFY_STATUS.CONFIRMED && !artifact.hasArtifact && !strongTier) {
+  if (status === VERIFY_STATUS.CONFIRMED && !artifact.hasArtifact && !strongTier && captures.length === 0) {
     status = VERIFY_STATUS.UNVERIFIED
   }
 
   let grade = 'none'
   if (tier === 'exploited') grade = 'exploitation-proven'
   else if (tier === 'validated') grade = 'configuration-validated'
+  else if (captures.length > 0) grade = 'artifact-observed'
   else if (artifact.hasArtifact) grade = 'artifact-observed'
   else if (artifact.playbooks > 0) grade = 'playbook-only'
   else if (artifact.hasModelVerdict) grade = 'model-assertion-only'
 
-  return { ...v, evidenceFields: artifact.fields, evidenceGrade: grade, verifyStatus: status, evidenceLocation: artifact.location }
+  return {
+    ...v,
+    evidenceFields: artifact.fields,
+    evidenceGrade: grade,
+    verifyStatus: status,
+    evidenceLocation: artifact.location,
+    captureFields: captures,
+  }
 }
 
 /**

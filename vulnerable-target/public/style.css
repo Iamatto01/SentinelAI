@@ -1,196 +1,238 @@
+/* ─────────────────────────────────────────────────────────────────────────────
+   MAYBANK2U / MALAYAN BANKING THEME STYLESHEET
+   Iconic Colors: Maybank Yellow (#ffc800), Charcoal/Black (#111827), Pure White (#ffffff)
+   ───────────────────────────────────────────────────────────────────────────── */
+
 :root {
-  --bg: #090c15;
-  --bg-surface: #0f1524;
-  --card-bg: #131c2e;
-  --card-border: #1e2c45;
-  --card-hover: #18233a;
-  --accent: #ef4444;
-  --accent-glow: rgba(239, 68, 68, 0.3);
-  --cyan: #06b6d4;
-  --purple: #a855f7;
-  --text-main: #f8fafc;
-  --text-muted: #94a3b8;
-  --text-dim: #64748b;
-  --danger: #ef4444;
-  --success: #10b981;
-  --warning: #f59e0b;
+  --mb-yellow: #ffc800;
+  --mb-yellow-hover: #e6b400;
+  --mb-yellow-light: #fff9e6;
+  --mb-yellow-border: #fcd34d;
+  --mb-dark: #111827;
+  --mb-dark-hover: #1f2937;
+  --mb-gray-bg: #f4f6f8;
+  --mb-card-bg: #ffffff;
+  --mb-border: #e5e7eb;
+  --mb-border-dark: #d1d5db;
+  --text-primary: #111827;
+  --text-secondary: #4b5563;
+  --text-muted: #6b7280;
+  --text-light: #9ca3af;
+  --accent-red: #dc2626;
+  --accent-green: #059669;
+  --accent-blue: #2563eb;
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.08);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
+  --shadow-lg: 0 10px 25px rgba(0, 0, 0, 0.12);
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-full: 9999px;
 }
 
 * {
   box-sizing: border-box;
   margin: 0;
   padding: 0;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "JetBrains Mono", monospace, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
 }
 
 body {
-  background-color: var(--bg);
-  background-image: 
-    radial-gradient(circle at 15% 10%, rgba(239, 68, 68, 0.08) 0%, transparent 40%),
-    radial-gradient(circle at 85% 90%, rgba(6, 182, 212, 0.06) 0%, transparent 40%);
-  color: var(--text-main);
+  background-color: var(--mb-gray-bg);
+  color: var(--text-primary);
   min-height: 100vh;
   display: flex;
   flex-direction: column;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
 }
 
-header {
-  background: rgba(15, 21, 36, 0.9);
-  backdrop-filter: blur(16px);
-  border-bottom: 1px solid var(--card-border);
-  padding: 14px 28px;
+/* ─────────────────────────────────────────────────────────────────────────────
+   TOP SECURITY ADVISORY & UTILITY BAR (Maybank Scam Alert)
+   ───────────────────────────────────────────────────────────────────────────── */
+.scam-alert-bar {
+  background: #fffbeb;
+  border-bottom: 1px solid #fef3c7;
+  padding: 8px 24px;
+  font-size: 12px;
+  color: #92400e;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.scam-alert-bar .alert-text {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.scam-alert-bar strong {
+  color: #78350f;
+  font-weight: 700;
+}
+
+.top-sub-bar {
+  background: #ffffff;
+  border-bottom: 1px solid var(--mb-border);
+  padding: 6px 28px;
+  font-size: 12px;
+  color: var(--text-muted);
   display: flex;
   justify-content: space-between;
   align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.top-sub-bar a {
+  color: var(--text-secondary);
+  text-decoration: none;
+  font-weight: 500;
+  margin-right: 14px;
+}
+
+.top-sub-bar a:hover {
+  color: var(--text-primary);
+  text-decoration: underline;
+}
+
+.pidm-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #f3f4f6;
+  border: 1px solid var(--mb-border);
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  color: #374151;
+  font-weight: 600;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   MAIN MAYBANK HEADER & NAVIGATION
+   ───────────────────────────────────────────────────────────────────────────── */
+header.maybank-header {
+  background: var(--mb-yellow);
+  padding: 12px 28px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
   position: sticky;
   top: 0;
   z-index: 100;
 }
 
-.logo {
-  font-size: 20px;
-  font-weight: 900;
-  letter-spacing: 1.5px;
-  color: #fff;
+.maybank-logo {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   text-decoration: none;
+  color: #000;
 }
 
-.logo span {
-  color: var(--accent);
-  text-shadow: 0 0 12px var(--accent-glow);
-}
-
-.logo small {
-  font-size: 11px;
-  color: var(--cyan);
-  background: rgba(6, 182, 212, 0.12);
-  padding: 3px 8px;
-  border-radius: 4px;
-  border: 1px solid rgba(6, 182, 212, 0.25);
-}
-
-nav {
+.maybank-tiger-badge {
+  width: 44px;
+  height: 44px;
+  background: #000;
+  border-radius: var(--radius-md);
   display: flex;
-  gap: 16px;
   align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+}
+
+.maybank-logo-text {
+  display: flex;
+  flex-direction: column;
+}
+
+.maybank-logo-title {
+  font-size: 22px;
+  font-weight: 900;
+  letter-spacing: -0.5px;
+  color: #000;
+  line-height: 1;
+}
+
+.maybank-logo-title span {
+  color: #111;
+  font-weight: 900;
+}
+
+.maybank-logo-sub {
+  font-size: 11px;
+  font-weight: 700;
+  color: #333;
+  letter-spacing: 0.5px;
+  margin-top: 2px;
+}
+
+nav.maybank-nav {
+  display: flex;
+  align-items: center;
+  gap: 4px;
   flex-wrap: wrap;
 }
 
-nav a {
-  color: var(--text-muted);
+nav.maybank-nav a {
+  color: #111827;
   text-decoration: none;
-  font-size: 13px;
-  font-weight: 600;
-  padding: 6px 10px;
-  border-radius: 6px;
-  transition: all 0.2s;
+  font-size: 13.5px;
+  font-weight: 700;
+  padding: 8px 14px;
+  border-radius: var(--radius-sm);
+  transition: all 0.15s;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 
-nav a:hover, nav a.active {
-  color: #fff;
-  background: rgba(239, 68, 68, 0.15);
-  border: 1px solid rgba(239, 68, 68, 0.35);
+nav.maybank-nav a:hover {
+  background: rgba(0, 0, 0, 0.08);
 }
 
+nav.maybank-nav a.active {
+  background: #000;
+  color: var(--mb-yellow);
+}
+
+.btn-maybank-login {
+  background: #000 !important;
+  color: var(--mb-yellow) !important;
+  font-weight: 800 !important;
+  padding: 9px 20px !important;
+  border-radius: var(--radius-full) !important;
+  letter-spacing: 0.5px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+  transition: transform 0.15s, background 0.15s;
+}
+
+.btn-maybank-login:hover {
+  background: #1f2937 !important;
+  color: #fff !important;
+  transform: translateY(-1px);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   LAYOUT & CONTAINERS
+   ───────────────────────────────────────────────────────────────────────────── */
 .container {
   max-width: 1200px;
-  margin: 30px auto;
+  margin: 24px auto;
   padding: 0 20px;
-  flex: 1;
   width: 100%;
+  flex: 1;
 }
 
-/* CTF Board Header */
-.ctf-banner {
-  background: linear-gradient(135deg, rgba(239, 68, 68, 0.15) 0%, rgba(168, 85, 247, 0.1) 100%);
-  border: 1px solid rgba(239, 68, 68, 0.35);
-  border-radius: 12px;
-  padding: 24px;
-  margin-bottom: 30px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 20px;
-  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.35);
-}
-
-.ctf-info h2 {
-  font-size: 24px;
-  font-weight: 800;
-  color: #fff;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.ctf-info p {
-  color: var(--text-muted);
-  font-size: 14px;
-  margin-top: 6px;
-}
-
-.ctf-progress {
-  display: flex;
-  align-items: center;
-  gap: 20px;
-}
-
-.progress-box {
-  text-align: right;
-}
-
-.progress-box .score {
-  font-size: 32px;
-  font-weight: 900;
-  color: var(--accent);
-  text-shadow: 0 0 16px var(--accent-glow);
-}
-
-.progress-box .label {
-  font-size: 12px;
-  color: var(--text-dim);
-  text-transform: uppercase;
-  letter-spacing: 1px;
-}
-
-.flag-form {
-  display: flex;
-  gap: 8px;
-}
-
-.flag-form input {
-  background: #090c15;
-  border: 1px solid var(--card-border);
-  color: #fff;
-  padding: 10px 14px;
-  border-radius: 6px;
-  font-size: 13px;
-  font-family: monospace;
-  width: 280px;
-}
-
-.flag-form input:focus {
-  outline: none;
-  border-color: var(--accent);
-  box-shadow: 0 0 10px var(--accent-glow);
-}
-
-/* Card & Grids */
-.card {
-  background: var(--card-bg);
-  border: 1px solid var(--card-border);
-  border-radius: 12px;
-  padding: 24px;
-  margin-bottom: 24px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
-}
-
-.card:hover {
-  border-color: rgba(239, 68, 68, 0.3);
+.grid-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
 }
 
 .grid-3 {
@@ -199,169 +241,640 @@ nav a:hover, nav a.active {
   gap: 20px;
 }
 
-.matrix-card {
-  background: var(--card-bg);
-  border: 1px solid var(--card-border);
-  border-radius: 10px;
-  padding: 20px;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  transition: all 0.25s;
-  position: relative;
-  overflow: hidden;
+.grid-4 {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 16px;
 }
 
-.matrix-card:hover {
-  transform: translateY(-3px);
-  border-color: var(--accent);
-  box-shadow: 0 8px 24px var(--accent-glow);
+@media (max-width: 860px) {
+  .grid-2 {
+    grid-template-columns: 1fr;
+  }
+  header.maybank-header {
+    flex-direction: column;
+    gap: 12px;
+    align-items: flex-start;
+  }
 }
 
-.matrix-card.solved {
-  border-color: var(--success);
-  background: rgba(16, 185, 129, 0.05);
-}
-
-.matrix-card.solved::after {
-  content: '✓ PWNED';
-  position: absolute;
-  top: 14px;
-  right: 14px;
-  background: rgba(16, 185, 129, 0.2);
-  color: var(--success);
-  font-size: 11px;
-  font-weight: 800;
-  padding: 2px 8px;
-  border-radius: 4px;
-  border: 1px solid rgba(16, 185, 129, 0.4);
-}
-
-.badges {
-  display: flex;
-  gap: 8px;
-  margin-bottom: 12px;
-}
-
-.badge {
-  font-size: 11px;
-  font-weight: 700;
-  text-transform: uppercase;
-  padding: 3px 8px;
-  border-radius: 4px;
-  letter-spacing: 0.5px;
-}
-
-.badge-crit { background: rgba(239, 68, 68, 0.2); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.4); }
-.badge-high { background: rgba(245, 158, 11, 0.2); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.4); }
-.badge-med { background: rgba(6, 182, 212, 0.2); color: #22d3ee; border: 1px solid rgba(6, 182, 212, 0.4); }
-
-.code-box {
-  background: #090c15;
-  border: 1px solid #1a2436;
-  border-radius: 6px;
-  padding: 10px 14px;
-  font-family: monospace;
-  font-size: 12px;
-  color: #38bdf8;
-  margin: 12px 0;
-  word-break: break-all;
+/* ─────────────────────────────────────────────────────────────────────────────
+   HERO BANNER (Maybank Style - Bright & Clean)
+   ───────────────────────────────────────────────────────────────────────────── */
+.maybank-hero {
+  background: linear-gradient(135deg, #111827 0%, #1f2937 60%, #374151 100%);
+  border-radius: var(--radius-lg);
+  padding: 40px 36px;
+  margin-bottom: 24px;
+  color: #fff;
   display: flex;
   justify-content: space-between;
   align-items: center;
+  flex-wrap: wrap;
+  gap: 28px;
+  position: relative;
+  overflow: hidden;
+  box-shadow: var(--shadow-md);
 }
 
-/* Buttons */
-.btn-primary {
-  background: linear-gradient(135deg, #ef4444 0%, #b91c1c 100%);
-  color: #fff;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  padding: 10px 18px;
-  border-radius: 6px;
-  font-size: 13px;
-  font-weight: 700;
-  cursor: pointer;
+.maybank-hero::before {
+  content: "";
+  position: absolute;
+  top: -50px;
+  right: -50px;
+  width: 250px;
+  height: 250px;
+  background: radial-gradient(circle, rgba(255, 200, 0, 0.25) 0%, transparent 70%);
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+.hero-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--mb-yellow);
+  color: #000;
+  font-size: 11.5px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  padding: 4px 12px;
+  border-radius: var(--radius-full);
+  margin-bottom: 12px;
+}
+
+.maybank-hero h1 {
+  font-size: 32px;
+  font-weight: 900;
+  line-height: 1.25;
+  color: #ffffff;
+  margin-bottom: 10px;
+}
+
+.maybank-hero h1 span {
+  color: var(--mb-yellow);
+}
+
+.maybank-hero p {
+  font-size: 15px;
+  color: #d1d5db;
+  line-height: 1.6;
+  margin-bottom: 20px;
+  max-width: 600px;
+}
+
+.hero-stats-box {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(8px);
+  border-radius: var(--radius-md);
+  padding: 20px 24px;
+  display: flex;
+  gap: 24px;
+}
+
+.hero-stat-item {
+  text-align: center;
+}
+
+.hero-stat-val {
+  font-size: 26px;
+  font-weight: 900;
+  color: var(--mb-yellow);
+  font-variant-numeric: tabular-nums;
+}
+
+.hero-stat-lbl {
+  font-size: 11px;
+  text-transform: uppercase;
+  color: #9ca3af;
+  letter-spacing: 0.8px;
+  margin-top: 4px;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   MAYBANK ACTION TILES / ICON BAR
+   ───────────────────────────────────────────────────────────────────────────── */
+.quick-action-bar {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.quick-action-tile {
+  background: #ffffff;
+  border: 1px solid var(--mb-border);
+  border-radius: var(--radius-md);
+  padding: 16px 10px;
+  text-align: center;
+  text-decoration: none;
+  color: var(--text-primary);
   transition: all 0.2s;
+  box-shadow: var(--shadow-sm);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.quick-action-tile:hover {
+  transform: translateY(-2px);
+  border-color: var(--mb-yellow);
+  box-shadow: 0 4px 12px rgba(255, 200, 0, 0.25);
+}
+
+.quick-action-icon {
+  width: 44px;
+  height: 44px;
+  background: var(--mb-yellow-light);
+  border: 1px solid var(--mb-yellow-border);
+  border-radius: var(--radius-full);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+}
+
+.quick-action-title {
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   CARDS & PANELS (Clean White Retail Banking)
+   ───────────────────────────────────────────────────────────────────────────── */
+.card {
+  background: var(--mb-card-bg);
+  border: 1px solid var(--mb-border);
+  border-radius: var(--radius-md);
+  padding: 24px;
+  margin-bottom: 24px;
+  box-shadow: var(--shadow-sm);
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.card:hover {
+  border-color: #cbd5e1;
+}
+
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 18px;
+  border-bottom: 1px solid var(--mb-border);
+  padding-bottom: 12px;
+}
+
+.card-title {
+  font-size: 18px;
+  font-weight: 800;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   BUTTONS
+   ───────────────────────────────────────────────────────────────────────────── */
+.btn-primary, .btn-yellow {
+  background: var(--mb-yellow);
+  color: #000000;
+  border: none;
+  padding: 10px 22px;
+  border-radius: var(--radius-full);
+  font-size: 13.5px;
+  font-weight: 800;
+  cursor: pointer;
   text-decoration: none;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  gap: 8px;
+  transition: all 0.15s;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
-.btn-primary:hover {
-  box-shadow: 0 0 16px var(--accent-glow);
+.btn-primary:hover, .btn-yellow:hover {
+  background: var(--mb-yellow-hover);
   transform: translateY(-1px);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.15);
 }
 
 .btn-secondary {
-  background: rgba(255, 255, 255, 0.05);
-  color: var(--text-main);
-  border: 1px solid var(--card-border);
-  padding: 8px 14px;
-  border-radius: 6px;
-  font-size: 12px;
-  font-weight: 600;
+  background: #ffffff;
+  border: 1px solid var(--mb-border-dark);
+  color: var(--text-primary);
+  padding: 8px 16px;
+  border-radius: var(--radius-full);
+  font-size: 12.5px;
+  font-weight: 700;
   cursor: pointer;
   text-decoration: none;
-  transition: all 0.2s;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.15s;
 }
 
 .btn-secondary:hover {
-  background: rgba(255, 255, 255, 0.1);
-  border-color: #475569;
+  background: #f9fafb;
+  border-color: #9ca3af;
 }
 
-/* Terminal Emulator */
+.btn-dark {
+  background: #111827;
+  color: #ffffff;
+  border: none;
+  padding: 10px 20px;
+  border-radius: var(--radius-full);
+  font-size: 13px;
+  font-weight: 700;
+  text-decoration: none;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.15s;
+}
+
+.btn-dark:hover {
+  background: #1f2937;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   BADGES & PILLS
+   ───────────────────────────────────────────────────────────────────────────── */
+.badges {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+
+.badge {
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+
+.badge-yellow {
+  background: var(--mb-yellow-light);
+  border: 1px solid var(--mb-yellow-border);
+  color: #92400e;
+}
+
+.badge-green {
+  background: #ecfdf5;
+  border: 1px solid #a7f3d0;
+  color: var(--accent-green);
+}
+
+.badge-blue {
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  color: var(--accent-blue);
+}
+
+.badge-crit {
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  color: var(--accent-red);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   FORMS & INPUTS
+   ───────────────────────────────────────────────────────────────────────────── */
+.form-group {
+  margin-bottom: 16px;
+}
+
+.form-label {
+  display: block;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 6px;
+}
+
+.form-input, input[type="text"], input[type="password"], input[type="number"], select, textarea {
+  width: 100%;
+  background: #ffffff;
+  border: 1px solid var(--mb-border-dark);
+  color: var(--text-primary);
+  padding: 10px 14px;
+  border-radius: var(--radius-sm);
+  font-size: 13.5px;
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.form-input:focus, input:focus, select:focus, textarea:focus {
+  border-color: var(--mb-yellow-hover);
+  box-shadow: 0 0 0 3px rgba(255, 200, 0, 0.25);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   TABLES
+   ───────────────────────────────────────────────────────────────────────────── */
+.bank-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  text-align: left;
+}
+
+.bank-table th {
+  background: #f8fafc;
+  color: var(--text-secondary);
+  font-weight: 700;
+  text-transform: uppercase;
+  font-size: 11px;
+  letter-spacing: 0.8px;
+  padding: 12px 16px;
+  border-bottom: 2px solid var(--mb-border);
+}
+
+.bank-table td {
+  padding: 13px 16px;
+  border-bottom: 1px solid var(--mb-border);
+  color: var(--text-primary);
+}
+
+.bank-table tr:hover td {
+  background: #f9fafb;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   FOREX / RATES TICKER (MYR Based)
+   ───────────────────────────────────────────────────────────────────────────── */
+.maybank-ticker {
+  background: #ffffff;
+  border: 1px solid var(--mb-border);
+  border-radius: var(--radius-md);
+  padding: 10px 20px;
+  margin-bottom: 24px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  font-size: 12.5px;
+  box-shadow: var(--shadow-sm);
+}
+
+.ticker-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ticker-label {
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.ticker-val {
+  font-weight: 800;
+  font-family: monospace;
+  color: var(--text-primary);
+}
+
+.ticker-up {
+  color: var(--accent-green);
+  font-weight: 700;
+  font-size: 11px;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   TERMINAL WINDOW (NOC Console in Maybank Clean Style)
+   ───────────────────────────────────────────────────────────────────────────── */
 .terminal-window {
-  background: #060911;
-  border: 1px solid #1e293b;
-  border-radius: 10px;
+  background: #111827;
+  border: 1px solid #374151;
+  border-radius: var(--radius-md);
+  margin-top: 18px;
   overflow: hidden;
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6);
-  margin-top: 20px;
+  box-shadow: var(--shadow-md);
 }
 
 .terminal-header {
-  background: #0f172a;
+  background: #1f2937;
+  border-bottom: 1px solid #374151;
   padding: 10px 16px;
   display: flex;
   align-items: center;
   gap: 8px;
-  border-bottom: 1px solid #1e293b;
 }
 
-.term-dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; }
+.term-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
 .term-dot.red { background: #ef4444; }
 .term-dot.yellow { background: #f59e0b; }
 .term-dot.green { background: #10b981; }
 
 .terminal-body {
-  padding: 20px;
-  min-height: 240px;
-  max-height: 480px;
-  overflow-y: auto;
-  font-family: "JetBrains Mono", Consolas, monospace;
+  padding: 16px;
+  font-family: "JetBrains Mono", "Courier New", monospace;
   font-size: 13px;
   line-height: 1.6;
-  color: #38bdf8;
+  color: #34d399;
+  min-height: 160px;
+  max-height: 380px;
+  overflow-y: auto;
   white-space: pre-wrap;
+  word-break: break-all;
 }
 
-footer {
-  border-top: 1px solid var(--card-border);
+/* ─────────────────────────────────────────────────────────────────────────────
+   FLAG ALERT BOX
+   ───────────────────────────────────────────────────────────────────────────── */
+.flag-alert-box {
+  display: none;
+  margin-top: 18px;
+  padding: 14px 18px;
+  background: #ecfdf5;
+  border: 1px solid #a7f3d0;
+  border-radius: var(--radius-sm);
+  color: #065f46;
+  font-size: 13.5px;
+}
+
+.flag-alert-box code {
+  color: #047857;
+  font-weight: 800;
+  font-size: 14px;
+  margin-left: 8px;
+  background: #d1fae5;
+  padding: 3px 8px;
+  border-radius: 4px;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   SECURITY AUDITOR DRAWER / CTF OVERLAY
+   ───────────────────────────────────────────────────────────────────────────── */
+.auditor-drawer {
+  position: fixed;
+  top: 0;
+  right: -520px;
+  width: 500px;
+  max-width: 90vw;
+  height: 100vh;
+  background: #ffffff;
+  border-left: 3px solid var(--mb-yellow);
+  z-index: 1000;
+  box-shadow: -10px 0 30px rgba(0, 0, 0, 0.2);
+  transition: right 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  display: flex;
+  flex-direction: column;
+}
+
+.auditor-drawer.open {
+  right: 0;
+}
+
+.auditor-drawer-backdrop {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(2px);
+  z-index: 999;
+  display: none;
+}
+
+.auditor-drawer-backdrop.open {
+  display: block;
+}
+
+.auditor-header {
+  padding: 18px 24px;
+  background: var(--mb-yellow);
+  border-bottom: 1px solid var(--mb-yellow-border);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.auditor-body {
   padding: 24px;
-  text-align: center;
-  color: var(--text-dim);
-  font-size: 13px;
-  margin-top: auto;
+  overflow-y: auto;
+  flex: 1;
 }
 
-footer a {
-  color: var(--text-muted);
+.auditor-close-btn {
+  background: none;
+  border: none;
+  color: #000;
+  font-size: 24px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.floating-auditor-pill {
+  position: fixed;
+  bottom: 22px;
+  right: 22px;
+  background: #000000;
+  border: 2px solid var(--mb-yellow);
+  color: var(--mb-yellow);
+  padding: 9px 18px;
+  border-radius: 30px;
+  font-size: 13px;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+  cursor: pointer;
+  z-index: 90;
+  transition: all 0.2s;
+}
+
+.floating-auditor-pill:hover {
+  background: var(--mb-yellow);
+  color: #000;
+  transform: translateY(-2px);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   MAYBANK STYLE FOOTER
+   ───────────────────────────────────────────────────────────────────────────── */
+footer.maybank-footer {
+  background: #ffffff;
+  border-top: 1px solid var(--mb-border);
+  margin-top: auto;
+  padding: 36px 28px 24px;
+  font-size: 12.5px;
+  color: var(--text-secondary);
+}
+
+.footer-grid {
+  max-width: 1200px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr 1fr;
+  gap: 32px;
+  margin-bottom: 28px;
+}
+
+@media (max-width: 768px) {
+  .footer-grid {
+    grid-template-columns: 1fr;
+    gap: 20px;
+  }
+}
+
+.footer-col h4 {
+  color: var(--text-primary);
+  font-size: 13.5px;
+  font-weight: 800;
+  margin-bottom: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.footer-col ul {
+  list-style: none;
+}
+
+.footer-col ul li {
+  margin-bottom: 8px;
+}
+
+.footer-col ul li a {
+  color: var(--text-secondary);
   text-decoration: none;
 }
 
-footer a:hover {
-  color: var(--accent);
+.footer-col ul li a:hover {
+  color: var(--text-primary);
+  text-decoration: underline;
+}
+
+.footer-bottom {
+  max-width: 1200px;
+  margin: 0 auto;
+  border-top: 1px solid var(--mb-border);
+  padding-top: 18px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  font-size: 11.5px;
+  color: var(--text-muted);
 }

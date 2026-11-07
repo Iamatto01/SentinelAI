@@ -1,6 +1,8 @@
-# 🛡️ VulnCorp — Vulnerable Target Web Application (OWASP Testbed)
+# 🏛️ Sentinel Trust Bank — Commercial & Digital Banking Portal (OWASP Testbed)
 
-A modern, full-featured vulnerable web application built for testing penetration testing platforms, automated vulnerability scanners (**SentinelAI**, Nuclei, Nikto, SQLmap, Dalfox, Arjun, etc.), and whitebox/blackbox audit workflows.
+A realistic, full-featured commercial and digital banking application built as a vulnerable benchmark testbed for automated vulnerability scanners (**SentinelAI**, Nuclei, Nikto, SQLmap, Dalfox, Arjun, etc.) and offensive security evaluations.
+
+Styled realistically as a modern financial institution (**Sentinel Trust Bank, N.A.**) featuring personal checking, high-yield commercial reserve accounts, Fedwire/SWIFT cross-border clearing, KYC onboarding verification, and internal NOC diagnostics.
 
 ---
 
@@ -16,49 +18,45 @@ The application will start on **`http://localhost:8080`**.
 
 ---
 
-### Option 2: Run on Kali Linux Server (`192.168.31.128`)
-You can run it as a background service on the Kali Linux server:
+### Option 2: Run on Kali Linux Server
 ```bash
 # SSH into Kali
-ssh kali@192.168.31.128
 cd /home/kali/server/SentinelAI/vulnerable-target
 npm install
 node server.js &
 ```
-The application will be accessible at: **`http://192.168.31.128:8080`**
+The application will be accessible at: **`http://localhost:8080`** or **`https://abuse.sentinelai.studio`** via Cloudflare Tunnel.
 
 ---
 
-## 🧪 Summary of Included Vulnerabilities & Attack Vectors
+## 🏛️ Realistic Banking Architecture & Mapping to Vulnerabilities
 
-| # | Vulnerability Category | OWASP 2021 | Endpoint / Parameter | Test Payload |
-|---|------------------------|------------|----------------------|--------------|
-| 1 | **SQL Injection (Auth Bypass)** | A03 / CWE-89 | `POST /api/login` (`username`) | `admin' --` or `admin' OR 1=1 --` |
-| 2 | **SQL Injection (Search)** | A03 / CWE-89 | `GET /api/products/search?q=` | `' UNION SELECT 1,username,password,credit_card,email FROM users--` |
-| 3 | **Command Injection (RCE)** | A03 / CWE-78 | `GET /api/tools/ping?host=` | `127.0.0.1; whoami` or `127.0.0.1 && id` |
-| 4 | **Reflected XSS** | A03 / CWE-79 | `GET /search?q=` | `<script>alert(document.domain)</script>` |
-| 5 | **Stored XSS** | A03 / CWE-79 | `POST /api/feedback` (`comment`) | `<img src=x onerror="alert(document.cookie)">` |
-| 6 | **Path Traversal / LFI** | A01 / CWE-22 | `GET /api/documents/view?file=` | `../../documents/company_secret.txt` or `../../../../etc/passwd` |
-| 7 | **IDOR (Broken Access Control)** | A01 / CWE-639 | `GET /api/orders/:id` | `GET /api/orders/1`, `GET /api/orders/2` |
-| 8 | **Sensitive User Data Leakage** | A01 / CWE-200 | `GET /api/users/:id` | `GET /api/users/1` (leaks credit cards & MD5 hashes) |
-| 9 | **Server-Side Request Forgery (SSRF)** | A10 / CWE-918 | `GET /api/proxy-fetch?url=` | `http://127.0.0.1:8080/api/users/1` |
-| 10 | **Hardcoded Secrets & Config Leak** | A05 / CWE-200 | `GET /.env` | Direct access to DB passwords, AWS keys, Stripe tokens |
-| 11 | **Database Backup Exposure** | A05 / CWE-200 | `GET /backup.sql` | Direct access to SQL schema and user data dump |
-| 12 | **Spring Actuator Disclosure** | A05 / CWE-200 | `GET /actuator/env` | Exposes internal environment properties |
-| 13 | **Insecure Session Cookie** | A07 / CWE-1004 | `Set-Cookie` on `/api/login` | Missing `HttpOnly`, `Secure`, `SameSite` flags |
-| 14 | **Missing Security Headers** | A05 / CWE-16 | All responses | No CSP, no X-Frame-Options (Clickjacking testable), no HSTS |
-| 15 | **Technology Banner Disclosure** | A05 / CWE-200 | All responses | `Server: Apache/2.4.41 (Ubuntu) OpenSSL/1.1.1d`, `X-Powered-By: Express` |
+| Banking Feature & Route | Realistic Context | OWASP 2021 | Vulnerability Category |
+|---|---|---|---|
+| **`/login.html`** (`POST /api/login`) | Commercial Online Banking Sign-In | A03 / CWE-89 | **SQL Injection (Auth Bypass)** |
+| **`/login.html`** (`GET /api/products/search?q=`) | Commercial Products & Yield Rates Search | A03 / CWE-89 | **SQL Injection (UNION Exfiltration)** |
+| **`/search?q=`** | Financial Catalog Search Term Reflection | A03 / CWE-79 | **Reflected Cross-Site Scripting (XSS)** |
+| **`/feedback.html`** (`POST /api/feedback`) | Client Experience & Branch Review Board | A03 / CWE-79 | **Stored Cross-Site Scripting (XSS)** |
+| **`/admin.html`** (`GET /api/tools/ping?host=`) | NOC ATM Switch & Routing Health Ping | A03 / CWE-78 | **Command Injection (RCE)** |
+| **`/documents.html`** (`GET /api/documents/view?file=`) | Regulatory Disclosures & E-Statement Archive | A01 / CWE-22 | **Path Traversal / Local File Inclusion** |
+| **`/profile.html`** (`GET /api/orders/:id`) | Interbank Fedwire Transfer Receipts | A01 / CWE-639 | **IDOR (Wire Settlement Leakage)** |
+| **`/profile.html`** (`GET /api/users/:id`) | Account Holder Profiles & Card Records | A01 / CWE-200 | **IDOR (Credit Card & Token Disclosure)** |
+| **`/upload.html`** (`POST /api/upload`) | Client Onboarding & KYC Document Verification | A04 / CWE-434 | **Unrestricted File Upload / Web Shells** |
+| **`/ssrf.html`** (`GET /api/proxy-fetch?url=`) | Interbank Foreign Exchange & Clearing Proxy | A10 / CWE-918 | **Server-Side Request Forgery (SSRF)** |
+| **`/.env`** | Production Environment Secrets | A05 / CWE-200 | **Sensitive Information Disclosure** |
+| **`/backup.sql`** | Core Banking Database Dump | A05 / CWE-200 | **Database Backup Exposure** |
+| **`/actuator/env`** | Spring Boot Actuator Infrastructure Disclosure | A05 / CWE-200 | **Environment Metric Disclosure** |
 
 ---
 
 ## 🎯 How to Scan with SentinelAI
 
-1. Open your SentinelAI dashboard at `http://192.168.31.128:5173/app/scans` (or `http://localhost:5173/app/scans`).
+1. Open your SentinelAI dashboard at `https://sentinelai.studio` (or `http://localhost:5173`).
 2. Click **+ New Scan**.
 3. Enter Target URL:
    ```
-   http://192.168.31.128:8080
+   https://abuse.sentinelai.studio
    ```
    *(Or `http://127.0.0.1:8080` if running locally)*.
 4. Select Mode: **Full Blackbox** or **Standard Scan**.
-5. Launch scan! SentinelAI's autonomous engines (Nikto, Nuclei, Katana, ffuf, SQLMap, Dalfox) will discover and map all 15+ vulnerabilities automatically.
+5. Launch scan! SentinelAI's autonomous engines will discover and exploit the banking application vulnerabilities automatically.

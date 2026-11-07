@@ -14,7 +14,7 @@ import * as db from './db.js'
 import { authMiddleware, requireAuth, signToken, getUser } from './auth.js'
 import { requireRole } from './auth.js'
 import * as kaliControl from './kali-control.js'
-import { UnifiedPipeline } from './pipeline.js'
+import { UnifiedPipeline, computeRiskScore } from './pipeline.js'
 import { getOwaspToolMapList, blackboxModulesForCategories, whiteboxPassesForCategories } from './owasp-tools.js'
 import { getAllScripts, getScript, createScript, updateScript, deleteScript, runCustomScript } from './custom-scripts.js'
 import { payloadsRag, skillsRag } from './integrations/index.js'
@@ -56,6 +56,7 @@ import {
 } from './billing.js'
 import { createStripeCheckoutSession, verifyAndFulfillSession, getStripe } from './stripe.js'
 import { channelGateway } from './channels/index.js'
+import { setupHoneypot } from './honeypot.js'
 
 // CORS: only whitelisted origins (config.corsOrigins from CLIENT_ORIGIN).
 // Non-browser clients (curl, server-to-server) carry no Origin header → allowed.
@@ -91,6 +92,7 @@ app.use((req, res, next) => {
   next()
 })
 app.use(authMiddleware)
+setupHoneypot(app)
 
 // Force password change — block platform usage until default credentials are changed
 app.use((req, res, next) => {
@@ -1140,7 +1142,7 @@ app.post('/api/scans/:id/re-run', requireAuth, requireStaff, async (req, res) =>
 
   // Whitebox needs its source material: either the inline files or the folder list.
   let whiteboxFiles = null
-  if (mode === 'whitebox') {
+  if (mode === 'whitebox' || mode === 'hybrid') {
     if (Array.isArray(cfg.files) && cfg.files.length) {
       whiteboxFiles = cfg.files
     } else if (Array.isArray(cfg.folders) && cfg.folders.length) {
@@ -1166,10 +1168,10 @@ app.post('/api/scans/:id/re-run', requireAuth, requireStaff, async (req, res) =>
   const id = 'scan_' + randomUUID()
   const now = new Date().toISOString()
 
-  db.run(`INSERT INTO scans (id, project_id, target, target_type, mode, status, template, modules, progress, risk_score, created_at, started_at)
-          VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+  db.run(`INSERT INTO scans (id, project_id, target, target_type, mode, status, template, modules, progress, risk_score, created_at, started_at, user_id, client)
+          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     id, old.project_id, old.target, old.target_type, mode, 'running', old.template,
-    JSON.stringify(modules), 0, 0, now, now)
+    JSON.stringify(modules), 0, 0, now, now, old.user_id || req.user?.id || null, old.client || req.user?.username || req.user?.email || null)
 
   const scan = db.get(`SELECT * FROM scans WHERE id = ?`, id)
   audit(req.user.username, 'scan:re-run', `${scan.target} (${id})`)
@@ -1178,8 +1180,14 @@ app.post('/api/scans/:id/re-run', requireAuth, requireStaff, async (req, res) =>
 
   setImmediate(async () => {
     try {
-      if (mode === 'whitebox') await pipeline.runWhitebox(scan, { ...baseOpts, files: whiteboxFiles })
-      else await pipeline.runBlackbox(scan, baseOpts)
+      if (mode === 'whitebox' || mode === 'hybrid') {
+        await pipeline.runWhitebox(scan, { ...baseOpts, files: whiteboxFiles })
+      }
+      if (mode === 'hybrid') {
+        await pipeline.runBlackbox({ ...scan, target: cfg.dynamicTarget || scan.target, target_type: 'url', mode: 'blackbox' }, baseOpts)
+      } else if (mode === 'blackbox') {
+        await pipeline.runBlackbox(scan, baseOpts)
+      }
     } catch (e) {
       if (e.message === 'SCAN_STOPPED') return
       pipeline.log(id, 'error', `Pipeline error: ${e.message}`)
@@ -1356,13 +1364,26 @@ app.post('/api/scans/whitebox-folder', requireAuth, async (req, res) => {
   const id = `scan_${randomUUID()}`
   const now = new Date().toISOString()
   const targetLabel = normalized.map(f => f.prefix).join(' + ')
-  db.run(`INSERT INTO scans (id, project_id, target, target_type, mode, status, template, modules, progress, created_at, started_at)
-          VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+  db.run(`INSERT INTO scans (id, project_id, target, target_type, mode, status, template, modules, progress, created_at, started_at, user_id, client)
+          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     id, projectId, targetLabel, 'code', 'whitebox', 'running', 'folder',
-    JSON.stringify(['folder-walker']), 0, now, now)
+    JSON.stringify(['folder-walker']), 0, now, now, req.user?.id || null, req.user?.username || req.user?.email || null)
   const scan = db.get(`SELECT * FROM scans WHERE id = ?`, id)
   audit(req.user.username, 'scan:start', `whitebox-folder → ${targetLabel} (${files.length} files)`)
-  saveScanConfig(id, { mode: 'whitebox', source: 'folder', folders: normalized, language, focus, verify, depth, maxFiles, maxBytes, owaspCategories })
+  saveScanConfig(id, {
+    mode: dynamicTarget?.trim() ? 'hybrid' : 'whitebox',
+    source: 'folder',
+    folders: normalized,
+    language,
+    focus,
+    verify,
+    depth,
+    maxFiles,
+    maxBytes,
+    owaspCategories,
+    dynamicTarget: dynamicTarget.trim(),
+    dynamicModules: Array.isArray(dynamicModules) ? dynamicModules : [],
+  })
 
   const whiteboxPasses = owaspCategories.length ? whiteboxPassesForCategories(owaspCategories) : null
 
@@ -1371,6 +1392,18 @@ app.post('/api/scans/whitebox-folder', requireAuth, async (req, res) => {
   setImmediate(async () => {
     try {
       await pipeline.runWhitebox(scan, { files, language, focus, verify, depth, owaspCategories, whiteboxPasses })
+      if (dynamicTarget?.trim()) {
+        const dynamicScan = { ...scan, target: dynamicTarget.trim(), target_type: 'url', mode: 'blackbox' }
+        db.run(`UPDATE scans SET target = ?, target_type = ?, mode = 'hybrid', modules = ? WHERE id = ?`,
+          dynamicTarget.trim(), 'url', JSON.stringify(Array.isArray(dynamicModules) ? dynamicModules : []), id)
+        await pipeline.runBlackbox(dynamicScan, {
+          modules: Array.isArray(dynamicModules) ? dynamicModules : [],
+          objective: 'comprehensive',
+          verify,
+          depth,
+          owaspCategories,
+        })
+      }
     } catch (e) {
       if (e.message === 'SCAN_STOPPED') return
       pipeline.log(id, 'error', `Pipeline error: ${e.message}`)
@@ -1435,13 +1468,26 @@ app.get('/api/findings', requireAuth, (req, res) => {
   res.json(db.all(sql, ...params))
 })
 app.delete('/api/findings/:id', requireAuth, requireStaff, (req, res) => {
-  const f = db.get(`SELECT id FROM findings WHERE id = ?`, req.params.id)
+  const f = db.get(`SELECT id, scan_id FROM findings WHERE id = ?`, req.params.id)
   if (!f) return res.status(404).json({ error: 'finding not found' })
   db.run(`DELETE FROM finding_notes WHERE finding_id = ?`, req.params.id)
   db.run(`DELETE FROM findings WHERE id = ?`, req.params.id)
+  recalculateScanRisk(f.scan_id)
   audit(req.user.username, 'finding:delete', req.params.id)
   res.json({ ok: true })
 })
+
+function recalculateScanRisk(scanId) {
+  const findings = db.all(`SELECT severity, cvss FROM findings WHERE scan_id = ?`, scanId)
+  const counts = {}
+  let maxCvss = 0
+  for (const finding of findings) {
+    counts[finding.severity] = (counts[finding.severity] || 0) + 1
+    maxCvss = Math.max(maxCvss, Number(finding.cvss) || 0)
+  }
+  const score = computeRiskScore(counts, maxCvss || null)
+  db.run(`UPDATE scans SET risk_score = ? WHERE id = ?`, score, scanId)
+}
 
 const FINDING_STATUSES = ['open', 'confirmed', 'in-progress', 'fixed', 'accepted', 'false-positive']
 app.put('/api/findings/:id/status', requireAuth, requireStaff, (req, res) => {
@@ -1454,9 +1500,11 @@ const FINDING_SEVERITIES = ['info', 'low', 'medium', 'high', 'critical']
 app.put('/api/findings/:id/severity', requireAuth, requireStaff, (req, res) => {
   const { severity } = req.body || {}
   if (!FINDING_SEVERITIES.includes(severity)) return res.status(400).json({ error: `severity must be one of: ${FINDING_SEVERITIES.join(', ')}` })
-  const existing = db.get(`SELECT id FROM findings WHERE id = ?`, req.params.id)
+  const existing = db.get(`SELECT id, scan_id FROM findings WHERE id = ?`, req.params.id)
   if (!existing) return res.status(404).json({ error: 'Finding not found' })
   db.run(`UPDATE findings SET severity = ? WHERE id = ?`, severity, req.params.id)
+  const finding = db.get(`SELECT scan_id FROM findings WHERE id = ?`, req.params.id)
+  recalculateScanRisk(finding.scan_id)
   audit(req.user.username, 'finding:severity', `${req.params.id} → ${severity}`)
   res.json(db.get(`SELECT * FROM findings WHERE id = ?`, req.params.id))
 })
@@ -1466,7 +1514,7 @@ app.put('/api/findings/:id/cvss', requireAuth, requireStaff, (req, res) => {
   if (!cvssVector || typeof cvssVector !== 'string') {
     return res.status(400).json({ error: 'cvssVector string is required (e.g. CVSS:4.0/AV:N/AC:L/...)' })
   }
-  const existing = db.get(`SELECT id FROM findings WHERE id = ?`, req.params.id)
+  const existing = db.get(`SELECT id, scan_id FROM findings WHERE id = ?`, req.params.id)
   if (!existing) return res.status(404).json({ error: 'Finding not found' })
 
   const cvssResult = calculateCvss4(cvssVector)
@@ -1476,6 +1524,7 @@ app.put('/api/findings/:id/cvss', requireAuth, requireStaff, (req, res) => {
 
   const { score, severity } = cvssResult
   db.run(`UPDATE findings SET cvss = ?, cvss_vector = ?, severity = ? WHERE id = ?`, score, cvssVector, severity, req.params.id)
+  recalculateScanRisk(existing.scan_id)
   audit(req.user.username, 'finding:cvss', `${req.params.id} -> ${cvssVector} (score: ${score}, ${severity})`)
   res.json(db.get(`SELECT * FROM findings WHERE id = ?`, req.params.id))
 })
@@ -1563,7 +1612,10 @@ app.get('/api/monitors/:id', requireAuth, requireStaff, (req, res) => {
 app.post('/api/monitors', requireAuth, requireStaff, (req, res) => {
   const { name, target, targetType = 'url', intervalMin = 60, modules: mods = [] } = req.body || {}
   if (!name || !target) return res.status(400).json({ error: 'name and target required' })
-  const m = monitors.createMonitor(pipeline, { name, target, targetType, intervalMin, modules: mods })
+  const m = monitors.createMonitor(pipeline, {
+    name, target, targetType, intervalMin, modules: mods,
+    userId: req.user?.id || null,
+  })
   audit(req.user.username, 'monitor:create', `${name} → ${target}`)
   res.status(201).json(m)
 })
@@ -2436,9 +2488,10 @@ app.post('/api/github/scan', requireAuth, async (req, res) => {
     const target = `github:${repoFullName}#${branch}`
 
     db.run(
-      `INSERT INTO scans (id, target, target_type, mode, status, template, modules, progress, created_at, started_at, trigger_source, repo_name, commit_hash, email_notify)
-       VALUES (?, ?, 'code', 'whitebox', 'running', 'standard', '[]', 0, ?, ?, 'github_manual', ?, ?, ?)`,
-      scanId, target, now, now, repoFullName, repoBundle.commitSha, req.user.email || null
+      `INSERT INTO scans (id, target, target_type, mode, status, template, modules, progress, created_at, started_at, trigger_source, repo_name, commit_hash, email_notify, user_id, client)
+       VALUES (?, ?, 'code', 'whitebox', 'running', 'standard', '[]', 0, ?, ?, 'github_manual', ?, ?, ?, ?, ?)`,
+      scanId, target, now, now, repoFullName, repoBundle.commitSha, req.user.email || null,
+      req.user.id || null, req.user.username || req.user.email || null
     )
 
     // Update tracked repo last scan info
@@ -2541,9 +2594,10 @@ app.post('/api/github/webhook', (req, res) => {
       const emailNotify = tracked.email_report ? (user?.email || event.authorEmail) : null
 
       db.run(
-        `INSERT INTO scans (id, target, target_type, mode, status, template, modules, progress, created_at, started_at, trigger_source, repo_name, commit_hash, email_notify)
-         VALUES (?, ?, 'code', 'whitebox', 'running', 'standard', '[]', 0, ?, ?, ?, ?, ?, ?)`,
-        scanId, `github:${event.repoFullName}#${event.branch}`, now, now, `github_${event.type}`, event.repoFullName, event.commitHash, emailNotify
+        `INSERT INTO scans (id, target, target_type, mode, status, template, modules, progress, created_at, started_at, trigger_source, repo_name, commit_hash, email_notify, user_id, client)
+         VALUES (?, ?, 'code', 'whitebox', 'running', 'standard', '[]', 0, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        scanId, `github:${event.repoFullName}#${event.branch}`, now, now, `github_${event.type}`, event.repoFullName, event.commitHash, emailNotify,
+        tracked.user_id || null, user?.email || event.authorEmail || null
       )
 
       db.run(

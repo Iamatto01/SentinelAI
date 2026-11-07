@@ -1,3 +1,12 @@
-VulnCorp Terms of Service
-All transactions are subject to standard enterprise terms and regulatory provisions.
-Last updated: January 2026.
+=== Maybank2u Terms & Conditions (Conventional & Islamic Banking) ===
+Effective Date: 1 January 2026
+Regulated by Bank Negara Malaysia | Ahli PIDM | Malayan Banking Berhad (Co. Reg. No. 196001000142)
+
+1. GENERAL TERMS OF ACCESS
+By accessing Maybank2u online banking, you agree to adhere to all terms governing electronic banking transactions, DuitNow transfers, and Secure2u authorization. Protect your username and password at all times.
+
+2. PIDM PROTECTION DISCLOSURE
+Eligible deposits held with Malayan Banking Berhad are protected by Perbadanan Insurans Deposit Malaysia (PIDM) up to RM250,000 for each depositor.
+
+3. DUITNOW & INTERBANK TRANSFERS
+DuitNow transfers up to RM50,000 per day are processed instantaneously across participating financial institutions in Malaysia. High-value transactions require Secure2u biometric verification.

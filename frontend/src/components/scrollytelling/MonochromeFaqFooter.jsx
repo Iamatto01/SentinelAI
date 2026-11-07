@@ -343,6 +343,8 @@ export default function MonochromeFaqFooter() {
                 <li><Link to="/services" className={isNight ? 'hover:text-white' : 'hover:text-black'}>DevSecOps GitHub CI</Link></li>
                 <li><Link to="/services" className={isNight ? 'hover:text-white' : 'hover:text-black'}>Virtual CISO Advisory</Link></li>
                 <li><Link to="/about" className={isNight ? 'hover:text-white' : 'hover:text-black'}>Local-First Architecture</Link></li>
+                <li><Link to="/terms" className={isNight ? 'hover:text-white' : 'hover:text-black'}>Terms &amp; Anti-RE Policy</Link></li>
+                <li><Link to="/privacy" className={isNight ? 'hover:text-white' : 'hover:text-black'}>Privacy &amp; Cookie Policy</Link></li>
               </ul>
             </div>
 
@@ -368,13 +370,31 @@ export default function MonochromeFaqFooter() {
           </div>
 
           {/* Bottom Copyright & Attribution Bar */}
-          <div className={`pt-8 border-t flex flex-col sm:flex-row items-center justify-between gap-3 text-[11px] font-mono ${
+          <div className={`pt-8 border-t flex flex-col md:flex-row items-center justify-between gap-3 text-[11px] font-mono ${
             isNight ? 'border-white/10 text-neutral-500' : 'border-zinc-200 text-zinc-500'
           }`}>
-            <span>
-              &copy; {new Date().getFullYear()} SentinelAI &mdash; Muhammad Saifudin. All rights reserved.
-            </span>
-            <span className={`flex items-center gap-1.5 ${isNight ? 'text-neutral-400' : 'text-zinc-600'}`}>
+            <div className="flex flex-wrap items-center justify-center md:justify-start gap-x-3 gap-y-1">
+              <span>
+                &copy; {new Date().getFullYear()} SentinelAI &mdash; Muhammad Saifudin.
+              </span>
+              <span className="hidden sm:inline opacity-40">&bull;</span>
+              <Link to="/terms" className={`transition-colors underline-offset-2 hover:underline ${isNight ? 'text-neutral-400 hover:text-white' : 'text-zinc-600 hover:text-black'}`}>
+                Terms (Anti-RE)
+              </Link>
+              <span className="opacity-40">&bull;</span>
+              <Link to="/privacy" className={`transition-colors underline-offset-2 hover:underline ${isNight ? 'text-neutral-400 hover:text-white' : 'text-zinc-600 hover:text-black'}`}>
+                Privacy &amp; Cookies
+              </Link>
+              <span className="opacity-40">&bull;</span>
+              <button
+                type="button"
+                onClick={() => window.dispatchEvent(new Event('sentinel_open_cookie_preferences'))}
+                className={`transition-colors cursor-pointer underline-offset-2 hover:underline ${isNight ? 'text-neutral-400 hover:text-white' : 'text-zinc-600 hover:text-black'}`}
+              >
+                Cookie Settings
+              </button>
+            </div>
+            <span className={`flex items-center gap-1.5 shrink-0 ${isNight ? 'text-neutral-400' : 'text-zinc-600'}`}>
               <ShieldCheck size={13} className={isNight ? 'text-white' : 'text-black'} />
               <span>Academic Pentest Platform &mdash; IIUM KICT Final Year Project 2</span>
             </span>
