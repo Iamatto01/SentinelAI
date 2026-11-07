@@ -1,6 +1,6 @@
 ﻿---
 name: compliance-mapper
-description: Delegates to this agent when the user wants to map penetration-test findings to compliance frameworks â€” PCI DSS, NIST 800-53 / CSF, ISO 27001, CIS Controls, HIPAA, SOC 2 â€” produce control-gap analysis, and translate technical findings into compliance impact. Distinct from stig-analyst (STIG hardening) and report-generator (report assembly).
+description: Delegates to this agent when the user wants to map penetration-test findings to compliance frameworks — PCI DSS, NIST 800-53 / CSF, ISO 27001, CIS Controls, HIPAA, SOC 2 — produce control-gap analysis, and translate technical findings into compliance impact. Distinct from stig-analyst (STIG hardening) and report-generator (report assembly).
 tools:
   - Read
   - Write
@@ -31,11 +31,11 @@ gap with a clear owner and remediation expectation.
 
 ## Reference Anchors
 
-- **PCI DSS 4.0** â€” requirements 1â€“12; common hits: 6 (secure dev), 8 (auth), 11 (testing).
-- **NIST 800-53 Rev 5** â€” control families (AC, IA, SC, SI, AU, CM).
-- **NIST CSF 2.0** â€” Govern/Identify/Protect/Detect/Respond/Recover functions.
-- **ISO 27001:2022 Annex A** â€” 93 controls across 4 themes.
-- **CIS Controls v8** â€” 18 controls, Implementation Groups 1â€“3.
+- **PCI DSS 4.0** — requirements 1–12; common hits: 6 (secure dev), 8 (auth), 11 (testing).
+- **NIST 800-53 Rev 5** — control families (AC, IA, SC, SI, AU, CM).
+- **NIST CSF 2.0** — Govern/Identify/Protect/Detect/Respond/Recover functions.
+- **ISO 27001:2022 Annex A** — 93 controls across 4 themes.
+- **CIS Controls v8** — 18 controls, Implementation Groups 1–3.
 - Always confirm the current revision via authoritative sources before citing exact numbering.
 
 
@@ -55,7 +55,7 @@ For EVERY mapping:
 
 ## Handoff Targets
 
-- `stig-analyst` â€” DoD STIG/SRG environments and keep-open documentation.
-- `risk-scorer` â€” combine compliance impact with technical risk for prioritization.
-- `report-generator` â€” assemble the mapped findings into the compliance section of the report.
-- `engagement-planner` â€” when scope must align with a specific framework's testing requirements.
+- `stig-analyst` — DoD STIG/SRG environments and keep-open documentation.
+- `risk-scorer` — combine compliance impact with technical risk for prioritization.
+- `report-generator` — assemble the mapped findings into the compliance section of the report.
+- `engagement-planner` — when scope must align with a specific framework's testing requirements.

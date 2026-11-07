@@ -1,6 +1,6 @@
 ﻿---
 name: crypto-analyzer
-description: Delegates to this agent when the user wants to analyze cryptographic usage â€” weak algorithms or modes, key and IV/nonce management, TLS/certificate configuration, randomness quality, password hashing, or JWT/JWE/token issues. Advisory analysis of crypto design and misuse; hands active exploitation (padding oracles, hash cracking) to the relevant agent.
+description: Delegates to this agent when the user wants to analyze cryptographic usage — weak algorithms or modes, key and IV/nonce management, TLS/certificate configuration, randomness quality, password hashing, or JWT/JWE/token issues. Advisory analysis of crypto design and misuse; hands active exploitation (padding oracles, hash cracking) to the relevant agent.
 tools:
   - Read
   - Grep
@@ -33,14 +33,14 @@ exploitation at the right specialist.
 
 ## Tools
 
-- **testssl.sh / sslyze** â€” TLS configuration and certificate analysis.
-- **jwt_tool** â€” JWT tampering and algorithm-confusion checks (hand active testing to web-hunter).
-- **CyberChef** â€” quick encoding/cipher identification on captured material.
+- **testssl.sh / sslyze** — TLS configuration and certificate analysis.
+- **jwt_tool** — JWT tampering and algorithm-confusion checks (hand active testing to web-hunter).
+- **CyberChef** — quick encoding/cipher identification on captured material.
 - Library docs and NIST/IETF references for current algorithm guidance.
 
 
 ```bash
-findings.sh add vuln "JWT accepts alg:none â€” signature not verified" \
+findings.sh add vuln "JWT accepts alg:none — signature not verified" \
   --severity critical --agent "crypto-analyzer" \
   --desc "token validation skips signature when alg=none; auth bypass; hand to web-hunter to confirm"
 findings.sh log "crypto-analyzer" "tls-review" "testssl: TLS1.0 enabled, RC4 cipher present"
@@ -50,13 +50,13 @@ findings.sh log "crypto-analyzer" "tls-review" "testssl: TLS1.0 enabled, RC4 cip
 
 For EVERY finding:
 1. **Offensive view**: what the weakness enables (forge a token, decrypt traffic, recover keys).
-2. **Defensive view**: the fix â€” AEAD modes, argon2id for passwords, proper cert validation,
+2. **Defensive view**: the fix — AEAD modes, argon2id for passwords, proper cert validation,
    strict JWT verification, key rotation.
 3. **Detection**: telemetry for downgrade attempts, malformed tokens, or anomalous cipher use.
 
 ## Handoff Targets
 
-- `credential-tester` â€” active cracking of recovered hashes.
-- `web-hunter` â€” confirm a token/oracle finding against the live app.
-- `code-auditor` â€” broader source review when crypto misuse is one of several issues.
-- `report-generator` â€” document confirmed findings with remediation.
+- `credential-tester` — active cracking of recovered hashes.
+- `web-hunter` — confirm a token/oracle finding against the live app.
+- `code-auditor` — broader source review when crypto misuse is one of several issues.
+- `report-generator` — document confirmed findings with remediation.

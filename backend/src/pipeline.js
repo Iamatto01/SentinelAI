@@ -342,6 +342,9 @@ export class UnifiedPipeline {
     // a scan completed would lazily re-create a `control` entry that nothing
     // ever deletes — one leaked entry per post-finish API call. Bounded below.
     this._finishedScans = new Set()
+    // scanIds whose finish() must not emit terminal notifications yet — see
+    // deferFinish()/releaseDeferredFinish().
+    this._deferredFinish = new Set()
     // scanId -> LLM verification budget. A bulk scanner (nuclei, ffuf, gobuster)
     // can emit hundreds of findings that each legitimately "own" the same domain
     // (cors/auth/injection word in the template name). Without a budget the scan
@@ -3130,7 +3133,7 @@ export class UnifiedPipeline {
       // generic — it also matches GraphQL clients (client.query({ query: … })),
       // TanStack/React Query, and knex-style builders — so require a known DB
       // receiver, or the raw/execute/queryRunner family used for raw SQL.
-      { re: /(?:\.|\b)(?:db|conn|connection|pool|client|knex|sequelize|prisma|mysql|pg|sqlite|sql|database)\.query\s*\(\s*(?!['"][^'"]*['"]\s*,\s*\[)|(?:\.|\b)(?:raw|execute|queryRunner|createQuery|createQueryBuilder)\s*\(\s*(?!['"][^'"]*['"]\s*,\s*\[)/, sev: 'medium', cwe: 'CWE-89', title: 'Database query without parameterized binding', owasp: 'A05:2025-Injection', impact: 'The query does not appear to use parameterized/placeholder binding. If user input reaches this query, it is vulnerable to SQL injection — attackers can extract, modify, or destroy database contents.', ext: ALL },
+      { re: /(?:\.|\b)(?:db|conn|connection|pool|knex|sequelize|prisma|mysql|pg|sqlite|sql|database)\.query\s*\(\s*(?!['"][^'"]*['"]\s*,\s*\[)|(?:db|conn|connection|pool|knex|sequelize|prisma|mysql|pg|sqlite|sql|database)\.(?:raw|execute|queryRunner|createQuery|createQueryBuilder)\s*\(\s*(?!['"][^'"]*['"]\s*,\s*\[)/, sev: 'medium', cwe: 'CWE-89', title: 'Database query without parameterized binding', owasp: 'A05:2025-Injection', impact: 'The query does not appear to use parameterized/placeholder binding. If user input reaches this query, it is vulnerable to SQL injection — attackers can extract, modify, or destroy database contents.', ext: ALL },
       { re: /mysql_query\s*\(\s*['"][^'"]*\$_(?:GET|POST|REQUEST)/, sev: 'critical', cwe: 'CWE-89', title: 'PHP SQL injection (mysql_query with superglobal)', owasp: 'A05:2025-Injection', impact: 'PHP code directly inserts user input ($_GET/$_POST) into a MySQL query string. An attacker can craft a URL parameter that extracts the entire database, including all user passwords and private data. This is trivially exploitable.', ext: f => extMatch(f, ['.php']) },
       { re: /(?:select|insert|update|delete)\s+.*\+.*\b(?:req|request|params|query|body|input|param)\b/i, sev: 'high', cwe: 'CWE-89', title: 'SQL statement concatenated with user input', owasp: 'A05:2025-Injection', impact: 'An SQL query string is built by concatenating (+) with user-supplied data. Attackers can inject SQL commands to read all database tables, modify records, or drop the entire database.', ext: ALL },
       // Command Injection patterns
@@ -3290,6 +3293,13 @@ export class UnifiedPipeline {
     // previously never removed.
     this.releaseScanState(scanId)
     this._markFinished(scanId)
+
+    // Hybrid/whitebox-folder runs stage whitebox then blackbox on one scanId.
+    // The intermediate finish() must not notify: its finding set is partial, so
+    // the email/alert would carry no blackbox results and the operator sees the
+    // same scan "complete" twice. The caller releases the deferral before the
+    // final finish(), which then notifies exactly once.
+    if (this._deferredFinish.has(scanId)) return
 
     // ── TELEGRAM & DISCORD REAL-TIME SCAN NOTIFICATION ──
     if (status === 'completed') {

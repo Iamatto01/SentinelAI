@@ -1181,9 +1181,11 @@ app.post('/api/scans/:id/re-run', requireAuth, requireStaff, async (req, res) =>
   setImmediate(async () => {
     try {
       if (mode === 'whitebox' || mode === 'hybrid') {
+        if (mode === 'hybrid') pipeline.deferFinish(scan.id)
         await pipeline.runWhitebox(scan, { ...baseOpts, files: whiteboxFiles })
       }
       if (mode === 'hybrid') {
+        pipeline.releaseDeferredFinish(scan.id)
         await pipeline.runBlackbox({ ...scan, target: cfg.dynamicTarget || scan.target, target_type: 'url', mode: 'blackbox' }, baseOpts)
       } else if (mode === 'blackbox') {
         await pipeline.runBlackbox(scan, baseOpts)
@@ -1391,8 +1393,11 @@ app.post('/api/scans/whitebox-folder', requireAuth, async (req, res) => {
 
   setImmediate(async () => {
     try {
+      const hybridDynamic = !!dynamicTarget?.trim()
+      if (hybridDynamic) pipeline.deferFinish(id)
       await pipeline.runWhitebox(scan, { files, language, focus, verify, depth, owaspCategories, whiteboxPasses })
-      if (dynamicTarget?.trim()) {
+      if (hybridDynamic) {
+        pipeline.releaseDeferredFinish(id)
         const dynamicScan = { ...scan, target: dynamicTarget.trim(), target_type: 'url', mode: 'blackbox' }
         db.run(`UPDATE scans SET target = ?, target_type = ?, mode = 'hybrid', modules = ? WHERE id = ?`,
           dynamicTarget.trim(), 'url', JSON.stringify(Array.isArray(dynamicModules) ? dynamicModules : []), id)

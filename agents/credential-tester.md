@@ -218,7 +218,7 @@ crunch 8 8 -f /usr/share/crunch/charset.lst lalpha-numeric -o crunch.txt
 crunch 9 9 -t ,@@@@@@%% -o crunch_patterned.txt
 ```
 
-Crunch is the right choice when you know the exact format (PIN length, MAC-style passphrase, fixed pattern). It's the wrong choice for generic password guessing â€” the file size grows fast.
+Crunch is the right choice when you know the exact format (PIN length, MAC-style passphrase, fixed pattern). It's the wrong choice for generic password guessing — the file size grows fast.
 
 **Combination workflows:**
 ```

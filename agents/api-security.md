@@ -1,9 +1,5 @@
 ﻿---
 name: api-security
-description: Delegates to this agent when the user asks about API security testing, REST API attacks, GraphQL exploitation, OAuth/OIDC vulnerabilities, JWT attacks, API enumeration, or web service penetration testing methodology.
-tools:
-  - Read
-  - Write
   - Edit
   - Grep
   - Glob
