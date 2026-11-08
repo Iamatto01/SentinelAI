@@ -85,6 +85,11 @@ export const CVSS4_TEMPLATES = {
   xxe: 'CVSS:4.0/AV:N/AC:L/AT:N/PR:L/UI:N/VC:H/VI:N/VA:N/SC:L/SI:N/SA:N', // 7.1 High
   deserialization: 'CVSS:4.0/AV:N/AC:H/AT:P/PR:L/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N', // 7.7 High
   cors_wildcard: 'CVSS:4.0/AV:N/AC:H/AT:P/PR:N/UI:A/VC:L/VI:N/VA:N/SC:N/SI:N/SA:N', // 2.1 Low
+  // Credentialed cross-origin read: attacker page reads the victim's
+  // authenticated responses with no user interaction beyond loading the page and
+  // no session artifact of its own. Confidentiality-only, full scope of the
+  // victim's own data, so VC:H and no integrity/availability impact.
+  cors_credentialed: 'CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:N/VC:H/VI:N/VA:N/SC:N/SI:N/SA:N',
   weak_tls: 'CVSS:4.0/AV:N/AC:H/AT:P/PR:N/UI:N/VC:L/VI:N/VA:N/SC:N/SI:N/SA:N', // 6.3 Medium
   subdomain_takeover: 'CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:A/VC:L/VI:L/VA:N/SC:N/SI:N/SA:N', // 5.1 Medium
   // Shared cache serving one user's authenticated response to another.
@@ -334,8 +339,30 @@ const SEMANTIC_CLASSES = [
     alt: /\bcwe-(?:269|266|862|285)\b/i,
   },
   {
+    // A credentialed cross-origin read is a session-hijack primitive only when a
+    // session actually rides on a cookie. The bare phrase "session hijack" in a
+    // title is a *claim*, so this class is gated on confirmed evidence and
+    // degrades to `cors_policy` when the claim is unsupported.
+    id: 'cors_credentialed', template: 'cors_credentialed', ceiling: 'high',
+    title: /(?:cors|cross[- ]origin|access-control-allow-origin)[\s\S]{0,80}?(?:with credentials|credentialed|authenticated|cookie|session)/i,
+    requiresConfirmed: true,
+    unconfirmedFallback: 'cors_policy',
+  },
+  {
+    // Deliberately ahead of every claim-based class. A title such as
+    // "CORS origin reflection WITH credentials - session hijack" names a *cause*
+    // (a CORS header) and a *consequence* the scanner never demonstrated.
+    // Classification must follow the cause, never the loudest word in the title,
+    // so this sits before every claim-based class and cannot be shadowed by one.
+    id: 'cors_policy', template: 'cors_wildcard', ceiling: 'low',
+    title: /\bcors\b|cross[- ]origin resource sharing|access-control-allow-origin/i,
+  },
+  {
     id: 'auth_bypass', template: 'auth_bypass', ceiling: 'high',
-    title: /auth[a-z]*\s*bypass|authentication bypass|broken[\s\S]{0,20}authentication|unauthenticated (?:access|endpoint)|default credential|weak (?:password|credential)|login bypass|session (?:fixation|hijack)|\bjwt\b[\s\S]{0,30}(?:broken|bypass|none|alg|algorithm|forged|weak|missing|unsigned)/i,
+    // `session (fixation|hijack)` used to match on its own, which let any title
+    // containing the phrase claim a HIGH authentication bypass without naming a
+    // session artifact. It now requires an actual session identifier in the text.
+    title: /auth[a-z]*\s*bypass|authentication bypass|broken[\s\S]{0,20}authentication|unauthenticated (?:access|endpoint)|default credential|weak (?:password|credential)|login bypass|session (?:fixation|hijack)[\s\S]{0,80}?(?:cookie|session id|jsessionid|phpsessid|\bsid\b|set-cookie)|\bjwt\b[\s\S]{0,30}(?:broken|bypass|none|alg|algorithm|forged|weak|missing|unsigned)/i,
     alt: /\bcwe-(?:287|288|306|384)\b/i,
   },
   {
@@ -344,6 +371,15 @@ const SEMANTIC_CLASSES = [
     alt: /\bcwe-(?:330|331|340)\b/i,
   },
   // ── Credentials & configuration ─────────────────────────────────────────────
+  {
+    // A credentials file reachable over HTTP is the single highest-impact config
+    // exposure there is: the file *is* the credentials, so the title alone proves
+    // live secrets were served. It must match here, ahead of the generic
+    // `.env`/`config file` alternative, or it falls through to `config_exposure`
+    // (medium) and understates a critical.
+    id: 'config_file_credentials', template: 'config_secrets', ceiling: 'critical',
+    title: /(?:credential|secret|password|key|token)s?[- _]?(?:file|dump|store)|\b(?:env|dotenv)\b[\s\S]{0,40}(?:credential|secret|password|key|exposed|file)|\bcredentials file\b|\bsecret store\b/i,
+  },
   {
     id: 'config_secrets', template: 'config_secrets', ceiling: 'critical',
     title: /(?:web\.config|wp-config|\.env|config(?:uration)? (?:file|backup)|appsettings|settings\.php|database\.yml)[\s\S]{0,80}(?:secret|password|credential|api[ _-]?key|connection string)|(?:secret|password|credential|api[ _-]?key)[\s\S]{0,60}(?:in|inside) (?:config|web\.config|\.env)/i,
@@ -363,6 +399,14 @@ const SEMANTIC_CLASSES = [
     id: 'dev_overlay_strong', template: 'dev_overlay_strong', ceiling: 'high',
     title: /telescope|ignition (?:debug|endpoint)|debug (?:console|dashboard|endpoint) exposed|(?:database|db) admin(?:istration)? (?:interface|console|panel)?[\s\S]{0,40}expos|phpmyadmin|adminer|mongo[- ]express|redis commander|kibana|elasticsearch head/i,
     requiresConfirmed: true, unconfirmedFallback: 'admin_surface',
+  },
+  {
+    // A runtime-mode flag is an observation about configuration, not a defect.
+    // "NODE_ENV development mode" was scoring 6.9 Medium through `dev_overlay`,
+    // which is the same number as a reachable debug console — a claim nobody
+    // made. It caps at Low until something is shown to be reachable through it.
+    id: 'dev_mode_indicator', template: 'missing_header', ceiling: 'low',
+    title: /node_env|\bdevelopment mode\b|\bdebug mode\b\s*(?:enabled|on|active)?|dev(?:elopment)? mode (?:enabled|on|active)|running in (?:dev|development|debug)/i,
   },
   {
     id: 'dev_overlay', template: 'dev_overlay', ceiling: 'medium',
@@ -393,10 +437,6 @@ const SEMANTIC_CLASSES = [
   },
   // ── Headers & transport ─────────────────────────────────────────────────────
   {
-    id: 'cors_policy', template: 'cors_wildcard', ceiling: 'low',
-    title: /\bcors\b|cross[- ]origin resource sharing|access-control-allow-origin/i,
-  },
-  {
     id: 'session_flags', template: 'missing_header', ceiling: 'low',
     title: /cookie[\s\S]{0,60}(?:httponly|secure flag|samesite|flag|attribute)|(?:httponly|samesite|secure attribute)[\s\S]{0,40}cookie/i,
     alt: /\bcwe-(?:1004|614|1275)\b/i,
@@ -417,9 +457,35 @@ const SEMANTIC_CLASSES = [
     alt: /\bcwe-(?:650|749)\b/i,
   },
   {
+    // A hostname resolved to a CDN or WAF edge answers with the edge's own
+    // configuration, not the origin's. Cloudflare's default cipher list and TLS
+    // floor then surface as "Weak Cipher Suites Detection" and "Deprecated TLS
+    // Detection" on every proxied host, which read as origin defects the operator
+    // cannot act on: the certificate and the cipher list belong to Cloudflare,
+    // and the origin is not even reachable directly. This class must stay ABOVE
+    // `transport_hardening` — Pass 1 is first-match-wins, so a plain
+    // unqualified TLS finding still lands in `transport_hardening`, while one
+    // that names the edge is downgraded to an infrastructure fact.
+    id: 'cdn_edge_transport', template: 'recon_info', ceiling: 'info',
+    title: /(?:cloudflare|akamai|cloudfront|fastly|incapsula|sucuri|stackpath|bunnycdn|imperva|azure front door|google cloud cdn)[\s\S]{0,48}?(?:tls|ssl|cipher|cert(?:ificate)?|hsts|http\/[23]|transport|edge|cdn|proxy|banner)|(?:tls|ssl|cipher|cert(?:ificate)?|hsts|http\/[23]|transport)[\s\S]{0,48}?(?:cloudflare|akamai|cloudfront|fastly|incapsula|sucuri|stackpath|bunnycdn|imperva|behind (?:a )?(?:cdn|waf|proxy)|cdn edge|edge (?:server|node)|proxied)/i,
+  },
+  {
     id: 'transport_hardening', template: 'weak_tls', ceiling: 'medium',
-    title: /no https? to https|missing https|plaintext http|insecure transport|ssl|\btls\b|weak cipher|expired cert|self[- ]signed|certificate/i,
+    // Only an *asserted* transport weakness belongs here. The previous regex
+    // listed the bare tokens `ssl`, `tls` and `certificate`, so pure
+    // reconnaissance ("SSL DNS Names", "TLS Version - Detect", "Detect SSL
+    // Certificate Issuer") was scored as a 6.3 Medium transport defect. A
+    // finding must now name a weakness AND the transport it weakens.
+    title: /no https? to https|missing https|plaintext http|insecure transport|(?:weak|deprecated|insecure|obsolete|expired|export[- ]grade|null|rc4|des|3des|md5)[\s\S]{0,24}?(?:cipher|tls|ssl|https)|(?:tls|ssl|https)[\s\S]{0,24}?(?:1\.[01]\b|v2\b|v3\b|weak|deprecated|insecure|obsolete|expired|disabled|untrusted)|(?:expired|self[- ]signed|untrusted|invalid|revoked|hostname mismatch)[\s\S]{0,24}?cert/i,
     alt: /\bcwe-(?:295|326|327|523)\b/i,
+  },
+  {
+    // Reconnaissance *about* transport that asserts no weakness: certificate
+    // issuer/SAN/expiry listings, TLS version or cipher-suite enumeration,
+    // CDN/WAF banners. These are useful inventory, never a defect on their own,
+    // so they must not borrow the transport ceiling.
+    id: 'transport_inventory', template: 'recon_info', ceiling: 'info',
+    title: /(?:cert(?:ificate)?)[\s\S]{0,24}?(?:issuer|dns names?|subject|san\b|alt names?|expiry|validity|chain)|(?:tls|ssl)[\s\S]{0,24}?(?:version[\s\S]{0,16}?(?:detect|detected|disclosure|enumerat)|certificate[\s\S]{0,16}?(?:detect|detected|issuer|subject))|cipher suites?[\s\S]{0,24}?(?:detect|enumerat|list|support)|(?:cloudflare|akamai|cloudfront|fastly|incapsula)[\s\S]{0,32}?(?:detected|banner|cf-ray|header)|dns names?\b\s*:?/i,
   },
   // ── Abuse & logic ───────────────────────────────────────────────────────────
   {
@@ -448,7 +514,10 @@ const SEMANTIC_CLASSES = [
   // ── Generic disclosure (order matters: after every specific family) ─────────
   {
     id: 'info_page', template: 'low_grade_exposure', ceiling: 'medium',
-    title: /information disclosure|info disclosure|sensitive (?:data|information) (?:exposure|disclosure)|directory listing|internal (?:ip|path|hostname)|error (?:page|message) disclosure|verbose error|source code disclosure/i,
+    // `internal ip`/`hostname` was matched here and scored 6.3 Medium. An RFC1918
+    // address appearing in a header or body is an information leak with no
+    // demonstrated path to the internal network; it belongs in the recon class.
+    title: /information disclosure|info disclosure|sensitive (?:data|information) (?:exposure|disclosure)|directory listing|internal (?:path|url)|error (?:page|message) disclosure|verbose error|source code disclosure/i,
     alt: /\bcwe-(?:200|209|548|538)\b/i,
   },
   {
@@ -462,7 +531,7 @@ const SEMANTIC_CLASSES = [
   },
   {
     id: 'recon', template: 'recon_info', ceiling: 'low',
-    title: /open port|port scan|subdomains? discovered|robots\.txt|sitemap|fingerprint|waf detection|dns record|certificate transparency|keep-alive|allowed options|infrastructure/i,
+    title: /open port|port scan|subdomains? discovered|robots\.txt|sitemap|fingerprint|waf detection|dns record|certificate transparency|keep-alive|allowed options|infrastructure|internal (?:ip|hostname|address)|\brfc[- ]?1918\b|private (?:ip|address)/i,
   },
 ]
 
@@ -498,6 +567,35 @@ function confirmationBlob(finding = {}) {
 }
 
 /**
+ * The scanner's own confidence that a finding is real, independent of any title.
+ *
+ * `classifyFinding` used to derive "confirmed" from the title, status and agent
+ * verdict alone. That made a class like `cors_credentialed` unreachable: a card
+ * is auto-`verified` at aggregate time, but the same finding object at scoring
+ * time carries no marker, so the very card whose title says "WITH credentials"
+ * was downgraded for lacking a confirmation it could never have carried. When
+ * the report has already classified the row, that verdict is the confirmation.
+ *
+ * Bounded deliberately: only a row the contract already marked `confirmed` (or
+ * that carries a captured artifact) unlocks a `requiresConfirmed` class. A bare
+ * `confidence: 90` or a stored `verified` string still does not.
+ *
+ * @param {object} finding
+ * @returns {boolean}
+ */
+function isContractConfirmed(finding = {}) {
+  if (String(finding.verifyStatus || finding.verify_status || '').toLowerCase() === 'confirmed') return true
+  if (finding.artifact || finding.capture) return true
+  // Stamped by the pipeline once `findCaptures()` has seen a real response body,
+  // header set or status line. This is the only confirmation signal available at
+  // scoring time; `verifyStatus` is attached later, by the report contract.
+  if (finding.captureConfirmed === true) return true
+  const verdict = finding.agentVerdict ?? finding.agent_verdict
+  if (verdict != null && String(verdict).toLowerCase() === 'confirmed') return true
+  return false
+}
+
+/**
  * Classify a finding into a semantic CVSS class.
  *
  * Classification is title-first because it is the only field the scanner
@@ -515,7 +613,7 @@ export function classifyFinding(finding = {}) {
 
   const title = findingTitleText(finding)
   const cwe = findingCweText(finding).toLowerCase()
-  const confirmed = CONFIRMED_RE.test(confirmationBlob(finding))
+  const confirmed = CONFIRMED_RE.test(confirmationBlob(finding)) || isContractConfirmed(finding)
   const hedged = HEDGE_RE.test(title)
 
   // Pass 1 — the title names the vulnerability.
@@ -769,8 +867,15 @@ export function evaluateFindingCvss(finding = {}) {
   }
 }
 
-/** Renders "declared → derived" with the exact reason, for the report footer. */
-function buildAuditNote({ cls, declaredVector, declaredScore, declaredSeverity, vector, score, severity, vectorSource, rejectedVectorReason }) {
+/**
+ * Plain-language explanation of a severity correction, for the report reader.
+ *
+ * The raw "declared → derived" arithmetic, including the rejected vector string,
+ * goes to the scan log rather than the document. A reader who is shown one score
+ * must never be handed a second, conflicting score on the same card. Returns null
+ * when nothing was overruled.
+ */
+function buildAuditNote({ cls, declaredVector, declaredScore, declaredSeverity, score, severity, vectorSource, rejectedVectorReason }) {
   if (vectorSource === 'declared') {
     return null
   }
@@ -779,12 +884,24 @@ function buildAuditNote({ cls, declaredVector, declaredScore, declaredSeverity, 
   if (declaredScore != null) declaredBits.push(declaredScore.toFixed(1))
   if (declaredVector) declaredBits.push(declaredVector)
   const origin = declaredBits.length ? declaredBits.join(' / ') : 'no declared rating'
-  const why = rejectedVectorReason
-    ? `declared vector rejected: ${rejectedVectorReason}`
-    : cls
-      ? `class "${cls.id}" has no trusted declaring vector`
-      : 'no semantic class matched'
-  return `Reconciled: ${origin} → ${severity.toUpperCase()} ${score.toFixed(1)} (${why})`
+  if (declaredBits.length) {
+    const why = rejectedVectorReason
+      ? `declared vector rejected: ${rejectedVectorReason}`
+      : cls
+        ? `class "${cls.id}" has no trusted declaring vector`
+        : 'no semantic class matched'
+    console.warn(`[cvss4] reconciled "${origin}" -> ${severity.toUpperCase()} ${score.toFixed(1)} (${why})`)
+  }
+  const from = declaredSeverity ? declaredSeverity.toUpperCase() : null
+  if (rejectedVectorReason) {
+    return `Reclassified${from ? ` from ${from}` : ''} to ${severity.toUpperCase()} ${score.toFixed(1)}: the stored rating could not be matched to a reproducible impact on this target.`
+  }
+  if (cls) {
+    return from
+      ? `Reclassified from ${from} to ${severity.toUpperCase()} ${score.toFixed(1)}: the finding's category determines its impact, not the stored rating.`
+      : `Scored at ${severity.toUpperCase()} ${score.toFixed(1)}: the finding's category determines its impact.`
+  }
+  return `Scored at ${severity.toUpperCase()} ${score.toFixed(1)}: the stored rating could not be independently confirmed, so the severity reflects the observed evidence only.`
 }
 
 /** Convenience wrapper: the numeric score a finding must render with. */
@@ -812,6 +929,7 @@ export function assertTemplateScores({ onMismatch = null } = {}) {
     brute_force: 6.3, missing_header: 2.1, disclosed_secret: 8.7, open_redirect: 5.1,
     path_traversal: 8.7, path_traversal_write: 8.6, xxe: 7.1, deserialization: 7.7,
     cors_wildcard: 2.1, weak_tls: 6.3, subdomain_takeover: 5.1, cache_deception: 5.9,
+    cors_credentialed: 8.2,
     end_of_life: 8.3, webshell_heuristic: 8.3, session_prediction: 8.7,
     vuln_component: 8.2,
     payment_tamper: 6.9, webshell_confirmed: 9.3, db_admin_exposed: 8.2,

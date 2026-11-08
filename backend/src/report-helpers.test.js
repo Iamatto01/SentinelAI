@@ -115,5 +115,190 @@ check('all-noise input uses fallback',
 check('mixed noise still yields the real sentence',
   cleanReportNarrative('[INFO] start\nReal sentence.\n[ERROR] boom', 'fallback'), 'Real sentence.')
 
+// --- a.11: reproduction hints must never name an un-runnable target -----------
+//
+// `locations` is harvested from the title when no structured field names one, so
+// "X-Powered-By header exposed: Express/4.21.2" produced the location `/4.21.2`
+// and the report printed `To confirm: curl -sI /4.21.2 ...` — a command that
+// cannot run and a defect claim that cannot be reproduced. Every hint is shell
+// text, so only a value naming a real host may become the command target.
+const safeReproTarget = new Function(`${extractFn('safeReproTarget')}; return safeReproTarget`)()
+const describeReproduction = new Function('safeReproTarget',
+  `${extractFn('describeReproduction')}; return describeReproduction`)(safeReproTarget)
+
+// Any `/` immediately followed by digits and dots is a version fragment, not a
+// path. `https://host/4.21.2` is legal, so the scheme prefix is allowed through.
+const VERSION_AS_PATH = /(^|[^:\w.])\/(?:v)?\d+(?:\.\d+)+/
+
+console.log('\ndescribeReproduction')
+
+const reproCases = [
+  { label: 'header finding with a version-fragment location',
+    v: { title: 'X-Powered-By header exposed: Express/4.21.2', locations: ['/4.21.2'], asset: 'https://abuse.example' } },
+  { label: 'cors finding with a version-fragment location',
+    v: { title: 'CORS misconfiguration', locations: ['/4.21.2'] } },
+  { label: 'auth finding with a version-fragment location',
+    v: { title: 'Admin panel login exposed', locations: ['/4.21.2'] } },
+  { label: 'traversal finding with a version-fragment location',
+    v: { title: 'Path traversal', locations: ['/4.21.2'] } },
+  { label: 'no location at all', v: { title: 'Weak TLS cipher suite' } },
+  { label: 'blank location', v: { title: 'Missing HSTS header', locations: [''] } },
+  { label: 'location is a bare relative path',
+    v: { title: 'Missing HSTS header', locations: ['/api/health'] } },
+  { label: 'version-named finding with no asset',
+    v: { title: 'Express/4.21.2 version disclosure', locations: ['/4.21.2', '/v2.0.1'] } },
+]
+
+for (const { label, v } of reproCases) {
+  const out = describeReproduction(v)
+  check(`no version-as-path in hint: ${label}`, VERSION_AS_PATH.test(out), false)
+  check(`hint is non-empty: ${label}`, out.length > 10, true)
+}
+
+// A real URL must survive verbatim — the guard must not blunt a valid hint.
+check('valid URL location is preserved',
+  describeReproduction({ title: 'Missing Content-Security-Policy header', locations: ['https://abuse.example/app'] }).includes('https://abuse.example/app'),
+  true)
+
+check('valid URL location still works when it is only in evidence.url',
+  describeReproduction({ title: 'Admin panel exposed', evidence: { url: 'https://abuse.example/admin' } }).includes('https://abuse.example/admin'),
+  true)
+
+// A bare host is routable knowledge, so it is kept rather than discarded.
+check('bare host is preserved',
+  describeReproduction({ title: 'Missing HSTS header', locations: ['abuse.example:8443'] }).includes('abuse.example:8443'),
+  true)
+
+// Purely-version assets must never be promoted to a command target.
+check('version fragment is replaced by the generic target',
+  describeReproduction({ title: 'Header disclosure', locations: ['/4.21.2'], asset: '/4.21.2' }).includes('the target'),
+  true)
+
+check('safeReproTarget ignores a version fragment in favour of a real asset',
+  safeReproTarget({ locations: ['/4.21.2'], asset: 'https://abuse.example' }),
+  'https://abuse.example')
+
+// --- a.12: a CDN edge answers for itself, not for the origin -----------------
+//
+// A scan that lands on Cloudflare gets Cloudflare's cipher list and TLS floor
+// back, which printed as "Weak Cipher Suites Detection" on the origin — advice
+// the operator cannot act on, because the origin is not reachable directly. The
+// edge evidence already exists as its own rows (banner, cf-ray header), so the
+// labelling pass reads it from the row set rather than guessing from the host.
+//
+// These helpers read module-level `EDGE_*` constants, so the whole region is
+// evaluated rather than each function body via extractFn.
+const edgeRegion = (() => {
+  const start = src.indexOf('// \u2500\u2500 CDN edge attribution \u2500\u2500')
+  if (start < 0) throw new Error('not found: CDN edge attribution region')
+  const end = src.indexOf('/** Normalize stored finding row into view model. */', start)
+  if (end < 0) throw new Error('not found: end of CDN edge attribution region')
+  return src.slice(start, end)
+})()
+const { labelEdgeTransport, scanInfrastructureFrom, EDGE_LABEL } =
+  new Function(`${edgeRegion}; return { labelEdgeTransport, scanInfrastructureFrom, EDGE_LABEL }`)()
+
+const EDGE_EVIDENCE = { evidence: { tools: [{ tool: 'nuclei', output: 'cloudflare' }], header: 'cf-ray: 8a1b2c3d' } }
+const edgeRows = (titles) => titles.map((title, i) => ({ id: i + 1, title, severity: 'medium', ...EDGE_EVIDENCE }))
+
+console.log('\nlabelEdgeTransport')
+
+const REAL_EDGE_TITLES = [
+  'Deprecated TLS Detection',
+  'TLS Version - Detect',
+  'Weak Cipher Suites Detection',
+  'Detect SSL Certificate Issuer',
+  'SSL DNS Names',
+]
+
+const labelled = labelEdgeTransport(edgeRows(REAL_EDGE_TITLES))
+for (let i = 0; i < REAL_EDGE_TITLES.length; i++) {
+  check(`edge transport title is labelled: ${REAL_EDGE_TITLES[i]}`,
+    labelled[i].title.includes('(CDN edge - not origin infrastructure)'), true)
+}
+
+// HSTS and the HTTPS redirect are the operator's to fix even when a CDN fronts
+// the site, so they must never be folded into the edge's infrastructure facts.
+const policyRows = labelEdgeTransport(edgeRows([
+  'Missing HSTS header',
+  'Missing Content-Security-Policy header',
+  'No HTTPS to HTTPS Redirect',
+]))
+check('HSTS is not treated as edge infrastructure', policyRows[0].title, 'Missing HSTS header')
+check('CSP is not treated as edge infrastructure', policyRows[1].title, 'Missing Content-Security-Policy header')
+check('HTTPS redirect is not treated as edge infrastructure', policyRows[2].title, 'No HTTPS to HTTPS Redirect')
+
+// Without edge evidence the pass must be a no-op — a non-CDN target's transport
+// findings are genuinely the origin's defects.
+const bareRows = REAL_EDGE_TITLES.map((title, i) => ({ id: i + 1, title }))
+check('no edge evidence leaves the rows untouched',
+  labelEdgeTransport(bareRows)[2].title, 'Weak Cipher Suites Detection')
+check('no edge evidence yields no infrastructure verdict',
+  scanInfrastructureFrom(bareRows), null)
+
+// A scan that reached the origin directly is the one case where the transport
+// advice is actionable, so the origin verdict must win over a lingering banner.
+const bypassed = labelEdgeTransport([...edgeRows(REAL_EDGE_TITLES), { id: 9, title: 'Origin IP exposed', evidence: {} }])
+check('origin exposure suppresses the edge label',
+  bypassed[2].title, 'Weak Cipher Suites Detection')
+
+// The label is what the severity classifier matches on, so labelling alone must
+// move the card out of the actionable tier.
+const { classifyFinding } = await import('./cvss4.js')
+const edgeCls = classifyFinding({ title: labelled[2].title })
+check('labelled cipher card classifies as edge transport',
+  edgeCls && edgeCls.id, 'cdn_edge_transport')
+check('labelled cipher card is informational',
+  edgeCls && edgeCls.ceiling, 'info')
+const plainCls = classifyFinding({ title: 'Weak Cipher Suites Detection' })
+check('unlabelled cipher card still needs hardening',
+  plainCls && plainCls.id, 'transport_hardening')
+
+// A second pass over already-labelled rows must not stack the suffix.
+check('relabelling is idempotent',
+  labelEdgeTransport(labelled)[2].title, labelled[2].title)
+check('idempotent pass labels exactly once',
+  labelled[2].title.split('(CDN edge - not origin infrastructure)').length - 1, 1)
+
+// Regression: Cloudflare advertises itself with `origin-cf-ray` / `origin-ip` /
+// `origin-agent-cluster` header names, and those names sit in the `present`
+// array of the missing-headers row. Read as origin exposure they flipped
+// proxied scans to the `origin` verdict and suppressed the label on exactly the
+// targets the label exists for — a live scan of https://x.com did this.
+const CF_HEADERS = {
+  url: 'https://cdn.example.com',
+  missing: ['Permissions-Policy'],
+  present: ['cache-control', 'cf-cache-status', 'cf-ray', 'origin-agent-cluster', 'origin-cf-ray', 'perf', 'server'],
+}
+const cfScan = [
+  ...edgeRows(REAL_EDGE_TITLES),
+  { id: 90, title: 'Server Header Information Disclosure (cloudflare envoy)', evidence: { url: 'https://cdn.example.com', server: 'cloudflare envoy' } },
+  { id: 91, title: 'Missing Security Headers (1)', evidence: CF_HEADERS },
+]
+check('a CDN header name is not read as origin exposure',
+  scanInfrastructureFrom(cfScan), 'edge')
+check('a CDN-header scan still gets its transport rows labelled',
+  labelEdgeTransport(cfScan)[2].title, `Weak Cipher Suites Detection${EDGE_LABEL}`)
+
+// The `origin` verdict must still work, and only a title may assert it.
+check('an exposure title still suppresses the label',
+  scanInfrastructureFrom([...edgeRows(REAL_EDGE_TITLES), { id: 92, title: 'Origin IP exposed', evidence: {} }]), 'origin')
+check('a real exposure title keeps transport rows unlabelled',
+  labelEdgeTransport([...edgeRows(REAL_EDGE_TITLES), { id: 93, title: 'Origin IP exposed', evidence: {} }])[2].title,
+  'Weak Cipher Suites Detection')
+// Prose in the evidence blob is likewise not a claim.
+check('exposure prose in evidence does not count',
+  scanInfrastructureFrom([...edgeRows(REAL_EDGE_TITLES), { id: 94, title: 'TLS Version - Detect', evidence: { note: 'cdn bypass observed' } }]), 'edge')
+
+// The transport matcher must not swallow non-transport titles that merely
+// mention a certificate. "28 subdomains discovered via certificate
+// transparency" is a real title from the live database.
+check('certificate transparency is not a transport finding',
+  labelEdgeTransport(edgeRows(['28 subdomains discovered via certificate transparency']))[0].title,
+  '28 subdomains discovered via certificate transparency')
+check('Detect SSL Certificate Issuer is a transport finding',
+  labelEdgeTransport(edgeRows(['Detect SSL Certificate Issuer']))[0].title,
+  `Detect SSL Certificate Issuer${EDGE_LABEL}`)
+
 console.log(`\nreport-helpers: ${pass}/${pass + fail} passed`)
 process.exit(fail ? 1 : 0)

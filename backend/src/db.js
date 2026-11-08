@@ -593,7 +593,9 @@ function migrate(d) {
  * data/default-custom-scripts.json change so existing installations pick the
  * fixes up on boot (see seedDefaultScripts).
  */
-const CUSTOM_SCRIPTS_REVISION = 9  // rev 8: catch-all/soft-404 hardening — all path-probing scripts now validate body content
+const CUSTOM_SCRIPTS_REVISION = 10 // rev 9: catch-all/soft-404 hardening — all path-probing scripts now validate body content
+// rev 10: header audits now emit an `evidence` block (status + captured headers)
+//         so their findings are verifiable instead of landing in Appendix A.
 
 /** sha256 of a shipped script body — used to tell "stale bundle" from "operator edit". */
 function bodyHash(text) {
@@ -654,10 +656,23 @@ export function seedDefaultScripts(d = getDb()) {
         }
       })
       syncTx(bundled)
-      markSynced()
+      // Only record the revision once the bundle actually reached the rows it was
+      // allowed to touch. If nothing refreshed but rows were skipped, the stored
+      // bodies matched neither the bundle nor the recorded history — that is the
+      // signature of an incomplete history file, not of operator edits, and
+      // advancing here would silently and permanently strand those scripts.
+      if (refreshed > 0 || skipped.length === 0) {
+        markSynced()
+      } else {
+        console.warn(
+          `[db] Custom script revision NOT advanced to ${CUSTOM_SCRIPTS_REVISION}: ` +
+          `${skipped.length} script(s) matched neither the bundle nor the shipped history. ` +
+          'Re-check default-custom-scripts.history.json — the refresh will be retried on next boot.'
+        )
+      }
       if (refreshed > 0) console.log(`[db] Refreshed ${refreshed} built-in custom script(s) to bundle revision ${CUSTOM_SCRIPTS_REVISION}`)
       if (skipped.length) console.warn(`[db] Left ${skipped.length} operator-modified custom script(s) untouched`)
-      return { seeded: false, refreshed, skipped: skipped.length, count: existingCount, revision: CUSTOM_SCRIPTS_REVISION }
+      return { seeded: false, refreshed, skipped: skipped.length, reconciled: skipped.length === 0, count: existingCount, revision: CUSTOM_SCRIPTS_REVISION }
     }
     const seedPath = path.join(__dirname, 'data', 'default-custom-scripts.json')
     if (!fs.existsSync(seedPath)) {

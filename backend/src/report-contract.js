@@ -15,8 +15,9 @@
  * template counts as a real artifact.
  */
 
-export const VERIFY_STATUS = {
-  CONFIRMED: 'Confirmed',
+import { coverageFromMeta } from './integrations/coverage.js'
+
+export const VERIFY_STATUS = {  CONFIRMED: 'Confirmed',
   UNVERIFIED: 'Unverified',
   REJECTED: 'Rejected',
 }
@@ -450,7 +451,13 @@ export function subjectDiscriminators(title) {
 export function primarySubjectPath(title) {
   const s = String(title || '').replace(/^\s*\d+\.\s*/, '')
   const m = s.match(/\/[A-Za-z0-9_.~%-]+(?:\/[A-Za-z0-9_.~%-]+)*/)
-  return m ? m[0] : null
+  if (!m) return null
+  // A version string is not a path. "X-Powered-By header exposed:
+  // Express/4.21.2" matched `/4.21.2`, which then became the "location" of the
+  // finding and was printed as `curl -sI /4.21.2`. A real path segment names
+  // something; a purely numeric-dotted token does not.
+  if (!/[a-z]/i.test(m[0])) return null
+  return m[0]
 }
 
 /**
@@ -525,6 +532,37 @@ function reconcileGroup(g) {
 function sortScore(v) {
   const cvss = Number(v.cvss)
   return Number.isFinite(cvss) && cvss > 0 ? cvss : 0
+}
+
+/**
+ * Scan-completeness view for the report header.
+ *
+ * A report that was produced without an active injection engine cannot claim a
+ * risk posture — it has not looked. This turns the stored coverage descriptor
+ * into a render-ready object so page 1 can say so, and into `coverage_gaps[]`
+ * so the renderer can enumerate untested classes without string-parsing prose.
+ *
+ * @param {string|object|null} stored  raw `scans.blackbox_meta` value
+ * @returns {{ degraded: boolean, criticalGaps: string[], gaps: string[],
+ *   covered: string[], untestedClasses: object[], summary: string|null,
+ *   missingTools: string[] }}
+ */
+export function coverageView(stored) {
+  const cov = coverageFromMeta(stored)
+  if (!cov) {
+    return { degraded: false, criticalGaps: [], gaps: [], covered: [], untestedClasses: [], summary: null, missingTools: [] }
+  }
+  // First tool listed for each untested class is the one whose absence is named.
+  const missingTools = [...new Set((cov.untestedClasses || []).map((c) => (c.missingTools || [])[0]).filter(Boolean))]
+  return {
+    degraded: Boolean(cov.degraded),
+    criticalGaps: cov.criticalGaps || [],
+    gaps: cov.gaps || [],
+    covered: cov.covered || [],
+    untestedClasses: cov.untestedClasses || [],
+    summary: cov.summary || null,
+    missingTools,
+  }
 }
 
 /**

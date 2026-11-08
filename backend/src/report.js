@@ -17,6 +17,7 @@ import {
   NON_ARTIFACT_EVIDENCE_KEYS,
   looksLikeFindingEcho,
   looksLikeTemplateWrapper,
+  coverageView,
 } from './report-contract.js'
 
 /**
@@ -38,6 +39,88 @@ const SEV_COLORS = {
   medium:   { bg: '#D97706', text: '#FFFFFF', border: '#B45309', light: '#FFFBEB' },
   low:      { bg: '#2563EB', text: '#FFFFFF', border: '#1D4ED8', light: '#EFF6FF' },
   info:     { bg: '#64748B', text: '#FFFFFF', border: '#475569', light: '#F8FAFC' },
+  // Not severities — posture accent colours. `success` was referenced by the
+  // HEALTHY POSTURE branch but never defined, so a clean scan crashed the
+  // renderer on `postureColor.light`. `incomplete` marks a scan that could not
+  // exercise the full vulnerability toolchain and therefore has no verdict.
+  success:  { bg: '#059669', text: '#FFFFFF', border: '#047857', light: '#ECFDF5' },
+  incomplete: { bg: '#B45309', text: '#FFFFFF', border: '#92400E', light: '#FFFBEB' },
+}
+
+/**
+ * Resolves the cover-page posture box from remediation counts and scan coverage.
+ *
+ * Extracted from the renderer so the precedence rule is unit-testable: a scan
+ * whose toolchain was incomplete can never claim a healthy posture, because an
+ * untested vulnerability class is indistinguishable from a clean one. That
+ * override outranks the "no criticals today" path, which is what previously let
+ * a partial scan print HEALTHY POSTURE.
+ *
+ * @param {{todayCount?:number, weekCount?:number, laterCount?:number, vulnerabilityCount?:number, coverage?:{degraded?:boolean, summary?:string}|null}} input
+ * @returns {{key:string, color:object, title:string, description:string}}
+ */
+export function resolvePosture({ todayCount = 0, weekCount = 0, laterCount = 0, vulnerabilityCount = 0, coverage = null } = {}) {
+  if (coverage && coverage.degraded) {
+    return {
+      key: 'incomplete',
+      color: SEV_COLORS.incomplete,
+      title: 'INCOMPLETE ASSESSMENT - POSTURE CANNOT BE RELIED UPON',
+      description: `One or more critical vulnerability classes were never exercised, so a clean result is not evidence of absence. ${coverage.summary || ''}`.trim(),
+    }
+  }
+  if (todayCount > 0) {
+    return {
+      key: 'critical',
+      color: SEV_COLORS.critical,
+      title: 'CRITICAL ATTENTION REQUIRED - IMMEDIATE ACTION',
+      description: `${todayCount} critical issue(s) require immediate same-day remediation to prevent potential compromise or breach.`,
+    }
+  }
+  if (weekCount > 0) {
+    return {
+      key: 'high',
+      color: SEV_COLORS.high,
+      title: 'ELEVATED RISK - ACTION REQUIRED THIS WEEK',
+      description: `${weekCount} high-priority issue(s) identified. Remediate within 7 days to eliminate high-risk exposure pathways.`,
+    }
+  }
+  if (laterCount > 0) {
+    return {
+      key: 'medium',
+      color: SEV_COLORS.medium,
+      title: 'MODERATE RISK - SCHEDULED HARDENING REQUIRED',
+      description: `Perimeter is stable. ${laterCount} medium-priority hardening item(s) should be scheduled during routine maintenance.`,
+    }
+  }
+  if (vulnerabilityCount > 0) {
+    return {
+      key: 'low',
+      color: SEV_COLORS.low,
+      title: 'GOOD POSTURE - LOW-PRIORITY HARDENING OPPORTUNITIES',
+      description: 'No critical, high, or medium threats detected. General security hygiene opportunities identified.',
+    }
+  }
+  return {
+    key: 'healthy',
+    color: SEV_COLORS.success,
+    title: 'HEALTHY POSTURE - NO ACTIONABLE THREATS IDENTIFIED',
+    description: 'All automated and AI security test suites passed. No vulnerabilities were detected on tested endpoints.',
+  }
+}
+
+/**
+ * Orders two scan-coverage descriptors by how much each one weakens a report.
+ * A degraded descriptor (a critical class such as injection or XSS was never
+ * exercised) outranks a merely reduced one, which outranks a complete toolchain.
+ * Used to pick the pessimistic banner when one report covers several scans.
+ */
+function compareCoverage(a, b) {
+  const rank = (c) => {
+    if (!c) return 0
+    if (c.degraded) return 2
+    return (c.gaps && c.gaps.length) ? 1 : 0
+  }
+  return rank(b) - rank(a)
 }
 
 const BRAND = {
@@ -2121,6 +2204,78 @@ function recoverProseFromTemplateBlob(raw) {
   return ''
 }
 
+// ── CDN edge attribution ──
+// A scan that lands on a CDN answers with the edge's configuration, not the
+// origin's. Cloudflare's own cipher list and TLS floor then surface as "Weak
+// Cipher Suites Detection" and "Deprecated TLS Detection" on every proxied
+// host, and a certificate finding describes Cloudflare's certificate. Printed
+// as origin defects, those cards send the reader to a fix the operator cannot
+// make, because the origin is not even reachable directly. The scan knows the
+// edge was hit — `nuclei` reports it by banner and by `cf-ray` header, and
+// `whatweb` records it against the technology stack — so the label is derived
+// from that evidence rather than guessed from the target's reputation.
+const EDGE_VENDOR_RE = /cloudflare|cf-ray|akamai|cloudfront|fastly|incapsula|imperva|sucuri|stackpath|bunnycdn|azure front door|google cloud cdn/i
+const EDGE_ORIGIN_EXPOSED_RE = /(?:origin|direct|real)[- _]?(?:ip|address|host|server)\b|bypass(?:ed|ing)?\s+(?:the\s+)?(?:cdn|waf|proxy)|(?:cdn|waf|proxy)\s+bypass/i
+// `certificate` only counts as a transport term when it names a property of the
+// certificate. "certificate transparency" is a discovery technique — the live
+// title "28 subdomains discovered via certificate transparency" is not a
+// transport finding and must not be labelled.
+const EDGE_TRANSPORT_TITLE_RE = /\btls\b|\bssl\b|\bcert\b|(?:^|[\s(])cert(?:ificate)?(?!\s+transparency)[\s)]|cipher|handshake|https?\s+version|protocol\s+version/i
+const EDGE_LABEL = ' (CDN edge - not origin infrastructure)'
+
+/**
+ * Decide whether this scan spoke to a CDN edge. Returns `'edge'` when the edge
+ * is proven and the origin was not separately reached, `'origin'` when the scan
+ * reached the origin directly (in which case a transport finding really is the
+ * origin's to fix), and `null` when the evidence does not say either way.
+ *
+ * The `origin` verdict deliberately wins: a scan that bypassed the CDN and
+ * tested the origin is the only case where "Weak Cipher Suites" is actionable
+ * advice, so a lingering banner match must not be allowed to suppress it.
+ */
+function scanInfrastructureFrom(rows) {
+  let edge = false
+  let originExposed = false
+  for (const r of rows) {
+    if (edge && originExposed) break
+    const title = String(r && r.title ? r.title : '')
+    let blob = ''
+    if (r && r.evidence) {
+      blob = typeof r.evidence === 'string' ? r.evidence : JSON.stringify(r.evidence) || ''
+    }
+    const hay = `${title} ${blob}`
+    if (!edge && EDGE_VENDOR_RE.test(hay)) edge = true
+    // The vendor test reads the evidence blob because the edge advertises itself
+    // in header values there. The origin test must not: Cloudflare's own
+    // `origin-cf-ray`, `origin-ip` and `origin-agent-cluster` header names sit in
+    // that same blob and mean the request went *through* the edge, so reading
+    // them here flipped proxied scans to `origin` and suppressed the label on
+    // exactly the targets it exists for. Origin exposure is a claim, and a claim
+    // is what a title states — no CDN header name ever appears in one.
+    if (!originExposed && EDGE_ORIGIN_EXPOSED_RE.test(title)) originExposed = true
+  }
+  if (!edge) return null
+  return originExposed ? 'origin' : 'edge'
+}
+
+/**
+ * Tag transport findings whose subject is the edge rather than the origin. The
+ * label is written into the title because the title is what the severity
+ * classifier matches on and what the reader reads, so one edit keeps the badge,
+ * the card and the appendix telling the same story.
+ */
+function labelEdgeTransport(rows) {
+  if (!Array.isArray(rows) || !rows.length) return rows
+  if (scanInfrastructureFrom(rows) !== 'edge') return rows
+  for (const r of rows) {
+    const title = String(r && r.title ? r.title : '')
+    if (!title || !EDGE_TRANSPORT_TITLE_RE.test(title)) continue
+    if (title.includes(EDGE_LABEL)) continue
+    r.title = `${title.trim()}${EDGE_LABEL}`
+  }
+  return rows
+}
+
 /** Normalize stored finding row into view model. */
 function toView(f, scanTarget) {
   let evidence = f.evidence
@@ -2176,10 +2331,7 @@ function toView(f, scanTarget) {
     cvssFindingClass: cvssEvaluation.findingClass,
     cvssSource: cvssEvaluation.source,
     cvssVectorSource: cvssEvaluation.vectorSource,
-    cvssReconciled: cvssEvaluation.reconciled,
     auditNote: cvssEvaluation.auditNote || null,
-    declaredSeverity: f.severity ? String(f.severity).toLowerCase() : null,
-    declaredCvss: cvssEvaluation.declaredScore,
     cweId: f.cwe_id,
     cveId: f.cve_id,
     owaspCategory: f.owasp_category,
@@ -2335,6 +2487,48 @@ function drawSectionTitle(doc, titleText, subtitle = null) {
 
 // == Section Renderers ========================================================
 
+/** Explains, in one sentence, why an untested class is not a clean class. */
+const COVERAGE_GAP_EXPLANATION =
+  'An untested vulnerability class is not evidence of absence. Treat every class listed above as unverified until it has been actively exercised.'
+
+/**
+ * Draws the scan-completeness banner and returns the y position below it.
+ * Shared by both cover renderers so an incomplete assessment can never be
+ * presented as a clean one.
+ */
+function drawCoverageBanner(doc, coverage, x, w, y) {
+  if (!coverage || !(coverage.gaps || []).length) return y
+  const degraded = Boolean(coverage.degraded)
+  const color = degraded ? SEV_COLORS.incomplete : SEV_COLORS.medium
+  const summary = sanitizePdfText(coverage.summary || '')
+  const classLine = (coverage.untestedClasses || [])
+    .map(c => `${c.label}${c.critical ? ' (CRITICAL)' : ''} - not exercised; requires ${(c.missingTools || []).join(' or ') || 'unavailable tooling'}`)
+    .join('\n')
+  const tools = (coverage.missingTools || []).join(', ')
+
+  doc.fontSize(9).font('Helvetica')
+  const summaryH = summary ? doc.heightOfString(summary, { width: w - 32 }) : 0
+  const classH = classLine ? doc.heightOfString(classLine, { width: w - 32 }) : 0
+  const explH = doc.heightOfString(COVERAGE_GAP_EXPLANATION, { width: w - 32 })
+  const h = 32 + summaryH + (summary ? 6 : 0) + classH + 6 + explH + 12
+
+  doc.roundedRect(x, y, w, h, 4).fillAndStroke(color.light, color.border)
+  drawRoundedBadge(doc, degraded ? 'INCOMPLETE ASSESSMENT' : 'REDUCED COVERAGE', x + 16, y + 11, color.bg, '#FFFFFF', null, 3)
+  if (tools) {
+    doc.fontSize(8.5).font('Helvetica').fillColor(BRAND.textMuted)
+      .text(`Missing tooling: ${tools}`, x + 16, y + 12, { width: w - 32, align: 'right' })
+  }
+
+  let cursor = y + 32
+  doc.fillColor(BRAND.textDark)
+  if (summary) { doc.fontSize(9).text(summary, x + 16, cursor, { width: w - 32 }); cursor += summaryH + 6 }
+  if (classLine) { doc.fontSize(9).text(classLine, x + 16, cursor, { width: w - 32 }); cursor += classH + 6 }
+  doc.fontSize(8.5).font('Helvetica-Oblique').fillColor(color.border)
+    .text(COVERAGE_GAP_EXPLANATION, x + 16, cursor, { width: w - 32 })
+
+  return y + h + 10
+}
+
 function renderCoverPage(doc, { reportTitle, scans, project, vulnerabilities, isWhitebox }) {
   const w = doc.page.width - doc.page.margins.left - doc.page.margins.right
   const cx = doc.page.margins.left + w / 2
@@ -2352,11 +2546,18 @@ function renderCoverPage(doc, { reportTitle, scans, project, vulnerabilities, is
   doc.fontSize(11).font('Helvetica').fillColor('#38BDF8')
     .text('SentinelAI - AI-Powered Autonomous Pentest Platform', 0, 95, { width: doc.page.width, align: 'center' })
 
-  doc.y = 170
+  // Leave room below for the scan-completeness banner: a report built without an
+  // active-injection engine must not read as a clean bill of health.
+  doc.y = 160
 
   // Overall Risk Rating Box
-  const rating = riskRating(vulnerabilities)
-  const ratingColor = SEV_COLORS[rating.toLowerCase()] || SEV_COLORS.info
+  const ratingY = doc.y
+  const scanCoverage = (scans || []).map(s => coverageView(s?.blackbox_meta)).sort(compareCoverage)[0] || null
+  const coverageDegraded = Boolean(scanCoverage && scanCoverage.degraded)
+  const rating = coverageDegraded ? 'INCOMPLETE' : riskRating(vulnerabilities)
+  const ratingColor = coverageDegraded
+    ? SEV_COLORS.incomplete
+    : (SEV_COLORS[rating.toLowerCase()] || SEV_COLORS.info)
   const boxW = 320
   const boxX = cx - boxW / 2
   
@@ -2366,13 +2567,41 @@ function renderCoverPage(doc, { reportTitle, scans, project, vulnerabilities, is
   doc.fontSize(20).font('Helvetica-Bold').fillColor(ratingColor.bg)
     .text(rating, boxX, doc.y + 28, { width: boxW, align: 'center' })
   doc.fontSize(9).font('Helvetica').fillColor(BRAND.textMuted)
-    .text(`${vulnerabilities.length} total vulnerabilities identified`, boxX, doc.y + 54, { width: boxW, align: 'center' })
+    .text(
+      coverageDegraded
+        ? `${vulnerabilities.length} finding(s) confirmed - coverage incomplete`
+        : `${vulnerabilities.length} total vulnerabilities identified`,
+      boxX, doc.y + 54, { width: boxW, align: 'center' })
 
-  doc.y += 95
+  // The posture sentence must be derived from the SAME inputs as the badge above
+  // it. Deriving it separately is what let a fully-covered scan that found
+  // nothing render "HEALTHY POSTURE" here while the badge said LOW, and — worse —
+  // would let a degraded scan announce a healthy posture beside its own
+  // "INCOMPLETE" badge. resolvePosture() takes coverage as an override, so one
+  // call keeps the two in lockstep.
+  const posture = resolvePosture({
+    todayCount: rating === 'CRITICAL' ? 1 : 0,
+    weekCount: rating === 'HIGH' ? 1 : 0,
+    laterCount: rating === 'MEDIUM' ? 1 : 0,
+    vulnerabilityCount: vulnerabilities.length,
+    coverage: scanCoverage,
+  })
+  doc.fontSize(11).font('Helvetica-Bold').fillColor(posture.color.bg)
+    .text(sanitizePdfText(posture.title), doc.page.margins.left, ratingY + 82, { width: w, align: 'center' })
+  doc.fontSize(8.5).font('Helvetica').fillColor(BRAND.textMuted)
+    .text(sanitizePdfText(posture.description), doc.page.margins.left, ratingY + 98, { width: w, align: 'center' })
 
-  // Metadata Card
+  // Anchor off the rating box rather than off doc.y: the rating block writes at
+  // absolute coordinates, so a relative advance would drift with text height.
+  doc.y = ratingY + 118
+
   const cardX = doc.page.margins.left
   const cardW = w
+  // Scan-completeness banner sits between the rating and the metadata card, so a
+  // reader meets "coverage was incomplete" before they meet the finding counts.
+  doc.y = drawCoverageBanner(doc, scanCoverage, cardX, w, doc.y)
+
+  // Metadata Card
   const cardH = 155
   const cardY = doc.y
   doc.rect(cardX, cardY, cardW, cardH).fillAndStroke(BRAND.cardBg, BRAND.cardBorder)
@@ -3119,10 +3348,37 @@ function formatLocationSample(locations, max) {
   return ` (e.g. ${shown.join(', ')}${rest > 0 ? ` +${rest} more` : ''})`
 }
 
+/**
+ * A reproduction hint may be pasted into a shell, so only a value that names a
+ * real host is allowed to become the command target.
+ *
+ * `locations` is built from whichever string looked most specific, which for a
+ * version finding is a product version: "X-Powered-By header exposed:
+ * Express/4.21.2" yields the location `/4.21.2`, and interpolation produced the
+ * unrunnable `curl -sI /4.21.2`. A bare path is only meaningful relative to a
+ * host, and the host is not recoverable here, so such a value is replaced with
+ * an instruction to substitute the target.
+ */
+function safeReproTarget(v) {
+  const candidates = [
+    v && v.locations && v.locations[0],
+    v && v.evidence && (v.evidence.url || v.evidence.path),
+    v && v.asset,
+  ]
+  for (const c of candidates) {
+    const s = String(c == null ? '' : c).trim()
+    if (/^https?:\/\/\S+$/i.test(s)) return s
+    // A bare host (optionally with :port) is still routable knowledge; a bare
+    // path never is, and a version-looking fragment (`/4.21.2`) least of all.
+    if (/^[a-z0-9][a-z0-9.-]*\.[a-z]{2,}(?::\d{1,5})?(?:\/\S*)?$/i.test(s)) return s
+  }
+  return 'the target'
+}
+
 /** Short, type-specific reproduction hint so a lead is actionable, not vague. */
 function describeReproduction(v) {
   const t = `${v.title || ''} ${v.category || ''}`.toLowerCase()
-  const where = (v.locations && v.locations[0]) || (v.evidence && (v.evidence.url || v.evidence.path)) || v.asset || 'the affected endpoint'
+  const where = safeReproTarget(v)
   if (/sql/.test(t)) return `replay ${where} with a sleep-based payload and compare response time against a benign baseline.`
   if (/xss|cross.site/.test(t)) return `submit ${'<svg/onload=alert(1)>'} to the reported parameter and grep the response for unencoded reflection.`
   if (/cors/.test(t)) return `re-request ${where} with 'Origin: https://evil.example' and check for Access-Control-Allow-Credentials: true.`
@@ -3916,7 +4172,7 @@ export async function generateReport(scanId, minSeverity = 'info', statusFilter 
 
     const project = scan.project_id ? db.get(`SELECT * FROM projects WHERE id = ?`, scan.project_id) : null
 
-    const vulnerabilities = filteredRows.map(r => toView(r, scan.target))
+    const vulnerabilities = labelEdgeTransport(filteredRows).map(r => toView(r, scan.target))
     // Classify every claim before it reaches a page: artifact-backed confirmations
     // are separated from unproven leads and explicit rejections, then repeated
     // root causes are collapsed so the report does not print one header warning
@@ -4126,7 +4382,7 @@ export async function generateProjectReport(projectId) {
       owasp_category ASC,
       CASE severity WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 ELSE 4 END`, s.id)
     s._findingCount = rows.length
-    vulnerabilities.push(...rows.map(r => toView(r, s.target)))
+    vulnerabilities.push(...labelEdgeTransport(rows).map(r => toView(r, s.target)))
   }
   const isWhitebox = scans.some(s => s.mode === 'whitebox' || s.target_type === 'code')
 
@@ -4423,7 +4679,12 @@ function buildSimplifiedActionItem(v, index, detectedTech = []) {
       (title.match(/\/[a-z0-9_.~%-]+(?:\/[a-z0-9_.~%-]+)*/gi) || []).map(s => s.toLowerCase()),
     )
     const others = (Array.isArray(v.locations) ? v.locations : [])
-      .filter(loc => /^[/.]/.test(String(loc)) && !titlePaths.has(String(loc).toLowerCase()))
+      .filter(loc => /^[/.]/.test(String(loc)))
+      // A version fragment is not a location. Locations are harvested from the
+      // title when no structured field names one, so "Express/4.21.2" produced
+      // `/4.21.2` and every merged card listed it as a second endpoint.
+      .filter(loc => !/^\/\d+(?:\.\d+)+$/.test(String(loc)))
+      .filter(loc => !titlePaths.has(String(loc).toLowerCase()))
     const sample = others.slice(0, 3)
     const rest = Math.max(0, merged - titlePaths.size - sample.length)
     const parts = []
@@ -4592,39 +4853,29 @@ async function renderSimplifiedPdf({ file, reportTitle, scans = [], project = nu
 
     // Overall Security Health & Posture Box
     const postureY = doc.y
-    let postureColor = SEV_COLORS.medium
-    let postureTitle = 'MODERATE RISK - SCHEDULED HARDENING REQUIRED'
-    let postureDesc = 'No emergency critical issues detected today. Scheduled remediation recommended for configuration and defense hardening.'
-
-    if (todayCount > 0) {
-      postureColor = SEV_COLORS.critical
-      postureTitle = 'CRITICAL ATTENTION REQUIRED - IMMEDIATE ACTION'
-      postureDesc = `${todayCount} critical issue(s) require immediate same-day remediation to prevent potential compromise or breach.`
-    } else if (weekCount > 0) {
-      postureColor = SEV_COLORS.high
-      postureTitle = 'ELEVATED RISK - ACTION REQUIRED THIS WEEK'
-      postureDesc = `${weekCount} high-priority issue(s) identified. Remediate within 7 days to eliminate high-risk exposure pathways.`
-    } else if (laterCount > 0) {
-      postureColor = SEV_COLORS.medium
-      postureTitle = 'MODERATE RISK - SCHEDULED HARDENING REQUIRED'
-      postureDesc = `Perimeter is stable. ${laterCount} medium-priority hardening item(s) should be scheduled during routine maintenance.`
-    } else if (vulnerabilities.length > 0) {
-      postureColor = SEV_COLORS.low
-      postureTitle = 'GOOD POSTURE - LOW-PRIORITY HARDENING OPPORTUNITIES'
-      postureDesc = 'No critical, high, or medium threats detected. General security hygiene opportunities identified.'
-    } else {
-      postureColor = SEV_COLORS.success
-      postureTitle = 'HEALTHY POSTURE - NO ACTIONABLE THREATS IDENTIFIED'
-      postureDesc = 'All automated and AI security test suites passed. No vulnerabilities were detected on tested endpoints.'
-    }
+    const scanCoverage = (scans || []).map(s => coverageView(s?.blackbox_meta)).sort(compareCoverage)[0] || null
+    const coverageDegraded = Boolean(scanCoverage && scanCoverage.degraded)
+    // A scan whose toolchain was incomplete can never claim a healthy posture:
+    // an absent finding is indistinguishable from an untested one.
+    const posture = resolvePosture({ todayCount, weekCount, laterCount, vulnerabilityCount: vulnerabilities.length, coverage: scanCoverage })
+    const postureColor = posture.color
+    const postureTitle = posture.title
+    const postureDesc = posture.description
 
     doc.roundedRect(leftX, postureY, w, 70, 4).fillAndStroke(postureColor.light, postureColor.border)
     drawRoundedBadge(doc, 'OVERALL POSTURE', leftX + 16, postureY + 12, postureColor.bg, '#FFFFFF', null, 3)
     doc.fontSize(12).font('Helvetica-Bold').fillColor(postureColor.border).text(postureTitle, leftX + 110, postureY + 12, { width: w - 126 })
-    doc.fontSize(9.5).font('Helvetica').fillColor(BRAND.textDark).text(postureDesc, leftX + 16, postureY + 34, { width: w - 32 })
+    doc.fontSize(9.5).font('Helvetica').fillColor(BRAND.textDark).text(postureDesc, leftX + 16, postureY + 34, { width: w - 32, height: 32, ellipsis: true })
+
+    // Scan completeness banner — names exactly which vulnerability classes were
+    // never tested and which binary was missing, so a reader cannot mistake an
+    // untested class for a clean one.
+    // Scan completeness banner — names exactly which vulnerability classes were
+    // never tested and which binary was missing, so a reader cannot mistake an
+    // untested class for a clean one.
+    doc.y = drawCoverageBanner(doc, scanCoverage, leftX, w, postureY + 85)
 
     // Assessment Scope & Metadata Card
-    doc.y = postureY + 85
     const metaY = doc.y
     const metaH = 135
     doc.roundedRect(leftX, metaY, w, metaH, 4).fillAndStroke(BRAND.cardBg, BRAND.cardBorder)
@@ -5130,10 +5381,13 @@ async function renderSimplifiedPdf({ file, reportTitle, scans = [], project = nu
         // below the prescription stacks three lines (severity/confidence, the
         // CVSS vector, and — when a stored rating was overruled — the audit note),
         // so its height must be measured rather than assumed.
+        // One reconciliation line, in plain language. The raw declared-vs-derived
+        // arithmetic is logged by buildAuditNote and never published, so the card
+        // can only ever show the single score the badge already carries.
         const auditNote = item.auditNote ? sanitizePdfText(item.auditNote) : null
         const prescH = Math.max(14, doc.fontSize(8.5).font('Helvetica').heightOfString(item.prescription || 'N/A', { width: w - 48, lineGap: 2.5 }))
         const auditNoteH = auditNote
-          ? doc.fontSize(6.5).font('Helvetica-Bold').heightOfString(`Note: ${auditNote}`, { width: w - 48, lineGap: 1 })
+          ? doc.fontSize(6.5).font('Helvetica').heightOfString(`Why this changed: ${auditNote}`, { width: w - 48, lineGap: 1 })
           : 0
         const metaTop = 22 + prescH + 8
         const prescBoxH = metaTop + 18 + (auditNoteH ? auditNoteH + 3 : 0) + 8
@@ -5222,9 +5476,10 @@ async function renderSimplifiedPdf({ file, reportTitle, scans = [], project = nu
         doc.fontSize(6.5).font('Helvetica').fillColor('#94A3B8')
           .text(sanitizePdfText(vectorLine), leftX + 24, contentY + metaTop + 11, { width: w - 48, ellipsis: true })
         if (auditNote) {
-          // Never silently disagree with the stored rating: print the correction.
-          doc.fontSize(6.5).font('Helvetica-Bold').fillColor('#B45309')
-            .text(`Note: ${auditNote}`, leftX + 24, contentY + metaTop + 22, { width: w - 48, lineGap: 1, height: auditNoteH + 1 })
+          // Reclassification is disclosed in plain language. No second score and
+          // no vector is printed here, so nothing can contradict the badge above.
+          doc.fontSize(6.5).font('Helvetica').fillColor('#94A3B8')
+            .text(`Why this changed: ${auditNote}`, leftX + 24, contentY + metaTop + 22, { width: w - 48, lineGap: 1, height: auditNoteH + 1 })
         }
         contentY += prescBoxH + 10
         // Row 4: Scan context. Only drawn when there is no panel to carry it —
@@ -5490,31 +5745,33 @@ async function renderSimplifiedPdf({ file, reportTitle, scans = [], project = nu
       doc.rect(leftX, checkY, w, headerRowH).fill('#F1F5F9')
 
       doc.fontSize(7.5).font('Helvetica-Bold').fillColor(BRAND.textMuted)
-      doc.text('#', leftX + 10, checkY + 7, { width: 20 })
-      doc.text('ACTION ITEM / DIRECTIVE', leftX + 35, checkY + 7, { width: 230 })
-      doc.text('PRIORITY', leftX + 270, checkY + 7, { width: 70 })
-      doc.text('ASSIGNED TO', leftX + 345, checkY + 7, { width: 85 })
-      doc.text('COMPLETED', leftX + 435, checkY + 7, { width: 75 })
+      doc.text('#', leftX + 10, checkY + 7, { width: 18 })
+      doc.text('ACTION ITEM / DIRECTIVE', leftX + 32, checkY + 7, { width: 228 })
+      doc.text('PRIORITY', leftX + 266, checkY + 7, { width: 60 })
+      doc.text('ASSIGNED TO', leftX + 334, checkY + 7, { width: 82 })
+      doc.text('VERIFICATION', leftX + 424, checkY + 7, { width: 66 })
 
       for (let c = 0; c < pageRows.length; c++) {
         const rowY = checkY + headerRowH + c * checkRowH
         const itm = pageRows[c]
         doc.strokeColor('#F1F5F9').lineWidth(0.8).moveTo(leftX, rowY).lineTo(rightX, rowY).stroke()
 
-        doc.fontSize(8).font('Helvetica-Bold').fillColor(BRAND.primary).text(String(rowNumber + 1), leftX + 10, rowY + 6, { width: 20 })
+        doc.fontSize(8).font('Helvetica-Bold').fillColor(BRAND.primary).text(String(rowNumber + 1), leftX + 10, rowY + 6, { width: 18 })
         doc.fontSize(8).font('Helvetica').fillColor(BRAND.textDark).text(
-          fitText(doc, itm.title, 230, 'Helvetica', 8),
-          leftX + 35, rowY + 6, { width: 230 },
+          fitText(doc, itm.title, 228, 'Helvetica', 8),
+          leftX + 32, rowY + 6, { width: 228 },
         )
 
         const sevLabel = String(itm.severity || 'medium').toUpperCase()
         const rowSevColor = SEV_COLORS[itm?.severity] || SEV_COLORS.medium
-        drawRoundedBadge(doc, sevLabel, leftX + 270, rowY + 4, rowSevColor.bg, '#FFFFFF', null, 2)
+        drawRoundedBadge(doc, sevLabel, leftX + 266, rowY + 4, rowSevColor.bg, '#FFFFFF', null, 2)
 
-        // Signature lines
-        doc.strokeColor('#CBD5E1').lineWidth(0.5).moveTo(leftX + 345, rowY + 16).lineTo(leftX + 420, rowY + 16).stroke()
-        doc.rect(leftX + 445, rowY + 5, 10, 10).strokeColor('#94A3B8').lineWidth(1).stroke()
-        doc.fontSize(7.5).font('Helvetica').fillColor(BRAND.textMuted).text('Verified', leftX + 460, rowY + 6)
+        // ASSIGNED TO is deliberately left as a blank signature rule: the report
+        // cannot know who owns the work. VERIFICATION carries the sign-off box and
+        // its own state, so an unverified item is never rendered as done.
+        doc.strokeColor('#CBD5E1').lineWidth(0.5).moveTo(leftX + 334, rowY + 16).lineTo(leftX + 408, rowY + 16).stroke()
+        doc.rect(leftX + 424, rowY + 5, 10, 10).strokeColor('#94A3B8').lineWidth(1).stroke()
+        doc.fontSize(7.5).font('Helvetica').fillColor(BRAND.textMuted).text('Pending', leftX + 440, rowY + 6, { width: 48 })
         rowNumber += 1
       }
 

@@ -2,6 +2,7 @@ import crypto, { randomUUID } from 'node:crypto'
 import net from 'node:net'
 import { payloadsRag } from './integrations/index.js'
 import { runNativeTool, cancelNativeTools, previewNativeCommand, nativeToolsStatus, NATIVE_TOOLS } from './integrations/native-tools.js'
+import { buildCoverage, coverageFromMeta } from './integrations/coverage.js'
 import { aiEngine } from './ai/ai-engine.js'
 import { enrichWithOwasp } from './owasp.js'
 import { getScriptsForTrigger, runCustomScript } from './custom-scripts.js'
@@ -430,6 +431,11 @@ export class UnifiedPipeline {
     this._urlPool = new Map()
     // scanId -> Array of harvested login forms {url, userField, passField, extra}
     this._loginForms = new Map()
+    // scanId -> scan-coverage descriptor derived from the tools present on
+    // this host. A scan whose critical classes have no tool available is
+    // INCOMPLETE, and the report has to say so rather than print a headline
+    // posture over untested ground. See integrations/coverage.js.
+    this._coverage = new Map()
     // Recently finished scanIds. Without this, a pause/stop call arriving after
     // a scan completed would lazily re-create a `control` entry that nothing
     // ever deletes — one leaked entry per post-finish API call. Bounded below.
@@ -520,6 +526,7 @@ export class UnifiedPipeline {
     this._deferredFinish?.delete(scanId)
     this._loginForms?.delete(scanId)
     this._blackboxMeta?.delete(scanId)
+    this._coverage?.delete(scanId)
     this._catchAllBaselines?.delete(scanId)
   }
 
@@ -1093,6 +1100,14 @@ export class UnifiedPipeline {
       : evidenceTier(f, targetType)
     f.evidence = { ...(f.evidence || {}), validationTier: tier }
 
+    // Publish the capture verdict *before* scoring. `findCaptures` is the only
+    // layer that can tell a real artifact from a title, and the semantic
+    // classifier runs below; without this stamp a class gated on
+    // `requiresConfirmed` (e.g. credentialed CORS) could never fire, because
+    // `verifyStatus` is not attached until the report contract builds its view
+    // objects — long after the score is already frozen into the finding row.
+    f.captureConfirmed = capturedNow
+
     // CVSS v4.0 score is DERIVED from the vector, never accepted from upstream.
     // Trusting an inbound `f.cvss` let a tool's guess (10.0 on a log file) become
     // permanent, and `Math.max()` in the merge below then made it unremovable —
@@ -1282,6 +1297,29 @@ export class UnifiedPipeline {
   }
 
   // ── BLACKBOX ───────────────────────────────────────────────────────────────
+  /**
+   * Merge a coverage descriptor into the scan row's `blackbox_meta` blob.
+   *
+   * Merge-only: `retryFailedBlackbox` also reads and rewrites this column, so a
+   * blind write here would drop whatever it had already recorded. Read-back and
+   * Object.assign keeps both writers additive. Non-fatal by design — a scan must
+   * not fail because it could not record its own scope.
+   */
+  _persistCoverage(scanId, coverage) {
+    if (!coverage) return
+    try {
+      const row = db.get('SELECT blackbox_meta FROM scans WHERE id = ?', scanId)
+      let meta = { tools: [], subdomains: [], urls: [], totalUrls: 0 }
+      if (row?.blackbox_meta) {
+        try { meta = Object.assign(meta, JSON.parse(row.blackbox_meta)) } catch { /* corrupt blob — rebuild */ }
+      }
+      meta.coverage = coverage
+      db.run(`UPDATE scans SET blackbox_meta = ? WHERE id = ?`, JSON.stringify(meta), scanId)
+    } catch (e) {
+      this.log(scanId, 'warn', `Coverage descriptor not persisted: ${e.message}`)
+    }
+  }
+
   async runBlackbox(scan, { modules = [], objective = 'comprehensive', maxTools = 6, verify = true, depth = 'standard', owaspCategories = [] } = {}) {
     const scanId = scan.id
     const target = scan.target
@@ -1305,6 +1343,22 @@ export class UnifiedPipeline {
     const engine = await nativeToolsStatus()
     const available = Object.values(engine).filter(Boolean).length
     this.log(scanId, 'info', `⚡ Native Scanner Engine — ${available}/${Object.keys(engine).length} tools available on this host`)
+
+    // A scan can only find what its toolchain can reach. Record which
+    // vulnerability classes are unreachable on this host so the report can
+    // state its own scope instead of printing a confident posture over an
+    // untested surface. Persisted on the scan row via `_persistBlackboxMeta`.
+    this._coverage.set(scanId, buildCoverage(engine, { modules }))
+    const cov = this._coverage.get(scanId)
+    if (cov.degraded) {
+      for (const cls of cov.untestedClasses.filter(c => c.critical)) {
+        this.log(scanId, 'warn', `⚠ Coverage gap — ${cls.label} will NOT be tested: ${cls.missingTools.join('/')} unavailable on this host`)
+      }
+      this.log(scanId, 'warn', `⚠ This scan is INCOMPLETE: ${cov.criticalGaps.length} critical class(es) cannot be exercised. The final report will be marked as such.`)
+    } else if (cov.gaps.length) {
+      this.log(scanId, 'info', `ℹ Reduced coverage — ${cov.gaps.length} non-critical class(es) unavailable: ${cov.gaps.join(', ')}`)
+    }
+    this._persistCoverage(scanId, cov)
 
     // Always audit HTTP security headers + sensitive paths first (fast, high-signal).
     await this.auditHttpBaseline(scanId, scan.target, { verify, targetType: scan.target_type })
@@ -2627,7 +2681,19 @@ export class UnifiedPipeline {
             description: `The target ${targetUrl} is missing ${missing.length} recommended HTTP security headers: ${missing.join(', ')}. This weakens defenses against clickjacking, MIME-sniffing, and XSS.`,
             remediation: 'Configure the web server to send: Strict-Transport-Security, Content-Security-Policy, X-Frame-Options, X-Content-Type-Options, Referrer-Policy, Permissions-Policy.',
             module: 'http-headers',
-            evidence: { url: targetUrl, missing, present: Object.keys(headers) },
+            // `missing`/`present` are derived lists, not a capture, so the report
+            // contract could not classify this card as confirmed and filed it under
+            // unverified leads — even though six absent headers were observed
+            // directly. Persist the response line and the real header block under
+            // keys the contract already trusts.
+            evidence: {
+              url: targetUrl,
+              status: res.status,
+              headers: Object.entries(headers).map(([k, v]) => `${k}: ${v}`).join('\n'),
+              responseHeaders: Object.fromEntries(Object.entries(headers)),
+              missing,
+              present: Object.keys(headers),
+            },
           }, { verify })
         }
         if (headers['server']) {
@@ -3440,7 +3506,12 @@ export class UnifiedPipeline {
       db.run(`UPDATE scans SET status = ?, risk_score = ?, progress = 100, finished_at = ? WHERE id = ?`,
         status, score, new Date().toISOString(), scanId)
       this.progress(scanId, 100, status)
-      this.emit(scanId, 'scan:done', { scanId, status, scan: scanRow, counts, riskScore: score })
+      // `coverage` travels with the terminal event so a caller can warn about an
+      // untested vulnerability class before the PDF is ever generated. Read from
+      // live state first (runBlackbox set it), falling back to the persisted blob
+      // for the retry paths that never call runBlackbox.
+      const coverage = this._coverage?.get(scanId) || coverageFromMeta(scanRow?.blackbox_meta)
+      this.emit(scanId, 'scan:done', { scanId, status, scan: scanRow, counts, riskScore: score, coverage })
     }
     // Release per-scan runtime state so Maps don't grow unbounded.
     // releaseScanState covers _loginForms/_blackboxMeta too, which finish()
