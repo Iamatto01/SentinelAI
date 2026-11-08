@@ -13,6 +13,39 @@ const TTL_MS = 24 * 60 * 60 * 1000
 const NEGATIVE_TTL_MS = 15 * 60 * 1000
 
 /**
+ * Normalise Moodle date-based internal build stamps (e.g. 2022112819.04)
+ * into semantic release numbers (e.g. 4.1.19 or 4.1) so NIST NVD CPE lookup matches.
+ */
+export function normalizeMoodleVersion(verStr) {
+  if (!verStr) return verStr
+  const s = String(verStr).trim()
+  const m = s.match(/^(\d{8})(\d{2})?(?:\.(\d+))?/)
+  if (m) {
+    const datePart = m[1]
+    const point = m[2] !== undefined ? parseInt(m[2], 10) : null
+    const map = {
+      '20241007': '4.5',
+      '20240422': '4.4',
+      '20231009': '4.3',
+      '20230424': '4.2',
+      '20221128': '4.1',
+      '20220419': '4.0',
+      '20210517': '3.11',
+      '20201109': '3.10',
+      '20200615': '3.9',
+      '20191118': '3.8',
+      '20190520': '3.7',
+      '20181203': '3.6',
+      '20180517': '3.5',
+    }
+    if (map[datePart]) {
+      return point !== null ? `${map[datePart]}.${point}` : map[datePart]
+    }
+  }
+  return s
+}
+
+/**
  * Version "coverage": a truncated fingerprint (`1.18`) matches a CPE range
  * either as that exact build or as the whole branch (`1.18.0`, `1.18.7`).
  * NVD ranges are usually written for the full three-component release
@@ -290,7 +323,10 @@ function cpeTargets(product) {
  * CPE applicability and installed version must be confirmed before reporting. */
 export async function findVersionVulnerabilities(product, version) {
   const name = String(product || '').trim()
-  const release = String(version || '').trim()
+  let release = String(version || '').trim()
+  if (name.toLowerCase() === 'moodle') {
+    release = normalizeMoodleVersion(release)
+  }
   if (!name || !release || name.length > 100 || release.length > 80) return { error: 'product and version are required' }
   const key = `cpev:${name.toLowerCase()}:${release.toLowerCase()}`
   const cached = db.get(`SELECT data, fetched_at FROM cve_cache WHERE id = ?`, key)

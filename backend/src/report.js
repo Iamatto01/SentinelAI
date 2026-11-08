@@ -1482,7 +1482,7 @@ export function buildTechStackFingerprint(findings = []) {
 
   const ordered = [...withVersion, ...versionless].slice(0, 24)
 
-  return { rows: ordered, detectedCount: ordered.length, versionedCount: withVersion.length, ...summarizeTechStack(ordered) }
+  return { rows: ordered, detectedCount: ordered.length, versionedCount: withVersion.length, hasData: ordered.length > 0, ...summarizeTechStack(ordered) }
 }
 
 /**
@@ -3838,6 +3838,7 @@ async function withAiEnrichment(deadlineMs, tasks) {
  */
 async function refreshUncorrelatedComponents(techStack, deadlineMs) {
   if (!techStack?.rows?.length) return
+  techStack.hasData = techStack.rows.length > 0
   const pending = techStack.rows.filter(r => r.lookupStatus === 'not-performed' && r.version && !r.versionUnverified)
   if (!pending.length) return
 

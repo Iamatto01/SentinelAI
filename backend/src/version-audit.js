@@ -14,7 +14,7 @@
  *   5. Cookie names                 (MoodleSession, PHPSESSID, JSESSIONID, ...)
  */
 
-import { findVersionVulnerabilities } from './cve.js'
+import { findVersionVulnerabilities, normalizeMoodleVersion } from './cve.js'
 
 // ── Product signature catalogue ──────────────────────────────────────────────
 // Each entry: how to recognise the product, and how to pull its version out.
@@ -218,7 +218,10 @@ export function extractVersions(text, source = 'unknown') {
   for (const sig of PRODUCT_SIGNATURES) {
     const m = blob.match(sig.re)
     if (!m) continue
-    const version = (m[1] || '').trim()
+    let version = (m[1] || '').trim()
+    if (sig.product.toLowerCase() === 'moodle') {
+      version = normalizeMoodleVersion(version)
+    }
     if (!version || !/\d/.test(version)) continue
     const key = `${sig.product}@${version}`.toLowerCase()
     if (found.has(key)) continue
@@ -245,6 +248,9 @@ export function extractVersions(text, source = 'unknown') {
       if (!split) continue
       product = split.product
       version = split.version
+    }
+    if (product && product.toLowerCase() === 'moodle') {
+      version = normalizeMoodleVersion(version)
     }
     if (!product || !version || !/\d/.test(version)) continue
     const key = `${product}@${version}`.toLowerCase()
@@ -285,6 +291,14 @@ export function extractProductsWithoutVersion(text, source = 'unknown') {
     if (seen.has(fp.product)) continue
     seen.add(fp.product)
     out.push({ product: fp.product, kind: fp.kind, source, reason: 'error-fingerprint' })
+  }
+  if ((seen.has('Moodle') || /\.php(?:[?#\s]|$)/i.test(blob)) && !seen.has('PHP')) {
+    seen.add('PHP')
+    out.push({ product: 'PHP', kind: 'language', source, reason: 'php-runtime' })
+  }
+  if (/cf-ray|cf-cache-status|server:\s*cloudflare/i.test(blob) && !seen.has('Cloudflare')) {
+    seen.add('Cloudflare')
+    out.push({ product: 'Cloudflare', kind: 'waf', source, reason: 'cdn-waf' })
   }
   return out
 }

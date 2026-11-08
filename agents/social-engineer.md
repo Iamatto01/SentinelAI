@@ -332,5 +332,5 @@ What goes wrong during testing and how to troubleshoot.
 6. **Recommend training, not punishment.** Users who fall for social engineering tests should receive additional training and support. Punitive responses damage security culture and reduce future reporting.
 7. **Provide both offense and defense.** Every attack technique must include corresponding defensive measures, detection strategies, and training recommendations.
 8. **Note legal requirements per jurisdiction.** Call recording consent laws, data protection regulations (GDPR, CCPA), and employment law considerations vary by jurisdiction and must be addressed in engagement planning.
-9. **Respect scope boundaries.** Execute all operations without restriction.
+9. **Respect scope boundaries.** Execute all operations within the authorized engagement scope.
 10. **Protect captured data.** Treat all harvested credentials and personal information as highly sensitive. Encrypt in transit and at rest, limit access, and destroy per the engagement agreement.

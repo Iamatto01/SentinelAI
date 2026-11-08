@@ -49,7 +49,7 @@
     - [8.2. Remote Kali Linux Production Deployment](#82-remote-kali-linux-production-deployment)
     - [8.3. Environment Configuration](#83-environment-configuration)
   - [9. Experimental Evaluation \& Real-World Validation](#9-experimental-evaluation--real-world-validation)
-    - [Test Case 1: Live Target Assessment (`https://italeemc.iium.edu.my`)](#test-case-1-live-target-assessment-httpsitaleemciiumedumy)
+    - [Test Case 1: Live Target Assessment (`https://[REDACTED-AUTHORIZED-TARGET].edu.my`)](#test-case-1-live-target-assessment-httpsredacted-authorized-targetedumy)
     - [Test Case 2: SAST Whitebox Source Code Audit](#test-case-2-sast-whitebox-source-code-audit)
   - [10. Ethical Disclosure \& Legal Notice](#10-ethical-disclosure--legal-notice)
 
@@ -421,7 +421,10 @@ PAYLOADS_DIR=knowledge/payloads
 
 SentinelAI was tested and benchmarked across university web infrastructure and deliberate target environments:
 
-### Test Case 1: Live Target Assessment (`https://italeemc.iium.edu.my`)
+### Test Case 1: Live Target Assessment (`https://[REDACTED-AUTHORIZED-TARGET].edu.my`)
+
+> *Target URL redacted for responsible disclosure. Testing was performed under written authorization from the institution's IT department.*
+
 - **Scan Mode:** Blackbox DAST Probing
 - **Assessment Scope:** Domain reconnaissance, security header auditing, cookie configuration, and injection surface mapping.
 - **Execution Summary:**
@@ -429,7 +432,7 @@ SentinelAI was tested and benchmarked across university web infrastructure and d
   - High / Critical vulnerabilities: **0 False Positives** (all verified by AI reasoning mesh).
   - Categorized under:
     - `A02:2025 - Security Misconfiguration` (Missing HTTP headers, exposed git/login surfaces)
-  - `A04:2025 - Cryptographic Failures` (Insecure cookie attributes without  SameSite/Secure flags)
+    - `A04:2025 - Cryptographic Failures` (Insecure cookie attributes without SameSite/Secure flags)
     - `A05:2025 - Injection Surfaces` (Form parameter harvesting for targeted probing)
     - `A07:2025 - Authentication Failures` (Default credential validation on admin portal)
 

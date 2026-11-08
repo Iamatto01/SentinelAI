@@ -1895,6 +1895,10 @@ export class UnifiedPipeline {
    * login form and measures whether the target throttles (429), locks out,
    * inserts a CAPTCHA, or slows down. Absence of ANY rate limiting means
    * the login form is brute-forceable at full network speed.
+   *
+   * ⚠️  WARNING: This test sends 10 rapid failed login attempts with zero delay.
+   *    It may trigger WAF rules, IDS alerts, or IP blocking on the target.
+   *    This is expected behavior and should be documented in the engagement scope.
    */
   async _testLoginRateLimit(scanId, target, { verify } = {}) {
     const base = /^https?:\/\//i.test(target) ? target : `https://${target}`
