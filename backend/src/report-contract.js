@@ -184,12 +184,42 @@ export const CAPTURE_EVIDENCE_KEYS = new Set([
   'responseTime', 'redirect', 'server', 'poweredBy', 'xPoweredBy',
 ])
 
+export function safeEvidence(v) {
+  let ev = v?.evidence
+  if (typeof ev === 'string') {
+    try { ev = JSON.parse(ev) } catch { ev = {} }
+  }
+  return ev && typeof ev === 'object' ? ev : {}
+}
+
+/**
+ * A finding that claims a file, admin panel, endpoint, or resource exists or was
+ * exposed is refuted if the captured HTTP response status is 404 (Not Found) or
+ * 410 (Gone). Such findings must never be graded as confirmed or appear on fix
+ * cards — the server explicitly told us the resource does not exist.
+ *
+ * The only exception is when the finding is specifically about detailed error
+ * page leaks or custom 404 disclosure (e.g. stack traces inside a 404 response).
+ */
+export function isStatus404Refutation(v) {
+  const ev = safeEvidence(v)
+  const status = Number(ev.status ?? ev.statusCode ?? ev.httpStatus ?? ev.reverified?.status)
+  if (status !== 404 && status !== 410) return false
+
+  const text = `${v?.title || ''} ${v?.name || ''} ${v?.description || ''}`
+  if (/error\s*page|stack\s*trace|verbose\s*error|404\s*(?:disclosure|leak|banner)/i.test(text)) {
+    return false
+  }
+  return true
+}
+
 /**
  * A capture is a key we recognise AND a value the target produced. Booleans are
  * excluded because a flag records an assertion, never a response.
  */
 export function findCaptures(v) {
-  const ev = v && v.evidence && typeof v.evidence === 'object' ? v.evidence : {}
+  if (isStatus404Refutation(v)) return []
+  const ev = safeEvidence(v)
   const keys = []
   for (const [k, val] of Object.entries(ev)) {
     if (!CAPTURE_EVIDENCE_KEYS.has(k)) continue
@@ -265,6 +295,16 @@ export function extractArtifact(v) {
  */
 export function classifyFinding(v) {
   const artifact = extractArtifact(v)
+  if (isStatus404Refutation(v)) {
+    return {
+      ...v,
+      evidenceFields: artifact.fields,
+      evidenceGrade: 'none',
+      verifyStatus: VERIFY_STATUS.REJECTED,
+      evidenceLocation: artifact.location,
+      captureFields: [],
+    }
+  }
   const tier = String(v.aiEvidenceTier || v.validationTier || '').toLowerCase()
   const conf = normalizeConfidence(v.aiConfidence)
   const captures = findCaptures(v)
@@ -507,7 +547,7 @@ export function aggregateFindings(classified) {
       .replace(/[0-9]+/g, '<n>')
       .replace(/\s+/g, ' ')
       .trim()
-    const key = [v.category || 'uncategorized', v.module || '', normTitle].join('|')
+    const key = [v.category || 'uncategorized', v.module || '', v.verifyStatus || '', normTitle].join('|')
     // The path is the useful location; the bare asset host is not. `asset` is
     // the same host for every row of a scan, so letting it win produced
     // "Observed at 25 locations (e.g. italeemc.iium.edu.my)" — a list of one

@@ -187,9 +187,25 @@ export function parseScriptFindings(stdout, severityFloor = 'info') {
  * which silently killed the whole stage. Passing env is shell-agnostic.
  */
 export async function runCustomScript(script, { target, scanId = 'test', depth = 'standard', baseline = null } = {}) {
+  let cleanTarget = target ?? ''
+  let targetOrigin = ''
+  try {
+    const rawTarget = String(target || '').trim()
+    const targetWithScheme = /^https?:\/\//i.test(rawTarget) ? rawTarget : `https://${rawTarget}`
+    const u = new URL(targetWithScheme)
+    targetOrigin = u.origin
+    // Strip query string and fragment so path-discovery probes ($TARGET/$P)
+    // append paths to the URL pathname, NEVER into ?query=parameter values.
+    cleanTarget = `${u.origin}${u.pathname.replace(/\/+$/, '')}`
+  } catch {
+    cleanTarget = String(target || '').split('?')[0].split('#')[0].replace(/\/+$/, '')
+  }
+
   const invocation = buildInvocation(script.language, script.command)
   const scriptEnv = {
-    TARGET: target ?? '',
+    TARGET: cleanTarget,
+    TARGET_ORIGIN: targetOrigin,
+    TARGET_RAW: target ?? '',
     SCAN_ID: scanId ?? '',
     DEPTH: depth ?? '',
     // ── CATCH-ALL CONTEXT ──

@@ -36,16 +36,16 @@ emit() {
 # --- Core PoC Execution ---
 emit() { printf '%s\n' "$1"; }
 T="$TARGET"
-# SSTI canary: 7*7=49 in multiple template syntaxes
-PAYLOADS="{{7*7}} ${7*7} <%= 7*7 %> {{7*'7'}} #{7*7} {*7*7} {{ 7 * 7 }}"
+# SSTI canary: 777*777=603729 in multiple template syntaxes
+SEP="?"
+if echo "$T" | grep -q "\?"; then SEP="&"; fi
 PARAMS="name template page view render q search title msg message content"
 for P in $PARAMS; do
-  for PL in "{{7*7}}" "\49" "<%= 7*7 %>"; do
-    RESP=$(curl -s --max-time 8 "$T?$P=$(echo $PL | sed 's/{/%7B/g; s/}/%7D/g')" 2>/dev/null | head -c 5000)
-    if echo "$RESP" | grep -q "49"; then
-      # verify it's not just coincidence — check the payload isn't reflected as-is
+  for PL in "{{777*777}}" "${777*777}" "<%= 777*777 %>" "#{777*777}"; do
+    RESP=$(curl -s --max-time 8 "$T${SEP}$P=$(echo $PL | sed 's/{/%7B/g; s/}/%7D/g')" 2>/dev/null | head -c 5000)
+    if echo "$RESP" | grep -q "603729"; then
       if ! echo "$RESP" | grep -q "$PL"; then
-        emit "{\"title\":\"SSTI detected: ?$P= parameter\",\"severity\":\"critical\",\"description\":\"Template expression evaluates at parameter ?$P= — 7*7 rendered as 49. Remote Code Execution likely possible.\",\"remediation\":\"Never pass user input directly to template engines. Use template context variables instead.\",\"cweId\":\"CWE-1336\",\"owaspCategory\":\"A03:2025-Injection\"}"
+        emit "{\"title\":\"SSTI detected: ?$P= parameter\",\"severity\":\"critical\",\"description\":\"Template expression evaluates at parameter ?$P= — 777*777 rendered as 603729. Remote Code Execution likely possible.\",\"remediation\":\"Never pass user input directly to template engines. Use template context variables instead.\",\"cweId\":\"CWE-1336\",\"owaspCategory\":\"A03:2025-Injection\"}"
       fi
     fi
   done

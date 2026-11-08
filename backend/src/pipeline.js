@@ -394,9 +394,16 @@ export function ensureScheme(url) {
 }
 
 export function joinUrl(base, p) {
-  const b = ensureScheme(base).replace(/\/+$/, '')
-  const cleanPath = (p || '').replace(/^\/+/, '')
-  return `${b}/${cleanPath}`
+  try {
+    const raw = ensureScheme(base)
+    const url = new URL(raw)
+    const cleanPath = (p || '').replace(/^\/+/, '')
+    return new URL(p && p.startsWith('/') ? p : `${url.pathname.replace(/\/+$/, '')}/${cleanPath}`, url.origin).href
+  } catch {
+    const b = ensureScheme(base).replace(/\/+$/, '')
+    const cleanPath = (p || '').replace(/^\/+/, '')
+    return `${b}/${cleanPath}`
+  }
 }
 
 export class UnifiedPipeline {
@@ -517,7 +524,11 @@ export class UnifiedPipeline {
   }
 
   async detectCatchAllBaseline(scanId, targetUrl) {
-    const base = String(targetUrl || '').replace(/\/+$/, '')
+    let base = String(targetUrl || '').trim()
+    try {
+      const u = new URL(ensureScheme(base))
+      base = `${u.origin}${u.pathname.replace(/\/+$/, '')}`
+    } catch {}
     const path = `/${crypto.randomBytes(10).toString('hex')}-probe-404`
     try {
       const { response: res } = await fetchWithHttpFallback(`${base}${path}`, { method: 'GET', redirect: 'manual', signal: AbortSignal.timeout(10000) })
@@ -718,6 +729,15 @@ export class UnifiedPipeline {
     if (typeof rawFinding.target === 'string' && rawFinding.target.length > 1) {
       rawFinding.target = rawFinding.target.replace(/\/+$/, '')
     }
+    // Reject 404/410 on path/file/endpoint existence claims immediately
+    const evStatus = Number(rawFinding.evidence?.status ?? rawFinding.evidence?.statusCode ?? rawFinding.evidence?.httpStatus)
+    const isPathOrExposure = /admin|panel|discover|exposed|downloadable|backup|\.git|\.env|idor|swagger|api endpoint|sensitive file|metadata/i.test(`${rawFinding.title || ''} ${rawFinding.description || ''}`)
+    const isErrorPageFinding = /error page|stack trace|custom 404|verbose error/i.test(`${rawFinding.title || ''} ${rawFinding.description || ''}`)
+    if ((evStatus === 404 || evStatus === 410) && isPathOrExposure && !isErrorPageFinding) {
+      this.log(scanId, 'info', `Suppressed 404 Not Found response for "${rawFinding.title}"`)
+      return null
+    }
+
     if (this._isSoft404Finding(scanId, rawFinding)) {
       rawFinding.evidence = { ...(rawFinding.evidence || {}), soft404: true, verification: 'soft-404-suppressed' }
       this.log(scanId, 'info', `Suppressed catch-all response for "${rawFinding.title}"`)
@@ -1467,19 +1487,23 @@ export class UnifiedPipeline {
           // Fix: when a catch-all baseline exists and the finding lacks response
           // metadata, re-fetch the claimed URL and attach the response fingerprint
           // so _isSoft404Finding() can correctly suppress catch-all matches.
-          if (baseline?.isCatchAll && f.evidence && f.evidence.status == null) {
-            const probeUrl = this._extractProbeUrl(f, target)
-            if (probeUrl) {
-              try {
-                const res = await fetch(probeUrl, { method: 'GET', redirect: 'manual', signal: AbortSignal.timeout(8000) })
-                const body = await res.text()
-                f.evidence.status = res.status
-                f.evidence.contentLength = body.length
-                f.evidence.bodyHash = crypto.createHash('sha256').update(body.slice(0, 4096)).digest('hex')
-                f.evidence.isHtml = /<(!doctype|html|head|body)/i.test(body)
-                f.evidence.contentType = res.headers.get('content-type') || ''
-              } catch { /* non-fatal — finding proceeds without enrichment */ }
-            }
+          const probeUrl = this._extractProbeUrl(f, target)
+          if (probeUrl && (!f.evidence || f.evidence.status == null || f.evidence.status === 200)) {
+            try {
+              const res = await fetch(probeUrl, { method: 'GET', redirect: 'manual', signal: AbortSignal.timeout(8000) })
+              const body = await res.text()
+              f.evidence = f.evidence || {}
+              f.evidence.status = res.status
+              f.evidence.contentLength = body.length
+              f.evidence.bodyHash = crypto.createHash('sha256').update(body.slice(0, 4096)).digest('hex')
+              f.evidence.isHtml = /<(!doctype|html|head|body)/i.test(body)
+              f.evidence.contentType = res.headers.get('content-type') || ''
+
+              if (res.status === 404 || res.status === 410) {
+                // The live endpoint does not exist. Discard immediately.
+                continue
+              }
+            } catch { /* non-fatal — finding proceeds without enrichment */ }
           }
           const stored = await this.ingestFinding(scanId, {
             ...f,

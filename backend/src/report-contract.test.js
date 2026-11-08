@@ -168,6 +168,34 @@ check(
   'artifact-observed'
 )
 
+// 404 response on exposure/discovery claim refutes the claim
+check(
+  '404 status refutes admin panel claim',
+  classifyFinding({
+    title: 'Admin panel discovered: /wp-login.php (HTTP 200)',
+    evidence: { status: 404, contentLength: 760 },
+  }).verifyStatus,
+  VERIFY_STATUS.REJECTED
+)
+
+check(
+  '404 status does not count as capture for file exposure',
+  findCaptures({
+    title: 'OS metadata file exposed: /.DS_Store',
+    evidence: { status: 404, contentLength: 757 },
+  }).length,
+  0
+)
+
+check(
+  '404 status on legitimate error page disclosure is preserved',
+  classifyFinding({
+    title: 'Detailed stack trace disclosed in custom 404 error page',
+    evidence: { status: 404, body: 'org.apache.catalina.core.StandardWrapperValve.invoke' },
+  }).verifyStatus,
+  VERIFY_STATUS.CONFIRMED
+)
+
 // ---------------------------------------------------------------------------
 section('Results')
 // ---------------------------------------------------------------------------
