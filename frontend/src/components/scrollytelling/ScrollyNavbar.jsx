@@ -195,14 +195,15 @@ export default function ScrollyNavbar() {
             <Link
               to="/login?mode=register&plan=trial"
               style={!isNight ? { color: '#ffffff' } : {}}
-              className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold font-sans uppercase tracking-wider transition-all hover:scale-[1.02] active:scale-[0.98] ${
+              className={`inline-flex items-center gap-1.5 sm:gap-2 px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg text-xs font-bold font-sans uppercase tracking-wider transition-all hover:scale-[1.02] active:scale-[0.98] ${
                 isNight
                   ? 'bg-white text-black hover:bg-neutral-200 shadow-[0_0_25px_rgba(255,255,255,0.25)]'
                   : 'bg-black text-white hover:bg-zinc-800 shadow-[0_0_20px_rgba(0,0,0,0.25)]'
               }`}
             >
-              <span style={!isNight ? { color: '#ffffff' } : {}}>Launch Console</span>
-              <ArrowUpRight size={14} className="stroke-[2.5]" style={!isNight ? { stroke: '#ffffff' } : {}} />
+              <span style={!isNight ? { color: '#ffffff' } : {}} className="hidden xs:inline sm:inline">Launch Console</span>
+              <span style={!isNight ? { color: '#ffffff' } : {}} className="xs:hidden sm:hidden">Launch</span>
+              <ArrowUpRight size={13} className="stroke-[2.5]" style={!isNight ? { stroke: '#ffffff' } : {}} />
             </Link>
 
             {/* Mobile Hamburger */}

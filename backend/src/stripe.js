@@ -164,7 +164,8 @@ export async function verifyAndFulfillSession(sessionId) {
     // Top-up on-demand credit to existing quota
     const quotaToAdd = parseInt(scanQuota, 10) || 1
     const currentSub = getUserSubscription(userId)
-    const newQuotaTotal = (currentSub.scanQuotaTotal || 3) + quotaToAdd
+    const currentTotal = currentSub?.scan_quota_total ?? currentSub?.scanQuotaTotal ?? 3
+    const newQuotaTotal = currentTotal + quotaToAdd
 
     db.run(
       `UPDATE subscriptions SET scan_quota_total = ?, updated_at = ? WHERE user_id = ?`,

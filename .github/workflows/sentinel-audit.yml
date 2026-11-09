@@ -1,0 +1,32 @@
+name: SentinelAI Audit
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Target URL registered in SentinelAI
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger SentinelAI audit
+        env:
+          SENTINEL_API_URL: ${{ secrets.SENTINEL_API_URL }}
+          SENTINEL_API_TOKEN: ${{ secrets.SENTINEL_API_TOKEN }}
+          TARGET: ${{ inputs.target }}
+        run: |
+          test -n "$SENTINEL_API_URL"
+          test -n "$SENTINEL_API_TOKEN"
+          payload="$(jq -n --arg target "$TARGET" \
+            '{target:$target,targetType:"url",mode:"blackbox"}')"
+          curl --fail-with-body --silent --show-error \
+            -X POST "$SENTINEL_API_URL/api/scans" \
+            -H "Authorization: Bearer $SENTINEL_API_TOKEN" \
+            -H "Content-Type: application/json" \
+            --data "$payload"

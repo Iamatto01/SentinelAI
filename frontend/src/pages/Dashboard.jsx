@@ -55,7 +55,7 @@ export default function Dashboard() {
         <div className="absolute -bottom-24 right-10 w-52 h-52 rounded-full bg-zinc-500/[0.02] blur-3xl pointer-events-none" />
 
         <div className="relative z-10">
-          <div className="flex items-center gap-2 mb-1">
+          <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 mb-1.5">
             <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold tracking-wider uppercase bg-white/10 text-zinc-300 border border-white/20">
               {isClient ? 'Client Security Portal' : 'Security Operations Center'}
             </span>
@@ -80,7 +80,7 @@ export default function Dashboard() {
           </p>
         </div>
 
-        <div className="flex items-center gap-3 shrink-0 relative z-10">
+        <div className="flex flex-wrap items-center gap-2 sm:gap-3 shrink-0 relative z-10 w-full sm:w-auto pt-2 sm:pt-0">
           {data?.runningScans > 0 ? (
             <span className="px-4 py-2 rounded-full bg-white/15 text-white border border-white/40 shadow-[0_0_16px_rgba(255,255,255,0.2)] animate-pulse text-xs font-extrabold flex items-center">
               <span className="relative flex h-2 w-2 mr-2">

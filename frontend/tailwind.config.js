@@ -3,6 +3,9 @@ export default {
   content: ['./index.html', './src/**/*.{js,jsx}'],
   theme: {
     extend: {
+      screens: {
+        xs: '480px',
+      },
       colors: {
         ink: {
           950: '#06080f', 900: '#0a0e1a', 850: '#0d1322', 800: '#111a2e',

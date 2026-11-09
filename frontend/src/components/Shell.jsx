@@ -148,12 +148,12 @@ export default function Shell() {
   const currentNav = allSubItems.find(sub => location.pathname === sub.to) || allNavItems.find(n => location.pathname.startsWith(n.to)) || { label: 'Platform' }
 
   // Paywall Condition: Client has expired subscription or exhausted trial quota
-  // Community Open Access Switch: Set to true so community members can freely test without being locked out
-  const COMMUNITY_FREE_ACCESS_MODE = true
+  // Community Open Access: dynamically synchronized with backend configuration
+  const communityFreeAccessMode = subscription?.communityFreeAccessMode ?? false
 
   const isTrial = isClient && subscription?.plan_id === 'trial'
-  const isTrialExhausted = !COMMUNITY_FREE_ACCESS_MODE && isTrial && (subscription?.remainingQuota <= 0 || (subscription?.scan_quota_used >= subscription?.scan_quota_total))
-  const isPaidExpired = !COMMUNITY_FREE_ACCESS_MODE && isClient && !isTrial && (
+  const isTrialExhausted = !communityFreeAccessMode && isTrial && (subscription?.remainingQuota <= 0 || (subscription?.scan_quota_used >= subscription?.scan_quota_total))
+  const isPaidExpired = !communityFreeAccessMode && isClient && !isTrial && (
     subscription?.isSubscribed === false ||
     subscription?.isExpired ||
     subscription?.status === 'expired' ||
@@ -202,7 +202,9 @@ export default function Shell() {
       )}
 
       {/* Mobile Top App Bar */}
-      <header className="lg:hidden sticky top-0 z-30 flex items-center justify-between px-4 py-3 bg-[#111111] border-b border-white/[0.07]">
+      <header className={`lg:hidden sticky top-0 z-30 flex items-center justify-between px-3.5 py-2.5 sm:px-4 sm:py-3 transition-colors duration-300 border-b ${
+        isNight ? 'bg-[#111111]/95 text-white border-white/[0.08]' : 'bg-white/95 text-slate-900 border-slate-200 shadow-sm'
+      } backdrop-blur-md`}>
         <div className="flex items-center gap-3">
           <button
             onClick={() => setMobileOpen(true)}
@@ -213,7 +215,7 @@ export default function Shell() {
           </button>
           <div className="flex items-center gap-2">
             <InspectorLogo size={28} />
-            <span className="font-bold text-slate-100 text-base">SentinelAI</span>
+            <span className={`font-bold text-sm sm:text-base tracking-tight truncate ${isNight ? 'text-slate-100' : 'text-slate-900'}`}>SentinelAI</span>
           </div>
         </div>
 
@@ -498,7 +500,7 @@ export default function Shell() {
           </div>
         </header>
 
-        <div className="px-3 sm:px-6 py-4 sm:py-6">
+        <div className="px-3 sm:px-6 py-4 sm:py-6 pb-24 lg:pb-6">
           {/* Paywall Gate: If client has no subscription and tries to view dashboard/scans, show Paywall Card */}
           {isSubscriptionExpired && !isAllowedPathWhenExpired ? (
             <div className="space-y-6 animate-in fade-in duration-300 py-6">
@@ -585,6 +587,141 @@ export default function Shell() {
           onStarted={(id) => { setShowNew(false); nav(`/app/scans/${id}`) }}
         />
       )}
+      {/* ── Native Mobile Bottom Navigation Bar (Phone Optimized) ── */}
+      <nav
+        aria-label="Mobile Navigation"
+        className={`lg:hidden fixed bottom-0 inset-x-0 z-40 border-t backdrop-blur-2xl transition-colors duration-300 ${
+          isNight
+            ? 'bg-slate-950/95 border-white/10 text-slate-400'
+            : 'bg-white/95 border-slate-200 text-slate-600 shadow-[0_-4px_20px_rgba(0,0,0,0.06)]'
+        }`}
+      >
+        <div className="grid grid-cols-5 items-center justify-around h-16 max-w-lg mx-auto px-1">
+          <NavLink
+            to="/app/dashboard"
+            className={({ isActive }) =>
+              `flex flex-col items-center justify-center gap-0.5 py-1 rounded-xl transition-colors ${
+                isActive
+                  ? isNight
+                    ? 'text-white font-bold'
+                    : 'text-slate-950 font-bold'
+                  : 'hover:text-slate-200'
+              }`
+            }
+          >
+            {({ isActive }) => (
+              <>
+                <div className={`p-1 rounded-lg ${isActive ? (isNight ? 'bg-white/10' : 'bg-slate-100') : ''}`}>
+                  <LayoutDashboard size={18} />
+                </div>
+                <span className="text-[10px] tracking-tight">Dashboard</span>
+              </>
+            )}
+          </NavLink>
+
+          <NavLink
+            to="/app/scans"
+            className={({ isActive }) =>
+              `flex flex-col items-center justify-center gap-0.5 py-1 rounded-xl transition-colors ${
+                isActive
+                  ? isNight
+                    ? 'text-white font-bold'
+                    : 'text-slate-950 font-bold'
+                  : 'hover:text-slate-200'
+              }`
+            }
+          >
+            {({ isActive }) => (
+              <>
+                <div className={`p-1 rounded-lg ${isActive ? (isNight ? 'bg-white/10' : 'bg-slate-100') : ''}`}>
+                  <Radar size={18} />
+                </div>
+                <span className="text-[10px] tracking-tight">Scans</span>
+              </>
+            )}
+          </NavLink>
+
+          <NavLink
+            to="/app/findings"
+            className={({ isActive }) =>
+              `flex flex-col items-center justify-center gap-0.5 py-1 rounded-xl transition-colors ${
+                isActive
+                  ? isNight
+                    ? 'text-white font-bold'
+                    : 'text-slate-950 font-bold'
+                  : 'hover:text-slate-200'
+              }`
+            }
+          >
+            {({ isActive }) => (
+              <>
+                <div className={`p-1 rounded-lg ${isActive ? (isNight ? 'bg-white/10' : 'bg-slate-100') : ''}`}>
+                  <Bug size={18} />
+                </div>
+                <span className="text-[10px] tracking-tight">Findings</span>
+              </>
+            )}
+          </NavLink>
+
+          {isAdmin ? (
+            <NavLink
+              to="/app/kali-control"
+              className={({ isActive }) =>
+                `flex flex-col items-center justify-center gap-0.5 py-1 rounded-xl transition-colors ${
+                  isActive
+                    ? isNight
+                      ? 'text-white font-bold'
+                      : 'text-slate-950 font-bold'
+                    : 'hover:text-slate-200'
+                }`
+              }
+            >
+              {({ isActive }) => (
+                <>
+                  <div className={`p-1 rounded-lg ${isActive ? (isNight ? 'bg-white/10' : 'bg-slate-100') : ''}`}>
+                    <Terminal size={18} />
+                  </div>
+                  <span className="text-[10px] tracking-tight">Kali</span>
+                </>
+              )}
+            </NavLink>
+          ) : (
+            <NavLink
+              to="/app/consultants"
+              className={({ isActive }) =>
+                `flex flex-col items-center justify-center gap-0.5 py-1 rounded-xl transition-colors ${
+                  isActive
+                    ? isNight
+                      ? 'text-white font-bold'
+                      : 'text-slate-950 font-bold'
+                    : 'hover:text-slate-200'
+                }`
+              }
+            >
+              {({ isActive }) => (
+                <>
+                  <div className={`p-1 rounded-lg ${isActive ? (isNight ? 'bg-white/10' : 'bg-slate-100') : ''}`}>
+                    <UserCheck size={18} />
+                  </div>
+                  <span className="text-[10px] tracking-tight">Advisory</span>
+                </>
+              )}
+            </NavLink>
+          )}
+
+          <button
+            type="button"
+            onClick={() => setMobileOpen(true)}
+            className="flex flex-col items-center justify-center gap-0.5 py-1 rounded-xl hover:text-white transition-colors cursor-pointer"
+          >
+            <div className="p-1 rounded-lg">
+              <Menu size={18} />
+            </div>
+            <span className="text-[10px] tracking-tight">Menu</span>
+          </button>
+        </div>
+      </nav>
+
       <AIChatWidget />
     </div>
   )

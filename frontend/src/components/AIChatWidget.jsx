@@ -86,7 +86,7 @@ export default function AIChatWidget() {
           onClick={() => setOpen(true)}
           title="SentinelAI Detective Assistant"
           aria-label="Open SentinelAI Chat"
-          className="fixed bottom-4 right-4 sm:bottom-6 sm:right-6 z-40 w-13 h-13 rounded-2xl flex items-center justify-center hover:scale-110 active:scale-95 transition-all p-2 bg-slate-950/95 border border-white/20 shadow-[0_0_24px_rgba(255,255,255,0.08)] hover:border-white/50 hover:shadow-[0_0_32px_rgba(255,255,255,0.18)] cursor-pointer"
+          className="fixed bottom-20 right-4 sm:bottom-6 sm:right-6 z-40 w-14 h-14 rounded-2xl flex items-center justify-center hover:scale-110 active:scale-95 transition-all p-2 bg-slate-950/95 border border-white/20 shadow-[0_0_24px_rgba(255,255,255,0.08)] hover:border-white/50 hover:shadow-[0_0_32px_rgba(255,255,255,0.18)] cursor-pointer"
         >
           <InspectorLogo size={28} />
           <span className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-emerald-400 border-2 border-slate-950 animate-pulse" />
@@ -105,7 +105,7 @@ export default function AIChatWidget() {
       {/* Responsive Chat Widget Window */}
       {open && (
         <div
-          className="fixed inset-x-3 bottom-3 top-16 sm:inset-auto sm:bottom-6 sm:right-6 sm:w-96 sm:h-[540px] z-50 card flex flex-col overflow-hidden glass-in shadow-2xl rounded-3xl border border-white/15 bg-slate-950/95 backdrop-blur-2xl"
+          className="fixed inset-x-2 bottom-2 top-14 sm:inset-auto sm:bottom-6 sm:right-6 sm:w-96 sm:h-[540px] z-50 card flex flex-col overflow-hidden glass-in shadow-2xl rounded-2xl sm:rounded-3xl border border-white/15 bg-slate-950/95 backdrop-blur-2xl"
           role="dialog"
           aria-label="AI Chat Assistant"
         >

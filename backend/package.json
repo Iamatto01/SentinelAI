@@ -7,7 +7,9 @@
   "scripts": {
     "dev": "node --env-file=../.env src/index.js",
     "start": "node --env-file=../.env src/index.js",
-    "test": "node src/report-contract.test.js && node src/catch-all.test.js && node src/report-helpers.test.js && node src/tool-coverage.test.js",
+    "test": "node src/report-contract.test.js && node src/catch-all.test.js && node src/report-helpers.test.js && node src/tool-coverage.test.js && node covtest.mjs && node src/cvss4.test.js && node src/auth.test.js && node src/billing.test.js && node src/channels-and-scans.test.js",
+    "test:e2e": "node scripts/test-all-features.mjs",
+    "benchmark": "node scripts/load-test.mjs",
     "index:payloads": "node --env-file=../.env scripts/index-payloads.js"
   },
   "dependencies": {
@@ -22,6 +24,7 @@
     "pdfkit": "^0.17.2",
     "socket.io": "^4.8.1",
     "stripe": "^22.6.1",
-    "swagger-ui-express": "^5.0.1"
+    "swagger-ui-express": "^5.0.1",
+    "autocannon": "^8.0.0"
   }
 }

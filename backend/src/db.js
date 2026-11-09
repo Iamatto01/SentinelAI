@@ -52,6 +52,7 @@ export function getDb() {
   if (db) return db
   db = new Database(config.dbPath)
   db.pragma('journal_mode = WAL')
+  db.pragma('busy_timeout = 5000')
   db.pragma('foreign_keys = ON')
   migrate(db)
   return db
@@ -711,8 +712,9 @@ export function seedDefaultScripts(d = getDb()) {
 }
 
 // ── generic helpers ──────────────────────────────────────────────────────────
+export function transaction(fn) { return getDb().transaction(fn) }
 export function run(sql, ...args) { return getDb().prepare(sql).run(...args) }
 export function get(sql, ...args) { return getDb().prepare(sql).get(...args) }
 export function all(sql, ...args) { return getDb().prepare(sql).all(...args) }
 
-export default { getDb, run, get, all }
+export default { getDb, run, get, all, transaction }

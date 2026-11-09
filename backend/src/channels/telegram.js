@@ -120,7 +120,7 @@ class TelegramBot {
     const token = config.channels?.telegram?.token
     if (!token) return Promise.resolve()
     const str = String(text || '')
-    const chunks = str.length > 3900 ? str.match(/[\s\S]{1,3900}(\s|$)/g) || [str] : [str]
+    const chunks = splitMessage(str, 3900)
 
     for (let i = 0; i < chunks.length; i++) {
       const chunk = chunks[i]
@@ -169,5 +169,21 @@ class TelegramBot {
 }
 
 const sleep = ms => new Promise(r => setTimeout(r, ms))
+
+function splitMessage(str, maxLen = 3900) {
+  if (!str) return []
+  if (str.length <= maxLen) return [str]
+  const chunks = []
+  let rem = str
+  while (rem.length > maxLen) {
+    let splitIdx = rem.lastIndexOf('\n', maxLen)
+    if (splitIdx < maxLen * 0.4) splitIdx = rem.lastIndexOf(' ', maxLen)
+    if (splitIdx < maxLen * 0.4) splitIdx = maxLen
+    chunks.push(rem.slice(0, splitIdx))
+    rem = rem.slice(splitIdx).trimStart()
+  }
+  if (rem.length) chunks.push(rem)
+  return chunks
+}
 
 export const telegramBot = new TelegramBot()

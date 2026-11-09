@@ -342,6 +342,19 @@ pm2 jlist 2>/dev/null | head -c 400 || true
     print("========================================================\n")
 
 def main():
+    print("🧪 Running local pre-flight tests before deployment...")
+    preflight_commands = [
+        ["npm", "test", "--prefix", "backend"],
+        ["npm", "run", "build", "--prefix", "frontend"],
+    ]
+    for command in preflight_commands:
+        print(f"   > {' '.join(command)}")
+        result = subprocess.run(command, shell=(os.name == 'nt'))
+        if result.returncode != 0:
+            print(f"[Error] Pre-flight command failed ({result.returncode}); deployment aborted.")
+            sys.exit(result.returncode or 1)
+    print("   ✓ Pre-flight checks passed.")
+
     temp_dir = tempfile.gettempdir()
     tar_path = os.path.join(temp_dir, "sentinel-deploy.tar.gz")
     try:

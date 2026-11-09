@@ -49,113 +49,81 @@ export default function CookieConsentBanner() {
           animate={{ opacity: 1, y: 0, scale: 1 }}
           exit={{ opacity: 0, y: 30, scale: 0.95 }}
           transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
-          className="fixed bottom-3 sm:bottom-6 inset-x-3 sm:inset-x-0 sm:max-w-3xl sm:mx-auto z-50 pointer-events-auto"
+          className="fixed bottom-2 sm:bottom-4 inset-x-2 sm:inset-x-auto sm:left-1/2 sm:-translate-x-1/2 sm:max-w-2xl sm:w-full z-50 pointer-events-auto"
         >
           <div
-            className={`p-4 sm:p-5 rounded-2xl sm:rounded-3xl border shadow-2xl backdrop-blur-2xl transition-colors duration-300 ${
+            className={`px-3 py-1.5 sm:px-4 sm:py-2 rounded-xl sm:rounded-2xl border shadow-xl backdrop-blur-2xl transition-colors duration-300 ${
               isNight
-                ? 'bg-neutral-950/90 border-white/15 text-white shadow-[0_16px_50px_rgba(0,0,0,0.85)]'
-                : 'bg-white/95 border-slate-200/90 text-slate-900 shadow-[0_16px_40px_rgba(0,0,0,0.12)]'
+                ? 'bg-neutral-950/95 border-white/15 text-white shadow-[0_8px_30px_rgba(0,0,0,0.85)]'
+                : 'bg-white/95 border-slate-200/90 text-slate-900 shadow-[0_8px_25px_rgba(0,0,0,0.12)]'
             }`}
           >
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div className="flex items-center justify-between gap-2 sm:gap-3">
               {/* Icon & Message */}
-              <div className="flex items-start gap-3.5">
+              <div className="flex items-center gap-2 sm:gap-2.5 min-w-0 flex-1">
                 <div
-                  className={`p-2.5 rounded-xl border shrink-0 ${
+                  className={`p-1 sm:p-1.5 rounded-lg border shrink-0 ${
                     isNight
-                      ? 'bg-white/5 border-white/10 text-white'
-                      : 'bg-slate-100 border-slate-200 text-slate-800'
+                      ? 'bg-white/5 border-white/10 text-amber-400'
+                      : 'bg-amber-50 border-amber-200 text-amber-700'
                   }`}
                 >
-                  <Cookie size={20} className="stroke-[2.2]" />
+                  <Cookie size={14} className="sm:w-4 sm:h-4 stroke-[2.2]" />
                 </div>
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2">
-                    <h3 className="text-xs sm:text-sm font-bold font-sans tracking-tight">
-                      Cookie &amp; Local Storage Governance
-                    </h3>
-                    <span
-                      className={`text-[10px] font-mono px-2 py-0.5 rounded-full uppercase tracking-wider font-semibold border ${
-                        isNight
-                          ? 'bg-white/5 border-white/10 text-neutral-300'
-                          : 'bg-slate-100 border-slate-200 text-slate-700'
-                      }`}
-                    >
-                      Local-First
-                    </span>
-                  </div>
-                  <p
-                    className={`text-xs font-sans leading-relaxed max-w-xl ${
-                      isNight ? 'text-neutral-400' : 'text-slate-600'
+                <div className="min-w-0 text-[11px] sm:text-xs font-sans leading-tight">
+                  <span className="font-semibold">Cookies &amp; storage: </span>
+                  <span className={isNight ? 'text-neutral-400' : 'text-slate-600'}>
+                    Essential session &amp; auth use only.{' '}
+                  </span>
+                  <Link
+                    to="/privacy"
+                    onClick={() => setIsVisible(false)}
+                    className={`inline-flex items-center gap-0.5 underline underline-offset-2 font-mono text-[10px] sm:text-[11px] ${
+                      isNight ? 'text-neutral-300 hover:text-white' : 'text-slate-800 hover:text-black'
                     }`}
                   >
-                    SentinelAI uses essential local storage &amp; cookies strictly for JWT session authentication,
-                    dark/light theme persistence, and offline audit caching. We do not use third-party tracking or
-                    ad-network cookies.
-                  </p>
-                  <div className="flex items-center gap-3 pt-1 text-[11px] font-mono">
-                    <Link
-                      to="/privacy"
-                      onClick={() => setIsVisible(false)}
-                      className={`inline-flex items-center gap-1 underline underline-offset-2 ${
-                        isNight ? 'text-neutral-300 hover:text-white' : 'text-slate-800 hover:text-black'
-                      }`}
-                    >
-                      <span>Privacy &amp; Cookie Policy</span>
-                      <ArrowUpRight size={11} />
-                    </Link>
-                    <span className="opacity-40">&bull;</span>
-                    <Link
-                      to="/terms"
-                      onClick={() => setIsVisible(false)}
-                      className={`inline-flex items-center gap-1 underline underline-offset-2 ${
-                        isNight ? 'text-neutral-300 hover:text-white' : 'text-slate-800 hover:text-black'
-                      }`}
-                    >
-                      <span>Terms of Service</span>
-                      <ArrowUpRight size={11} />
-                    </Link>
-                  </div>
+                    <span>Privacy</span>
+                    <ArrowUpRight size={10} />
+                  </Link>
                 </div>
               </div>
 
               {/* Action Buttons */}
-              <div className="flex items-center gap-2 w-full sm:w-auto shrink-0 pt-2 sm:pt-0">
+              <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
                 <button
                   type="button"
                   onClick={() => handleConsent('essential')}
-                  className={`flex-1 sm:flex-initial px-3.5 py-2 rounded-xl text-xs font-mono font-medium border transition-all cursor-pointer ${
+                  className={`hidden sm:inline-block px-2.5 py-1 rounded-lg text-[11px] font-mono font-medium border transition-all cursor-pointer whitespace-nowrap ${
                     isNight
                       ? 'border-white/15 bg-white/5 text-neutral-300 hover:bg-white/10 hover:text-white'
                       : 'border-slate-300 bg-slate-100 text-slate-700 hover:bg-slate-200 hover:text-black'
                   }`}
                 >
-                  Essential Only
+                  Essential
                 </button>
                 <button
                   type="button"
                   onClick={() => handleConsent('accepted')}
-                  className={`flex-1 sm:flex-initial inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl text-xs font-mono font-bold transition-all shadow-md cursor-pointer ${
+                  className={`inline-flex items-center justify-center gap-1 px-2.5 sm:px-3 py-1 rounded-lg text-[11px] font-mono font-bold transition-all shadow-sm cursor-pointer whitespace-nowrap ${
                     isNight
                       ? 'bg-white text-black hover:bg-neutral-200'
                       : 'bg-slate-900 text-white hover:bg-black'
                   }`}
                 >
-                  <Check size={14} className="stroke-[2.5]" />
-                  <span>Accept All</span>
+                  <Check size={11} className="stroke-[2.5]" />
+                  <span>Accept</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => handleConsent('essential')}
                   aria-label="Dismiss banner"
-                  className={`p-2 rounded-xl border transition-colors cursor-pointer ${
+                  className={`p-1 rounded-lg border transition-colors cursor-pointer shrink-0 ${
                     isNight
                       ? 'border-white/10 text-neutral-400 hover:text-white hover:bg-white/5'
                       : 'border-slate-200 text-slate-500 hover:text-black hover:bg-slate-100'
                   }`}
                 >
-                  <X size={14} />
+                  <X size={12} />
                 </button>
               </div>
             </div>

@@ -36,6 +36,7 @@ class DiscordBot {
     const me = await meRes.json()
     if (!gwRes.ok) throw new Error(`Discord gateway fetch failed (${gwRes.status})`)
     const gw = await gwRes.json()
+    this.me = me
     this.applicationId = me.id
     this.clientUsername = me.username
     this.running = true
@@ -44,7 +45,16 @@ class DiscordBot {
 
   connectWs(url) {
     this.ws = new WebSocket(url)
-    this.ws.onmessage = (ev) => this.onGatewayMessage(JSON.parse(ev.data))
+    this.ws.onerror = (err) => {
+      console.warn('[Channels] Discord WebSocket error:', err.message || err)
+    }
+    this.ws.onmessage = (ev) => {
+      try {
+        this.onGatewayMessage(JSON.parse(ev.data))
+      } catch (err) {
+        console.warn('[Channels] Discord message parse error:', err.message)
+      }
+    }
     this.ws.onclose = () => {
       this.stopHeartbeat()
       if (this.running) setTimeout(() => this.connectWs(this.resumeUrl || url), 3000)
@@ -158,7 +168,7 @@ class DiscordBot {
     }
 
     // 2. Standard message chunking for plain text
-    for (const chunk of String(rawContent).match(/[\s\S]{1,1900}(\s|$)/g) || [String(rawContent)]) {
+    for (const chunk of splitMessage(String(rawContent), 1900)) {
       await fetch(`${API_BASE}/channels/${channelId}/messages`, {
         method: 'POST',
         headers: { authorization: `Bot ${token}`, 'content-type': 'application/json' },
@@ -177,6 +187,22 @@ class DiscordBot {
     this.stopHeartbeat()
     this.ws?.close()
   }
+}
+
+function splitMessage(str, maxLen = 1900) {
+  if (!str) return []
+  if (str.length <= maxLen) return [str]
+  const chunks = []
+  let rem = str
+  while (rem.length > maxLen) {
+    let splitIdx = rem.lastIndexOf('\n', maxLen)
+    if (splitIdx < maxLen * 0.4) splitIdx = rem.lastIndexOf(' ', maxLen)
+    if (splitIdx < maxLen * 0.4) splitIdx = maxLen
+    chunks.push(rem.slice(0, splitIdx))
+    rem = rem.slice(splitIdx).trimStart()
+  }
+  if (rem.length) chunks.push(rem)
+  return chunks
 }
 
 export const discordBot = new DiscordBot()

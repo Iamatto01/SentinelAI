@@ -25,7 +25,7 @@ const CWE_MAP = {
   'CWE-269': 'A01',
   // A02 Security Misconfiguration
   'CWE-16': 'A02', 'CWE-260': 'A02', 'CWE-489': 'A02', 'CWE-942': 'A02',
-  'CWE-1004': 'A02', 'CWE-2': 'A02', 'CWE-5': 'A02', 'CWE-200': 'A02', 'CWE-209': 'A02',
+  'CWE-1004': 'A02', 'CWE-2': 'A02', 'CWE-5': 'A02', 'CWE-200': 'A02',
   'CWE-611': 'A02', 'CWE-614': 'A02', 'CWE-693': 'A02', 'CWE-698': 'A02', 'CWE-1327': 'A02',
   // A03 Software Supply Chain Failures
   'CWE-1104': 'A03', 'CWE-829': 'A03', 'CWE-1357': 'A03', 'CWE-494': 'A03', 'CWE-710': 'A03',
@@ -38,7 +38,7 @@ const CWE_MAP = {
   'CWE-89': 'A05', 'CWE-78': 'A05', 'CWE-79': 'A05', 'CWE-77': 'A05', 'CWE-90': 'A05',
   'CWE-94': 'A05', 'CWE-917': 'A05', 'CWE-643': 'A05', 'CWE-93': 'A05', 'CWE-95': 'A05',
   'CWE-98': 'A05', 'CWE-943': 'A05', 'CWE-1336': 'A05', 'CWE-434': 'A05', 'CWE-20': 'A05',
-  'CWE-502': 'A05', 'CWE-1321': 'A05',
+  'CWE-1321': 'A05',
   // A06 Insecure Design
   'CWE-937': 'A06', 'CWE-1188': 'A06', 'CWE-747': 'A06', 'CWE-799': 'A06', 'CWE-307': 'A06',
   'CWE-770': 'A06', 'CWE-522': 'A06', 'CWE-602': 'A06', 'CWE-521': 'A06',
@@ -46,7 +46,7 @@ const CWE_MAP = {
   'CWE-287': 'A07', 'CWE-306': 'A07', 'CWE-384': 'A07', 'CWE-294': 'A07',
   'CWE-640': 'A07', 'CWE-620': 'A07', 'CWE-308': 'A07', 'CWE-613': 'A07',
   // A08 Software or Data Integrity Failures
-  'CWE-502': 'A08', 'CWE-829': 'A08', 'CWE-494': 'A08', 'CWE-345': 'A08', 'CWE-353': 'A08',
+  'CWE-502': 'A08', 'CWE-345': 'A08', 'CWE-353': 'A08',
   'CWE-565': 'A08',
   // A09 Security Logging and Alerting Failures
   'CWE-532': 'A09', 'CWE-778': 'A09', 'CWE-117': 'A09', 'CWE-223': 'A09',

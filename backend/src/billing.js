@@ -517,6 +517,7 @@ export function getUserSubscription(userId) {
     isTrial,
     remainingQuota,
     isUnlimited,
+    communityFreeAccessMode: process.env.COMMUNITY_FREE_ACCESS_MODE === 'true',
   }
 }
 
@@ -530,7 +531,7 @@ export function consumeScanQuota(userId) {
     throw new Error('Unable to resolve an active subscription for this account. Please sign in again or contact support.')
   }
 
-  if (!COMMUNITY_FREE_ACCESS_MODE) {
+  if (process.env.COMMUNITY_FREE_ACCESS_MODE !== 'true') {
     if (sub.isExpired) {
       throw new Error(`Your SentinelAI subscription has expired. Please renew your plan in Billing to continue scanning.`)
     }

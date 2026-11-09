@@ -85,25 +85,28 @@ async function tick(id, pipeline) {
   if (!m || !m.enabled) return
   const now = new Date().toISOString()
   const target = cleanTarget(m.target)
-  db.run(`UPDATE monitors SET status = 'running', last_run = ? WHERE id = ?`, now, id)
-
-  // Launch a normal scan through the unified pipeline
-  const scanId = `scan_${randomUUID()}`
-  const modules = JSON.parse(m.modules || '[]')
-  const owner = m.user_id ? db.get(`SELECT username, email FROM users WHERE id = ?`, m.user_id) : null
-  db.run(
-    `INSERT INTO scans (id, project_id, target, target_type, mode, status, template, modules, progress, created_at, started_at, user_id, client)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-    scanId, null, target, m.target_type, 'blackbox', 'running', 'monitor', JSON.stringify(modules), 0, now, now,
-    m.user_id || null, owner?.username || owner?.email || null
-  )
-  const scan = db.get(`SELECT * FROM scans WHERE id = ?`, scanId)
-  addEvent(id, scanId, 'info', `Scheduled scan started (${scanId})`)
+  let scanId = null
 
   try {
+    db.run(`UPDATE monitors SET status = 'running', last_run = ? WHERE id = ?`, now, id)
+
+    // Launch a normal scan through the unified pipeline
+    scanId = `scan_${randomUUID()}`
+    let modules = []
+    try { modules = typeof m.modules === 'string' ? JSON.parse(m.modules || '[]') : (m.modules || []) } catch { modules = [] }
+    const owner = m.user_id ? db.get(`SELECT username, email FROM users WHERE id = ?`, m.user_id) : null
+    db.run(
+      `INSERT INTO scans (id, project_id, target, target_type, mode, status, template, modules, progress, created_at, started_at, user_id, client)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      scanId, null, target, m.target_type, 'blackbox', 'running', 'monitor', JSON.stringify(modules), 0, now, now,
+      m.user_id || null, owner?.username || owner?.email || null
+    )
+    const scan = db.get(`SELECT * FROM scans WHERE id = ?`, scanId)
+    addEvent(id, scanId, 'info', `Scheduled scan started (${scanId})`)
+
     await pipeline.runBlackbox(scan, { modules, objective: 'monitoring', maxTools: 4, verify: true })
     const done = db.get(`SELECT * FROM scans WHERE id = ?`, scanId)
-    const count = db.get(`SELECT COUNT(*) c FROM findings WHERE scan_id = ?`, scanId).c
+    const count = db.get(`SELECT COUNT(*) c FROM findings WHERE scan_id = ?`, scanId)?.c ?? 0
     const finalStatus = done?.status || 'completed'
     db.run(`UPDATE monitors SET status = 'idle', last_status = ?, last_risk = ?, next_run = ? WHERE id = ?`,
       finalStatus, done?.risk_score ?? 0, new Date(Date.now() + Math.max(5, m.interval_min | 0) * 60000).toISOString(), id)
@@ -111,8 +114,9 @@ async function tick(id, pipeline) {
   } catch (e) {
     db.run(`UPDATE monitors SET status = 'idle', last_status = 'error' WHERE id = ?`, id)
     addEvent(id, scanId, 'error', `Scheduled scan failed: ${e.message}`)
+  } finally {
+    schedule(id, pipeline)
   }
-  schedule(id, pipeline)
 }
 
 /** Re-arm timers for all enabled monitors (call on boot). */

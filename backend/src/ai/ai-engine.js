@@ -911,12 +911,15 @@ If no vulnerabilities are found, respond with: {"findings":[]}`
   async generateExploitPoc(finding, targetType = 'code') {
     if (!this.llm.isConfigured()) return null
 
-    const evidence = finding.evidence || {}
+    let evidence = finding.evidence || {}
+    if (typeof evidence === 'string') {
+      try { evidence = JSON.parse(evidence) } catch { evidence = {} }
+    }
     const file = evidence.file || finding.file || 'unknown'
     const line = evidence.line || ''
     const code = evidence.code || evidence.snippet || ''
-    const category = finding.category || finding.owaspCategory || ''
-    const cwe = finding.cweId || finding.cwe || ''
+    const category = finding.category || finding.owaspCategory || finding.owasp_category || ''
+    const cwe = finding.cweId || finding.cwe || finding.cwe_id || ''
     const title = finding.title || ''
     const description = finding.description || ''
     const url = evidence.url || finding.target || ''
@@ -1007,10 +1010,10 @@ FINDINGS BREAKDOWN:
 - Total: ${totalFindings}
 
 TOP FINDINGS:
-${(topFindings || []).map((f, i) => `${i + 1}. [${f.severity.toUpperCase()}] ${f.title}${f.owaspCategory ? ' (' + f.owaspCategory + ')' : ''}`).join('\n')}
+${(topFindings || []).map((f, i) => `${i + 1}. [${(f.severity || 'INFO').toUpperCase()}] ${f.title}${(f.owaspCategory || f.owasp_category) ? ' (' + (f.owaspCategory || f.owasp_category) + ')' : ''}`).join('\n')}
 
 VERIFIED FINDINGS LIST (the only findings permitted in the attack chain or business impact):
-${(verifiedFindings || []).map((f, i) => `${i + 1}. [${f.severity.toUpperCase()}] ${f.title} (${f.evidenceGrade || 'none'})`).join('\n') || 'No verified findings.'}
+${(verifiedFindings || []).map((f, i) => `${i + 1}. [${(f.severity || 'INFO').toUpperCase()}] ${f.title} (${f.evidenceGrade || 'none'})`).join('\n') || 'No verified findings.'}
 
 ${promptGuard || 'Use only the verified findings list above. Do not speculate beyond it.'}
 
@@ -1043,13 +1046,20 @@ Write in professional but accessible language. Do NOT use generic templates. Be 
       .slice(0, 15)
     if (!topFindings.length) return null
 
-    const findingList = topFindings.map((f, i) =>
-      `${i + 1}. [${f.severity.toUpperCase()}] ${f.title}
-   File: ${f.evidence?.file || 'N/A'}:${f.evidence?.line || ''}
+    const findingList = topFindings.map((f, i) => {
+      let ev = f.evidence
+      if (typeof ev === 'string') {
+        try { ev = JSON.parse(ev) } catch { ev = {} }
+      }
+      const loc = ev?.file ? `${ev.file}:${ev.line || ''}` : (ev?.url || ev?.endpoint || f.target || 'N/A')
+      const owasp = f.owaspCategory || f.owasp_category || 'N/A'
+      const cwe = f.cweId || f.cwe_id || f.cwe || 'N/A'
+      return `${i + 1}. [${(f.severity || 'INFO').toUpperCase()}] ${f.title}
+   Location: ${loc}
    Description: ${f.description || 'N/A'}
-   OWASP: ${f.owaspCategory || 'N/A'}
-   CWE: ${f.cweId || f.cwe || 'N/A'}`
-    ).join('\n\n')
+   OWASP: ${owasp}
+   CWE: ${cwe}`
+    }).join('\n\n')
 
     const prompt = `You are analyzing vulnerability findings from a security assessment of: ${target || 'a web application'}
 
@@ -1096,7 +1106,7 @@ Respond ONLY with JSON:
       const SEV_ORDER = ['critical', 'high', 'medium', 'low', 'info']
       const actionable = [...findings]
         // A lead with no captured artifact must never become a prescription.
-        .filter(f => f.verifyStatus !== 'unverified' && f.verifyStatus !== 'rejected')
+        .filter(f => (f.verifyStatus || f.verify_status) !== 'unverified' && (f.verifyStatus || f.verify_status) !== 'rejected')
         .filter(f => ['critical', 'high', 'medium'].includes((f.severity || '').toLowerCase()))
         .sort((a, b) => {
           const ai = SEV_ORDER.indexOf((a.severity || 'info').toLowerCase())
@@ -1107,12 +1117,17 @@ Respond ONLY with JSON:
         .slice(0, 15)
       if (!actionable.length) return null
 
-      const findingList = actionable.map((f, i) =>
-        `${i + 1}. [${f.severity.toUpperCase()}] ${f.title}
-     Location: ${f.evidence?.url || f.evidence?.file || f.asset || 'N/A'}
+      const findingList = actionable.map((f, i) => {
+        let ev = f.evidence
+        if (typeof ev === 'string') {
+          try { ev = JSON.parse(ev) } catch { ev = {} }
+        }
+        const loc = ev?.url || ev?.file || ev?.endpoint || f.target || f.asset || 'N/A'
+        return `${i + 1}. [${(f.severity || 'INFO').toUpperCase()}] ${f.title}
+     Location: ${loc}
      Technical description: ${(f.description || '').slice(0, 200)}
      Suggested remediation: ${(f.remediation || '').slice(0, 200)}`
-      ).join('\n\n')
+      }).join('\n\n')
 
       const techStr = detectedTech.length ? detectedTech.join(', ') : 'not specified'
       const prompt = `You are a senior IT manager writing a SIMPLIFIED remediation guide for a junior IT admin. Target: ${target || 'a web application'}

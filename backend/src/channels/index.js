@@ -6,6 +6,7 @@ import { randomUUID } from 'node:crypto'
 import { llm } from '../ai/llm-client.js'
 import { nativeToolsStatus } from '../integrations/native-tools.js'
 import { EXPLOIT_REGISTRY, matchExploits } from '../exploits/registry.js'
+import { consumeScanQuota } from '../billing.js'
 
 const COPILOT_SYSTEM_PROMPT = `You are SentinelAI Security Copilot, an elite offensive and defensive cybersecurity AI specialist integrated with the SentinelAI autonomous penetration testing platform (https://sentinelai.studio).
 Your role:
@@ -483,10 +484,15 @@ class ChannelGateway {
         const scanIdArg = args[0]
         let findings = []
         if (scanIdArg) {
-          findings = db.all(
-            `SELECT * FROM findings WHERE scan_id = ? ORDER BY CASE severity WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 ELSE 4 END LIMIT 6`,
-            scanIdArg
-          )
+          findings = pairedUser.role === 'admin'
+            ? db.all(
+                `SELECT f.*, s.target FROM findings f JOIN scans s ON f.scan_id = s.id WHERE f.scan_id = ? ORDER BY CASE f.severity WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 ELSE 4 END LIMIT 6`,
+                scanIdArg
+              )
+            : db.all(
+                `SELECT f.*, s.target FROM findings f JOIN scans s ON f.scan_id = s.id WHERE f.scan_id = ? AND (s.user_id = ? OR s.client = ?) ORDER BY CASE f.severity WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 ELSE 4 END LIMIT 6`,
+                scanIdArg, pairedUser.id, pairedUser.username
+              )
         } else {
           findings = pairedUser.role === 'admin'
             ? db.all(`SELECT f.*, s.target FROM findings f JOIN scans s ON f.scan_id = s.id ORDER BY CASE f.severity WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 ELSE 4 END, f.created_at DESC LIMIT 6`)
@@ -714,33 +720,33 @@ class ChannelGateway {
           break
         }
 
-        // Check user scan quota
-        const sub = db.get("SELECT * FROM subscriptions WHERE user_id = ?", pairedUser.id)
-        if (sub && sub.scan_quota_used >= sub.scan_quota_total) {
-          const quotaMsg =
-            `⚠️ *Kuota Imbasan Telah Habis!*\n\n` +
-            `Akaun anda telah menggunakan *${sub.scan_quota_used}/${sub.scan_quota_total}* imbasan yang diperuntukkan.\n` +
-            `Sila naik taraf pelan langganan anda di https://sentinelai.studio/app/billing untuk mendapatkan imbasan seterusnya.`
-          if (platform === 'telegram') {
-            reply(quotaMsg, {
-              inlineKeyboard: [[{ text: '💳 Naik Taraf Pelan', url: 'https://sentinelai.studio/app/billing' }]]
-            })
-          } else {
-            reply(quotaMsg)
+        // Check user scan quota (admins exempt)
+        if (pairedUser.role !== 'admin') {
+          try {
+            consumeScanQuota(pairedUser.id)
+          } catch (quotaErr) {
+            const quotaMsg =
+              `⚠️ *Kuota Imbasan Tidak Mencukupi!*\n\n` +
+              `${quotaErr.message}\n` +
+              `Sila naik taraf pelan langganan anda di https://sentinelai.studio/app/billing.`
+            if (platform === 'telegram') {
+              reply(quotaMsg, {
+                inlineKeyboard: [[{ text: '💳 Naik Taraf Pelan', url: 'https://sentinelai.studio/app/billing' }]]
+              })
+            } else {
+              reply(quotaMsg)
+            }
+            break
           }
-          break
         }
 
         try {
-          // Deduct quota
-          db.run("UPDATE subscriptions SET scan_quota_used = scan_quota_used + 1, updated_at = ? WHERE user_id = ?", new Date().toISOString(), pairedUser.id)
-
           const scanId = `scan_${randomUUID()}`
           const now = new Date().toISOString()
           db.run(
-            `INSERT INTO scans (id, user_id, target, target_type, mode, status, template, modules, progress, created_at, started_at)
-             VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
-            scanId, pairedUser.id, target.trim(), 'url', 'blackbox', 'running', 'standard',
+            `INSERT INTO scans (id, user_id, client, target, target_type, mode, status, template, modules, progress, created_at, started_at)
+             VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+            scanId, pairedUser.id, pairedUser.username || pairedUser.email || null, target.trim(), 'url', 'blackbox', 'running', 'standard',
             JSON.stringify(['nmap', 'httpx', 'whatweb', 'nuclei', 'nikto']), 0, now, now
           )
 
@@ -761,6 +767,10 @@ class ChannelGateway {
             })
           }
 
+          const sub = db.get("SELECT * FROM subscriptions WHERE user_id = ?", pairedUser.id)
+          const isUnlimited = pairedUser.role === 'admin' || (sub?.scan_quota_total ?? 3) === -1 || (sub?.scan_quota_total ?? 3) >= 9000
+          const remainingQuotaStr = isUnlimited ? 'Tanpa Had (Unlimited)' : `${Math.max(0, (sub?.scan_quota_total ?? 3) - (sub?.scan_quota_used ?? 0))} imbasan`
+
           const portalUrl = `https://sentinelai.studio/app/scans/${scanId}`
           if (platform === 'discord') {
             const embed = {
@@ -770,7 +780,7 @@ class ChannelGateway {
                 { name: '🎯 Sasaran', value: `\`${target}\``, inline: true },
                 { name: '🆔 Scan ID', value: `\`${scanId.slice(0, 12)}\``, inline: true },
                 { name: '⚙️ Toolchain', value: '`nmap`, `httpx`, `whatweb`, `nuclei`, `nikto`', inline: false },
-                { name: '💳 Baki Kuota', value: `**${Math.max(0, (sub?.scan_quota_total || 3) - (sub?.scan_quota_used || 0) - 1)} imbasan**`, inline: true },
+                { name: '💳 Baki Kuota', value: `**${remainingQuotaStr}**`, inline: true },
                 { name: '📡 Pemantauan Langsung', value: `[Buka Analisis Masa Nyata](${portalUrl})`, inline: false },
               ],
               footer: { text: 'Anda akan menerima notifikasi sebaik sahaja imbasan selesai!' },
@@ -783,7 +793,7 @@ class ChannelGateway {
               `• *Sasaran:* \`${target}\`\n` +
               `• *Scan ID:* \`${scanId.slice(0, 12)}\`\n` +
               `• *Toolchain:* \`nmap\`, \`httpx\`, \`whatweb\`, \`nuclei\`, \`nikto\`\n` +
-              `• *Baki Kuota:* *${Math.max(0, (sub?.scan_quota_total || 3) - (sub?.scan_quota_used || 0) - 1)} imbasan*\n\n` +
+              `• *Baki Kuota:* *${remainingQuotaStr}*\n\n` +
               `🔗 Pantau secara langsung di:\n${portalUrl}\n\n` +
               `_💡 Bot akan menghantar ringkasan penemuan sebaik sahaja imbasan ini selesai._`
 
@@ -806,10 +816,12 @@ class ChannelGateway {
           reply('⚠️ Sila nyatakan Scan ID yang ingin dihentikan.\nContoh: `/stop scan_abc123`')
           break
         }
-        const scan = db.get(
-          "SELECT * FROM scans WHERE (id = ? OR id LIKE ?) AND (user_id = ? OR client = ?)",
-          scanIdArg, `${scanIdArg}%`, pairedUser.id, pairedUser.username
-        )
+        const scan = pairedUser.role === 'admin'
+          ? db.get("SELECT * FROM scans WHERE (id = ? OR id LIKE ?)", scanIdArg, `${scanIdArg}%`)
+          : db.get(
+              "SELECT * FROM scans WHERE (id = ? OR id LIKE ?) AND (user_id = ? OR client = ?)",
+              scanIdArg, `${scanIdArg}%`, pairedUser.id, pairedUser.username
+            )
         if (!scan) {
           reply(`❌ Imbasan dengan ID \`${scanIdArg}\` tidak dijumpai atau bukan milik anda.`)
           break

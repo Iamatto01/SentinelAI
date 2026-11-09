@@ -150,12 +150,14 @@ function findApplicability(configurations, vendor, cpeProduct, version) {
   const wantVendor = String(vendor || '').toLowerCase()
   const wantProduct = String(cpeProduct || '').toLowerCase()
   const ranges = []
+  let productMatched = false
   for (const config of Array.isArray(configurations) ? configurations : []) {
     for (const node of config?.nodes || []) {
       for (const match of node?.cpeMatch || []) {
         const parts = String(match?.criteria || '').split(':')
         if (parts[3]?.toLowerCase() !== wantVendor) continue
         if (parts[4]?.toLowerCase() !== wantProduct) continue
+        productMatched = true
         if (cpeMatchApplies(match, version)) {
           ranges.push({
             criteria: match.criteria,
@@ -168,7 +170,7 @@ function findApplicability(configurations, vendor, cpeProduct, version) {
       }
     }
   }
-  return ranges
+  return { ranges, productMatched }
 }
 
 function parseNvd(cve, applicability = null) {
@@ -345,6 +347,7 @@ export async function findVersionVulnerabilities(product, version) {
 
   const targets = cpeTargets(name)
   const applicable = []
+  const outOfRange = []
   const unconfirmed = []
   const reasons = []
 
@@ -369,17 +372,16 @@ export async function findVersionVulnerabilities(product, version) {
       for (const entry of json.vulnerabilities || []) {
         const cve = entry.cve
         if (!cve?.id) continue
-        const ranges = target.vendor
+        const appInfo = target.vendor
           ? findApplicability(cve.configurations, target.vendor, target.product, release)
           : null
-        if (ranges && ranges.length > 0) {
-          applicable.push(parseNvd(cve, ranges))
-        } else if (!ranges) {
+        if (appInfo && appInfo.ranges.length > 0) {
+          applicable.push(parseNvd(cve, appInfo.ranges))
+        } else if (appInfo && appInfo.productMatched && appInfo.ranges.length === 0) {
+          outOfRange.push(parseNvd(cve, []))
+        } else {
           unconfirmed.push(parseNvd(cve, null))
         }
-        // ranges === [] means the advisory exists for this product but the
-        // observed version is outside every affected window. That is the single
-        // most useful negative a scanner can produce, so it is counted, not lost.
       }
     } catch (error) {
       reasons.push(error.name === 'AbortError' ? 'NVD request timed out' : error.message)
@@ -391,15 +393,21 @@ export async function findVersionVulnerabilities(product, version) {
     return list.filter(c => (seen.has(c.id) ? false : (seen.add(c.id), true)))
   }
   const scored = dedupe(applicable).sort((a, b) => (b.cvss?.score || 0) - (a.cvss?.score || 0))
-  const possibly = dedupe(unconfirmed)
+  const excluded = dedupe(outOfRange)
     .filter(c => !scored.some(s => s.id === c.id))
+    .sort((a, b) => (b.cvss?.score || 0) - (a.cvss?.score || 0))
+  const possibly = dedupe(unconfirmed)
+    .filter(c => !scored.some(s => s.id === c.id) && !excluded.some(e => e.id === c.id))
     .sort((a, b) => (b.cvss?.score || 0) - (a.cvss?.score || 0))
     .slice(0, 10)
 
   if (!targets.length) return { error: 'product could not be mapped to a CPE name' }
-  if (!scored.length && !possibly.length && reasons.length === targets.length) {
+  if (!scored.length && !possibly.length && !excluded.length && reasons.length === targets.length) {
     return { error: reasons.join('; ') || 'NVD lookup failed' }
   }
+
+  const totalOutOfRange = excluded.length
+  const outOfRangeSample = excluded.slice(0, 3).map(c => ({ id: c.id, score: c.cvss?.score ?? null }))
 
   const output = {
     product: name,
@@ -409,8 +417,8 @@ export async function findVersionVulnerabilities(product, version) {
     results: scored,
     // Advisories that name the product but whose range does not include this
     // build. Reported separately so the reader can see the negative.
-    outOfRangeCount: possibly.length,
-    outOfRangeSample: possibly.slice(0, 3).map(c => ({ id: c.id, score: c.cvss?.score ?? null })),
+    outOfRangeCount: totalOutOfRange,
+    outOfRangeSample,
     reasons: reasons.length ? reasons : undefined,
   }
   db.run(

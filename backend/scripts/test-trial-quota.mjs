@@ -1,3 +1,5 @@
+process.env.COMMUNITY_FREE_ACCESS_MODE = 'false'
+
 import { getUserSubscription, consumeScanQuota, activateSubscription, PLANS } from '../src/billing.js'
 import * as db from '../src/db.js'
 import { randomUUID } from 'node:crypto'

@@ -321,8 +321,65 @@ export default function Scans() {
     }
 
     return (
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm min-w-[760px] glass-table">
+      <>
+        {/* Mobile View: Touch-Friendly Card List */}
+        <div className="md:hidden space-y-2.5 p-2.5">
+          {scanList.map((s) => (
+            <div
+              key={s.id}
+              onClick={() => nav(`/app/scans/${s.id}`)}
+              className={`p-3.5 rounded-2xl border transition-all cursor-pointer ${
+                isNight
+                  ? 'bg-white/[0.02] hover:bg-white/[0.06] border-white/10 active:bg-white/10'
+                  : 'bg-white hover:bg-slate-50 border-slate-200 shadow-sm'
+              }`}
+            >
+              <div className="flex items-start justify-between gap-2 mb-2">
+                <div className="min-w-0 flex-1">
+                  <p className={`font-bold text-xs truncate ${isNight ? 'text-white' : 'text-slate-900'}`}>
+                    {s.target}
+                  </p>
+                  <p className={`text-[10px] capitalize mt-0.5 ${isNight ? 'text-slate-400' : 'text-slate-500'}`}>
+                    {s.mode} scan • {new Date(s.created_at).toLocaleDateString()}
+                  </p>
+                </div>
+                <span className={`chip text-[10px] shrink-0 border ${STATUS_STYLE[s.status] || STATUS_STYLE.stopped}`}>
+                  {s.status}
+                </span>
+              </div>
+
+              {(s.status === 'running' || s.status === 'paused') && (
+                <div className="mb-2 flex items-center gap-2">
+                  <div className={`h-1.5 flex-1 rounded-full overflow-hidden border ${isNight ? 'bg-slate-900 border-white/10' : 'bg-slate-200 border-slate-300'}`}>
+                    <div
+                      className="h-full bg-gradient-to-r from-cyan-400 to-blue-500 transition-all duration-500 shadow-[0_0_8px_rgba(0,242,254,0.6)]"
+                      style={{ width: `${Math.round(s.progress || 0)}%` }}
+                    />
+                  </div>
+                  <span className={`text-[10px] font-bold ${isNight ? 'text-cyan-300' : 'text-cyan-600'}`}>{Math.round(s.progress || 0)}%</span>
+                </div>
+              )}
+
+              <div className="flex items-center justify-between text-xs pt-2 border-t border-white/5">
+                <div className="flex items-center gap-3">
+                  <span className="text-[11px] text-slate-400">
+                    Findings: <strong className={isNight ? 'text-white' : 'text-slate-900'}>{s.findings_count ?? 0}</strong>
+                  </span>
+                  <span className="text-[11px] text-slate-400">
+                    Risk: <strong className={isNight ? 'text-cyan-300' : 'text-cyan-600'}>{(s.risk_score ?? 0).toFixed(1)}</strong>
+                  </span>
+                </div>
+                <span className="text-[10px] font-mono font-bold text-cyan-400 flex items-center gap-0.5">
+                  Audit <ChevronRight size={12} />
+                </span>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Desktop View: Full Table */}
+        <div className="hidden md:block overflow-x-auto">
+          <table className="w-full text-sm min-w-[760px] glass-table">
           <thead>
             <tr>
               <th className="px-5 py-3.5">Target</th>
@@ -472,7 +529,8 @@ export default function Scans() {
           </tbody>
         </table>
       </div>
-    )
+    </>
+  )
   }
 
   return (

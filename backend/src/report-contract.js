@@ -585,7 +585,7 @@ export function aggregateFindings(classified) {
       .replace(/[0-9]+/g, '<n>')
       .replace(/\s+/g, ' ')
       .trim()
-    const key = [v.category || 'uncategorized', v.module || '', v.verifyStatus || '', normTitle].join('|')
+    const key = [v.category || 'uncategorized', v.module || '', normTitle].join('|')
     // The path is the useful location; the bare asset host is not. `asset` is
     // the same host for every row of a scan, so letting it win produced
     // "Observed at 25 locations (e.g. italeemc.iium.edu.my)" — a list of one

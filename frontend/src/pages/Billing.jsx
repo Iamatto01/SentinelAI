@@ -18,6 +18,7 @@ export default function Billing() {
   const [loading, setLoading] = useState(true)
   const [plans, setPlans] = useState([])
   const [subscription, setSubscription] = useState(null)
+  const [billingConfig, setBillingConfig] = useState(null)
   const [history, setHistory] = useState([])
   const [interval, setInterval] = useState('monthly') // monthly | yearly
   const [upgradingPlan, setUpgradingPlan] = useState(null)
@@ -48,14 +49,16 @@ export default function Billing() {
     setLoading(true)
     setError('')
     try {
-      const [plansRes, subRes, histRes] = await Promise.all([
+      const [plansRes, subRes, histRes, cfgRes] = await Promise.all([
         api.billingPlans().catch(() => ({ plans: [] })),
         api.billingSubscription().catch(() => null),
         api.billingHistory().catch(() => ({ transactions: [] })),
+        api.billingConfig().catch(() => null),
       ])
       setPlans(plansRes.plans || [])
       setSubscription(subRes)
       setHistory(histRes.transactions || [])
+      setBillingConfig(cfgRes)
     } catch (err) {
       setError(err.message || 'Failed to load billing details')
     } finally {
@@ -119,6 +122,10 @@ export default function Billing() {
   }, [selectedPlan, modalOpen, interval, appliedPromo, duitnowRef])
 
   const handleOpenCheckout = (plan) => {
+    if (billingConfig?.paymentsEnabled === false) {
+      alert(billingConfig.message || 'Payment gateway is currently closed. All platform features are accessible in community mode.')
+      return
+    }
     setSelectedPlan(plan)
     setPromoCodeInput('')
     setAppliedPromo(null)
@@ -305,6 +312,19 @@ export default function Billing() {
           )}
         </div>
       </div>
+
+      {/* Community Evaluation Mode Notice */}
+      {(billingConfig?.paymentsEnabled === false || subscription?.communityFreeAccessMode) && (
+        <div className="p-4 rounded-2xl bg-cyan-950/40 border border-cyan-500/30 flex items-start sm:items-center justify-between gap-4 text-xs text-cyan-200">
+          <div className="flex items-center gap-3">
+            <span className="flex h-2.5 w-2.5 rounded-full bg-cyan-400 animate-pulse shrink-0" />
+            <div>
+              <span className="font-bold text-white">Community Evaluation Mode Active: </span>
+              {billingConfig?.message || 'Payment processing is currently closed. All platform pentest features, automated toolchains, and AI Copilot capabilities are available for evaluation.'}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Admin Tab Switcher */}
       {isAdmin && (

@@ -985,6 +985,9 @@ app.post('/api/scans/request', requireAuth, async (req, res) => {
     }
 
     const project = projectId ? db.get(`SELECT * FROM projects WHERE id = ?`, projectId) : null
+    if (project && !canAccessProject(req.user, project)) {
+      return res.status(403).json({ error: 'Cannot request scan for this project' })
+    }
     const requestId = `req_${randomUUID()}`
 
     audit(req.user.username, 'scan:request', `Target: ${target.trim()} (Project: ${project?.name || 'N/A'})`)
@@ -1060,6 +1063,13 @@ app.post('/api/scans', requireAuth, async (req, res) => {
   if (mode === 'blackbox' && !target) return res.status(400).json({ error: 'target required for blackbox' })
   if (mode === 'whitebox' && (!files || !files.length)) return res.status(400).json({ error: 'files required for whitebox' })
 
+  if (projectId) {
+    const proj = db.get(`SELECT * FROM projects WHERE id = ?`, projectId)
+    if (!proj || !canAccessProject(req.user, proj)) {
+      return res.status(403).json({ error: 'Cannot attach scan to this project' })
+    }
+  }
+
   // Authorization gate — operator must confirm they have written permission
   if (mode === 'blackbox' && !authorizationAcknowledged) {
     return res.status(400).json({ error: 'You must confirm that you have written authorization from the target owner before launching a scan.' })
@@ -1105,7 +1115,7 @@ app.post('/api/scans', requireAuth, async (req, res) => {
   res.status(201).json({ scan })
 })
 
-app.post('/api/scans/:id/stop', requireAuth, requireStaff, (req, res) => {
+app.post('/api/scans/:id/stop', requireAuth, requireScanAccess, (req, res) => {
   pipeline.stopScan(req.params.id) // set stopped flag so loops abort
   db.run(`UPDATE scans SET status = 'stopped', finished_at = ? WHERE id = ?`, new Date().toISOString(), req.params.id)
   audit(req.user.username, 'scan:stop', req.params.id)
@@ -1334,6 +1344,13 @@ app.post('/api/scans/whitebox-folder', requireAuth, async (req, res) => {
   const list = Array.isArray(folders) ? folders : [folders]
   if (!list.length) return res.status(400).json({ error: 'folders required (array of {dir, prefix?} or paths)' })
 
+  if (projectId) {
+    const proj = db.get(`SELECT * FROM projects WHERE id = ?`, projectId)
+    if (!proj || !canAccessProject(req.user, proj)) {
+      return res.status(403).json({ error: 'Cannot attach scan to this project' })
+    }
+  }
+
   // Quota enforcement — whitebox-folder scans count against scan quota unless free mode is active
   if (req.user?.role !== 'admin') {
     try {
@@ -1424,7 +1441,7 @@ app.post('/api/scans/whitebox-folder', requireAuth, async (req, res) => {
   res.status(201).json({ scan, stats })
 })
 
-app.post('/api/scans/:id/pause', requireAuth, requireStaff, (req, res) => {
+app.post('/api/scans/:id/pause', requireAuth, requireScanAccess, (req, res) => {
   pipeline.pauseScan(req.params.id)
   db.run(`UPDATE scans SET status = 'paused' WHERE id = ?`, req.params.id)
   pipeline.log(req.params.id, 'warn', '⏸ Scan paused by user')
@@ -1432,7 +1449,7 @@ app.post('/api/scans/:id/pause', requireAuth, requireStaff, (req, res) => {
   res.json({ ok: true, status: 'paused' })
 })
 
-app.post('/api/scans/:id/resume', requireAuth, requireStaff, (req, res) => {
+app.post('/api/scans/:id/resume', requireAuth, requireScanAccess, (req, res) => {
   pipeline.resumeScan(req.params.id)
   db.run(`UPDATE scans SET status = 'running' WHERE id = ?`, req.params.id)
   pipeline.log(req.params.id, 'info', '▶ Scan resumed by user')
@@ -1537,6 +1554,44 @@ app.put('/api/findings/:id/cvss', requireAuth, requireStaff, (req, res) => {
   recalculateScanRisk(existing.scan_id)
   audit(req.user.username, 'finding:cvss', `${req.params.id} -> ${cvssVector} (score: ${score}, ${severity})`)
   res.json(db.get(`SELECT * FROM findings WHERE id = ?`, req.params.id))
+})
+
+// Generate an AI exploit reproduction / PoC on demand for a finding
+app.post('/api/findings/:id/poc', requireAuth, async (req, res) => {
+  try {
+    const finding = db.get(`SELECT * FROM findings WHERE id = ?`, req.params.id)
+    if (!finding) return res.status(404).json({ error: 'Finding not found' })
+
+    const scan = db.get(`SELECT * FROM scans WHERE id = ?`, finding.scan_id)
+    if (req.user?.role === 'client') {
+      const allowed = visibleProjectIds(req.user)
+      const username = (req.user.username || '').toLowerCase()
+      const userEmail = (req.user.email || '').toLowerCase()
+      const isOwner = (scan?.user_id && scan.user_id === req.user.id) ||
+        (scan?.client && (scan.client.toLowerCase() === username || scan.client.toLowerCase() === userEmail))
+      const inProject = allowed && scan?.project_id && allowed.includes(scan.project_id)
+      if (!isOwner && !inProject) {
+        return res.status(404).json({ error: 'Finding not found' })
+      }
+    }
+
+    const targetType = scan?.mode === 'whitebox' ? 'code' : 'url'
+    const targetUrl = scan?.target || finding.target || ''
+
+    const poc = await aiEngine.generateExploitPoc({ ...finding, target: targetUrl }, targetType)
+    if (!poc) {
+      return res.status(422).json({ error: 'Unable to generate an exploit PoC for this vulnerability type.' })
+    }
+
+    try {
+      db.run(`UPDATE findings SET poc = ? WHERE id = ?`, JSON.stringify(poc), req.params.id)
+    } catch {}
+
+    audit(req.user.username, 'finding:poc:generate', `Generated PoC for finding ${req.params.id}`)
+    return res.json({ success: true, poc })
+  } catch (err) {
+    return res.status(500).json({ error: err.message || 'PoC generation failed' })
+  }
 })
 
 app.post('/api/cvss/calculate', requireAuth, (req, res) => {
@@ -2331,6 +2386,19 @@ app.post('/api/exploits/check', requireAuth, (req, res) => {
   const finding = db.get(`SELECT * FROM findings WHERE id = ?`, findingId)
   if (!finding) return res.status(404).json({ error: 'finding not found' })
 
+  if (req.user?.role === 'client') {
+    const scan = db.get(`SELECT id, project_id, user_id, client FROM scans WHERE id = ?`, finding.scan_id)
+    const allowed = visibleProjectIds(req.user)
+    const username = (req.user.username || '').toLowerCase()
+    const userEmail = (req.user.email || '').toLowerCase()
+    const isOwner = (scan?.user_id && scan.user_id === req.user.id) ||
+      (scan?.client && (scan.client.toLowerCase() === username || scan.client.toLowerCase() === userEmail))
+    const inProject = allowed && scan?.project_id && allowed.includes(scan.project_id)
+    if (!isOwner && !inProject) {
+      return res.status(404).json({ error: 'finding not found' })
+    }
+  }
+
   const matches = matchExploits(finding)
   const risk = classifyRisk(finding)
 
@@ -2473,18 +2541,20 @@ app.post('/api/github/scan', requireAuth, async (req, res) => {
   const { repoFullName, branch = 'main' } = req.body || {}
   if (!repoFullName) return res.status(400).json({ error: 'repoFullName required' })
 
-  // 1. Quota Verification & Consumption
-  try {
-    consumeScanQuota(req.user.id)
-  } catch (quotaErr) {
-    return res.status(402).json({ error: quotaErr.message, upgradeRequired: true })
-  }
+  const [owner, repo] = repoFullName.split('/')
+  if (!owner || !repo) return res.status(400).json({ error: 'Invalid repoFullName format (expected owner/repo)' })
 
   const integration = db.get(`SELECT access_token FROM github_integrations WHERE user_id = ?`, req.user.id)
   if (!integration) return res.status(400).json({ error: 'GitHub is not connected' })
 
-  const [owner, repo] = repoFullName.split('/')
-  if (!owner || !repo) return res.status(400).json({ error: 'Invalid repoFullName format (expected owner/repo)' })
+  // 1. Quota Verification & Consumption (admins exempt, matching /api/scans)
+  if (req.user?.role !== 'admin') {
+    try {
+      consumeScanQuota(req.user.id)
+    } catch (quotaErr) {
+      return res.status(402).json({ error: quotaErr.message, upgradeRequired: true })
+    }
+  }
 
   try {
     const client = new GitHubClient(integration.access_token)
@@ -2585,12 +2655,15 @@ app.post('/api/github/webhook', (req, res) => {
     return res.status(200).json({ ok: true, message: 'Integration token missing for user' })
   }
 
-  // Consume scan quota for the repo owner
-  try {
-    consumeScanQuota(tracked.user_id)
-  } catch (quotaErr) {
-    console.warn(`[webhook] Quota exceeded for user ${tracked.user_id}: ${quotaErr.message}`)
-    return res.status(200).json({ ok: false, error: quotaErr.message })
+  // Consume scan quota for the repo owner (admins exempt)
+  const repoOwner = db.get(`SELECT role FROM users WHERE id = ?`, tracked.user_id)
+  if (repoOwner?.role !== 'admin') {
+    try {
+      consumeScanQuota(tracked.user_id)
+    } catch (quotaErr) {
+      console.warn(`[webhook] Quota exceeded for user ${tracked.user_id}: ${quotaErr.message}`)
+      return res.status(200).json({ ok: false, error: quotaErr.message })
+    }
   }
 
   const [owner, repo] = event.repoFullName.split('/')
@@ -2653,6 +2726,7 @@ app.get('/api/billing/config', (req, res) => {
     stripeEnabled: false,
     publishableKey: '',
     currency: 'MYR',
+    communityFreeAccessMode: process.env.COMMUNITY_FREE_ACCESS_MODE === 'true',
     duitnow: {
       enabled: false,
       merchantName: '',
@@ -2672,6 +2746,17 @@ app.get('/api/billing/subscription', requireAuth, (req, res) => {
 })
 
 // Payment gateway is CLOSED — reject all checkout attempts
+// Validate a promo code against a plan
+app.post('/api/billing/validate-promo', requireAuth, (req, res) => {
+  try {
+    const { code, planId, billingInterval = 'monthly' } = req.body || {}
+    const result = validatePromoCode(code, planId, billingInterval)
+    return res.json(result)
+  } catch (err) {
+    return res.status(400).json({ error: err.message })
+  }
+})
+
 app.post('/api/billing/checkout', requireAuth, async (req, res) => {
   return res.status(403).json({
     error: 'Payment gateway is currently closed. Subscriptions and payments are not required at this time.',
@@ -2905,8 +2990,8 @@ app.post('/api/channels/pair', requireAuth, (req, res) => {
     const platform = pending.platform || 'telegram'
     const platformLabel = platform === 'discord' ? 'Discord' : 'Telegram'
 
-    // Unlink old pairing of this user on this specific platform
-    db.run("DELETE FROM telegram_pairings WHERE user_id = ? AND platform = ?", req.user.id, platform)
+    // Unlink old pairing of this user or this specific chat on this platform
+    db.run("DELETE FROM telegram_pairings WHERE (user_id = ? OR chat_id = ?) AND platform = ?", req.user.id, pending.chat_id, platform)
     db.run("UPDATE telegram_pairings SET user_id = ?, username = ?, status = 'approved', approved_at = ? WHERE id = ?",
       req.user.id, req.user.username || req.user.email, now, pending.id)
     

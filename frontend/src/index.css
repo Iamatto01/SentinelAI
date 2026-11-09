@@ -1251,3 +1251,32 @@ body.day-mode .skeleton-shimmer {
   to   { opacity: 1; transform: translateY(0); }
 }
 .content-fade { animation: content-fade 0.3s cubic-bezier(0.16,1,0.3,1) both; }
+
+/* ── Browser Autofill Harmonization ─────────────────────────────── */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
+input:-webkit-autofill:active {
+  -webkit-text-fill-color: inherit !important;
+  transition: background-color 500000s ease-in-out 0s, color 500000s ease-in-out 0s;
+}
+
+input.bg-black:-webkit-autofill,
+input.bg-black:-webkit-autofill:hover,
+input.bg-black:-webkit-autofill:focus,
+input.bg-black:-webkit-autofill:active {
+  -webkit-text-fill-color: #ffffff !important;
+  -webkit-box-shadow: 0 0 0px 1000px #000000 inset !important;
+  box-shadow: 0 0 0px 1000px #000000 inset !important;
+  caret-color: #ffffff;
+}
+
+input.bg-zinc-50:-webkit-autofill,
+input.bg-zinc-50:-webkit-autofill:hover,
+input.bg-zinc-50:-webkit-autofill:focus,
+input.bg-zinc-50:-webkit-autofill:active {
+  -webkit-text-fill-color: #09090b !important;
+  -webkit-box-shadow: 0 0 0px 1000px #fafafa inset !important;
+  box-shadow: 0 0 0px 1000px #fafafa inset !important;
+  caret-color: #09090b;
+}
