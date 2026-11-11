@@ -54,7 +54,7 @@ export const config = {
 
   jwt: {
     secret: (() => { const s = process.env.JWT_SECRET || ''; if (!s || s.includes('CHANGE_ME')) { console.error('[SECURITY] JWT_SECRET is not set or uses the default placeholder. Generate one with: node -e "console.log(require(\'crypto\').randomBytes(64).toString(\'hex\'))"'); process.exit(1); } return s })(),
-    issuer: process.env.JWT_ISSUER || 'fyp2-backend',
+    issuer: process.env.JWT_ISSUER || 'sentinelai-auth',
   },
   defaultAdminPassword: process.env.DEFAULT_ADMIN_PASSWORD || 'kali',
   forceAdminPasswordChange: (process.env.FORCE_ADMIN_PASSWORD_CHANGE || 'true').trim() !== 'false',

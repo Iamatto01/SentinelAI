@@ -35,7 +35,7 @@ KALI_HOST = os.environ.get("KALI_HOST", "192.168.68.132")
 KALI_PORT = int(os.environ.get("KALI_PORT", 22))
 KALI_USER = os.environ.get("KALI_USER", "kali")
 KALI_PASS = os.environ.get("KALI_PASS", "kali")
-OPENSSH_HOST = os.environ.get("OPENSSH_HOST", "kali-n100")
+OPENSSH_HOST = os.environ.get("OPENSSH_HOST", "qexec")
 REMOTE_DIR = "/home/kali/server/SentinelAI"
 REMOTE_TAR = "/home/kali/sentinel-deploy.tar.gz"
 
@@ -85,6 +85,7 @@ def get_local_env_var(name):
 CRITICAL_MODULES = [
     "backend/src/index.js",
     "backend/src/report.js",
+    "backend/src/pipeline.js",
     "backend/src/version-audit.js",
     "backend/src/exploits/registry.js",
 ]
@@ -102,19 +103,19 @@ def local_module_hashes():
 def detect_connection():
     has_ssh = shutil.which("ssh") is not None
     if has_ssh:
-        # 1. Try Cloudflare Access alias (kali-n100) - retry once if initial handshake takes a moment
-        for attempt in range(1, 3):
+        # 1. Try Cloudflare Access alias (kali-n100) - retry if initial handshake takes a moment
+        for attempt in range(1, 4):
             try:
                 res = subprocess.run(
-                    ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=15", OPENSSH_HOST, "echo ping_cf_ok"],
-                    capture_output=True, text=True, timeout=20
+                    ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=30", OPENSSH_HOST, "echo ping_cf_ok"],
+                    capture_output=True, text=True, timeout=35
                 )
                 if res.returncode == 0 and "ping_cf_ok" in res.stdout:
                     return "openssh", OPENSSH_HOST, "Cloudflare Access Tunnel (Global)"
             except Exception as e:
-                if attempt == 1:
-                    print(f"   [Debug] Cloudflare tunnel attempt 1 failed ({e}), retrying once...")
-                    time.sleep(1)
+                if attempt < 3:
+                    print(f"   [Debug] Cloudflare tunnel attempt {attempt} failed ({e}), retrying...")
+                    time.sleep(2)
                 else:
                     print(f"   [Debug] Cloudflare tunnel check failed: {e}")
 
@@ -349,7 +350,7 @@ def main():
     ]
     for command in preflight_commands:
         print(f"   > {' '.join(command)}")
-        result = subprocess.run(command, shell=(os.name == 'nt'))
+        result = subprocess.run(command, cwd=PROJECT_ROOT, shell=(os.name == 'nt'))
         if result.returncode != 0:
             print(f"[Error] Pre-flight command failed ({result.returncode}); deployment aborted.")
             sys.exit(result.returncode or 1)

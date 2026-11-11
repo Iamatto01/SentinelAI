@@ -1714,6 +1714,13 @@ function buildProofPanel(v, endpoint, reconciled) {
     const t = String(token).toLowerCase()
     if (t.length >= 4 && !markers.includes(t)) markers.push(t)
   }
+  // Include injected test values (e.g. '754137' from UNION SELECT) as priority markers so the underline hits the proof
+  if (ev.payload) {
+    const quoted = String(ev.payload).match(/'([^']+)'/)
+    if (quoted && quoted[1] && quoted[1].length >= 3) {
+      markers.unshift(quoted[1].toLowerCase())
+    }
+  }
 
   // Only strings that came off the wire. `raw` is accepted solely when it is not
   // the finding's own JSON echoed back.
@@ -1721,7 +1728,18 @@ function buildProofPanel(v, endpoint, reconciled) {
     .find(x => typeof x === 'string' && x.trim())
     || (typeof ev.raw === 'string' && !/^\{[\s\S]*"(title|severity|description|cweId)"\s*:/.test(ev.raw.trim()) ? ev.raw : null)
 
-  let excerpt = rawBody ? String(rawBody).replace(/\s+/g, ' ').trim().slice(0, 520) : null
+  let excerpt = null
+  if (rawBody) {
+    const cleanRaw = String(rawBody).replace(/\s+/g, ' ').trim()
+    // If it's a JSON array with multiple objects (e.g. database rows dumped by SQLi),
+    // extract the first object so the user sees the injected reflection without getting flooded
+    const firstObjMatch = cleanRaw.match(/^(\[\s*\{[\s\S]*?\})\s*,\s*\{/)
+    if (firstObjMatch) {
+      excerpt = `${firstObjMatch[1]}, ... (remaining rows truncated)]`
+    } else {
+      excerpt = cleanRaw.slice(0, 360)
+    }
+  }
   let hit = null
   if (excerpt) {
     for (const m of markers) {
@@ -1731,6 +1749,12 @@ function buildProofPanel(v, endpoint, reconciled) {
   }
 
   const headers = []
+  if (ev.parameter) headers.push(['Vulnerable parameter', String(ev.parameter)])
+  if (ev.payload) {
+    let cleanPayload = String(ev.payload)
+    if (cleanPayload.length > 60) cleanPayload = cleanPayload.slice(0, 58) + '...'
+    headers.push(['Test payload', cleanPayload])
+  }
   if (ev.contentType) headers.push(['Content-Type', String(ev.contentType).slice(0, 60)])
   if (ev.server) headers.push(['Server', String(ev.server).slice(0, 60)])
   const bytes = ev.bytes ?? ev.size ?? ev.contentLengthHeader
@@ -1901,6 +1925,10 @@ function resolveScreenshotEvidence(ev) {
 function compactUrlForLabel(url) {
   if (typeof url !== 'string' || !url.trim()) return 'the endpoint'
   let out = url.trim()
+  try {
+    // Decode percent-encoded characters and pluses so human readers see clean parameters
+    out = decodeURIComponent(out.replace(/\+/g, ' '))
+  } catch {}
   out = out.replace(/^https?:\/\//i, (m) => (m.toLowerCase().startsWith('https') ? '(https) ' : '(http) '))
   return out.replace(/\/$/, '').slice(0, 90)
 }
@@ -1992,11 +2020,25 @@ function cleanReportNarrative(value, fallback = '') {
 
 function makeEvidenceDrivenProblem(v, fallback, context) {
   const parts = []
-  if (context.endpoint) parts.push(`Observed at ${context.endpoint}.`)
-  if (context.status) parts.push(`The endpoint returned HTTP ${context.status}.`)
-  if (context.parameter) parts.push(`Affected input: ${context.parameter}.`)
+  if (context.endpoint) {
+    let cleanEp = context.endpoint
+    try {
+      const u = new URL(cleanEp)
+      cleanEp = u.pathname || cleanEp
+    } catch {
+      cleanEp = cleanEp.split('?')[0]
+    }
+    parts.push(`Observed at ${cleanEp}.`)
+  }
+  if (context.parameter) parts.push(`Affected parameter: "${context.parameter}".`)
+  if (context.status && !context.endpoint) parts.push(`The endpoint returned HTTP ${context.status}.`)
   if (context.location) parts.push(`Source location: ${context.location}.`)
-  if (context.observed) parts.push(`Observed evidence: ${context.observed}.`)
+  // Filter out large JSON/HTML dumps from the symptom narrative; raw captures belong in WHAT WE CAPTURED
+  if (context.observed && !context.observed.startsWith('{') && !context.observed.startsWith('[') && !/^\s*[\[\{]/i.test(context.observed)) {
+    if (context.observed.length < 80 && !context.observed.includes('\n')) {
+      parts.push(`Observed: ${context.observed}.`)
+    }
+  }
   parts.push(fallback)
   return parts.join(' ')
 }
@@ -4630,7 +4672,63 @@ function buildSimplifiedActionItem(v, index, detectedTech = []) {
     risk = 'Attackers can use version information to pinpoint targeted CVE exploits without active brute-forcing.'
     prescription = 'Disable server signature tokens (e.g. Nginx: `server_tokens off;`, Apache: `ServerSignature Off` and `ServerTokens Prod`).'
     verification = `curl -sSI "${context.endpoint || 'https://target.example'}" | grep -iE "^(server|x-powered-by):"`
-  } else if (lowerTitle.includes('sql') || lowerTitle.includes('injection')) {
+  } else if (/backup|\.sql\b|\.dump\b|\.bak\b|database dump/i.test(lowerTitle)) {
+    difficulty = 'easy'
+    estimatedMinutes = 15
+    urgency = sev === 'critical' ? 'fix-today' : 'this-week'
+    symptom = makeEvidenceDrivenProblem(v, 'The scanner identified an exposed database backup or file archive directly accessible from the web root.', context)
+    risk = 'Attackers can download database dumps, extracting sensitive customer records, password hashes, and system credentials without authentication.'
+    prescription = 'Immediately remove backup and database dump files from the web root, store archives in an access-controlled offline or cloud bucket, and rotate exposed credentials.'
+    verification = `curl -sS -o /dev/null -w "HTTP %{http_code}\\n" "${context.endpoint || '<affected URL>'}" (confirm 404 or 403 response).`
+  } else if (lowerTitle.includes('command injection') || (v.cweId === 'CWE-78' || lowerTitle.includes('cwe-78'))) {
+    difficulty = 'hard'
+    estimatedMinutes = 60
+    urgency = 'fix-today'
+    symptom = makeEvidenceDrivenProblem(v, 'The web application executes operating system commands using unsanitized user-supplied parameters.', context)
+    risk = 'Attackers can execute arbitrary operating system commands, seize server control, access local files, and pivot into the internal network.'
+    prescription = 'Never invoke shell commands with user-supplied arguments. Use language APIs instead of system commands, or pass arguments via safe exec arrays with strict input whitelisting.'
+    verification = `Submit a harmless command separator to ${context.endpoint || '<affected URL>'} and verify the application treats it as literal data without spawning system subshells.`
+  } else if (lowerTitle.includes('path traversal') || lowerTitle.includes('file inclusion') || (v.cweId === 'CWE-22' || lowerTitle.includes('cwe-22'))) {
+    difficulty = 'medium'
+    estimatedMinutes = 30
+    urgency = sev === 'critical' ? 'fix-today' : 'this-week'
+    symptom = makeEvidenceDrivenProblem(v, 'The application accesses files using unvalidated path input, allowing traversal sequences to access files outside the intended directory.', context)
+    risk = 'Attackers can read sensitive server files, configuration credentials, source code, and cryptographic keys.'
+    prescription = 'Use path.basename() to strip directory traversal sequences, validate requested file names against a strict whitelist, or verify the resolved path starts with the allowed root directory.'
+    verification = `Submit a traversal payload (e.g. "../") to ${context.endpoint || '<affected URL>'} and confirm the server returns 400 Bad Request or 404 Not Found without disclosing file contents.`
+  } else if (lowerTitle.includes('server-side request forgery') || lowerTitle.includes('ssrf') || (v.cweId === 'CWE-918' || lowerTitle.includes('cwe-918'))) {
+    difficulty = 'hard'
+    estimatedMinutes = 45
+    urgency = sev === 'critical' ? 'fix-today' : 'this-week'
+    symptom = makeEvidenceDrivenProblem(v, 'The application fetches remote resources using user-supplied URLs without restricting requests to authorized public destinations.', context)
+    risk = 'Attackers can force the server to issue requests to internal systems, loopback services (127.0.0.1), and cloud metadata endpoints, bypassing firewall boundaries.'
+    prescription = 'Enforce an allowed domain whitelist for outgoing HTTP requests. Block requests resolving to private IP ranges (RFC 1918, RFC 3927, loopback 127.0.0.0/8) and disable HTTP redirect following.'
+    verification = `Request an internal address (e.g. "http://127.0.0.1") via ${context.endpoint || '<affected URL>'} and verify the server blocks the request.`
+  } else if (lowerTitle.includes('idor') || lowerTitle.includes('direct object reference') || (v.cweId === 'CWE-639' || lowerTitle.includes('cwe-639'))) {
+    difficulty = 'medium'
+    estimatedMinutes = 30
+    urgency = sev === 'critical' ? 'fix-today' : 'this-week'
+    symptom = makeEvidenceDrivenProblem(v, 'The application exposes records or objects based on user-supplied IDs without verifying that the requesting user is authorized to access that object.', context)
+    risk = 'Attackers can iterate numeric or predictable record IDs to view, modify, or delete sensitive data belonging to other users.'
+    prescription = 'Implement object-level access control on every record lookup. Verify that the authenticated session owns or has explicit permission to access the requested entity ID.'
+    verification = `Request record IDs belonging to a different test account from an unauthenticated or separate session; verify that HTTP 403 Forbidden is returned.`
+  } else if (lowerTitle.includes('jwt') || (v.cweId === 'CWE-345' || lowerTitle.includes('cwe-345'))) {
+    difficulty = 'medium'
+    estimatedMinutes = 20
+    urgency = sev === 'critical' ? 'fix-today' : 'this-week'
+    symptom = makeEvidenceDrivenProblem(v, 'The JWT authentication mechanism accepts tokens signed with insecure algorithms (e.g. "none" algorithm) or lacks signature verification.', context)
+    risk = 'Attackers can forge arbitrary JWT tokens, tampering with claims such as username and administrative roles to achieve complete authentication bypass.'
+    prescription = 'Configure the JWT verification library to accept only secure, explicitly specified algorithms (e.g. RS256, HS256). Explicitly disallow the "none" algorithm in production.'
+    verification = `Submit a test JWT with {"alg": "none"} to the authentication endpoint; verify the server rejects the token with HTTP 401 Unauthorized.`
+  } else if (lowerTitle.includes('code injection') || lowerTitle.includes('eval') || (v.cweId === 'CWE-94' || lowerTitle.includes('cwe-94'))) {
+    difficulty = 'hard'
+    estimatedMinutes = 60
+    urgency = 'fix-today'
+    symptom = makeEvidenceDrivenProblem(v, 'The application dynamically evaluates untrusted code expressions submitted by users.', context)
+    risk = 'Attackers can execute arbitrary application code and system instructions, completely compromising the application process and hosting environment.'
+    prescription = 'Remove eval(), new Function(), and dynamic script execution. Use safe mathematical expression parsers or sandboxed execution libraries if calculation is required.'
+    verification = `Submit a non-destructive mathematical expression to ${context.endpoint || '<affected URL>'}; verify the server treats input as literal text without evaluating code.`
+  } else if ((/(?:\bsqli?\b|sql\s*injection)/i.test(lowerTitle) || lowerTitle.includes('injection')) && !lowerTitle.includes('command')) {
     difficulty = 'hard'
     estimatedMinutes = 60
     urgency = sev === 'critical' ? 'fix-today' : 'this-week'
@@ -5327,10 +5425,12 @@ async function renderSimplifiedPdf({ file, reportTitle, scans = [], project = nu
           score: item.cvss ?? proofSubject.cvss_score ?? proofSubject.score,
         })
         const reproCmd = concreteVerification({ title: item.title }, contextEndpoint)
-        // When a drawn panel exists, the one-line proof summary is folded into it
-        // as a wrapped row instead of owning a second framed box. Two frames per
-        // card holding the same evidence was pure page growth.
-        if (proofPanel && proofLine) proofPanel.note = proofLine
+        // When a drawn panel exists, only fold proofLine into proofPanel.note if there is NO
+        // excerpt or verbatim block. When excerpt exists, the panel already displays the full
+        // exchange cleanly, and putting proofLine under SCAN CONTEXT duplicates the URL and response body!
+        if (proofPanel && proofLine && !proofPanel.excerpt && !proofPanel.verbatim) {
+          proofPanel.note = proofLine
+        }
         const proofH = proofLine && !proofPanel ? Math.max(12, doc.fontSize(8).font('Helvetica').heightOfString(proofLine, { width: w - 48, lineGap: 2 })) + 26 : 0
         const reproH = reproCmd ? Math.max(12, doc.fontSize(8).font('Helvetica').heightOfString(reproCmd, { width: w - 48, lineGap: 2 })) + 26 : 0
 
@@ -5802,13 +5902,22 @@ async function renderSimplifiedPdf({ file, reportTitle, scans = [], project = nu
     )
     doc.y = signY + signH + 12
 
+    // Custom Conclusion if specified (placed right under sign-off box)
+    if (custom.customConclusion) {
+      doc.y = signY + signH + 14
+      doc.fontSize(9.5).font('Helvetica-Bold').fillColor(BRAND.primary).text('Operational Notes', leftX, doc.y)
+      doc.moveDown(0.3)
+      doc.fontSize(8.5).font('Helvetica').fillColor(BRAND.textDark).text(sanitizePdfText(custom.customConclusion), leftX, doc.y, { width: w })
+      doc.moveDown(0.8)
+    }
+
     // =========================================================================
     // UNVERIFIED LEADS & REJECTED OBSERVATIONS
     // Kept out of the action queue: nothing here has been proven, so listing it
     // as a fix task would create work that may be chasing a scanner artifact.
     // =========================================================================
     if (unverifiedFindings.length || rejectedFindings.length) {
-      ensureSpace(doc, 90)
+      doc.addPage()
       const ax = leftX
       doc.rect(ax, doc.y, 4, 16).fill(BRAND.accent)
       doc.fontSize(12).font('Helvetica-Bold').fillColor(BRAND.primary)
@@ -5857,13 +5966,7 @@ async function renderSimplifiedPdf({ file, reportTitle, scans = [], project = nu
       doc.moveDown(0.5)
     }
 
-    // Custom Conclusion if specified
-    if (custom.customConclusion) {
-      doc.y = signY + signH + 14
-      doc.fontSize(9.5).font('Helvetica-Bold').fillColor(BRAND.primary).text('Operational Notes', leftX, doc.y)
-      doc.moveDown(0.3)
-      doc.fontSize(8.5).font('Helvetica').fillColor(BRAND.textDark).text(sanitizePdfText(custom.customConclusion), leftX, doc.y, { width: w })
-    }
+
 
     // =========================================================================
     // RUNNING HEADERS & FOOTERS (All pages except Cover)

@@ -84,10 +84,14 @@ app.disable('x-powered-by')
 app.use(express.json({ limit: '10mb', verify: (req, res, buf) => { req.rawBody = buf } }))
 app.use(cors(corsOptions))
 app.use((req, res, next) => {
+  res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains; preload')
   res.setHeader('X-Content-Type-Options', 'nosniff')
   res.setHeader('X-Frame-Options', 'DENY')
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin')
   res.setHeader('X-XSS-Protection', '1; mode=block')
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()')
+  res.setHeader('Cross-Origin-Opener-Policy', 'same-origin')
+  res.setHeader('Cross-Origin-Resource-Policy', 'same-origin')
   res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https:; style-src 'self' 'unsafe-inline' https:; img-src 'self' data: https: blob:; font-src 'self' https: data:; connect-src 'self' https: wss: ws:; frame-ancestors 'none';")
   next()
 })
@@ -289,31 +293,63 @@ app.get('/api/status', requireAuth, async (req, res) => {
     totalTools: total,
     tools,
   }
+
+  // Non-admin clients only receive high-level status, zero infrastructure topology
+  if (req.user?.role !== 'admin') {
+    return res.json({
+      engine: {
+        ok: available > 0,
+        available: available > 0,
+        toolsAvailable: available,
+        totalToolsAvailable: available,
+        totalTools: total,
+      },
+      ai: { configured: aiEngine.llm.isConfigured() },
+      agents: { count: agentRegistry.list().length },
+    })
+  }
+
   const rag = payloadsRag.payloadsIndexStatus()
   let msf = { available: false, reason: 'MSF_RPC_PASS is not configured' }
   try { msf = await msfClient.status() } catch (e) { msf = { available: false, reason: e.message } }
+
+  const oobRaw = oob.getOobStatus()
+  const sanitizedOob = {
+    enabled: Boolean(oobRaw.enabled),
+    running: Boolean(oobRaw.running),
+    port: oobRaw.port,
+    localOnly: Boolean(oobRaw.localOnly),
+    publicUrlConfigured: Boolean(oobRaw.publicUrlConfigured),
+    activeProbes: oobRaw.activeProbes || 0,
+    totalHits: oobRaw.totalHits || 0,
+  }
+
+  const sanitizedMsf = {
+    available: Boolean(msf.available),
+    enabled: Boolean(msf.enabled),
+    reason: msf.available ? 'online' : 'offline',
+  }
+
   res.json({
     engine,
     rag,
     exploitation: {
       engine: 'native',
-      // Metasploit is optional: the campaign engine runs native/inline probes when
-      // msfrpcd is not reachable, and reports the concrete reason it is offline.
       metasploit: msf.available ? 'online' : 'offline',
-      msf,
-      oob: oob.getOobStatus(),
+      msf: sanitizedMsf,
+      oob: sanitizedOob,
     },
-    agents: { count: agentRegistry.list().length, dir: config.agentsDir },
+    agents: { count: agentRegistry.list().length },
     ai: { configured: aiEngine.llm.isConfigured(), provider: config.ai.provider },
   })
 })
 
 // ── Auth ─────────────────────────────────────────────────────────────────────
-// Enterprise Brute-force protection: 10 attempts / 15 min per real client IP.
+// Enterprise Brute-force protection: 5 attempts / 15 min per real client IP.
 // Uses the library's DEFAULT keying (= req.ip, with IPv6 subnet bucketing).
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  limit: 10,
+  limit: 5,
   skipSuccessfulRequests: true,
   standardHeaders: true,
   legacyHeaders: false,
@@ -323,13 +359,14 @@ const loginLimiter = rateLimit({
 // Strict RFC 5322 standard regex for email validation
 const EMAIL_REGEX = /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+$/
 
-// Enterprise password validation: min 8 chars, mixed complexity
+// Enterprise password validation: min 8 chars, mixed complexity + special characters
 function validatePasswordComplexity(pass) {
   if (!pass || typeof pass !== 'string') return 'Password is required'
   if (pass.length < 8) return 'Password must be at least 8 characters long'
   if (!/[a-z]/.test(pass)) return 'Password must contain at least one lowercase letter'
   if (!/[A-Z]/.test(pass)) return 'Password must contain at least one uppercase letter'
   if (!/[0-9]/.test(pass)) return 'Password must contain at least one digit'
+  if (!/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?~`]/.test(pass)) return 'Password must contain at least one special character (!@#$%^&*...)'
   return null
 }
 
@@ -403,19 +440,30 @@ app.post('/api/auth/login', loginLimiter, (req, res) => {
   return res.status(401).json({ error: 'Username or password is invalid' })
 })
 
-// Registration-specific rate limiter: 5 per hour per IP, NO skipping on success
+// Registration-specific rate limiter: 3 per hour per IP, NO skipping on success
 const registerLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,
-  limit: 5,
+  limit: 3,
   skipSuccessfulRequests: false,
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many accounts created from this IP — please try again later.' },
 })
 
+const DISPOSABLE_EMAIL_DOMAINS = new Set([
+  'tempmail.com', 'mailinator.com', '10minutemail.com', 'guerrillamail.com',
+  'sharklasers.com', 'trashmail.com', 'dispostable.com', 'yopmail.com',
+  'fakemailgenerator.com', 'throwawaymail.com', 'temp-mail.org', 'getairmail.com'
+])
+
 // Registration with plan selection & instant subscription
 app.post('/api/auth/register', registerLimiter, (req, res) => {
   try {
+    // Bot honeypot verification
+    if (req.body?.website || req.body?.company_url || req.body?.phone_fax) {
+      return res.status(400).json({ error: 'Automated registration detected.' })
+    }
+
     const { username, email, password, planId = 'pro', billingInterval = 'monthly', paymentProvider = 'stripe' } = req.body || {}
     const uName = (username || '').trim()
     const uEmail = (email || '').trim().toLowerCase()
@@ -428,6 +476,10 @@ app.post('/api/auth/register', registerLimiter, (req, res) => {
     }
     if (!EMAIL_REGEX.test(uEmail)) {
       return res.status(400).json({ error: 'Please enter a valid email address' })
+    }
+    const emailDomain = uEmail.split('@')[1] || ''
+    if (DISPOSABLE_EMAIL_DOMAINS.has(emailDomain)) {
+      return res.status(400).json({ error: 'Disposable or temporary email addresses are not permitted.' })
     }
     const passwordError = validatePasswordComplexity(password)
     if (passwordError) {
@@ -1841,7 +1893,7 @@ app.post('/api/ai/test', requireAuth, async (req, res) => {
   }
 })
 
-app.get('/api/ai/providers', requireAuth, async (req, res) => {
+app.get('/api/ai/providers', requireRole('admin'), async (req, res) => {
   try {
     const health = await aiEngine.llm.checkProvidersHealth()
     res.json({
@@ -1856,8 +1908,8 @@ app.get('/api/ai/providers', requireAuth, async (req, res) => {
 })
 
 // ── RAG / payloads ───────────────────────────────────────────────────────────
-app.get('/api/payloads/status', requireAuth, (req, res) => res.json(payloadsRag.payloadsIndexStatus()))
-app.post('/api/payloads/reindex', requireAuth, (req, res) => {
+app.get('/api/payloads/status', requireRole('admin'), (req, res) => res.json(payloadsRag.payloadsIndexStatus()))
+app.post('/api/payloads/reindex', requireRole('admin'), (req, res) => {
   const r = payloadsRag.buildPayloadIndex()
   audit(req.user.username, 'payloads:reindex', `${r.indexed} docs`)
   res.json(r)

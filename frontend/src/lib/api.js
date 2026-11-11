@@ -1,10 +1,11 @@
-const TOKEN_KEY = 'fyp2_token'
+const TOKEN_KEY = 'sentinel_auth_token'
+const LEGACY_TOKEN_KEY = 'fyp2_token'
 
 
 
 export const getToken = () => {
   try {
-    return sessionStorage.getItem(TOKEN_KEY) || localStorage.getItem(TOKEN_KEY)
+    return sessionStorage.getItem(TOKEN_KEY) || localStorage.getItem(TOKEN_KEY) || sessionStorage.getItem(LEGACY_TOKEN_KEY) || localStorage.getItem(LEGACY_TOKEN_KEY)
   } catch {
     return null
   }
@@ -29,12 +30,16 @@ export const setToken = (t, remember = true) => {
         sessionStorage.setItem(TOKEN_KEY, t)
 
         localStorage.removeItem(TOKEN_KEY)
+      localStorage.removeItem(LEGACY_TOKEN_KEY)
+      sessionStorage.removeItem(LEGACY_TOKEN_KEY)
 
       }
 
     } else {
 
       localStorage.removeItem(TOKEN_KEY)
+      localStorage.removeItem(LEGACY_TOKEN_KEY)
+      sessionStorage.removeItem(LEGACY_TOKEN_KEY)
 
       sessionStorage.removeItem(TOKEN_KEY)
 

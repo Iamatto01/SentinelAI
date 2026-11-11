@@ -9,7 +9,7 @@ export function authMiddleware(req, res, next) {
   const token = h.startsWith('Bearer ') ? h.slice(7) : null
   if (token) {
     try {
-      const payload = jwt.verify(token, config.jwt.secret, { issuer: config.jwt.issuer })
+      const payload = jwt.verify(token, config.jwt.secret, { issuer: [config.jwt.issuer, 'fyp2-backend', 'sentinelai-auth'] })
       // Verify token generation — tokens issued before a password change are rejected
       const dbUser = db.get(`SELECT token_generation, password_must_change FROM users WHERE id = ?`, payload.id || payload.sub)
       if (dbUser && typeof payload.tgen === 'number' && payload.tgen < (dbUser.token_generation || 0)) {

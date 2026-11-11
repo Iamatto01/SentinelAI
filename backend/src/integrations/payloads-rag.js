@@ -103,7 +103,7 @@ export function payloadsIndexStatus() {
         .map(d => d.name)
     } catch { /* ignore */ }
   }
-  return { installed, path: dir, docs, categories, ftsReady }
+  return { installed, corpus: 'payloads-all-the-things', docs, categories, ftsReady }
 }
 
 /**
