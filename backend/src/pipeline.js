@@ -14,6 +14,8 @@ import {
   correlateVersion,
   buildVersionFinding,
   buildUnversionedFinding,
+  buildEdgeInventoryFinding,
+  isEdgeProduct,
 } from './version-audit.js'
 import {
   calculateCvss4,
@@ -42,6 +44,17 @@ import { findCaptures } from './report-contract.js'
  * `evaluateFindingCvss()` — see the design contract in cvss4.js.
  */
 const SEVERITY_RANK = { info: 0, low: 1, medium: 2, high: 3, critical: 4 }
+
+/**
+ * Nuclei templates that only match a VERSION STRING against a known-bad range
+ * ("Nginx End-of-Life - Detect", "Apache 2.4.49 - Detect"). They assert "this
+ * software exists and is old", never "this is exploitable here". The template's
+ * own `info.severity` is `info` for exactly that reason, so a generic lifecycle
+ * override must not walk them up to `high` — an outdated banner is not a HIGH
+ * finding on its own. Real EOL risk is still reported, by the lifecycle stage
+ * that reads a curated EOL registry and can state months-of-exposure.
+ */
+const VERSION_ONLY_RE = /\b(end[\s-]?of[\s-]?life|eol|unsupported version|outdated version|version detect|is outdated|obsolete)\b/i
 
 function extractHtmlTitle(body) {
   return String(body || '').match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1]?.replace(/\s+/g, ' ').trim().slice(0, 200) || null
@@ -213,6 +226,179 @@ function responseEvidence(evidence = {}) {
       /<(!doctype|html|head|body)\b/i.test(String(body).trim()),
     claim: `${evidence.claim || ''} ${evidence.type || ''}`,
   }
+}
+
+/**
+ * Claims that a `200 OK` alone cannot substantiate.
+ *
+ * Each entry maps a claim to the artifact that would actually prove it. The
+ * `proof` fields are matched against evidence text (`content`, `body`,
+ * `snippet`, `excerpt`, `raw`, `poc`) — NOT against the title, because the
+ * title is the very thing being adjudicated. Matching the title let a finding
+ * whose description was `"Found pattern: <?php"` re-qualify itself as proven
+ * just by being titled "PHP injection".
+ */
+const CLAIM_PROOF_RULES = [
+  {
+    claim: 'code execution',
+    match: /\b(?:webshell|web shell|backdoor|rce|remote code execution|command injection|arbitrary command|code execution|shell upload|reverse shell)\b/i,
+    proof: [
+      /uid=\d+\([^)]+\)\s+gid=\d+/i,          // id / whoami output
+      /\b(?:root|www-data|nobody|apache|nginx):[\w$/]/i, // /etc/passwd-shaped line
+      /^#!\/(?:usr\/bin|bin)\/(?:ba)?sh/m,     // a shebang in a returned script
+      /<\?php[\s\S]{0,400}(?:eval|system|exec|shell_exec|passthru)\s*\(/i, // actual PHP source returned
+      /\b(?:Microsoft Windows|Darwin Kernel|Linux \S+ \d+\.\d+)\b/,       // uname-shaped banner
+      /\bcommand (?:executed|output)\b/i,
+    ],
+  },
+  {
+    claim: 'unauthorised data access',
+    // A bare "accessible without auth" needs an actual record to be data access.
+    // `/api/users/1` returning `{"error":"invalid token"}` or an empty array is
+    // an authentication boundary holding, not an IDOR.
+    match: /\b(?:idor|bola|broken object level|insecure direct object|access(?:ible|ed) without auth|without authentication|unauthenticated access|authorization bypass|auth bypass)\b/i,
+    proof: [
+      /\b[\w.+-]+@[\w-]+\.[\w.]{2,}\b/,                      // an email address
+      /\b(?:19|20)\d{2}-\d{2}-\d{2}T?\d{0,2}/,               // a record timestamp
+      /"(?:id|uuid|user_?id|account|email|username|token|balance|iban|ssn|phone)"\s*:\s*(?:"[^"]{1,}"|\d+)/i,
+      /\b(?:access_token|api_key|session|authorization)\s*[:=]\s*\S/i,
+      /\b(?:record|user|account|order|invoice|document|ticket)s?\s+(?:retrieved|returned|leaked|found)\b/i,
+    ],
+  },
+  {
+    claim: 'injection',
+    match: /\b(?:sql injection|sqli|nosql injection|ssti|template injection|ldap injection|xml injection|xxe|expression language injection)\b/i,
+    proof: [
+      /SQL syntax.*MySQL|PostgreSQL.*ERROR|ORA-\d{5}|SQLite3?::|sqlite3\.OperationalError|Microsoft OLE DB|ODBC SQL Server|Unclosed quotation mark/i,
+      /you have an error in your sql syntax/i,
+      /Mongo(?:DB)?ServerError|MongoError|E11000 duplicate key/i,
+      /\b(?:root|mysql|postgres|sa)\b.*(?:password|authentication)/i,
+      /\d+\s+(?:rows?|records?)\s+(?:returned|fetched)/i,
+      /\{\{[\s\S]{0,80}\}\}\s*(?:=|→|->)\s*\d+/,
+    ],
+  },
+  {
+    claim: 'secret exposure',
+    // "exposed with secrets" is proven by a secret, not by the file existing.
+    match: /\b(?:secret|credential|password|api[ _-]?key|private key|token)\b.{0,40}\b(?:expos|leak|disclos|found|present)\b|\b(?:expos|leak|disclos)\w*\b.{0,40}\b(?:secret|credential|password|api[ _-]?key)/i,
+    proof: [
+      /(?:password|passwd|pwd|secret|api[_-]?key|access[_-]?key|private[_-]?key|auth[_-]?token|connection[_-]?string)\s*[=:]\s*["']?[^\s"'<>]{6,}/i,
+      /BEGIN (?:RSA |EC |OPENSSH |PGP )?PRIVATE KEY/,
+      /\bAKIA[0-9A-Z]{12,}\b/,
+      /\b(?:sk|pk)_(?:live|test)_[A-Za-z0-9]{10,}\b/,
+      /\bgh[pousr]_[A-Za-z0-9]{20,}\b/,
+      /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b/, // JWT
+      /\b(?:mysql|postgres(?:ql)?|mongodb(?:\+srv)?|redis|amqp|mssql):\/\/[^\s"'<>]{6,}/i,
+    ],
+  },
+  {
+    claim: 'file disclosure',
+    // Traversal / LFI is proven by the file's contents appearing.
+    match: /\b(?:lfi|local file inclusion|path traversal|directory traversal|arbitrary file read|file disclosure|file inclusion)\b/i,
+    proof: [
+      /root:x?:0:0:/,                                        // /etc/passwd
+      /\[(?:fonts|extensions)\]/i,                           // win.ini
+      /(?:daemon|bin|sys):[x*]?:\d+:\d+:/,                   // more /etc/passwd lines
+      /; for 16-bit app support/i,                           // boot.ini
+      /\b(?:DB_PASSWORD|DB_USER|APP_KEY|SECRET_KEY)\s*=/,
+      /<\?php\s+[\s\S]{0,200}\$(?:conn|link|db)/i,
+    ],
+  },
+  {
+    claim: 'server-side request forgery',
+    match: /\b(?:ssrf|server-side request forgery)\b/i,
+    proof: [
+      /\b(?:ami-id|instance-id|instance-identity|iam\/security-credentials)\b/,
+      /\b(?:localhost|127\.0\.0\.1|\[::1\])\b.{0,200}\b(?:open|refused|served|running)\b/i,
+      /<title>\s*(?:Index of|Welcome to nginx|Apache2? (?:Ubuntu|Debian) Default Page)/i,
+      /\bmeta-data\/\d\.\d\//,
+    ],
+  },
+  {
+    claim: 'unsafe deserialization',
+    match: /\b(?:deserializ|pickle|ysoserial|object injection)\b/i,
+    proof: [
+      /java\.lang\.(?:Runtime|ProcessBuilder)|ysoserial|CommonsCollections/i,
+      /rO0AB[A-Za-z0-9+/=]{20,}/,             // Java serialized stream
+      /gAS[V\d][A-Za-z0-9+/=]{10,}/,           // Python pickle protocol
+      /(?:CVE-\d{4}-\d+|deserialization (?:confirmed|triggered))/i,
+    ],
+  },
+  {
+    claim: 'authentication bypass',
+    match: /\b(?:auth(?:entication)? bypass|login bypass|jwt (?:bypass|none|crack|forged)|session (?:fixation|hijack|forgery)|privilege escalation)\b/i,
+    proof: [
+      /\b(?:Set-Cookie|set-cookie)\s*:\s*\S+/,
+      /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b/,
+      /"(?:token|access_token|jwt|session)"\s*:\s*"[^"]{12,}"/i,
+      /\b(?:admin|administrator|superuser)\b.{0,60}\b(?:granted|authenticated|logged in|access granted)\b/i,
+      /\brole"\s*:\s*"(?:admin|root|superuser)"/i,
+    ],
+  },
+]
+
+/** Artifact-bearing evidence fields, in the order they are trusted. */
+const CLAIM_ARTIFACT_FIELDS = ['content', 'body', 'snippet', 'excerpt', 'responseBody', 'output', 'raw', 'poc', 'proof']
+
+/**
+ * Concatenate the target-produced bytes attached to a finding.
+ *
+ * `poc` is included only when it is a string: a structured PoC object is a
+ * recipe the scanner wrote, not something the target emitted, and feeding it to
+ * the proof rules would let `{"sqlmap": "--os-shell"}` self-certify as an
+ * injection artifact.
+ */
+function claimArtifactText(v = {}) {
+  const ev = (() => {
+    let e = v.evidence
+    if (typeof e === 'string') { try { e = JSON.parse(e) } catch { e = {} } }
+    return e && typeof e === 'object' ? e : {}
+  })()
+  const parts = []
+  for (const key of CLAIM_ARTIFACT_FIELDS) {
+    const val = ev[key]
+    if (typeof val === 'string') parts.push(val)
+    else if (val && typeof val === 'object' && !Array.isArray(val)) {
+      try { parts.push(JSON.stringify(val)) } catch { /* circular — skip */ }
+    }
+  }
+  // `evidence.poc` is covered above; a bare top-level `poc` is always the
+  // scanner's reconstruction (a command, a payload, a script), never bytes the
+  // target produced, so it is deliberately excluded.
+  return parts.join('\n').slice(0, 20000)
+}
+
+/**
+ * Decide whether a finding's claimed severity is substantiated by a captured artifact.
+ *
+ * @param {{title?: string, severity?: string, description?: string, evidence?: object, proofArtifact?: boolean}} finding
+ * @returns {{claim: string, severity: 'medium'} | null} the demotion to apply, or null to leave the finding alone
+ */
+export function adjudicateClaimSeverity({ title = '', severity = '', description = '', evidence = {}, proofArtifact = false } = {}) {
+  const rank = SEVERITY_RANK[String(severity).toLowerCase()]
+  if (rank == null || rank < SEVERITY_RANK.high) return null
+  // AI-authored and source-level findings carry their own proof (the source
+  // line, the model's reasoning). Only *response-driven* claims — the scanner
+  // asserting that a remote host executed code, returned a record, or leaked a
+  // file — are adjudicated here.
+  const module = String(evidence.module || '').toLowerCase()
+  if (/^code-audit|^sast|^dast-src|^source-/.test(module)) return null
+  const claimText = `${title}\n${description}`
+  // Negation is handled downstream: every rule returns a demotion when the
+  // artifact is absent, and a self-negating description only ever *reinforces*
+  // that outcome. Reading the keyword as the claim is what made the previous
+  // guards turn "no traversal payload was captured" into a traversal finding.
+  const artifactText = claimArtifactText({ evidence })
+
+  for (const rule of CLAIM_PROOF_RULES) {
+    if (!rule.match.test(claimText)) continue
+    if (proofArtifact) return null
+    // An in-band artifact that can only exist when the exploit worked is proof
+    // even without a structured capture entry.
+    if (artifactText && rule.proof.some(re => re.test(artifactText))) return null
+    return { claim: rule.claim, severity: 'medium' }
+  }
+  return null
 }
 
 /**
@@ -600,6 +786,14 @@ export class UnifiedPipeline {
   _isSoft404Finding(scanId, finding) {
     const source = String(finding.module || '').toLowerCase()
     if (!source.startsWith('custom-script:') && source !== 'path-enum' && !/^native:(?:ffuf|gobuster)$/.test(source)) return false
+
+    // Non-path findings (DNS, ports, SSL/TLS, redirects, rate-limits, headers, protocol features)
+    // are infrastructure or behavioral findings — they are NEVER soft-404 SPA landing pages.
+    const titleAndDesc = `${finding.title || ''} ${finding.description || ''} ${finding.evidence?.claim || ''}`
+    if (/\b(?:dns|spf|dmarc|dkim|caa|zone transfer|wildcard dns|open port|non-standard port|tls|ssl|cipher|certificate|redirect|rate limit(?:ing)?|cookie|security header|alt-svc)\b/i.test(titleAndDesc)) {
+      return false
+    }
+
     const baseline = this._catchAllBaselines.get(scanId)
     if (!baseline?.isCatchAll) return false
     const evidence = responseEvidence(finding.evidence)
@@ -668,11 +862,13 @@ export class UnifiedPipeline {
     const fingerprint = this._targetFingerprint(scanId)
     const isLinuxPhp = /\b(?:linux|unix|centos|ubuntu|debian|apache|nginx|php)\b/i.test(fingerprint)
     const isCmsFramework = /\b(?:moodle|wordpress|drupal)\b/i.test(fingerprint)
-    // Both name AND command are inspected: the shipped ASP.NET probe is titled
-    // "ASP.NET Security Checks" and only names elmah.axd / web.config / trace.axd
-    // inside its command, so matching the name alone silently ran it on PHP hosts.
-    if (isLinuxPhp && /elmah|web\.config|trace\.axd|\.aspx/i.test(`${name} ${script.command}`)) return true
-    if (isLinuxPhp && /\b(?:actuator|spring boot|java)\b/i.test(`${name} ${script.command}`)) return true
+    // Dedicated platform probes: skip ASP.NET on Linux/PHP targets.
+    // Match name directly (e.g. "ASP.NET Security Checks") so general config-probing scripts
+    // that check web.config alongside .env don't get skipped.
+    if (isLinuxPhp && /\b(?:asp\.net|iis|elmah)\b/i.test(name)) return true
+    // Dedicated Java / Spring Boot probes: skip on Linux/PHP targets.
+    // Match name directly so generic scripts like "CSP Deep Analysis" (which mentions Java plugins) don't get skipped.
+    if (isLinuxPhp && /\b(?:actuator|spring boot|websphere|jboss|tomcat|java)\b/i.test(name)) return true
     // Name-only for Laravel on purpose: the generic "Log File Exposure" probe
     // walks ~26 log paths, mentioning laravel.log once among them, and is
     // hardened + useful on this host class. Matching its command would suppress
@@ -857,6 +1053,49 @@ export class UnifiedPipeline {
     // keyword list, which routes it to the LLM branch instead — so the overrule
     // never executed for exactly the findings it exists to correct.
     const directorySource = /(?:ffuf|gobuster|dirsearch|feroxbuster|path-enum|dirb)/i.test(String(f.module || ''))
+    // ── Claim verification gate ──────────────────────────────────────────────
+    // A custom script's stdout IS the finding. Whatever severity string the
+    // script author wrote into `emit` lands in the database, so a probe whose
+    // only success condition is "HTTP 200 came back" can publish
+    // `"severity":"critical"` with no exploitability proof at all. Measured on
+    // one scan: 25 `.php` paths on a catch-all static host produced 23
+    // "Possible webshell" HIGH findings because the content regex
+    // `cmd|command|password|eval(` matches ordinary HTML.
+    //
+    // Severity is therefore a CLAIM, and this gate demotes the claim unless an
+    // artifact that can only exist when the exploit worked was captured. The
+    // demotion is to `medium` + a needs-validation tier, not `info`: a 200 on
+    // `/shell.php` remains a real observation worth an analyst's time, it just
+    // is not proof of code execution.
+    {
+      // A capture key proves a response was recorded; it does not prove the
+      // claim. `findCaptures` accepts `status`, so every re-fetched 200 counts —
+      // which is exactly how unverified `critical` findings kept their tier.
+      // Extract the actual bytes instead and let the rules read them.
+      const proofArtifact = claimArtifactText(f) !== ''
+      const demoted = adjudicateClaimSeverity({
+        title: f.title,
+        severity: f.severity,
+        description: f.description,
+        evidence: { ...(f.evidence || {}), module: f.module },
+        proofArtifact,
+      })
+      if (demoted) {
+        this.log(scanId, 'info',
+          `⚖️  claim demoted "${f.title}" ${f.severity} → ${demoted.severity}: no artifact proves ${demoted.claim}; evidence is a response, not an exploitation`)
+        f.severity = demoted.severity
+        f.cvss = null
+        f.cvssVector = null
+        f.exploitPlaybooks = []
+        const { exploitPlaybooks: _staleClaimPlaybooks, ...claimEvidence } = f.evidence || {}
+        f.evidence = {
+          ...claimEvidence,
+          unverifiedClaim: demoted.claim,
+          validationTier: 'needs-validation',
+        }
+      }
+    }
+
     // Adjudicate on the *claim*, never on the absence of a keyword. `sqlProof`
     // must be able to tell "an error-based injection was confirmed" apart from
     // "no SQL error was observed" — the negation-blind version read the denial
@@ -1121,22 +1360,52 @@ export class UnifiedPipeline {
     }
 
     // The tier recorded above may say "needs-validation" because the reviewer
-    // could not settle the claim — but a captured response settles it regardless
-    // of what the reviewer concluded. Re-stamping needs-validation here would
-    // erase the contract's own decision after it was already made, which is how a
-    // finding holding a photographed 200 OK still rendered as unverified.
+    // could not settle the claim — and a captured response settles it regardless
+    // of what the reviewer concluded, so the tier must not be re-stamped on top of
+    // the reviewer's own decision.
     //
-    // Both spellings must be honoured. The undecided branch stamps
+    // "Captured" means bytes, not a key. `findCaptures` treats `status` as a
+    // capture, and `_runCustomScripts` attaches a `status` to *every* finding when
+    // it enriches evidence after the fact — so keying the tier on it made
+    // `capturedNow` unconditionally true and every `needs-validation` finding
+    // rendered as confirmed. That is the mechanism that let an unverified claim
+    // stay `high`/`critical` in the report while carrying a needs-validation
+    // stamp: the stamp was written, then discarded one line later.
+    //
+    // Both spellings must still be honoured. The undecided branch stamps
     // `verification: 'needs-validation'` while the artifact-less downgrade stamps
     // `aiEvidenceTier: 'needs-validation'`; reading only the latter let an
-    // undecided review — the very case this comment describes — fall through to
-    // evidenceTier() and render as "observed", i.e. more confirmed than the
-    // verdict justified.
+    // undecided review fall through to evidenceTier() and render as "observed".
     const capturedNow = findCaptures(f).length > 0
-    const tier = (!capturedNow && (f.evidence?.aiEvidenceTier === 'needs-validation' || f.evidence?.verification === 'needs-validation'))
+    const hasArtifact = claimArtifactText(f) !== ''
+    const flaggedUnverified = f.evidence?.aiEvidenceTier === 'needs-validation' || f.evidence?.verification === 'needs-validation'
+    const tier = (flaggedUnverified && !hasArtifact)
       ? 'needs-validation'
       : evidenceTier(f, targetType)
     f.evidence = { ...(f.evidence || {}), validationTier: tier }
+
+    // An unverified claim may not outrank its evidence. The AI reviewer's own
+    // `needs-validation` stamp is a ceiling on severity, not a footnote: a finding
+    // the reviewer declined to settle cannot ship as HIGH/CRITICAL while holding
+    // no artifact a reader could check. Same treatment the discovery-only
+    // reclassification above uses — severity capped at medium, CVSS withheld,
+    // playbooks cleared — so unproven claims stay in the appendix and cannot
+    // inflate the posture score.
+    if (tier === 'needs-validation' && (SEVERITY_RANK[f.severity] ?? 0) >= SEVERITY_RANK.high) {
+      const capped = String(f.severity).toLowerCase()
+      f.severity = 'medium'
+      f.cvss = null
+      f.cvssVector = null
+      f.exploitPlaybooks = []
+      f.evidence = {
+        ...f.evidence,
+        unverified: true,
+        severityCappedFrom: capped,
+        note: `Capped ${capped} → medium: reviewer flagged this needs-validation and no response artifact backs the claim.`,
+      }
+      this.log(scanId, 'info',
+        `⚖️  "${f.title}" capped ${capped} → medium — no artifact backs the claim (unverified findings cannot outrank their evidence)`)
+    }
 
     // Publish the capture verdict *before* scoring. `findCaptures` is the only
     // layer that can tell a real artifact from a title, and the semantic
@@ -1580,7 +1849,10 @@ export class UnifiedPipeline {
           // Fix: when a catch-all baseline exists and the finding lacks response
           // metadata, re-fetch the claimed URL and attach the response fingerprint
           // so _isSoft404Finding() can correctly suppress catch-all matches.
-          const probeUrl = this._extractProbeUrl(f, target) || (target ? ensureScheme(target) : null)
+          // Only probe URLs for path-based findings. Non-path findings (DNS, ports, SSL, redirects)
+          // must never fall back to fetching the root target HTML and getting stamped with the SPA baseline hash.
+          const isNonPathFinding = /\b(?:dns|spf|dmarc|dkim|caa|zone transfer|wildcard dns|open port|non-standard port|tls|ssl|cipher|certificate|redirect|rate limit(?:ing)?|cookie|security header|alt-svc)\b/i.test(`${f.title || ''} ${f.description || ''}`)
+          const probeUrl = !isNonPathFinding ? this._extractProbeUrl(f, target) : null
           if (probeUrl && (!f.evidence || f.evidence.status == null || f.evidence.status === 200)) {
             try {
               const res = await fetch(probeUrl, { method: 'GET', redirect: 'manual', signal: AbortSignal.timeout(8000) })
@@ -1865,7 +2137,16 @@ export class UnifiedPipeline {
     }
 
     // ── 5. Unversioned products (lower severity, still reported) ──
+    // WAF/CDN products are collapsed into ONE infrastructure-inventory card:
+    // whatweb, wafw00f and header fingerprints each recognise the same edge,
+    // so per-product emission produced several duplicate "Cloudflare" rows.
+    const edgeInventory = buildEdgeInventoryFinding(unversioned)
+    if (edgeInventory) {
+      await this.ingestFinding(scanId, edgeInventory, { verify })
+      this.log(scanId, 'info', `📌 [${edgeInventory.severity}] ${edgeInventory.title}`)
+    }
     for (const u of unversioned) {
+      if (isEdgeProduct(u)) continue
       const alreadyVersioned = detected.some(d => d.product.toLowerCase() === u.product.toLowerCase())
       if (alreadyVersioned) continue
       const finding = buildUnversionedFinding(u)
@@ -3241,10 +3522,13 @@ export class UnifiedPipeline {
     // ── SUBDOMAIN SCAN CASCADE: scan top subdomains for HTTP headers + sensitive paths ──
     // Strictly limited to subdomains of the target rootDomain
     // Runs in parallel batches of 5 for performance (vs sequential which took 15-30 min)
-    // Reduced from 20 to 5 subdomains, and only checks 10 critical paths instead of 40
+    // Cap raised 5 -> 12: a live subdomain that never gets crawled is an unscanned
+    // host, which is exactly how `hall-of-fame.<target>` kept only header coverage.
+    // Subdomains that actually answer 200/401/403 are then promoted to a full sweep
+    // including client-side bundle auditing; dead ones stay on the cheap path.
     const validSubs = [...subs].filter(s => s === rootDomain || s.endsWith('.' + rootDomain))
     if (validSubs.length > 0) {
-      const topSubs = validSubs.slice(0, 5) // top 5 subdomains (was 20)
+      const topSubs = validSubs.slice(0, 12)
       this.log(scanId, 'info', `🔎 Cascading baseline scan to ${topSubs.length} subdomains under ${rootDomain}...`)
       // Run ALL subdomains in parallel (not in batches of 5 sequentially)
       const results = await Promise.allSettled(
@@ -3254,6 +3538,32 @@ export class UnifiedPipeline {
       this.progress(scanId, 8 + 4)
       if (scanned > 0) {
         this.log(scanId, 'info', `🔎 Subdomain cascade complete: ${scanned}/${topSubs.length} subdomains audited`)
+      }
+
+      // Deep pass: a live subdomain is its own application with its own routing,
+      // bundle and admin surface. Probe each for reachability first so dead hosts
+      // never pay for the full 50-path sweep, then re-audit the live ones without
+      // fastMode (full path list + JS bundle audit + admin portals).
+      const liveSubs = []
+      await Promise.allSettled(topSubs.map(async (sub) => {
+        try {
+          const { response: res } = await fetchWithHttpFallback(sub, {
+            method: 'GET',
+            redirect: 'follow',
+            signal: AbortSignal.timeout(8000),
+          })
+          if (res && [200, 401, 403].includes(res.status)) liveSubs.push(sub)
+        } catch { /* unreachable subdomain — skip deep pass */ }
+      }))
+      if (liveSubs.length) {
+        this.log(scanId, 'info', `🔎 Deep-probing ${liveSubs.length} live subdomain(s): ${liveSubs.join(', ')}`)
+        const deep = await Promise.allSettled(
+          liveSubs.map(sub => this.auditHttpBaseline(scanId, sub, { verify, targetType: 'url', fastMode: false }))
+        )
+        const deepScanned = deep.filter(r => r.status === 'fulfilled').length
+        if (deepScanned > 0) {
+          this.log(scanId, 'info', `🔎 Subdomain deep pass complete: ${deepScanned}/${liveSubs.length} live subdomains fully audited`)
+        }
       }
     }
   }
@@ -3323,6 +3633,233 @@ export class UnifiedPipeline {
       } catch { /* try next */ }
     }
     return false // no hit
+  }
+
+  /**
+   * Client-side JavaScript bundle audit.
+   *
+   * HTML/header scanners are blind to single-page apps: the routes, API surface
+   * and sometimes credentials live inside `assets/index-*.js`, not the served
+   * document. This fetches the entry document, follows its script tags, and
+   * greps the bundles for API routes, secret-looking literals and auth-token
+   * storage keys. Findings are evidence-gated: a match must carry the actual
+   * surrounding snippet, and secret findings require a value-shaped token, so a
+   * minified word like `password` in a variable name cannot raise a card.
+   */
+  async auditClientBundle(scanId, targetUrl, { verify } = {}) {
+    const base = String(targetUrl || '').replace(/\/+$/, '')
+    if (!base) return { scripts: 0, endpoints: 0, secrets: 0 }
+
+    let html = ''
+    try {
+      const res = await fetch(base, {
+        redirect: 'follow',
+        headers: { 'user-agent': 'Mozilla/5.0 (compatible; SentinelAI/1.0)' },
+        signal: AbortSignal.timeout(15000),
+      })
+      if (!res.ok) return { scripts: 0, endpoints: 0, secrets: 0 }
+      html = (await res.text()).slice(0, 3_000_000)
+    } catch {
+      return { scripts: 0, endpoints: 0, secrets: 0 }
+    }
+
+    // Collect same-origin script URLs from src attributes and ES module imports.
+    const scriptUrls = new Set()
+    for (const m of html.matchAll(/<script[^>]+src\s*=\s*["']([^"']+)["']/gi)) {
+      scriptUrls.add(m[1])
+    }
+    for (const m of html.matchAll(/["']([^"']*\.m?js(?:\?[^"']*)?)["']/gi)) {
+      scriptUrls.add(m[1])
+    }
+
+    const resolved = []
+    for (const raw of scriptUrls) {
+      try {
+        const u = new URL(raw, base + '/')
+        if (u.origin !== new URL(base).origin) continue
+        if (!/\.m?js(\?|$)/i.test(u.pathname)) continue
+        resolved.push(u.href)
+      } catch { /* skip unparsable */ }
+    }
+    // Entry bundle first, then everything else; cap the fan-out.
+    resolved.sort((a, b) => (/index[.-]/i.test(b) ? 1 : 0) - (/index[.-]/i.test(a) ? 1 : 0))
+    const targets = [...new Set(resolved)].slice(0, 12)
+    if (!targets.length) return { scripts: 0, endpoints: 0, secrets: 0 }
+
+    const apiRoutes = new Set()
+    const secretHits = []
+    const storageHits = new Set()
+    let fetched = 0
+    let bundleBytes = 0
+
+    // Placeholder/example values that look secret-shaped but carry no real data.
+    const PLACEHOLDER = /^(?:x{3,}|0{4,}|your[_-]?|changeme|example|placeholder|dummy|test[_-]?key|undefined|null|true|false|\{\{.*?\}\}|<.*?>)$/i
+
+    for (const url of targets) {
+      await this.waitIfPaused(scanId)
+      let body = ''
+      try {
+        const r = await fetch(url, {
+          redirect: 'follow',
+          headers: { 'user-agent': 'Mozilla/5.0 (compatible; SentinelAI/1.0)' },
+          signal: AbortSignal.timeout(15000),
+        })
+        if (!r.ok) continue
+        body = (await r.text()).slice(0, 5_000_000)
+        fetched++
+        bundleBytes += body.length
+      } catch { continue }
+
+      // API routes: absolute paths inside fetchers, axios calls and string literals.
+      for (const m of body.matchAll(/["'`](\/api\/[A-Za-z0-9_\-./{}$:]{2,120})["'`]/g)) {
+        const p = m[1].split('?')[0]
+        if (/\$\{|\{\{|%s/.test(p)) continue
+        apiRoutes.add(p)
+      }
+      for (const m of body.matchAll(
+        /(?:https?:\/\/[A-Za-z0-9_.\-]+)?(\/(?:v[1-3]|rest|graphql|internal)(?:\/[A-Za-z0-9_\-./{}:]{0,120})?)["'`]/g,
+      )) {
+        const p = m[1].split('?')[0]
+        if (/\$\{|\{\{/.test(p)) continue
+        // Drop the bare-prefix duplicate produced when the `/api/x` form already matched.
+        if (/^\/(?:v[1-3]|rest|graphql|internal)$/.test(p) && !/\/graphql$/.test(p)) continue
+        apiRoutes.add(p)
+      }
+
+      // Auth-token storage keys: the exact pattern the reviewer asked for.
+      for (const m of body.matchAll(
+        /(?:localStorage|sessionStorage)\s*\.\s*setItem\s*\(\s*["'`]([^"'`]{1,80})["'`]/g,
+      )) {
+        storageHits.add(m[1])
+      }
+      for (const m of body.matchAll(
+        /(?:localStorage|sessionStorage)\s*\[\s*["'`]([^"'`]{1,80})["'`]\s*\]\s*=/g,
+      )) {
+        storageHits.add(m[1])
+      }
+
+      // Secret-shaped literals. Require a real value, not a name or placeholder.
+      const secretPatterns = [
+        { kind: 'AWS Access Key ID', re: /\b(AKIA[0-9A-Z]{16})\b/g, sev: 'high' },
+        { kind: 'Google API Key', re: /\b(AIza[0-9A-Za-z\-_]{35})\b/g, sev: 'high' },
+        { kind: 'Stripe Live Secret Key', re: /\b(sk_live_[0-9A-Za-z]{16,})\b/g, sev: 'critical' },
+        { kind: 'Slack Token', re: /\b(xox[abprs]-[0-9A-Za-z\-]{10,})/g, sev: 'high' },
+        { kind: 'Private Key Block', re: /(-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----)/g, sev: 'critical' },
+        { kind: 'JSON Web Token', re: /\b(eyJ[A-Za-z0-9_\-]{8,}\.eyJ[A-Za-z0-9_\-]{8,}\.[A-Za-z0-9_\-]{8,})/g, sev: 'medium' },
+        {
+          kind: 'Hardcoded Credential Assignment',
+          re: /(?:api[_-]?key|secret|passwd|password|auth[_-]?token|access[_-]?token)\s*[:=]\s*["'`]([A-Za-z0-9+/_\-]{16,64})["'`]/gi,
+          sev: 'medium',
+          valueGroup: 1,
+        },
+      ]
+      for (const pat of secretPatterns) {
+        for (const m of body.matchAll(pat.re)) {
+          const value = m[pat.valueGroup ?? 1]
+          if (!value || PLACEHOLDER.test(value)) continue
+          // Reject obvious runtime interpolation and repeated-character filler.
+          if (/^\$\{|\{\{|%s|<%/.test(value)) continue
+          if (new Set(value).size < 6) continue
+          // Keep the literal but redact the middle so the report does not leak a live key.
+          const redacted = value.length > 12
+            ? `${value.slice(0, 6)}…${value.slice(-4)}`
+            : `${value.slice(0, 2)}…`
+          secretHits.push({
+            kind: pat.kind,
+            sev: pat.sev,
+            bundle: url,
+            redacted,
+            context: m[0].slice(0, 200).replace(/\s+/g, ' '),
+          })
+        }
+      }
+    }
+
+    if (!fetched) return { scripts: 0, endpoints: 0, secrets: 0 }
+
+    const host = (() => { try { return new URL(base).host } catch { return base } })()
+
+    // ── Finding 1: API surface disclosed by the bundle ──
+    if (apiRoutes.size) {
+      const routes = [...apiRoutes].sort()
+      await this.ingestFinding(scanId, {
+        title: `Client Bundle Discloses ${routes.length} API Route${routes.length === 1 ? '' : 's'}`,
+        severity: 'low',
+        cweId: 'CWE-200',
+        owaspCategory: 'A01:2025-Broken Access Control',
+        description: `The JavaScript bundles served by ${host} embed ${routes.length} API route${routes.length === 1 ? '' : 's'} that are not discoverable by crawling the rendered HTML. These paths expand the authenticated attack surface and were queued for injection testing.`,
+        remediation: 'Treat client-side route strings as public. Enforce authorization server-side on every one of these endpoints; move any secret or privileged path out of the bundle.',
+        module: 'js-bundle-audit',
+        evidence: {
+          url: base,
+          bundlesScanned: fetched,
+          bytesScanned: bundleBytes,
+          routeCount: routes.length,
+          routes: routes.slice(0, 60),
+          sample: routes.slice(0, 15),
+        },
+      }, { verify })
+      // Feed them into the URL pool so the injection chain gets a shot at them.
+      this._collectUrls(scanId, routes.slice(0, 40).map(p => `${base}${p}`))
+      this.log(scanId, 'info', `🧩 JS bundle audit: ${routes.length} API routes extracted from ${fetched} bundle(s) → queued for probing`)
+    }
+
+    // ── Finding 2: secret-shaped literals in the bundle (grouped by kind) ──
+    if (secretHits.length) {
+      const byKind = new Map()
+      for (const h of secretHits) {
+        if (!byKind.has(h.kind)) byKind.set(h.kind, [])
+        byKind.get(h.kind).push(h)
+      }
+      for (const [kind, hits] of byKind) {
+        const worst = hits.some(h => h.sev === 'critical') ? 'critical'
+          : hits.some(h => h.sev === 'high') ? 'high' : 'medium'
+        await this.ingestFinding(scanId, {
+          title: `${kind} Exposed in Client Bundle (${hits.length})`,
+          severity: worst,
+          cweId: 'CWE-798',
+          owaspCategory: 'A07:2025-Authentication Failures',
+          description: `${hits.length} ${kind} value${hits.length === 1 ? '' : 's'} found in JavaScript served to unauthenticated clients on ${host}. Anything shipped in a bundle must be considered public. Evidence captured: ${hits[0].context}`,
+          remediation: 'Rotate the exposed credential immediately, then move the call to a server-side proxy and keep the key in server environment variables.',
+          module: 'js-bundle-audit',
+          evidence: {
+            url: hits[0].bundle,
+            kind,
+            count: hits.length,
+            // Literal kept, middle redacted, plus the index keys the contract trusts.
+            matches: hits.slice(0, 10).map(h => ({ bundle: h.bundle, value: h.redacted })),
+            snippet: hits[0].context,
+            body: hits.map(h => h.context).join('\n').slice(0, 4000),
+          },
+        }, { verify })
+      }
+      this.log(scanId, 'warn', `🔑 JS bundle audit: ${secretHits.length} secret-shaped literal(s) across ${byKind.size} kind(s)`)
+    }
+
+    // ── Finding 3: auth material stored client-side ──
+    if (storageHits.size) {
+      const keys = [...storageHits].sort()
+      const sensitive = keys.filter(k => /token|auth|jwt|session|secret|key|credential|pass/i.test(k))
+      if (sensitive.length) {
+        await this.ingestFinding(scanId, {
+          title: `Authentication Material Persisted in Web Storage (${sensitive.length})`,
+          severity: 'medium',
+          cweId: 'CWE-922',
+          owaspCategory: 'A07:2025-Authentication Failures',
+          description: `${host} writes authentication material to browser storage under ${sensitive.length} key${sensitive.length === 1 ? '' : 's'}: ${sensitive.slice(0, 10).join(', ')}. Web storage is readable by any script on the origin, so a single XSS yields a durable token theft with no HttpOnly protection.`,
+          remediation: 'Store session tokens in HttpOnly, Secure, SameSite cookies instead of localStorage/sessionStorage.',
+          module: 'js-bundle-audit',
+          evidence: {
+            url: base,
+            storageKeys: sensitive.slice(0, 30),
+            allKeys: keys.slice(0, 40),
+            bundlesScanned: fetched,
+          },
+        }, { verify })
+      }
+    }
+
+    return { scripts: fetched, endpoints: apiRoutes.size, secrets: secretHits.length }
   }
 
   /**
@@ -3563,21 +4100,40 @@ export class UnifiedPipeline {
                 evidence: { url: checkUrl },
               }, { verify })
             } else if (p === '/robots.txt' && !isHtml && /user-agent:|disallow:|allow:/i.test(text)) {
+              // Deliberately joins the corpus template's robots.txt finding
+              // family (see `Robots.txt Sensitive Path Discovery`): both
+              // describe the same artefact, so `findingFingerprint` collapses
+              // them into one card and the template's severity wins the merge.
+              // Emitting a separate `robots.txt Discovered` row here produced
+              // a second, near-duplicate entry for every scan.
               await this.ingestFinding(scanId, {
-                title: 'robots.txt Discovered',
+                title: 'Information Disclosure: robots.txt exposes 0 reachable sensitive path(s)',
                 severity: 'info',
-                cweId: 'CWE-200',
-                owaspCategory: 'A02:2025-Security Misconfiguration',
-                description: `Discovered robots.txt containing crawler directives:\n${text.slice(0, 300)}`,
-                remediation: 'Ensure robots.txt does not disclose sensitive administrative endpoints.',
+                cweId: 'CWE-548',
+                owaspCategory: 'A05:2025-Security Misconfiguration',
+                description: `robots.txt is publicly served at ${checkUrl} and lists restricted crawler directives:\n${text.slice(0, 300)}\n\nNo listed path was confirmed reachable, so this is a disclosure-only observation.`,
+                remediation: 'Serve robots.txt without enumerating sensitive locations, and enforce authentication on every path it lists. A Disallow entry is not an access control.',
                 module: 'path-enum',
-                evidence: { url: checkUrl, snippet: text.slice(0, 300) },
+                evidence: { url: checkUrl, snippet: text.slice(0, 300), count: 0 },
               }, { verify })
             }
           }
         } catch { /* skip */ }
       }
     } // end if (!isSpaCatchAll)
+
+    // 4. Client-side bundle audit. Runs even on SPA catch-all hosts — that is
+    // precisely the case path enumeration has to skip, so the bundle is the only
+    // place the real attack surface (routes, API calls, tokens) can be observed.
+    // Intentional for subdomain cascades too: a subdomain is usually a separate
+    // application with its own bundle, and skipping it produced zero JS coverage
+    // for the whole host. Guarded by a size cap inside `auditClientBundle`.
+    try {
+      this.log(scanId, 'info', `▶ Auditing client-side JS bundles on ${targetUrl}...`)
+      await this.auditClientBundle(scanId, targetUrl, { verify })
+    } catch (err) {
+      this.log(scanId, 'warn', `JS bundle audit warning: ${err.message}`)
+    }
   }
 
   /** Parse raw tool stdout into structured findings (heuristic + severity extraction). */
@@ -3609,7 +4165,20 @@ export class UnifiedPipeline {
     }
     this.log(scanId, 'info', `🔍 [${tool}] parser extracted ${findings.length} findings — passing to AI verification`)
     for (const f of findings) {
-      await this.ingestFinding(scanId, { ...f, module: `native:${tool}` }, { verify, targetType })
+      const declared = SEVERITY_RANK[f.severity] ?? SEVERITY_RANK.info
+      const moduleTitle = String(f.title || '')
+      const versionOnly = VERSION_ONLY_RE.test(moduleTitle)
+      // End-of-life / lifecycle templates are `info` by design: they assert a
+      // version string matches a range, not that anything is exploitable. Letting
+      // the lifecycle override below promote them to `high` turned every outdated
+      // banner into a HIGH finding — that is how a template whose own
+      // `info.severity` reads "info" ended up stored as HIGH.
+      const treated = (versionOnly && declared <= SEVERITY_RANK.info)
+        ? 'info'
+        : VERSION_FINDING_MODULES.has(tool)
+          ? (declared < SEVERITY_RANK.medium ? 'medium' : f.severity)
+          : f.severity
+      await this.ingestFinding(scanId, { ...f, severity: treated, module: `native:${tool}` }, { verify, targetType })
     }
   }
 
@@ -4675,11 +5244,18 @@ export function extractFindingsFromOutput(tool, output, target = '', baseline = 
         // unverified" instead of silently dropping or guessing.
         const wafDetected = /Cloudflare|Incapsula|Sucuri|Imperva|Akamai|Fastly/i.test(rest)
         const productMatches = [...rest.matchAll(/\b([A-Za-z][A-Za-z0-9_-]{1,30})\[([^\]]*)\]/g)]
+        // Edge/WAF products are collapsed into a single infrastructure card —
+        // per-product rows here duplicated the version-audit inventory finding.
+        const edgeVendors = []
         for (const pm of productMatches) {
           const product = pm[1]
           const version = (pm[2] || '').trim()
           if (/^(IP|Country|Title|HTTPServer|Email|Script|Open-Graph-Protocol|X-Frame-Options|Content-Security-Policy|Strict-Transport-Security|X-XSS-Protection)\b/i.test(product)) continue
           if (version) continue // version present — verified
+          if (/^(cloudflare|incapsula|sucuri|imperva|akamai|fastly|cloudfront|akamaighost|azurefrontdoor|cloudflare-nginx)$/i.test(product)) {
+            if (!edgeVendors.some(v => v.toLowerCase() === product.toLowerCase())) edgeVendors.push(product)
+            continue
+          }
           // Product detected but version obscured
           push(`whatweb: ${product} detected but version obscured${wafDetected ? ' (behind WAF/CDN)' : ''}`, 'info', line, {
             url,
@@ -4687,6 +5263,21 @@ export function extractFindingsFromOutput(tool, output, target = '', baseline = 
             product,
             wafDetected,
           })
+        }
+        if (edgeVendors.length) {
+          push(
+            `Edge security / CDN infrastructure detected: ${edgeVendors.join(', ')}`,
+            'info',
+            `whatweb observed an edge security layer: ${edgeVendors.join(', ')}. Consolidated as infrastructure context; the edge obscures origin versions but does not remove origin vulnerability.`,
+            {
+              module: 'version-audit',
+              cweId: 'CWE-200',
+              owaspCategory: 'A02:2025-Security Misconfiguration',
+              severityFloor: 'info',
+              url,
+              evidence: { edgeProducts: edgeVendors.join(', '), kind: 'edge-inventory', detectionSource: 'whatweb', count: edgeVendors.length },
+            },
+          )
         }
       }
       if (findings.length) return { findings: findings.slice(0, 10), discoveredUrls }
@@ -4944,15 +5535,36 @@ export function extractFindingsFromOutput(tool, output, target = '', baseline = 
   }
   if (findings.length) return { findings: findings.slice(0, 30), discoveredUrls }
 
-  // wafw00f — WAF detection
+  // wafw00f — WAF detection.
+  // Emitted into the `version-audit` channel with a stable, vendor-independent
+  // title so `findingFingerprint` collapses it with the whatweb and header
+  // fingerprints of the same edge into ONE infrastructure-inventory finding.
+  // Per-vendor `WAF Detected: <vendor>` titles produced 4 duplicate rows on a
+  // single Cloudflare-fronted target.
   if (tool === 'wafw00f') {
+    const vendors = []
     for (const line of lines) {
       const m = line.match(/is\s+behind\s+(.+?)(?:\s|$)/i)
       if (m) {
-        push(`WAF Detected: ${m[1].trim()}`, 'info', line.trim())
+        const vendor = m[1].trim()
+        if (vendor && !vendors.some(v => v.toLowerCase() === vendor.toLowerCase())) vendors.push(vendor)
       }
     }
-    if (findings.length) return { findings: findings.slice(0, 10), discoveredUrls }
+    if (vendors.length) {
+      push(
+        `Edge security / CDN infrastructure detected: ${vendors.join(', ')}`,
+        'info',
+        `wafw00f identified an edge security layer: ${vendors.join(', ')}. Consolidated as infrastructure context; a WAF reduces but does not remove origin vulnerability.`,
+        {
+          module: 'version-audit',
+          cweId: 'CWE-200',
+          owaspCategory: 'A02:2025-Security Misconfiguration',
+          severityFloor: 'info',
+          evidence: { edgeProducts: vendors.join(', '), kind: 'edge-inventory', detectionSource: 'wafw00f', count: vendors.length },
+        },
+      )
+      return { findings: findings.slice(0, 10), discoveredUrls }
+    }
   }
 
   // ── feroxbuster: recursive directory brute-force ──

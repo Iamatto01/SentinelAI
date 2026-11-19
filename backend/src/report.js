@@ -14,6 +14,7 @@ import {
   classifyFinding,
   aggregateFindings,
   normalizeConfidence,
+  enforceSeverityFloor,
   NON_ARTIFACT_EVIDENCE_KEYS,
   looksLikeFindingEcho,
   looksLikeTemplateWrapper,
@@ -4220,7 +4221,10 @@ export async function generateReport(scanId, minSeverity = 'info', statusFilter 
     // root causes are collapsed so the report does not print one header warning
     // forty times. `raw` keeps the pre-aggregation list for the appendix counts.
     const classified = vulnerabilities.map(classifyFinding)
-    const reportedFindings = aggregateFindings(classified)
+    // Cap claimed severity to what the evidence supports BEFORE aggregation, so
+    // the dedup merge, the severity counts, the risk score and the AI narrative
+    // all inherit one number instead of each grading the claim differently.
+    const reportedFindings = aggregateFindings(classified.map(enforceSeverityFloor))
     const rejectedFindings = reportedFindings.filter(v => v.verifyStatus === VERIFY_STATUS.REJECTED)
     const activeFindings = reportedFindings.filter(v => v.verifyStatus !== VERIFY_STATUS.REJECTED)
     const unverifiedFindings = activeFindings.filter(v => v.verifyStatus === VERIFY_STATUS.UNVERIFIED)
@@ -4430,7 +4434,7 @@ export async function generateProjectReport(projectId) {
 
   // Same contract as a single-scan report: classify, then aggregate repeats.
   const allViews = vulnerabilities.map(classifyFinding)
-  const reportedFindings = aggregateFindings(allViews)
+  const reportedFindings = aggregateFindings(allViews.map(enforceSeverityFloor))
   const rejectedFindings = reportedFindings.filter(v => v.verifyStatus === VERIFY_STATUS.REJECTED)
   const activeFindings = reportedFindings.filter(v => v.verifyStatus !== VERIFY_STATUS.REJECTED)
   const unverifiedFindings = activeFindings.filter(v => v.verifyStatus === VERIFY_STATUS.UNVERIFIED)

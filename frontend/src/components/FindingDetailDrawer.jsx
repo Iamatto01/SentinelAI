@@ -287,6 +287,18 @@ export default function FindingDetailDrawer({ finding, onClose, onStatusChange, 
   const [generatingPoc, setGeneratingPoc] = useState(false)
   const [pocCopied, setPocCopied] = useState(false)
 
+  // ── Virtual Patching (WAF) & Verification (Pillars 2-4) State ──
+  const [wafRules, setWafRules] = useState(null)
+  const [wafLoading, setWafLoading] = useState(false)
+  const [wafError, setWafError] = useState('')
+  const [wafType, setWafType] = useState('cloudflare')
+  const [wafCopied, setWafCopied] = useState(false)
+
+  const [verifyResult, setVerifyResult] = useState(null)
+  const [verifyLoading, setVerifyLoading] = useState(false)
+  const [verifyError, setVerifyError] = useState('')
+  const [verifyAuthAck, setVerifyAuthAck] = useState(true)
+
   useEffect(() => {
     if (!finding) return
     setStatus(finding.status || 'open')
@@ -300,6 +312,10 @@ export default function FindingDetailDrawer({ finding, onClose, onStatusChange, 
     setExploitCheck(null)
     setExploitCampaign(null)
     setExploitError('')
+    setWafRules(null)
+    setWafError('')
+    setVerifyResult(null)
+    setVerifyError('')
     setCustomPoc(safeParse(finding.poc, null))
     api.findingNotes(finding.id).then(setNotes).catch(() => setNotes([]))
 
@@ -345,6 +361,47 @@ export default function FindingDetailDrawer({ finding, onClose, onStatusChange, 
     if (!query.trim() || chatBusy) return
     sendFindingAiQuery(finding, query.trim())
     if (!customMsg) setChatInput('')
+  }
+
+  // ── Virtual Patching & Closed-Loop Verification Functions ──
+  async function loadWafRules() {
+    if (!finding?.id) return
+    setWafLoading(true)
+    setWafError('')
+    try {
+      const res = await api.getFindingWafRules(finding.id)
+      setWafRules(res?.rules || null)
+    } catch (e) {
+      setWafError(e.message || 'Gagal menjana peraturan WAF')
+    } finally {
+      setWafLoading(false)
+    }
+  }
+
+  function copyWafCode(code) {
+    if (!code) return
+    const text = typeof code === 'object' ? JSON.stringify(code, null, 2) : String(code)
+    navigator.clipboard.writeText(text)
+    setWafCopied(true)
+    setTimeout(() => setWafCopied(false), 2000)
+  }
+
+  async function handleVerifyMitigation() {
+    if (!finding?.id) return
+    if (!verifyAuthAck) {
+      setVerifyError('Pengesahan bertulis (authorization) diperlukan sebelum verifikasi.')
+      return
+    }
+    setVerifyLoading(true)
+    setVerifyError('')
+    try {
+      const res = await api.verifyFinding(finding.id, true)
+      setVerifyResult(res?.verification || res)
+    } catch (e) {
+      setVerifyError(e.message || 'Verifikasi gagal dijalankan')
+    } finally {
+      setVerifyLoading(false)
+    }
   }
 
   // ── Exploit Functions ──
@@ -502,6 +559,7 @@ export default function FindingDetailDrawer({ finding, onClose, onStatusChange, 
 
   const TABS = [
     { id: 'overview', label: 'Overview', icon: ShieldAlert },
+    { id: 'remediation', label: 'Virtual Patch (WAF)', icon: Wrench },
     { id: 'cvss', label: 'CVSS 4.0', icon: ShieldCheck },
     { id: 'exploit', label: 'Exploit', icon: Crosshair },
     { id: 'ai', label: 'AI Chat', icon: Bot },
@@ -678,11 +736,234 @@ export default function FindingDetailDrawer({ finding, onClose, onStatusChange, 
               )}
               {finding.remediation && (
                 <div className="rounded-lg bg-emerald-500/5 border border-emerald-500/20 p-3">
-                  <p className="text-[11px] uppercase tracking-wider text-emerald-400/80 mb-1">Remediation</p>
+                  <div className="flex items-center justify-between mb-1">
+                    <p className="text-[11px] uppercase tracking-wider text-emerald-400/80">Remediation</p>
+                    <button
+                      type="button"
+                      onClick={() => setTab('remediation')}
+                      className="text-[11px] font-semibold text-accent hover:underline flex items-center gap-1"
+                    >
+                      <Wrench size={11} /> Virtual Patch & Verification &rarr;
+                    </button>
+                  </div>
                   <p className="text-sm text-emerald-100/90 whitespace-pre-wrap">{finding.remediation}</p>
                 </div>
               )}
             </>
+          )}
+
+          {tab === 'remediation' && (
+            <div className="space-y-4">
+              {/* Pillar 2: Virtual Patching (WAF) Card */}
+              <div className="rounded-xl border border-blue-500/30 bg-blue-500/[0.04] p-4 space-y-3">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <div className="p-1.5 rounded-lg bg-blue-500/20 text-blue-400">
+                      <ShieldCheck size={16} />
+                    </div>
+                    <div>
+                      <h3 className="text-xs font-bold uppercase tracking-wider text-blue-300">
+                        Virtual Patching (WAF Hotpatch)
+                      </h3>
+                      <p className="text-[11px] text-slate-400">
+                        Sekat exploit serta-merta di edge/gateway sebelum kod dibaiki.
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={loadWafRules}
+                    disabled={wafLoading}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold transition disabled:opacity-50"
+                  >
+                    {wafLoading ? (
+                      <Loader2 size={13} className="animate-spin" />
+                    ) : (
+                      <Sparkles size={13} />
+                    )}
+                    {wafRules ? 'Regenerate WAF' : 'Generate WAF Rules'}
+                  </button>
+                </div>
+
+                {wafError && (
+                  <p className="text-xs text-red-400 bg-red-500/10 border border-red-500/20 p-2.5 rounded-lg">
+                    {wafError}
+                  </p>
+                )}
+
+                {wafRules && (
+                  <div className="space-y-3 pt-2">
+                    {/* WAF engine selector */}
+                    <div className="flex flex-wrap gap-1 border-b border-white/10 pb-2">
+                      {[
+                        { id: 'cloudflare', label: 'Cloudflare WAF' },
+                        { id: 'nginx', label: 'Nginx Block' },
+                        { id: 'modSecurity', label: 'ModSecurity (OWASP)' },
+                        { id: 'awsWaf', label: 'AWS WAF JSON' },
+                      ].map(({ id, label }) => (
+                        <button
+                          key={id}
+                          type="button"
+                          onClick={() => setWafType(id)}
+                          className={`px-2.5 py-1 rounded-md text-xs font-medium transition ${
+                            wafType === id
+                              ? 'bg-blue-500/20 text-blue-300 border border-blue-500/40'
+                              : 'text-slate-400 hover:text-slate-200'
+                          }`}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* Active WAF Rule Code Display */}
+                    <div className="rounded-lg border border-white/10 bg-black/40 overflow-hidden">
+                      <div className="flex items-center justify-between px-3 py-1.5 border-b border-white/10 bg-white/[0.02]">
+                        <span className="text-[10px] uppercase font-mono text-slate-400">
+                          {wafType === 'cloudflare' && 'Cloudflare Custom Rule Expression'}
+                          {wafType === 'nginx' && 'Nginx Configuration Directives'}
+                          {wafType === 'modSecurity' && 'ModSecurity Core Rule Directive'}
+                          {wafType === 'awsWaf' && 'AWS WAF ByteMatchStatement (JSON)'}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const val =
+                              wafType === 'cloudflare'
+                                ? wafRules.cloudflare?.expression
+                                : wafType === 'nginx'
+                                ? wafRules.nginx
+                                : wafType === 'modSecurity'
+                                ? wafRules.modSecurity
+                                : wafRules.awsWaf
+                            copyWafCode(val)
+                          }}
+                          className="flex items-center gap-1 text-[11px] font-semibold text-blue-400 hover:text-blue-300 transition"
+                        >
+                          {wafCopied ? (
+                            <>
+                              <Check size={12} /> Copied!
+                            </>
+                          ) : (
+                            <>
+                              <Copy size={12} /> Copy Rule
+                            </>
+                          )}
+                        </button>
+                      </div>
+
+                      <pre className="p-3 text-[11px] font-mono text-slate-200 whitespace-pre-wrap overflow-x-auto leading-relaxed">
+                        {wafType === 'cloudflare' && (wafRules.cloudflare?.expression || 'No expression generated')}
+                        {wafType === 'nginx' && (wafRules.nginx || 'No nginx rule generated')}
+                        {wafType === 'modSecurity' && (wafRules.modSecurity || 'No modSecurity rule generated')}
+                        {wafType === 'awsWaf' && (JSON.stringify(wafRules.awsWaf, null, 2) || '{}')}
+                      </pre>
+                    </div>
+
+                    <div className="rounded-lg bg-amber-500/[0.08] border border-amber-500/20 p-2.5 flex items-start gap-2">
+                      <AlertTriangle size={13} className="text-amber-400 shrink-0 mt-0.5" />
+                      <p className="text-[11px] text-amber-200/90 leading-relaxed">
+                        {wafRules.warning || 'Sahkan peraturan ini di persekitaran staging sebelum pengeluaran.'}
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Pillar 4: Closed-Loop Verification Card */}
+              <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/[0.04] p-4 space-y-3">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <div className="p-1.5 rounded-lg bg-emerald-500/20 text-emerald-400">
+                      <Crosshair size={16} />
+                    </div>
+                    <div>
+                      <h3 className="text-xs font-bold uppercase tracking-wider text-emerald-300">
+                        Closed-Loop Verification
+                      </h3>
+                      <p className="text-[11px] text-slate-400">
+                        Uji semula endpoint untuk sahkan patch atau sekatan WAF berkesan.
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleVerifyMitigation}
+                    disabled={verifyLoading}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition disabled:opacity-50"
+                  >
+                    {verifyLoading ? (
+                      <Loader2 size={13} className="animate-spin" />
+                    ) : (
+                      <CheckCircle size={13} />
+                    )}
+                    Verify Mitigation
+                  </button>
+                </div>
+
+                <div className="flex items-center gap-2 pt-1">
+                  <input
+                    type="checkbox"
+                    id="verify-auth"
+                    checked={verifyAuthAck}
+                    onChange={(e) => setVerifyAuthAck(e.target.checked)}
+                    className="rounded border-slate-700 text-emerald-500 focus:ring-emerald-500"
+                  />
+                  <label htmlFor="verify-auth" className="text-[11px] text-slate-400 cursor-pointer">
+                    Saya sahkan kebenaran bertulis (<em>authorization</em>) untuk mengimbas semula sasaran ini.
+                  </label>
+                </div>
+
+                {verifyError && (
+                  <p className="text-xs text-red-400 bg-red-500/10 border border-red-500/20 p-2.5 rounded-lg">
+                    {verifyError}
+                  </p>
+                )}
+
+                {verifyResult && (
+                  <div className="rounded-lg border border-white/10 bg-black/40 p-3 space-y-2 mt-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-slate-200">Keputusan Verifikasi:</span>
+                      <span
+                        className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full flex items-center gap-1 ${
+                          verifyResult.result === 'mitigated'
+                            ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                            : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                        }`}
+                      >
+                        {verifyResult.result === 'mitigated' ? (
+                          <>
+                            <CheckCircle size={12} /> MITIGATED & BLOCKED
+                          </>
+                        ) : (
+                          <>
+                            <AlertTriangle size={12} /> NEEDS REVIEW ({verifyResult.status})
+                          </>
+                        )}
+                      </span>
+                    </div>
+                    <div className="text-[11px] font-mono text-slate-400 space-y-1">
+                      <p>Target URL: <span className="text-slate-200">{verifyResult.url}</span></p>
+                      <p>HTTP Status: <span className="text-slate-200">{verifyResult.status}</span></p>
+                      <p>Masa Verifikasi: <span className="text-slate-200">{new Date(verifyResult.verifiedAt).toLocaleString()}</span></p>
+                      {verifyResult.note && <p className="text-[10px] text-slate-500 italic pt-1">{verifyResult.note}</p>}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Standard Remediation Advice Card */}
+              {finding.remediation && (
+                <div className="rounded-xl border border-white/10 bg-white/[0.02] p-4 space-y-2">
+                  <p className="text-[11px] uppercase tracking-wider font-bold text-slate-400">
+                    Langkah Pembaikan Kod (Code-Level Fix)
+                  </p>
+                  <p className="text-xs text-slate-300 whitespace-pre-wrap leading-relaxed">
+                    {finding.remediation}
+                  </p>
+                </div>
+              )}
+            </div>
           )}
 
           {tab === 'exploit' && (

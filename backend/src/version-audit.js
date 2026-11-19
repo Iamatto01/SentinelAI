@@ -52,7 +52,7 @@ export const PRODUCT_SIGNATURES = [
   { product: 'ASP.NET', vendor: 'microsoft', kind: 'framework', owasp: 'A03:2025-Software Supply Chain Failures',
     re: /\bASP\.NET[^\d]{0,10}(\d+\.\d+(?:\.\d+)?)/i, cwe: 'CWE-1104' },
   { product: 'Node.js', vendor: 'nodejs', kind: 'language', owasp: 'A03:2025-Software Supply Chain Failures',
-    re: /\bNode(?:\.js)?\/(\d+\.\d+(?:\.\d+)?)/i, cwe: 'CWE-1104' },
+    re: /\bNode(?:\.js)?(?:\/|\s+v?)(\d+\.\d+(?:\.\d+)?)/i, cwe: 'CWE-1104' },
   { product: 'Express', vendor: 'expressjs', kind: 'framework', owasp: 'A03:2025-Software Supply Chain Failures',
     re: /\bExpress\/(\d+\.\d+(?:\.\d+)?)/i, cwe: 'CWE-1104' },
   { product: 'Python', vendor: 'python', kind: 'language', owasp: 'A03:2025-Software Supply Chain Failures',
@@ -296,7 +296,7 @@ export function extractProductsWithoutVersion(text, source = 'unknown') {
     seen.add('PHP')
     out.push({ product: 'PHP', kind: 'language', source, reason: 'php-runtime' })
   }
-  if (/cf-ray|cf-cache-status|server:\s*cloudflare/i.test(blob) && !seen.has('Cloudflare')) {
+  if (/cf-ray|cf-cache-status|server:\s*cloudflare|__cf_bm|cf_clearance/i.test(blob) && !seen.has('Cloudflare')) {
     seen.add('Cloudflare')
     out.push({ product: 'Cloudflare', kind: 'waf', source, reason: 'cdn-waf' })
   }
@@ -453,6 +453,70 @@ export function buildUnversionedFinding(detected) {
   }
 }
 
+/**
+ * Edge-security products (WAF/CDN) are infrastructure context, not per-product
+ * vulnerabilities. whatweb, wafw00f and header fingerprints each recognise the
+ * same edge independently, so one target produced four near-identical
+ * "Cloudflare detected" rows that crowded out the real findings.
+ *
+ * Collapse every WAF/CDN product into ONE infrastructure-inventory finding.
+ * Returns `null` when there is nothing edge-shaped to report, so the caller can
+ * fall through to the normal per-product path.
+ */
+export const EDGE_KINDS = new Set(['waf', 'cdn', 'edge', 'proxy'])
+
+export function isEdgeProduct(detected) {
+  return Boolean(detected) && EDGE_KINDS.has(String(detected.kind || '').toLowerCase())
+}
+
+export function buildEdgeInventoryFinding(detectedList = []) {
+  const edge = detectedList.filter(isEdgeProduct)
+  if (!edge.length) return null
+
+  const products = []
+  const reasons = []
+  const sources = new Set()
+  for (const d of edge) {
+    const name = String(d.product || '').trim()
+    if (name && !products.some(p => p.toLowerCase() === name.toLowerCase())) products.push(name)
+    if (d.reason) reasons.push(`${name} (${d.reason})`)
+    if (d.source) sources.add(String(d.source))
+  }
+  if (!products.length) return null
+
+  const label = products.join(', ')
+  const n = products.length
+  return {
+    // Title is deliberately product-independent: `findingFingerprint` builds a
+    // `version|…` key for version-audit findings, so a stable product list plus
+    // the host is what actually collapses duplicates. The count keeps the card
+    // self-describing in the report.
+    title: `Edge security / CDN infrastructure detected: ${label}`,
+    severity: 'info',
+    cweId: 'CWE-200',
+    owaspCategory: 'A02:2025-Security Misconfiguration',
+    description:
+      `The target sits behind ${n === 1 ? 'an edge security product' : `${n} edge security products`} (${label}). ` +
+      `WAF and CDN presence is expected on production estates and is not a vulnerability in itself — it was previously ` +
+      `reported as several separate detections because each scanner recognises the edge independently. ` +
+      `Recorded here once as infrastructure context so the finding list reflects distinct issues rather than ` +
+      `repeated observations of the same layer. Note that a WAF does not remove the underlying vulnerability; ` +
+      `confirm every application finding against the origin as well, because edge filtering can mask exploitability.`,
+    remediation:
+      `No action required for the edge itself. Maintain the vendor's managed rule set, keep the origin reachable only ` +
+      `from the edge, and treat WAF detection as a hint to review origin-level controls rather than as a mitigation.`,
+    module: 'version-audit',
+    evidence: {
+      edgeProducts: label,
+      count: n,
+      detectionReasons: reasons.join('; '),
+      detectionSource: [...sources].join(',') || 'live-http-response',
+      kind: 'edge-inventory',
+      versionUnverified: true,
+    },
+  }
+}
+
 export default {
   PRODUCT_SIGNATURES,
   extractVersions,
@@ -461,4 +525,6 @@ export default {
   severityFromCves,
   buildVersionFinding,
   buildUnversionedFinding,
+  buildEdgeInventoryFinding,
+  isEdgeProduct,
 }

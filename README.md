@@ -441,6 +441,14 @@ SentinelAI was tested and benchmarked across university web infrastructure and d
 - **Languages Tested:** JavaScript (Express/Node), PHP, Python
 - **Findings:** Successfully pinpointed blind Boolean SQL injection, arbitrary file upload vectors, and unvalidated redirects with corresponding line numbers and remediation patches.
 
+### SentinelAI 2.0 response workflows
+
+- **Virtual patching:** `POST /api/findings/:findingId/waf-rules` generates reviewable Cloudflare, ModSecurity, Nginx, and AWS WAF rules scoped to the finding endpoint.
+- **Closed-loop verification:** `POST /api/findings/:findingId/verify` performs an authorization-gated, read-only same-origin re-test and stores the result.
+- **Dependency intelligence:** `POST /api/dependencies/osv` queries OSV and `POST /api/dependencies/patch-plan` creates a bounded npm remediation plan without executing commands.
+- **GitHub remediation:** `POST /api/github/security-pr` creates a branch and manifest-only dependency PR after the user supplies reviewed package updates.
+- **Hardening:** verification blocks private/local DNS targets, GitHub tokens are stored encrypted at rest, and dependency plans report detected npm lockfiles that must be regenerated and reviewed.
+
 ---
 
 ## 10. Ethical Disclosure & Legal Notice

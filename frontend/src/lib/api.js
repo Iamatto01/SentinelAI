@@ -14,39 +14,24 @@ export const getToken = () => {
 
 
 export const setToken = (t, remember = true) => {
-
   try {
-
     if (t) {
-
       if (remember) {
-
         localStorage.setItem(TOKEN_KEY, t)
-
         sessionStorage.removeItem(TOKEN_KEY)
-
       } else {
-
         sessionStorage.setItem(TOKEN_KEY, t)
-
         localStorage.removeItem(TOKEN_KEY)
+      }
       localStorage.removeItem(LEGACY_TOKEN_KEY)
       sessionStorage.removeItem(LEGACY_TOKEN_KEY)
-
-      }
-
     } else {
-
       localStorage.removeItem(TOKEN_KEY)
       localStorage.removeItem(LEGACY_TOKEN_KEY)
       sessionStorage.removeItem(LEGACY_TOKEN_KEY)
-
       sessionStorage.removeItem(TOKEN_KEY)
-
     }
-
   } catch {}
-
 }
 
 
@@ -173,6 +158,13 @@ export const api = {
   addFindingNote: (id, note) => apiFetch(`/api/findings/${id}/notes`, { method: 'POST', body: { note } }),
 
   cve: (id) => apiFetch(`/api/cve/${encodeURIComponent(id)}`),
+
+  // ── Virtual Patching & Closed-Loop Verification (Pillars 2-4) ──
+  getFindingWafRules: (findingId) => apiFetch(`/api/findings/${findingId}/waf-rules`, { method: 'POST' }),
+  verifyFinding: (findingId, authorizationAcknowledged = true) => apiFetch(`/api/findings/${findingId}/verify`, { method: 'POST', body: { authorizationAcknowledged } }),
+  queryOsv: (body) => apiFetch('/api/dependencies/osv', { method: 'POST', body }),
+  createDependencyPatchPlan: (files) => apiFetch('/api/dependencies/patch-plan', { method: 'POST', body: { files } }),
+  createSecurityPr: (body) => apiFetch('/api/github/security-pr', { method: 'POST', body }),
 
   monitors: () => apiFetch('/api/monitors'),
 

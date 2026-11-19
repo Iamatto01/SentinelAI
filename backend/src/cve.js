@@ -266,7 +266,9 @@ const CPE_MAP = {
   'php': { vendors: ['php'], product: 'php' },
   'asp.net': { vendors: ['microsoft'], product: 'asp.net_core' },
   'node.js': { vendors: ['nodejs'], product: 'node.js' },
-  'express': { vendors: ['expressjs'], product: 'express' },
+  // NVD has used both the project name and the OpenJS Foundation vendor
+  // for Express advisories.
+  'express': { vendors: ['expressjs', 'openjsf'], product: 'express' },
   'python': { vendors: ['python'], product: 'python' },
   'ruby': { vendors: ['ruby-lang'], product: 'ruby' },
   'java': { vendors: ['oracle'], product: 'jre' },

@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react'
 import { Loader2, Bug, Trash2, FolderGit2, Radar, Search, Filter, RefreshCw, Flag, Crosshair, Play, Download, Database, Sparkles } from 'lucide-react'
 import { FindingSkeleton } from '../components/SkeletonLoader.jsx'
 import Tooltip from '../components/Tooltip.jsx'
-import { api } from '../lib/api.js'
+import { api, getToken } from '../lib/api.js'
 import { useAi } from '../lib/AiContext.jsx'
 import SeverityBadge from '../components/SeverityBadge.jsx'
 import FindingDetailDrawer from '../components/FindingDetailDrawer.jsx'
@@ -98,7 +98,7 @@ export default function Findings() {
       await api.createBackup()
       setBackupMsg(`Database backup created! Downloading ${format.toUpperCase()}...`)
       
-      const token = localStorage.getItem('fyp2_token') || ''
+      const token = getToken() || ''
       const downloadPath = format === 'db' ? api.rawBackupUrl : api.exportBackupUrl
       const res = await fetch(downloadPath, {
         headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },

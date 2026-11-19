@@ -378,8 +378,31 @@ Respond with JSON:
         }
       }
 
-      // ── Sensitive path / file exposure: fetch it and inspect the body.
+      // ── Authentication / login surface: confirm endpoint reachability (GET or POST)
       const pathMatch = (finding.evidence && (finding.evidence.path || finding.evidence.url)) || url
+      if (/auth(?:entication)?\s*surface|login\s*surface/i.test(claim)) {
+        const res = await httpRequest(pathMatch, probe)
+        let confirmed = Boolean(res.status && res.status !== 404 && res.status !== 410)
+        let statusUsed = res.status
+        // If GET returns 404, check with POST because REST endpoints (like /api/auth/login) only respond to POST
+        if (!confirmed) {
+          const postRes = await httpRequest(pathMatch, { ...probe, method: 'POST', body: '{}', headers: { 'content-type': 'application/json' } })
+          if (postRes.status && postRes.status !== 404 && postRes.status !== 410) {
+            confirmed = true
+            statusUsed = postRes.status
+          }
+        }
+        return {
+          isTruePositive: confirmed,
+          confidence: confirmed ? 90 : 80,
+          verdict: confirmed
+            ? `Live check confirms authentication surface at ${pathMatch} (HTTP ${statusUsed}).`
+            : `Live check of ${pathMatch} returned HTTP 404 on both GET and POST. Endpoint not found.`,
+          ...(confirmed ? { refined: { ...finding, evidence: { ...(finding.evidence || {}), reverified: { url: pathMatch, status: statusUsed, at: new Date().toISOString() } } } } : {}),
+        }
+      }
+
+      // ── Sensitive path / file exposure: fetch it and inspect the body.
       if (/exposed|sensitive.*(?:path|file)|(?:git|env|backup|config).*disclosure|directory listing|swagger|openapi|robots\.txt/i.test(claim)) {
         const res = await httpRequest(pathMatch, probe)
         if (!res.status) return null

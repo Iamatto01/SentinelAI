@@ -33,6 +33,7 @@ import ClientsManagement from './pages/ClientsManagement.jsx'
 import KaliControl from './pages/KaliControl.jsx'
 import Consultants from './pages/Consultants.jsx'
 import CustomScripts from './pages/CustomScripts.jsx'
+import NotFound from './pages/NotFound.jsx'
 
 class ErrorBoundary extends React.Component {
   constructor(props) {
@@ -147,11 +148,11 @@ export default function App() {
             <Route path="exploits" element={<Exploits />} />
             <Route path="exploits/:id" element={<ExploitCampaign />} />
             <Route path="settings" element={<Settings />} />
-            <Route path="*" element={<Navigate to="/app/dashboard" replace />} />
+            <Route path="*" element={<NotFound />} />
           </Route>
 
           {/* Global Catch-all Redirect */}
-          <Route path="*" element={<Navigate to="/app/dashboard" replace />} />
+          <Route path="*" element={<NotFound />} />
         </Routes>
       </ThemeProvider>
     </ErrorBoundary>

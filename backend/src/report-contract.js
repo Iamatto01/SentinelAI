@@ -145,7 +145,9 @@ export const LOCATION_EVIDENCE_KEYS = new Set([
   'url', 'path', 'endpoint', 'asset', 'parameter', 'param', 'field',
 ])
 
-const isEvidenceField = (k) => !NON_ARTIFACT_EVIDENCE_KEYS.has(k) && !LOCATION_EVIDENCE_KEYS.has(k)
+const isEvidenceField = (k) => !NON_ARTIFACT_EVIDENCE_KEYS.has(k)
+  && !LOCATION_EVIDENCE_KEYS.has(k)
+  && !ASSESSMENT_PROSE_KEYS.has(String(k).toLowerCase())
 
 /**
  * Keys that record what the target actually EMITTED over the wire, as opposed to
@@ -224,6 +226,13 @@ export function findCaptures(v) {
   const keys = []
   for (const [k, val] of Object.entries(ev)) {
     if (!CAPTURE_EVIDENCE_KEYS.has(k)) continue
+    // `raw` holds the script's own emitted JSON finding (`{"title":"Possible
+    // webshell: /1.php","severity":"critical"}`), i.e. the scanner restating its
+    // claim — not bytes the target returned. extractArtifact already refuses it
+    // via isFindingEcho; capture detection must agree, or a finding's own
+    // assertion becomes the proof of itself. That disagreement is what graded 25
+    // phantom webshell findings `artifact-observed` / Confirmed.
+    if (isFindingEcho(k, val)) continue
     // A flag records an assertion; never a response.
     if (typeof val === 'boolean') continue
     if (val == null) continue
@@ -259,12 +268,54 @@ function isPrimitiveArtifact(val) {
   return isMeaningful(val)
 }
 
+/**
+ * Evidence keys that name the SCANNER, not the target.
+ *
+ * `evidence.tool: "nuclei"` is provenance — it records which binary produced the
+ * record. Counting it as an artifact observation graded "Nginx End-of-Life -
+ * Detect" as `artifact-observed` / Confirmed on a single field whose entire
+ * content was the string "nuclei", and that grade is what exempted it from the
+ * severity cap. The same hole would mark any tool-attributed finding verified.
+ *
+ * Deliberately narrow: only keys whose value is definitionally scanner-side.
+ * A target-emitted `Server` header or `version` string must stay admissible.
+ */
+const SCANNER_BOOKKEEPING_KEYS = new Set([
+  'tool', 'scanner', 'source', 'engine', 'template', 'templateid', 'templatename',
+  'nuclei', 'module', 'agent', 'action', 'validationtier', 'aievidenceTier',
+])
+
+/**
+ * Content keys that hold the SCANNER'S ASSESSMENT of a response rather than the
+ * response itself.
+ *
+ * `extractArtifact` is a deny-list (`isEvidenceField`), so it accepts any key it
+ * has not been told to reject. That default let a one-word prose assessment
+ * certify a finding: `{ detail: 'nope' }` graded `artifact-observed`, and every
+ * custom-script emission carries `detail` holding the script's own sentence
+ * ("Possible webshell found at /1.php"). The value is authored by the detector,
+ * which is the definition of a self-assertion.
+ *
+ * Confirmed captures have their own positive allow-list (`CAPTURE_EVIDENCE_KEYS`)
+ * which never contained `detail`, and the report's evidence dump already
+ * de-emphasises these fields — so excluding them here aligns grading with what
+ * the rest of the contract already believed.
+ *
+ * Deliberately NOT extended to `description`/`notes`: those may legitimately
+ * quote a server banner. `detail` is the field the heuristics actually exploit.
+ */
+const ASSESSMENT_PROSE_KEYS = new Set([
+  'detail', 'details', 'message', 'msg', 'summary', 'assessment', 'verdict',
+  'observation', 'observations', 'comment', 'remarks',
+])
+
 export function extractArtifact(v) {
   const ev = v.evidence && typeof v.evidence === 'object' ? v.evidence : {}
   const found = []
   for (const [k, val] of Object.entries(ev)) {
     if (!isEvidenceField(k)) continue
     if (isFindingEcho(k, val)) continue
+    if (SCANNER_BOOKKEEPING_KEYS.has(String(k).toLowerCase())) continue
     if (!isPrimitiveArtifact(val)) continue
     found.push(k)
   }
@@ -361,6 +412,26 @@ export function classifyFinding(v) {
     status = VERIFY_STATUS.UNVERIFIED
   }
 
+  // Confidence gate: a claim the verifier itself did not believe is a lead, not
+  // a result. The `needs-validation` ceiling already caps what such a finding can
+  // be rated; this decides where it is *filed*, because a capped `High` in the
+  // findings table still reads as a vulnerability to anyone who never opens the
+  // appendix. Below 70% the report's own numbers disprove the placement, so the
+  // finding moves to Appendix A and says so.
+  //
+  // Escapes are the ones that represent contact with the target: only findings
+  // with neither a capture nor `strongTier` are displaced, so `configuration-validated`
+  // and `exploitation-proven` evidence is never hidden, and a model verdict of
+  // `true` is not overruled by its own confidence number.
+  const lowConfidenceLead = conf > 0 && conf < 0.7
+    && captures.length === 0
+    && !artifact.hasArtifact
+    && !strongTier
+    && v.aiVerification !== true
+  if (lowConfidenceLead && status === VERIFY_STATUS.CONFIRMED) {
+    status = VERIFY_STATUS.UNVERIFIED
+  }
+
   let grade = 'none'
   if (tier === 'exploited') grade = 'exploitation-proven'
   else if (tier === 'validated') grade = 'configuration-validated'
@@ -376,6 +447,12 @@ export function classifyFinding(v) {
     verifyStatus: status,
     evidenceLocation: artifact.location,
     captureFields: captures,
+    ...(lowConfidenceLead && status === VERIFY_STATUS.UNVERIFIED
+      ? {
+        unverifiedReason: `Verifier confidence ${Math.round(conf * 100)}% is below the 70% threshold and no response artifact backs the claim, so it is filed as an unverified lead.`,
+        lowConfidenceLead: true,
+      }
+      : {}),
   }
 }
 
@@ -390,6 +467,58 @@ export function normalizeConfidence(val) {
   const n = Number(val)
   if (!Number.isFinite(n) || n <= 0) return 0
   return n > 1 ? n / 100 : n
+}
+
+/**
+ * A finding may not outrank its own evidence.
+ *
+ * `classifyFinding` decides which *section* a claim belongs in; this decides what
+ * number is printed next to it. They were independent, so a claim could be filed
+ * as an unverified lead in Appendix A and still render as `High · CVSS 8.6` in
+ * the finding table and the executive summary — the reader saw the severity, not
+ * the appendix, and the report read exactly like a scanner that found something.
+ *
+ * The rule is the one the whole contract rests on: severity is a statement about
+ * exploitability, exploitability is established by an artifact, so no artifact
+ * means no High. A lead stays visible — a 200 on `/shell.php` is worth an
+ * analyst's time — it just cannot shout.
+ *
+ * Deliberately narrow, so it does not flatten real findings:
+ *   • only `high`/`critical` are touched; medium and below already pass through;
+ *   • only grades that represent NO observation of the target are capped —
+ *     `none` (nothing at all), `playbook-only` (a registry match proving the bug
+ *     class is exploitable in general) and `model-assertion-only` (a verdict with
+ *     no response behind it). None of these is evidence that THIS target is
+ *     exploitable, and treating them as "work that was actually done" is how 25
+ *     phantom webshell findings kept a High rating while carrying nothing but a
+ *     playbook. `artifact-observed`, `configuration-validated` and
+ *     `exploitation-proven` are left alone — each rests on something captured;
+ *   • a model verdict of `true` at >= 70% confidence is honoured as a substitute
+ *     for the artifact, because the verifier read the response;
+ *   • an explicitly exploited/validated tier is never capped.
+ *
+ * Returns the same view object with `severity` (and `cvss`/`cvssVector`) adjusted,
+ * plus `severityCappedFrom` so the renderer can show what was claimed.
+ */
+const UNCAPPED_GRADES = new Set(['artifact-observed', 'configuration-validated', 'exploitation-proven'])
+export function enforceSeverityFloor(v) {
+  const sev = String(v?.severity || '').toLowerCase()
+  if (sev !== 'high' && sev !== 'critical') return v
+  const grade = String(v?.evidenceGrade || 'none')
+  const tier = String(v?.aiEvidenceTier || v?.validationTier || '').toLowerCase()
+  if (tier === 'exploited' || tier === 'validated') return v
+  if (UNCAPPED_GRADES.has(grade)) return v
+  const conf = normalizeConfidence(v?.aiConfidence)
+  if (v?.aiVerification === true && conf >= 0.7) return v
+
+  return {
+    ...v,
+    severity: 'medium',
+    cvss: null,
+    cvssVector: null,
+    severityCappedFrom: sev,
+    severityCapReason: 'No response artifact, verified exploit, or confident model verdict backs this claim, so it cannot be rated above Medium.',
+  }
 }
 
 /**

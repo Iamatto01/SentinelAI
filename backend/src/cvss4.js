@@ -838,6 +838,30 @@ export function evaluateFindingCvss(finding = {}) {
     }
   }
 
+  // The class template is a CEILING, never a floor. A component class such as
+  // `end_of_life` or `webshell_heuristic` carries a worst-case reference vector
+  // (8.2–8.7) because that is what the flaw costs WHEN the affected thing is
+  // actually in play. Applying that vector to a declaration of `info` is an
+  // upward promotion: a nuclei template that deliberately declares `info`
+  // ("Nginx End-of-Life - Detect") was being stored and rendered as HIGH 8.3,
+  // which then emitted a card whose severity contradicted its own template.
+  // The caller (pipeline.ingestFinding) treats declared severity as a floor for
+  // *inference*; it must equally refuse to let a class template invent impact
+  // the declaring tool never claimed. So when the declared band sits BELOW the
+  // class result and no vector good enough to corroborate the higher band was
+  // captured, hold the score at the declared band's representative vector.
+  const declaredBandVector = SEVERITY_TO_VECTOR[declaredSeverity] || null
+  if (cls && declaredBandVector && vectorSource !== 'declared' && vectorSource !== 'advisory') {
+    const declaredBandCeilingScore = declaredBandCeiling(declaredSeverity)
+    if (evaluated.score > declaredBandCeilingScore + 1e-9) {
+      vector = declaredBandVector
+      vectorSource = 'severity-floor'
+      evaluated = calculateCvss4(vector)
+      rejectedVectorReason = rejectedVectorReason
+        || `class "${cls.id}" would score ${scoreForVector(CVSS4_TEMPLATES[cls.template]).toFixed(1)} but the declaring tool rated this "${declaredSeverity}"; a class template describes the worst case, not the observed one`
+    }
+  }
+
   const score = Math.round((evaluated?.score || 0) * 10) / 10
   const severity = severityFromCvss4Score(score)
   const reconciled = (declaredScore != null && Math.abs(declaredScore - score) > CVSS_MISMATCH_TOLERANCE)

@@ -143,7 +143,7 @@ X-Requested-With: XMLHttpRequest
    try {
 -    const decoded = jwt.decode(token); // VULNERABLE: missing alg check
 +    // Remediated by SentinelAI Autonomous Engine
-+    const verified = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ['RS256', 'HS256'] });
++    const verified = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ['HS256'] });
 +    req.user = verified;
 +    return next();
 +  } catch (err) {

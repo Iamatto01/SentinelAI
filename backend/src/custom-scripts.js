@@ -135,10 +135,15 @@ function buildInvocation(language, command) {
  * any line that doesn't parse as a JSON object with a title is skipped.
  *
  * `stats.rejected` records every line that LOOKED like a finding (starts with
- * `{`) but was dropped, with the parse error. Those drops used to be silent,
- * which hid a real defect for months: `\xac\xed` in one script's description is
- * an invalid JSON escape, so bash emitted malformed JSON and the finding
- * vanished with no trace anywhere. Callers log this so silent loss is audible.
+ * `{`) but was dropped or altered, with the parse error. Those drops used to be
+ * silent, which hid a real defect for months: `\xac\xed` in one script's
+ * description is an invalid JSON escape, so bash emitted malformed JSON and the
+ * finding vanished with no trace anywhere. Callers log this so silent loss is
+ * audible.
+ *
+ * `severityFloor` is a MINIMUM, not a filter: emissions below it are raised to
+ * the floor and listed in `rejected` as `raised-to-severity-floor`. Never
+ * downgrade this back to a `continue` — see the note at the floor check.
  */
 export function parseScriptFindings(stdout, severityFloor = 'info') {
   const findings = []
@@ -159,12 +164,35 @@ export function parseScriptFindings(stdout, severityFloor = 'info') {
       continue
     }
     const sev = String(obj.severity || 'info').toLowerCase()
-    if (!RANK.hasOwnProperty(sev)) continue
-    // severity floor: script author can suppress noisy low/info output
-    if (RANK[sev] < RANK[severityFloor]) continue
+    if (!RANK.hasOwnProperty(sev)) {
+      rejected.push({ reason: 'unknown-severity', severity: sev, sample: trimmed.slice(0, 200) })
+      continue
+    }
+    // SEVERITY FLOOR = a MINIMUM, never a discard filter.
+    //
+    // This used to `continue`, which silently deleted any finding whose
+    // emitted severity ranked below the script's `severity_floor`. Two shipped
+    // scripts declare `severity_floor: "critical"` while legitimately emitting
+    // `high`, so every one of their findings vanished between the process and
+    // the database with no log line and no `rejected` entry. The report simply
+    // did not contain them, and the disappearance was indistinguishable from
+    // "the template found nothing".
+    //
+    // A floor expresses "do not bother me below this level", not "throw away
+    // evidence above it". Raise to the floor and record the drop so the
+    // behaviour stays observable.
+    let floorRaisedFrom = null
+    let sevOut = sev
+    const floorRank = RANK.hasOwnProperty(severityFloor) ? RANK[severityFloor] : 0
+    if (RANK[sev] < floorRank) {
+      floorRaisedFrom = sev
+      sevOut = severityFloor
+      rejected.push({ reason: 'raised-to-severity-floor', severity: sev, floor: severityFloor, sample: trimmed.slice(0, 200) })
+    }
     findings.push({
       title: String(obj.title).slice(0, 300),
-      severity: sev,
+      severity: sevOut,
+      ...(floorRaisedFrom ? { severityRaisedFrom: floorRaisedFrom } : {}),
       description: obj.description ? String(obj.description).slice(0, 8000) : '',
       remediation: obj.remediation ? String(obj.remediation).slice(0, 4000) : '',
       cweId: obj.cweId ? String(obj.cweId).slice(0, 20) : undefined,
@@ -223,12 +251,27 @@ export async function runCustomScript(script, { target, scanId = 'test', depth =
   }
 
   const result = await runNativeCommand(invocation, { timeout: SCRIPT_TIMEOUT_MS, env: scriptEnv })
-  const findings = parseScriptFindings(result.stdout, script.severity_floor || 'info')
+  const severityFloor = script.severity_floor || 'info'
+  const findings = parseScriptFindings(result.stdout, severityFloor)
+
+  // ── PARSE LEDGER ──
+  // The log header used to record only `exit` and `success`, so a script could
+  // exit 0, print correct JSON, and still contribute nothing because the
+  // parser dropped every line below the severity floor. That failure was
+  // invisible in the logs and cost a multi-hour trace to find. Record the
+  // emitted/kept/raised/rejected counts so it can never hide again.
+  const rejected = Array.isArray(findings.rejected) ? findings.rejected : []
+  const raised = rejected.filter(r => r.reason === 'raised-to-severity-floor').length
+  const emitted = findings.length + rejected.filter(r => r.reason !== 'raised-to-severity-floor').length
+  const ledger = `floor=${severityFloor} emitted=${emitted} kept=${findings.length} raised=${raised} rejected=${rejected.length}`
+  const rejectionDetail = rejected.length
+    ? `\n# REJECTED: ${rejected.map(r => `${r.reason}:${r.severity ?? '?'}`).join(' ')}`
+    : ''
 
   // Persist raw output for audit/debug (best-effort). The command is logged
   // without the env prefix because the prefix no longer exists on the wire.
   try {
-    const logContent = `# ${new Date().toISOString()} — ${script.name}\n# ENV: TARGET=${scriptEnv.TARGET} SCAN_ID=${scriptEnv.SCAN_ID} DEPTH=${scriptEnv.DEPTH} CATCHALL_STATUS=${scriptEnv.CATCHALL_STATUS || '-'} CATCHALL_LEN=${scriptEnv.CATCHALL_LEN || '-'}\n# CMD: ${invocation}\n# exit=${result.code} success=${result.success}\n\n${result.stdout}\n\n--- stderr ---\n${result.stderr}\n`
+    const logContent = `# ${new Date().toISOString()} — ${script.name}\n# ENV: TARGET=${scriptEnv.TARGET} SCAN_ID=${scriptEnv.SCAN_ID} DEPTH=${scriptEnv.DEPTH} CATCHALL_STATUS=${scriptEnv.CATCHALL_STATUS || '-'} CATCHALL_LEN=${scriptEnv.CATCHALL_LEN || '-'}\n# CMD: ${invocation}\n# exit=${result.code} success=${result.success}\n# PARSE: ${ledger}${rejectionDetail}\n\n${result.stdout}\n\n--- stderr ---\n${result.stderr}\n`
     
     // 1. Primary: Save inside organized scan folder (output/scans/<scanId>/custom-scripts/)
     const scanDir = path.join(config.outputDir, 'scans', scanId, 'custom-scripts')

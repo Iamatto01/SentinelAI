@@ -180,6 +180,40 @@ export class GitHubClient {
       body: JSON.stringify({ body: commentBody }),
     })
   }
+
+  async createBranch(owner, repo, baseBranch, branchName) {
+    const base = await this._fetch(`/repos/${owner}/${repo}/git/ref/heads/${encodeURIComponent(baseBranch)}`)
+    return this._fetch(`/repos/${owner}/${repo}/git/refs`, {
+      method: 'POST',
+      body: JSON.stringify({ ref: `refs/heads/${branchName}`, sha: base.object.sha }),
+    })
+  }
+
+  async updateFile(owner, repo, path, branch, content, message) {
+    let sha
+    try {
+      const current = await this._fetch(`/repos/${owner}/${repo}/contents/${path}?ref=${encodeURIComponent(branch)}`)
+      sha = current.sha
+    } catch (error) {
+      if (error.status !== 404) throw error
+    }
+    return this._fetch(`/repos/${owner}/${repo}/contents/${path}`, {
+      method: 'PUT',
+      body: JSON.stringify({
+        message,
+        content: Buffer.from(content, 'utf8').toString('base64'),
+        branch,
+        ...(sha ? { sha } : {}),
+      }),
+    })
+  }
+
+  async createPullRequest(owner, repo, title, head, base, body) {
+    return this._fetch(`/repos/${owner}/${repo}/pulls`, {
+      method: 'POST',
+      body: JSON.stringify({ title, head, base, body }),
+    })
+  }
 }
 
 /**

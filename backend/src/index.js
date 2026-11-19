@@ -57,6 +57,11 @@ import {
 import { createStripeCheckoutSession, verifyAndFulfillSession, getStripe } from './stripe.js'
 import { channelGateway } from './channels/index.js'
 import { setupHoneypot } from './honeypot.js'
+import { generateWafRules } from './virtual-patching.js'
+import { verifyFinding } from './verification.js'
+import { createDependencyPatchPlan } from './dependency-patcher.js'
+import { queryOsv } from './osv.js'
+import { encryptGitHubToken, decryptGitHubToken } from './github-secrets.js'
 
 // CORS: only whitelisted origins (config.corsOrigins from CLIENT_ORIGIN).
 // Non-browser clients (curl, server-to-server) carry no Origin header → allowed.
@@ -72,7 +77,7 @@ const corsOptions = {
     // "evilsentinelai.studio" cannot pass as sentinelai.studio.
     const isSentinelHost = /^https?:\/\/([a-z0-9-]+\.)*sentinelai\.studio(:\d+)?$/i.test(origin)
     if (!origin || config.corsOrigins.includes(origin) || isSentinelHost || LOCAL_ORIGIN_RE.test(origin) || LAN_ORIGIN_RE.test(origin)) return cb(null, true)
-    return cb(new Error(`CORS blocked: ${origin}`))
+    return cb(null, false)
   },
   credentials: true,
 }
@@ -92,7 +97,7 @@ app.use((req, res, next) => {
   res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()')
   res.setHeader('Cross-Origin-Opener-Policy', 'same-origin')
   res.setHeader('Cross-Origin-Resource-Policy', 'same-origin')
-  res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https:; style-src 'self' 'unsafe-inline' https:; img-src 'self' data: https: blob:; font-src 'self' https: data:; connect-src 'self' https: wss: ws:; frame-ancestors 'none';")
+  res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline' https:; style-src 'self' 'unsafe-inline' https:; img-src 'self' data: https: blob:; font-src 'self' https: data:; connect-src 'self' https: wss: ws:; frame-ancestors 'none';")
   next()
 })
 app.use(authMiddleware)
@@ -252,6 +257,14 @@ function requireScanAccess(req, res, next) {
   return res.status(404).json({ error: 'not found' })
 }
 
+function requireFindingAccess(req, res, next) {
+  const finding = db.get(`SELECT id, scan_id FROM findings WHERE id = ?`, req.params.findingId)
+  if (!finding) return res.status(404).json({ error: 'finding not found' })
+  req.finding = finding
+  req.params.id = finding.scan_id
+  return requireScanAccess(req, res, next)
+}
+
 /** Persist the exact launch configuration of a scan so it can be re-run later. */
 const saveScanConfig = (scanId, cfg) => {
   try {
@@ -269,79 +282,87 @@ app.get('/api/openapi.json', (req, res) => res.json(openapiSpec))
 // ── Health & status ──────────────────────────────────────────────────────────
 app.get('/api/health', (req, res) => res.json({ ok: true, time: new Date().toISOString(), agentsCount: agentRegistry.list().length }))
 app.get('/api/public/stats', async (req, res) => {
-  const tools = await nativeToolsStatus().catch(() => ({}))
-  res.json({
-    agentsCount: agentRegistry.list().length,
-    toolsCount: Object.keys(tools).length || 150,
-    ragDocsCount: payloadsRag.payloadsIndexStatus().docs || 10000,
-  })
+  try {
+    const tools = await nativeToolsStatus().catch(() => ({}))
+    res.json({
+      agentsCount: agentRegistry.list().length,
+      toolsCount: Object.keys(tools).length || 150,
+      ragDocsCount: payloadsRag.payloadsIndexStatus().docs || 10000,
+    })
+  } catch (e) {
+    res.status(500).json({ error: e.message })
+  }
 })
 app.get('/api/public/agents', (req, res) => {
   res.json(agentRegistry.list())
 })
 
 app.get('/api/status', requireAuth, async (req, res) => {
-  const tools = await nativeToolsStatus()
-  const available = Object.values(tools).filter(Boolean).length
-  const total = Object.keys(tools).length
-  const engine = {
-    ok: available > 0,
-    available: available > 0,
-    engine: 'native',
-    toolsAvailable: available,
-    totalToolsAvailable: available,
-    totalTools: total,
-    tools,
-  }
-
-  // Non-admin clients only receive high-level status, zero infrastructure topology
-  if (req.user?.role !== 'admin') {
-    return res.json({
-      engine: {
-        ok: available > 0,
-        available: available > 0,
-        toolsAvailable: available,
-        totalToolsAvailable: available,
-        totalTools: total,
-      },
-      ai: { configured: aiEngine.llm.isConfigured() },
-      agents: { count: agentRegistry.list().length },
-    })
-  }
-
-  const rag = payloadsRag.payloadsIndexStatus()
-  let msf = { available: false, reason: 'MSF_RPC_PASS is not configured' }
-  try { msf = await msfClient.status() } catch (e) { msf = { available: false, reason: e.message } }
-
-  const oobRaw = oob.getOobStatus()
-  const sanitizedOob = {
-    enabled: Boolean(oobRaw.enabled),
-    running: Boolean(oobRaw.running),
-    port: oobRaw.port,
-    localOnly: Boolean(oobRaw.localOnly),
-    publicUrlConfigured: Boolean(oobRaw.publicUrlConfigured),
-    activeProbes: oobRaw.activeProbes || 0,
-    totalHits: oobRaw.totalHits || 0,
-  }
-
-  const sanitizedMsf = {
-    available: Boolean(msf.available),
-    enabled: Boolean(msf.enabled),
-    reason: msf.available ? 'online' : 'offline',
-  }
-
-  res.json({
-    engine,
-    rag,
-    exploitation: {
+  try {
+    const tools = await nativeToolsStatus()
+    const available = Object.values(tools).filter(Boolean).length
+    const total = Object.keys(tools).length
+    const engine = {
+      ok: available > 0,
+      available: available > 0,
       engine: 'native',
-      metasploit: msf.available ? 'online' : 'offline',
-      msf: sanitizedMsf,
-      oob: sanitizedOob,
-    },
-    agents: { count: agentRegistry.list().length },
-    ai: { configured: aiEngine.llm.isConfigured(), provider: config.ai.provider },
-  })
+      toolsAvailable: available,
+      totalToolsAvailable: available,
+      totalTools: total,
+      tools,
+    }
+
+    // Non-admin clients only receive high-level status, zero infrastructure topology
+    if (req.user?.role !== 'admin') {
+      return res.json({
+        engine: {
+          ok: available > 0,
+          available: available > 0,
+          toolsAvailable: available,
+          totalToolsAvailable: available,
+          totalTools: total,
+        },
+        ai: { configured: aiEngine.llm.isConfigured() },
+        agents: { count: agentRegistry.list().length },
+      })
+    }
+
+    const rag = payloadsRag.payloadsIndexStatus()
+    let msf = { available: false, reason: 'MSF_RPC_PASS is not configured' }
+    try { msf = await msfClient.status() } catch (e) { msf = { available: false, reason: e.message } }
+
+    const oobRaw = oob.getOobStatus()
+    const sanitizedOob = {
+      enabled: Boolean(oobRaw.enabled),
+      running: Boolean(oobRaw.running),
+      port: oobRaw.port,
+      localOnly: Boolean(oobRaw.localOnly),
+      publicUrlConfigured: Boolean(oobRaw.publicUrlConfigured),
+      activeProbes: oobRaw.activeProbes || 0,
+      totalHits: oobRaw.totalHits || 0,
+    }
+
+    const sanitizedMsf = {
+      available: Boolean(msf.available),
+      enabled: Boolean(msf.enabled),
+      reason: msf.available ? 'online' : 'offline',
+    }
+
+    res.json({
+      engine,
+      rag,
+      exploitation: {
+        engine: 'native',
+        metasploit: msf.available ? 'online' : 'offline',
+        msf: sanitizedMsf,
+        oob: sanitizedOob,
+      },
+      agents: { count: agentRegistry.list().length },
+      ai: { configured: aiEngine.llm.isConfigured(), provider: config.ai.provider },
+    })
+  } catch (e) {
+    res.status(500).json({ error: e.message })
+  }
 })
 
 // ── Auth ─────────────────────────────────────────────────────────────────────
@@ -1028,6 +1049,49 @@ app.get('/api/scans/:id', requireAuth, requireScanAccess, (req, res) => {
   res.json({ scan, findings, logs, whiteboxMeta })
 })
 
+app.post('/api/findings/:findingId/waf-rules', requireAuth, requireFindingAccess, (req, res) => {
+  const finding = db.get(`SELECT * FROM findings WHERE id = ?`, req.finding.id)
+  if (!finding) return res.status(404).json({ error: 'finding not found' })
+  const rules = generateWafRules(finding)
+  audit(req.user.username, 'finding:waf-rules', `${finding.id} (${finding.title})`)
+  res.json({ findingId: finding.id, rules })
+})
+
+app.post('/api/findings/:findingId/verify', requireAuth, requireFindingAccess, async (req, res) => {
+  const finding = db.get(`SELECT * FROM findings WHERE id = ?`, req.finding.id)
+  const scan = db.get(`SELECT * FROM scans WHERE id = ?`, finding?.scan_id)
+  if (!finding || !scan) return res.status(404).json({ error: 'finding not found' })
+  const authorizationAcknowledged = req.body?.authorizationAcknowledged === true
+  if (!authorizationAcknowledged) return res.status(400).json({ error: 'authorizationAcknowledged must be true' })
+  try {
+    const result = await verifyFinding({ target: scan.target, finding, authorizationAcknowledged })
+    db.run(
+      `INSERT INTO finding_verifications (id, finding_id, scan_id, result, details, created_at) VALUES (?,?,?,?,?,?)`,
+      `verification_${randomUUID()}`, finding.id, scan.id, result.result, JSON.stringify(result), result.verifiedAt
+    )
+    audit(req.user.username, 'finding:verify', `${finding.id} -> ${result.result}`)
+    res.json({ findingId: finding.id, verification: result })
+  } catch (error) {
+    res.status(400).json({ error: error.message || 'verification failed' })
+  }
+})
+
+app.post('/api/dependencies/patch-plan', requireAuth, async (req, res) => {
+  try {
+    const plan = await createDependencyPatchPlan(req.body?.files)
+    audit(req.user.username, 'dependencies:patch-plan', `${plan.manifestPath || 'no-manifest'}`)
+    res.json({ plan })
+  } catch (error) {
+    res.status(400).json({ error: error.message || 'failed to create dependency patch plan' })
+  }
+})
+
+app.post('/api/dependencies/osv', requireAuth, async (req, res) => {
+  const result = await queryOsv(req.body || {})
+  if (result.error) return res.status(400).json(result)
+  res.json(result)
+})
+
 // Client scan request endpoint (notifies admin via email)
 app.post('/api/scans/request', requireAuth, async (req, res) => {
   try {
@@ -1674,10 +1738,14 @@ app.get('/api/backup/raw', requireAuth, requireRole('admin'), (req, res) => {
     const backupDir = path.join(config.outputDir, 'backups')
     const latestPath = path.join(backupDir, 'fyp2_latest_backup.db')
     if (fs.existsSync(latestPath)) {
-      return res.download(latestPath, `sentinelai_backup_${Date.now()}.db`)
+      return res.download(latestPath, `sentinelai_backup_${Date.now()}.db`, (err) => {
+        if (err && !res.headersSent) res.status(500).json({ error: 'Backup download aborted' })
+      })
     }
     if (fs.existsSync(config.dbPath)) {
-      return res.download(config.dbPath, `sentinelai_active_${Date.now()}.db`)
+      return res.download(config.dbPath, `sentinelai_active_${Date.now()}.db`, (err) => {
+        if (err && !res.headersSent) res.status(500).json({ error: 'Active database download aborted' })
+      })
     }
     res.status(404).json({ error: 'No backup database file found' })
   } catch (err) {
@@ -2121,9 +2189,17 @@ app.get('/api/reports/download/:scanId', requireAuth, requireScanAccess, (req, r
     customTarget: req.query.target,
   })
 
-  res.setHeader('Content-Disposition', `attachment; filename="${downloadFilename}"`)
+  res.setHeader('Content-Type', 'application/pdf')
+  res.setHeader('Content-Disposition', `attachment; filename="${downloadFilename}"; filename*=UTF-8''${encodeURIComponent(downloadFilename)}`)
   res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition')
-  res.download(file, downloadFilename)
+  res.download(file, downloadFilename, (err) => {
+    if (err) {
+      if (!res.headersSent) {
+        try { res.status(500).json({ error: 'Download aborted or failed' }) } catch {}
+      }
+      console.warn(`[Report Download]: ${err?.code === 'ECONNABORTED' || err?.code === 'ECANCELED' ? 'Client disconnected during download' : (err?.message || err)}`)
+    }
+  })
 })
 
 app.post('/api/scans/:id/audio-briefing', requireAuth, requireScanAccess, async (req, res) => {
@@ -2502,14 +2578,14 @@ app.post('/api/github/connect', requireAuth, async (req, res) => {
     if (existing) {
       db.run(
         `UPDATE github_integrations SET github_username = ?, access_token = ?, avatar_url = ?, updated_at = ? WHERE user_id = ?`,
-        profile.login, token.trim(), profile.avatar_url, now, req.user.id
+        profile.login, encryptGitHubToken(token.trim()), profile.avatar_url, now, req.user.id
       )
     } else {
       const id = `gh_${randomUUID().slice(0, 12)}`
       db.run(
         `INSERT INTO github_integrations (id, user_id, github_username, access_token, avatar_url, created_at, updated_at)
          VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        id, req.user.id, profile.login, token.trim(), profile.avatar_url, now, now
+        id, req.user.id, profile.login, encryptGitHubToken(token.trim()), profile.avatar_url, now, now
       )
     }
 
@@ -2533,7 +2609,7 @@ app.get('/api/github/repos', requireAuth, async (req, res) => {
   if (!integration) return res.status(400).json({ error: 'GitHub is not connected yet. Please connect your GitHub account.' })
 
   try {
-    const client = new GitHubClient(integration.access_token)
+    const client = new GitHubClient(decryptGitHubToken(integration.access_token))
     const remoteRepos = await client.listRepositories(1, 100)
     const trackedRows = db.all(`SELECT * FROM github_repos WHERE user_id = ?`, req.user.id)
     const trackedMap = new Map(trackedRows.map(r => [r.full_name, r]))
@@ -2609,7 +2685,7 @@ app.post('/api/github/scan', requireAuth, async (req, res) => {
   }
 
   try {
-    const client = new GitHubClient(integration.access_token)
+    const client = new GitHubClient(decryptGitHubToken(integration.access_token))
     const repoBundle = await client.fetchRepoSourceFiles(owner, repo, branch)
 
     if (!repoBundle.fileList.length) {
@@ -2661,6 +2737,61 @@ app.post('/api/github/scan', requireAuth, async (req, res) => {
     })
   } catch (err) {
     res.status(500).json({ error: `GitHub scan ingestion failed: ${err.message}` })
+  }
+})
+
+app.post('/api/github/security-pr', requireAuth, async (req, res) => {
+  const { repoFullName, baseBranch = 'main', updates, title, body } = req.body || {}
+  if (!/^[^/]+\/[^/]+$/.test(String(repoFullName || ''))) {
+    return res.status(400).json({ error: 'repoFullName must use owner/repository format' })
+  }
+  if (!Array.isArray(updates) || !updates.length || updates.length > 20) {
+    return res.status(400).json({ error: 'updates must contain 1 to 20 manifest updates' })
+  }
+  if (updates.some(update => update?.path !== 'package.json' || !update.package || typeof update.to !== 'string')) {
+    return res.status(400).json({ error: 'only package.json dependency updates are supported' })
+  }
+
+  const tracked = db.get(`SELECT id FROM github_repos WHERE user_id = ? AND full_name = ?`, req.user.id, repoFullName)
+  const integration = db.get(`SELECT access_token FROM github_integrations WHERE user_id = ?`, req.user.id)
+  if (!tracked || !integration) return res.status(403).json({ error: 'repository must be tracked and GitHub connected' })
+
+  const [owner, repo] = repoFullName.split('/')
+  const branch = `security/sentinelai-${Date.now().toString(36)}`
+  try {
+    const client = new GitHubClient(decryptGitHubToken(integration.access_token))
+    const bundle = await client.fetchRepoSourceFiles(owner, repo, baseBranch)
+    const packageFile = bundle.files.find(file => file.path === 'package.json')
+    if (!packageFile) return res.status(400).json({ error: 'package.json not found on the selected branch' })
+    let packageJson
+    try { packageJson = JSON.parse(packageFile.content) } catch { return res.status(400).json({ error: 'package.json is invalid JSON' }) }
+
+    for (const update of updates) {
+      let updated = false
+      for (const section of ['dependencies', 'devDependencies', 'optionalDependencies', 'peerDependencies']) {
+        if (packageJson[section]?.[update.package] !== undefined) {
+          packageJson[section][update.package] = update.to
+          updated = true
+        }
+      }
+      if (!updated) return res.status(400).json({ error: `package is not declared: ${update.package}` })
+    }
+
+    await client.createBranch(owner, repo, baseBranch, branch)
+    await client.updateFile(
+      owner, repo, 'package.json', branch, `${JSON.stringify(packageJson, null, 2)}\n`,
+      title || 'chore(security): update vulnerable npm dependencies'
+    )
+    const pull = await client.createPullRequest(
+      owner, repo,
+      title || 'chore(security): update vulnerable npm dependencies',
+      branch, baseBranch,
+      body || 'SentinelAI generated this manifest-only security patch. Review CI, lockfiles, and transitive changes before merging.'
+    )
+    audit(req.user.username, 'github:security-pr', `${repoFullName} -> ${pull.html_url || branch}`)
+    res.status(201).json({ success: true, branch, pullRequest: pull })
+  } catch (error) {
+    res.status(error.status && error.status < 500 ? error.status : 502).json({ error: `GitHub security PR failed: ${error.message}` })
   }
 })
 
@@ -2721,7 +2852,7 @@ app.post('/api/github/webhook', (req, res) => {
   const [owner, repo] = event.repoFullName.split('/')
   setImmediate(async () => {
     try {
-      const client = new GitHubClient(integration.access_token)
+      const client = new GitHubClient(decryptGitHubToken(integration.access_token))
       const repoBundle = await client.fetchRepoSourceFiles(owner, repo, event.branch || 'main')
       
       const scanId = `scan_${randomUUID()}`
@@ -3099,6 +3230,11 @@ app.get('/api/channels', requireAuth, requireStaff, (req, res) => {
   })
 })
 
+// ── 404 Catch-All for Unhandled API Routes (prevents Express HTML leak) ───
+app.all('/api/*', (req, res) => {
+  res.status(404).json({ error: `Cannot ${req.method} ${req.path}` })
+})
+
 // ── Centralized Production-Safe Error Handler ──────────────────────────────
 app.use((err, req, res, next) => {
   const status = err.status || err.statusCode || 500
@@ -3115,30 +3251,53 @@ app.use((err, req, res, next) => {
 
 // ── WebSocket ────────────────────────────────────────────────────────────────
 io.on('connection', (socket) => {
+  socket.on('error', (err) => {
+    console.warn('[Socket client error]:', err?.message || err)
+  })
+
   // Authorize WebSocket room subscriptions — clients may only join rooms for their own scans
   socket.on('scan:subscribe', (scanId) => {
-    if (!scanId) return
-    if (socket.user?.role === 'client') {
-      const scan = db.get(`SELECT id, project_id, user_id, client FROM scans WHERE id = ?`, scanId)
-      if (!scan) return
-      const allowed = visibleProjectIds(socket.user)
-      const owns = (scan.user_id && scan.user_id === socket.user.id)
-        || (scan.client && (scan.client.toLowerCase() === (socket.user.username || '').toLowerCase() || scan.client.toLowerCase() === (socket.user.email || '').toLowerCase()))
-        || (allowed && scan.project_id && allowed.includes(scan.project_id))
-      if (!owns) return
+    try {
+      if (!scanId) return
+      if (socket.user?.role === 'client') {
+        const scan = db.get(`SELECT id, project_id, user_id, client FROM scans WHERE id = ?`, scanId)
+        if (!scan) return
+        const allowed = visibleProjectIds(socket.user)
+        const owns = (scan.user_id && scan.user_id === socket.user.id)
+          || (scan.client && (scan.client.toLowerCase() === (socket.user.username || '').toLowerCase() || scan.client.toLowerCase() === (socket.user.email || '').toLowerCase()))
+          || (allowed && scan.project_id && allowed.includes(scan.project_id))
+        if (!owns) return
+      }
+      socket.join(`scan:${scanId}`)
+    } catch (e) {
+      console.warn('[Socket scan:subscribe error]:', e?.message || e)
     }
-    socket.join(`scan:${scanId}`)
   })
-  socket.on('scan:unsubscribe', (scanId) => { if (scanId) socket.leave(`scan:${scanId}`) })
+  socket.on('scan:unsubscribe', (scanId) => { try { if (scanId) socket.leave(`scan:${scanId}`) } catch {} })
   socket.on('exploit:subscribe', (campaignId) => {
-    if (!campaignId) return
-    if (socket.user?.role === 'client') return // staff-only
-    socket.join(`exploit:${campaignId}`)
+    try {
+      if (!campaignId) return
+      if (socket.user?.role === 'client') return // staff-only
+      socket.join(`exploit:${campaignId}`)
+    } catch (e) {
+      console.warn('[Socket exploit:subscribe error]:', e?.message || e)
+    }
   })
-  socket.on('exploit:unsubscribe', (campaignId) => { if (campaignId) socket.leave(`exploit:${campaignId}`) })
+  socket.on('exploit:unsubscribe', (campaignId) => { try { if (campaignId) socket.leave(`exploit:${campaignId}`) } catch {} })
 })
 
 const PORT = config.port
+server.on('error', (err) => {
+  if (err?.code === 'EADDRINUSE') {
+    console.error(`[FYP2] Port ${PORT} is already in use. Please terminate the existing server process before restarting.`)
+  } else {
+    console.error('[FYP2 HTTP Server error]:', err?.message || err)
+  }
+})
+server.on('clientError', (err, socket) => {
+  if (err?.code === 'ECONNRESET' || !socket.writable) return
+  socket.end('HTTP/1.1 400 Bad Request\r\n\r\n')
+})
 server.listen(PORT, async () => {
   console.log(`\n[FYP2] Unified Pentest Platform backend listening on http://localhost:${PORT}`)
   console.log(`[FYP2] Native scanner engine: direct subprocess execution (hexstrike removed)`)
@@ -3194,9 +3353,20 @@ for (const sig of ['SIGINT', 'SIGTERM']) {
   process.on(sig, () => { shutdown(sig) })
 }
 
+function logCrashDiagnostic(type, err) {
+  const timestamp = new Date().toISOString()
+  const stack = err?.stack || String(err)
+  const diag = `\n[${timestamp}] [${type}] ${stack}\nMemory: ${JSON.stringify(process.memoryUsage())}\n`
+  console.error(`[FYP2 Backend ${type}]:`, err?.message || err)
+  try {
+    const crashLog = path.join(config.outputDir, 'crash.log')
+    fs.appendFileSync(crashLog, diag)
+  } catch {}
+}
+
 process.on('uncaughtException', (err) => {
-  console.error('[FYP2 Backend uncaughtException]:', err?.message || err)
+  logCrashDiagnostic('uncaughtException', err)
 })
 process.on('unhandledRejection', (reason) => {
-  console.error('[FYP2 Backend unhandledRejection]:', reason?.message || reason)
+  logCrashDiagnostic('unhandledRejection', reason)
 })

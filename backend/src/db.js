@@ -231,6 +231,18 @@ function migrate(d) {
     fetched_at TEXT NOT NULL
   );
 
+  CREATE TABLE IF NOT EXISTS finding_verifications (
+    id TEXT PRIMARY KEY,
+    finding_id TEXT NOT NULL,
+    scan_id TEXT NOT NULL,
+    result TEXT NOT NULL,
+    details TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (finding_id) REFERENCES findings(id) ON DELETE CASCADE,
+    FOREIGN KEY (scan_id) REFERENCES scans(id) ON DELETE CASCADE
+  );
+  CREATE INDEX IF NOT EXISTS idx_verifications_finding ON finding_verifications(finding_id, created_at);
+
   -- Full scan configuration snapshot (JSON) so a scan can be re-run with its
   -- exact original parameters. Added 2026-07; nullable for legacy rows.
   CREATE TABLE IF NOT EXISTS scan_configs (
@@ -594,7 +606,7 @@ function migrate(d) {
  * data/default-custom-scripts.json change so existing installations pick the
  * fixes up on boot (see seedDefaultScripts).
  */
-const CUSTOM_SCRIPTS_REVISION = 10 // rev 9: catch-all/soft-404 hardening — all path-probing scripts now validate body content
+const CUSTOM_SCRIPTS_REVISION = 11 // rev 11: SSTI probe syntax fix
 // rev 10: header audits now emit an `evidence` block (status + captured headers)
 //         so their findings are verifiable instead of landing in Appendix A.
 

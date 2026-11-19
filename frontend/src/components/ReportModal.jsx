@@ -1,14 +1,14 @@
 import React, { useState, useEffect, useMemo } from 'react'
-import { FileDown, X, ShieldAlert, AlertTriangle, Info, Check, Flag, Eye, Edit3, Sliders, Sparkles, ShieldCheck } from 'lucide-react'
-import { api } from '../lib/api.js'
+import { FileDown, X, Check, Flag, Sparkles } from 'lucide-react'
+import { api, getToken } from '../lib/api.js'
 import { useTheme } from '../lib/ThemeContext.jsx'
 
 const SEVERITY_OPTIONS = [
-  { id: 'info', label: 'All Findings (Info+)', desc: 'Includes Informational, Low, Medium, High & Critical findings', color: 'border-slate-700 hover:border-slate-500 text-slate-300' },
-  { id: 'low', label: 'Low & Above (Low+)', desc: 'Excludes informational notices; includes Low, Medium, High & Critical', color: 'border-blue-500/40 hover:border-blue-400 text-blue-400' },
-  { id: 'medium', label: 'Medium & Above (Medium+)', desc: 'Focuses on actionable risks; includes Medium, High & Critical', color: 'border-amber-500/40 hover:border-amber-400 text-amber-400' },
-  { id: 'high', label: 'High & Above (High+)', desc: 'Includes High and Critical severity vulnerabilities only', color: 'border-orange-500/40 hover:border-orange-400 text-orange-400' },
-  { id: 'critical', label: 'Critical Only', desc: 'Includes only Critical severity vulnerabilities requiring immediate fix', color: 'border-red-500/40 hover:border-red-400 text-red-400' },
+  { id: 'info', label: 'All Findings (Info+)', desc: 'Includes Informational, Low, Medium, High & Critical findings' },
+  { id: 'low', label: 'Low & Above (Low+)', desc: 'Excludes informational notices; includes Low, Medium, High & Critical' },
+  { id: 'medium', label: 'Medium & Above (Medium+)', desc: 'Focuses on actionable risks; includes Medium, High & Critical' },
+  { id: 'high', label: 'High & Above (High+)', desc: 'Includes High and Critical severity vulnerabilities only' },
+  { id: 'critical', label: 'Critical Only', desc: 'Includes only Critical severity vulnerabilities requiring immediate fix' },
 ]
 
 const STATUS_OPTIONS = [
@@ -64,7 +64,6 @@ export function extractTargetName(scanObj) {
 
 export default function ReportModal({ isOpen, onClose, scanId, scan: propScan }) {
   const { isNight } = useTheme()
-  const [activeTab, setActiveTab] = useState('settings') // 'settings' | 'preview'
   const [minSeverity, setMinSeverity] = useState('info')
   const [statusFilter, setStatusFilter] = useState('all')
   const [reportType, setReportType] = useState('full')
@@ -74,6 +73,9 @@ export default function ReportModal({ isOpen, onClose, scanId, scan: propScan })
   const [scan, setScan] = useState(propScan || null)
   const [scannerName, setScannerName] = useState(() => extractScannerName(propScan))
   const [targetName, setTargetName] = useState(() => extractTargetName(propScan))
+
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
 
   useEffect(() => {
     if (propScan) {
@@ -107,19 +109,6 @@ export default function ReportModal({ isOpen, onClose, scanId, scan: propScan })
     return `${sc}-${tg}-${tp}-${dt}.pdf`
   }, [scannerName, targetName, reportType, scan])
 
-  // Custom Editable Fields
-  const [customTitle, setCustomTitle] = useState('')
-  const [customSummary, setCustomSummary] = useState(
-    'This security assessment report summarizes findings detected during automated and AI-assisted vulnerability testing. Recommendations should be validated by qualified security personnel prior to remediation.'
-  )
-  const [customScope, setCustomScope] = useState('Full Blackbox & Whitebox Target Infrastructure')
-  const [customConclusion, setCustomConclusion] = useState(
-    'All identified critical and high vulnerabilities should be remediated immediately. Apply patch management and implement secure coding best practices.'
-  )
-
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState('')
-
   if (!isOpen) return null
 
   async function handleDownload() {
@@ -129,16 +118,12 @@ export default function ReportModal({ isOpen, onClose, scanId, scan: propScan })
       const genResult = await api.generateReport(scanId, minSeverity, statusFilter, reportType, {
         scannerName: scannerName.trim() || undefined,
         targetName: targetName.trim() || undefined,
-        customTitle: customTitle.trim() || undefined,
-        customSummary: customSummary.trim() || undefined,
-        customScope: customScope.trim() || undefined,
-        customConclusion: customConclusion.trim() || undefined,
         filterNoise,
       })
       if (!genResult?.ok) throw new Error('Report generation failed')
       
-      // Secure download: use fetch with Authorization header instead of ?token= query param
-      const token = localStorage.getItem('fyp2_token') || ''
+      // Secure download: use getToken() from api.js (supports sentinel_auth_token & legacy keys)
+      const token = getToken() || ''
       const downloadParams = new URLSearchParams({
         type: reportType,
         ...(scannerName.trim() ? { scanner: scannerName.trim() } : {}),
@@ -163,13 +148,56 @@ export default function ReportModal({ isOpen, onClose, scanId, scan: propScan })
         }
       }
 
-      const url = URL.createObjectURL(blob)
+      const pdfBlob = new Blob([blob], { type: 'application/pdf' })
+
+      // Strategy 1: Mobile Web Share API (Android & iOS)
+      // Allows user on phone to Save to Files, Open in PDF Viewer, or Share
+      if (typeof navigator !== 'undefined' && navigator.canShare) {
+        try {
+          const fileObj = new File([pdfBlob], finalFilename, { type: 'application/pdf' })
+          if (navigator.canShare({ files: [fileObj] })) {
+            await navigator.share({
+              files: [fileObj],
+              title: finalFilename,
+              text: 'SentinelAI Security Assessment Report',
+            })
+            onClose()
+            return
+          }
+        } catch (shareErr) {
+          if (shareErr.name === 'AbortError') {
+            // User dismissed share dialog
+            onClose()
+            return
+          }
+          console.warn('[WebShare fallback to browser download]:', shareErr)
+        }
+      }
+
+      // Strategy 2: Reliable Cross-Platform Anchor Download
+      const url = URL.createObjectURL(pdfBlob)
       const a = document.createElement('a')
       a.href = url
       a.download = finalFilename
+      a.rel = 'noopener'
+      a.target = '_blank'
       document.body.appendChild(a)
       a.click()
-      setTimeout(() => { URL.revokeObjectURL(url); document.body.removeChild(a) }, 1000)
+
+      // Strategy 3: Mobile fallback — if on mobile browser and download is sandboxed, also trigger window.open
+      const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
+      if (isMobile) {
+        setTimeout(() => {
+          try { window.open(url, '_blank') } catch {}
+        }, 300)
+      }
+
+      // Keep blob URL active for 60 seconds so mobile PDF viewer can load fully before revoking
+      setTimeout(() => {
+        try { document.body.removeChild(a) } catch {}
+        URL.revokeObjectURL(url)
+      }, 60000)
+
       onClose()
     } catch (err) {
       setError(err.message || 'Failed to generate report')
@@ -182,7 +210,7 @@ export default function ReportModal({ isOpen, onClose, scanId, scan: propScan })
     <div className={`fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 animate-in fade-in duration-200 ${
       isNight ? 'bg-black/80 backdrop-blur-md' : 'bg-slate-900/50 backdrop-blur-sm'
     }`}>
-      <div className={`relative w-full max-w-2xl max-h-[92vh] flex flex-col rounded-2xl border shadow-2xl overflow-hidden transition-colors ${
+      <div className={`relative w-full max-w-xl max-h-[92vh] flex flex-col rounded-2xl border shadow-2xl overflow-hidden transition-colors ${
         isNight
           ? 'border-slate-800 bg-ink-900 text-slate-100'
           : 'border-slate-200 bg-white text-slate-800 shadow-xl'
@@ -200,10 +228,10 @@ export default function ReportModal({ isOpen, onClose, scanId, scan: propScan })
             </div>
             <div>
               <h2 className={`text-base sm:text-lg font-bold ${isNight ? 'text-slate-100' : 'text-slate-900'}`}>
-                Export & Customise PDF Report
+                Export PDF Report
               </h2>
               <p className={`text-xs ${isNight ? 'text-slate-400' : 'text-slate-500'}`}>
-                Configure filters, preview, & edit report details before download
+                Configure filters and export your assessment report
               </p>
             </div>
           </div>
@@ -219,42 +247,8 @@ export default function ReportModal({ isOpen, onClose, scanId, scan: propScan })
           </button>
         </div>
 
-        {/* Navigation Tabs */}
-        <div className={`flex border-b px-4 pt-2 gap-2 shrink-0 transition-colors ${
-          isNight ? 'border-slate-800 bg-ink-950' : 'border-slate-200 bg-slate-100/70'
-        }`}>
-          <button
-            onClick={() => setActiveTab('settings')}
-            className={`flex items-center gap-2 px-4 py-2.5 text-xs font-semibold rounded-t-xl border-t border-x transition-all ${
-              activeTab === 'settings'
-                ? isNight
-                  ? 'border-slate-700 bg-ink-900 text-accent font-bold'
-                  : 'border-slate-300 bg-white text-purple-700 font-bold shadow-xs'
-                : isNight
-                  ? 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-ink-900/40'
-                  : 'border-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-200/50'
-            }`}
-          >
-            <Sliders size={14} /> Report Filters & Format
-          </button>
-          <button
-            onClick={() => setActiveTab('preview')}
-            className={`flex items-center gap-2 px-4 py-2.5 text-xs font-semibold rounded-t-xl border-t border-x transition-all ${
-              activeTab === 'preview'
-                ? isNight
-                  ? 'border-slate-700 bg-ink-900 text-cyan-400 font-bold'
-                  : 'border-slate-300 bg-white text-cyan-700 font-bold shadow-xs'
-                : isNight
-                  ? 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-ink-900/40'
-                  : 'border-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-200/50'
-            }`}
-          >
-            <Eye size={14} /> Live Text Preview & Editor
-          </button>
-        </div>
-
         {/* Scrollable Body */}
-        <div className={`flex-1 overflow-y-auto p-4 sm:p-5 space-y-5 ${isNight ? 'bg-ink-900' : 'bg-white'}`}>
+        <div className={`flex-1 overflow-y-auto p-4 sm:p-5 space-y-4 ${isNight ? 'bg-ink-900' : 'bg-white'}`}>
           {error && (
             <div className={`rounded-xl border p-3.5 text-xs font-medium ${
               isNight ? 'border-red-500/30 bg-red-500/10 text-red-400' : 'border-red-200 bg-red-50 text-red-700'
@@ -263,206 +257,154 @@ export default function ReportModal({ isOpen, onClose, scanId, scan: propScan })
             </div>
           )}
 
-          {activeTab === 'settings' ? (
-            <>
-              {/* Report Version / Format */}
-              <div className="space-y-2.5">
-                <div className={`text-xs font-bold uppercase tracking-wider flex items-center justify-between ${
-                  isNight ? 'text-slate-400' : 'text-slate-600'
-                }`}>
-                  <span>Report Version</span>
-                  <span className={`text-[10px] font-bold ${isNight ? 'text-accent' : 'text-purple-600'}`}>Select Simplified or Full</span>
-                </div>
-                {REPORT_TYPES.map((opt) => {
-                  const isSelected = reportType === opt.id
-                  return (
-                    <button
-                      key={opt.id}
-                      type="button"
-                      onClick={() => setReportType(opt.id)}
-                      className={`w-full flex items-start gap-3 rounded-xl border p-3 text-left transition-all ${
-                        isSelected
-                          ? isNight
-                            ? 'border-accent bg-accent/10 ring-1 ring-accent'
-                            : 'border-purple-500 bg-purple-50/70 ring-1 ring-purple-500/50 shadow-xs'
-                          : isNight
-                            ? 'border-slate-800/80 bg-ink-950/60 hover:bg-ink-800/50'
-                            : 'border-slate-200 bg-slate-50/60 hover:bg-slate-100 hover:border-slate-300'
-                      }`}
-                    >
-                      <div className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border ${
-                        isSelected
-                          ? isNight
-                            ? 'border-accent bg-accent text-slate-950'
-                            : 'border-purple-600 bg-purple-600 text-white'
-                          : isNight
-                            ? 'border-slate-700'
-                            : 'border-slate-300 bg-white'
-                      }`}>
-                        {isSelected && <Check size={11} strokeWidth={3} />}
-                      </div>
-                      <div className="flex-1">
-                        <span className={`text-xs sm:text-sm font-semibold ${
-                          isSelected
-                            ? isNight ? 'text-slate-100' : 'text-slate-900 font-bold'
-                            : isNight ? 'text-slate-200' : 'text-slate-700'
-                        }`}>{opt.label}</span>
-                        <p className={`mt-0.5 text-[11px] ${isNight ? 'text-slate-400' : 'text-slate-500'}`}>{opt.desc}</p>
-                      </div>
-                    </button>
-                  )
-                })}
-              </div>
+          {/* Report Version / Format */}
+          <div className="space-y-2">
+            <div className={`text-xs font-bold uppercase tracking-wider flex items-center justify-between ${
+              isNight ? 'text-slate-400' : 'text-slate-600'
+            }`}>
+              <span>Report Version</span>
+              <span className={`text-[10px] font-bold ${isNight ? 'text-accent' : 'text-purple-600'}`}>Select Simplified or Full</span>
+            </div>
+            {REPORT_TYPES.map((opt) => {
+              const isSelected = reportType === opt.id
+              return (
+                <button
+                  key={opt.id}
+                  type="button"
+                  onClick={() => setReportType(opt.id)}
+                  className={`w-full flex items-start gap-3 rounded-xl border p-3 text-left transition-all ${
+                    isSelected
+                      ? isNight
+                        ? 'border-accent bg-accent/10 ring-1 ring-accent'
+                        : 'border-purple-500 bg-purple-50/70 ring-1 ring-purple-500/50 shadow-xs'
+                      : isNight
+                        ? 'border-slate-800/80 bg-ink-950/60 hover:bg-ink-800/50'
+                        : 'border-slate-200 bg-slate-50/60 hover:bg-slate-100 hover:border-slate-300'
+                  }`}
+                >
+                  <div className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border ${
+                    isSelected
+                      ? isNight
+                        ? 'border-accent bg-accent text-slate-950'
+                        : 'border-purple-600 bg-purple-600 text-white'
+                      : isNight
+                        ? 'border-slate-700'
+                        : 'border-slate-300 bg-white'
+                  }`}>
+                    {isSelected && <Check size={11} strokeWidth={3} />}
+                  </div>
+                  <div className="flex-1">
+                    <span className={`text-xs sm:text-sm font-semibold ${
+                      isSelected
+                        ? isNight ? 'text-slate-100' : 'text-slate-900 font-bold'
+                        : isNight ? 'text-slate-200' : 'text-slate-700'
+                    }`}>{opt.label}</span>
+                    <p className={`mt-0.5 text-[11px] ${isNight ? 'text-slate-400' : 'text-slate-500'}`}>{opt.desc}</p>
+                  </div>
+                </button>
+              )
+            })}
+          </div>
 
-              {/* Report Output Filename & Identification */}
-              <div className={`rounded-xl border p-3.5 space-y-3 transition-colors ${
-                isNight ? 'border-slate-800 bg-slate-950/70' : 'border-slate-200 bg-slate-50/70 shadow-xs'
+          {/* Report Output Filename & Identification */}
+          <div className={`rounded-xl border p-3.5 space-y-3 transition-colors ${
+            isNight ? 'border-slate-800 bg-slate-950/70' : 'border-slate-200 bg-slate-50/70 shadow-xs'
+          }`}>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <FileDown size={14} className={isNight ? 'text-cyan-400' : 'text-cyan-600'} />
+                <span className={`text-xs font-bold ${isNight ? 'text-slate-200' : 'text-slate-800'}`}>Report Filename</span>
+              </div>
+              <span className={`text-[10px] font-mono px-2 py-0.5 rounded border ${
+                isNight
+                  ? 'text-cyan-400/80 bg-cyan-950/40 border-cyan-800/40'
+                  : 'text-cyan-700 bg-cyan-100/70 border-cyan-200'
               }`}>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <FileDown size={14} className={isNight ? 'text-cyan-400' : 'text-cyan-600'} />
-                    <span className={`text-xs font-bold ${isNight ? 'text-slate-200' : 'text-slate-800'}`}>Report Download Filename</span>
-                  </div>
-                  <span className={`text-[10px] font-mono px-2 py-0.5 rounded border ${
+                (scanner-target-type-date)
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className={`text-[11px] font-semibold block mb-1 ${isNight ? 'text-slate-400' : 'text-slate-600'}`}>
+                  Scanner Name
+                </label>
+                <input
+                  type="text"
+                  value={scannerName}
+                  onChange={(e) => setScannerName(e.target.value)}
+                  placeholder="e.g. sentinelai, nuclei, nmap"
+                  className={`w-full rounded-lg border px-3 py-1.5 text-xs font-mono focus:outline-none transition-colors ${
                     isNight
-                      ? 'text-cyan-400/80 bg-cyan-950/40 border-cyan-800/40'
-                      : 'text-cyan-700 bg-cyan-100/70 border-cyan-200'
-                  }`}>
-                    (scanner-target-full/simplify-date)
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className={`text-[11px] font-semibold block mb-1 ${isNight ? 'text-slate-400' : 'text-slate-600'}`}>
-                      Scanner Name
-                    </label>
-                    <input
-                      type="text"
-                      value={scannerName}
-                      onChange={(e) => setScannerName(e.target.value)}
-                      placeholder="e.g. sentinelai, nuclei, nmap"
-                      className={`w-full rounded-lg border px-3 py-1.5 text-xs font-mono focus:outline-none transition-colors ${
-                        isNight
-                          ? 'border-slate-700 bg-slate-900 text-slate-100 focus:border-cyan-400'
-                          : 'border-slate-300 bg-white text-slate-900 focus:border-cyan-600 focus:ring-1 focus:ring-cyan-500/30'
-                      }`}
-                    />
-                  </div>
-
-                  <div>
-                    <label className={`text-[11px] font-semibold block mb-1 ${isNight ? 'text-slate-400' : 'text-slate-600'}`}>
-                      Target Name
-                    </label>
-                    <input
-                      type="text"
-                      value={targetName}
-                      onChange={(e) => setTargetName(e.target.value)}
-                      placeholder="e.g. example.com, 192.168.1.1"
-                      className={`w-full rounded-lg border px-3 py-1.5 text-xs font-mono focus:outline-none transition-colors ${
-                        isNight
-                          ? 'border-slate-700 bg-slate-900 text-slate-100 focus:border-cyan-400'
-                          : 'border-slate-300 bg-white text-slate-900 focus:border-cyan-600 focus:ring-1 focus:ring-cyan-500/30'
-                      }`}
-                    />
-                  </div>
-                </div>
-
-                {/* Live Filename Preview Banner */}
-                <div className={`flex items-center gap-2 pt-2 border-t text-xs ${
-                  isNight ? 'border-slate-800/80' : 'border-slate-200'
-                }`}>
-                  <span className={`text-[11px] shrink-0 font-medium ${isNight ? 'text-slate-400' : 'text-slate-500'}`}>Download file:</span>
-                  <span className={`font-mono font-bold px-2.5 py-1 rounded-md border truncate max-w-full ${
-                    isNight
-                      ? 'text-cyan-300 bg-cyan-950/60 border-cyan-500/30'
-                      : 'text-cyan-800 bg-cyan-50 border-cyan-200 shadow-xs'
-                  }`}>
-                    {computedFilename}
-                  </span>
-                </div>
+                      ? 'border-slate-700 bg-slate-900 text-slate-100 focus:border-cyan-400'
+                      : 'border-slate-300 bg-white text-slate-900 focus:border-cyan-600 focus:ring-1 focus:ring-cyan-500/30'
+                  }`}
+                />
               </div>
 
-              {/* Simplified mode: hide all filters — only important stuff shown */}
-              {reportType === 'simple' ? (
-                <div className={`rounded-xl border p-4 text-xs space-y-2 ${
-                  isNight
-                    ? 'border-accent/30 bg-accent/5 text-slate-300'
-                    : 'border-purple-200 bg-purple-50/80 text-purple-900'
-                }`}>
-                  <div className={`flex items-center gap-2 font-bold ${isNight ? 'text-accent' : 'text-purple-700'}`}>
-                    <Sparkles size={14} /> Simplified Mode Active
-                  </div>
-                  <p className={`leading-relaxed ${isNight ? 'text-slate-400' : 'text-slate-600'}`}>
-                    The simplified report automatically filters out noise (INFO/low findings) and shows only actionable critical, high, and medium issues with plain-language fix cards. No additional configuration needed — just download.
-                  </p>
-                </div>
-              ) : (
-                <>
+              <div>
+                <label className={`text-[11px] font-semibold block mb-1 ${isNight ? 'text-slate-400' : 'text-slate-600'}`}>
+                  Target Name
+                </label>
+                <input
+                  type="text"
+                  value={targetName}
+                  onChange={(e) => setTargetName(e.target.value)}
+                  placeholder="e.g. example.com, 192.168.1.1"
+                  className={`w-full rounded-lg border px-3 py-1.5 text-xs font-mono focus:outline-none transition-colors ${
+                    isNight
+                      ? 'border-slate-700 bg-slate-900 text-slate-100 focus:border-cyan-400'
+                      : 'border-slate-300 bg-white text-slate-900 focus:border-cyan-600 focus:ring-1 focus:ring-cyan-500/30'
+                  }`}
+                />
+              </div>
+            </div>
+
+            {/* Live Filename Banner */}
+            <div className={`flex items-center gap-2 pt-2 border-t text-xs ${
+              isNight ? 'border-slate-800/80' : 'border-slate-200'
+            }`}>
+              <span className={`text-[11px] shrink-0 font-medium ${isNight ? 'text-slate-400' : 'text-slate-500'}`}>Output file:</span>
+              <span className={`font-mono font-bold px-2 py-0.5 rounded-md border truncate max-w-full text-[11px] ${
+                isNight
+                  ? 'text-cyan-300 bg-cyan-950/60 border-cyan-500/30'
+                  : 'text-cyan-800 bg-cyan-50 border-cyan-200 shadow-xs'
+              }`}>
+                {computedFilename}
+              </span>
+            </div>
+          </div>
+
+          {/* Simplified mode notice */}
+          {reportType === 'simple' ? (
+            <div className={`rounded-xl border p-3.5 text-xs space-y-1.5 ${
+              isNight
+                ? 'border-accent/30 bg-accent/5 text-slate-300'
+                : 'border-purple-200 bg-purple-50/80 text-purple-900'
+            }`}>
+              <div className={`flex items-center gap-2 font-bold ${isNight ? 'text-accent' : 'text-purple-700'}`}>
+                <Sparkles size={14} /> Simplified IT Action Guide Mode
+              </div>
+              <p className={`leading-relaxed text-[11px] ${isNight ? 'text-slate-400' : 'text-slate-600'}`}>
+                Automatically prioritizes critical, high, and medium issues with plain-language fix cards and verified reproduction steps. Scanner noise is filtered automatically.
+              </p>
+            </div>
+          ) : (
+            <>
               {/* Severity Options */}
-              <div className="space-y-2.5">
+              <div className="space-y-2">
                 <div className={`text-xs font-bold uppercase tracking-wider ${isNight ? 'text-slate-400' : 'text-slate-600'}`}>
                   Minimum Severity Filter
                 </div>
-                {SEVERITY_OPTIONS.map((opt) => {
-                  const isSelected = minSeverity === opt.id
-                  return (
-                    <button
-                      key={opt.id}
-                      type="button"
-                      onClick={() => setMinSeverity(opt.id)}
-                      className={`w-full flex items-start gap-3 rounded-xl border p-3 text-left transition-all ${
-                        isSelected
-                          ? isNight
-                            ? 'border-accent bg-accent/10 ring-1 ring-accent'
-                            : 'border-purple-500 bg-purple-50/70 ring-1 ring-purple-500/50 shadow-xs'
-                          : isNight
-                            ? 'border-slate-800/80 bg-ink-950/60 hover:bg-ink-800/50'
-                            : 'border-slate-200 bg-slate-50/60 hover:bg-slate-100 hover:border-slate-300'
-                      }`}
-                    >
-                      <div className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border ${
-                        isSelected
-                          ? isNight
-                            ? 'border-accent bg-accent text-slate-950'
-                            : 'border-purple-600 bg-purple-600 text-white'
-                          : isNight
-                            ? 'border-slate-700'
-                            : 'border-slate-300 bg-white'
-                      }`}>
-                        {isSelected && <Check size={11} strokeWidth={3} />}
-                      </div>
-                      <div className="flex-1">
-                        <span className={`text-xs sm:text-sm font-semibold ${
-                          isSelected
-                            ? isNight ? 'text-slate-100' : 'text-slate-900 font-bold'
-                            : isNight ? 'text-slate-200' : 'text-slate-700'
-                        }`}>
-                          {opt.label}
-                        </span>
-                        <p className={`mt-0.5 text-[11px] ${isNight ? 'text-slate-400' : 'text-slate-500'}`}>{opt.desc}</p>
-                      </div>
-                    </button>
-                  )
-                })}
-              </div>
-
-              {/* Status Filter */}
-              <div className="space-y-2.5">
-                <div className={`flex items-center gap-2 text-xs font-bold uppercase tracking-wider ${
-                  isNight ? 'text-slate-400' : 'text-slate-600'
-                }`}>
-                  <Flag size={13} className={isNight ? 'text-accent' : 'text-purple-600'} /> Status Filter
-                </div>
-                <div className="flex flex-col gap-2">
-                  {STATUS_OPTIONS.map((opt) => {
-                    const isSelected = statusFilter === opt.id
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {SEVERITY_OPTIONS.map((opt) => {
+                    const isSelected = minSeverity === opt.id
                     return (
                       <button
                         key={opt.id}
                         type="button"
-                        onClick={() => setStatusFilter(opt.id)}
-                        className={`flex items-start gap-3 rounded-xl border p-3 text-left transition-all ${
+                        onClick={() => setMinSeverity(opt.id)}
+                        className={`flex items-center gap-2.5 rounded-xl border p-2.5 text-left transition-all ${
                           isSelected
                             ? isNight
                               ? 'border-accent bg-accent/10 ring-1 ring-accent'
@@ -472,27 +414,52 @@ export default function ReportModal({ isOpen, onClose, scanId, scan: propScan })
                               : 'border-slate-200 bg-slate-50/60 hover:bg-slate-100 hover:border-slate-300'
                         }`}
                       >
-                        <div className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border ${
+                        <div className={`flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full border ${
+                          isSelected
+                            ? isNight ? 'border-accent bg-accent text-slate-950' : 'border-purple-600 bg-purple-600 text-white'
+                            : isNight ? 'border-slate-700' : 'border-slate-300 bg-white'
+                        }`}>
+                          {isSelected && <Check size={9} strokeWidth={3} />}
+                        </div>
+                        <span className={`text-xs font-medium truncate ${
+                          isSelected
+                            ? isNight ? 'text-slate-100 font-bold' : 'text-slate-900 font-bold'
+                            : isNight ? 'text-slate-300' : 'text-slate-700'
+                        }`}>
+                          {opt.label}
+                        </span>
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+
+              {/* Status Filter */}
+              <div className="space-y-2">
+                <div className={`flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider ${
+                  isNight ? 'text-slate-400' : 'text-slate-600'
+                }`}>
+                  <Flag size={12} className={isNight ? 'text-accent' : 'text-purple-600'} /> Status Filter
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {STATUS_OPTIONS.map((opt) => {
+                    const isSelected = statusFilter === opt.id
+                    return (
+                      <button
+                        key={opt.id}
+                        type="button"
+                        onClick={() => setStatusFilter(opt.id)}
+                        className={`px-3 py-1.5 rounded-lg border text-xs font-medium transition-all ${
                           isSelected
                             ? isNight
-                              ? 'border-accent bg-accent text-slate-950'
-                            : 'border-purple-600 bg-purple-600 text-white'
-                          : isNight
-                            ? 'border-slate-700'
-                            : 'border-slate-300 bg-white'
-                        }`}>
-                          {isSelected && <Check size={11} strokeWidth={3} />}
-                        </div>
-                        <div className="flex-1">
-                          <span className={`text-xs sm:text-sm font-semibold ${
-                            isSelected
-                              ? isNight ? 'text-slate-100' : 'text-slate-900 font-bold'
-                              : isNight ? 'text-slate-200' : 'text-slate-700'
-                          }`}>
-                            {opt.label}
-                          </span>
-                          <p className={`mt-0.5 text-[11px] ${isNight ? 'text-slate-400' : 'text-slate-500'}`}>{opt.desc}</p>
-                        </div>
+                              ? 'border-accent bg-accent/15 text-accent font-bold'
+                              : 'border-purple-600 bg-purple-50 text-purple-700 font-bold shadow-xs'
+                            : isNight
+                              ? 'border-slate-800 bg-ink-950/60 text-slate-400 hover:text-slate-200'
+                              : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+                        }`}
+                      >
+                        {opt.label}
                       </button>
                     )
                   })}
@@ -500,12 +467,12 @@ export default function ReportModal({ isOpen, onClose, scanId, scan: propScan })
               </div>
 
               {/* Noise Filter Toggle */}
-              <div className={`rounded-xl border p-3.5 flex items-center justify-between ${
+              <div className={`rounded-xl border p-3 flex items-center justify-between ${
                 isNight ? 'border-slate-800 bg-ink-950/60' : 'border-slate-200 bg-slate-50/70 shadow-xs'
               }`}>
                 <div>
                   <span className={`text-xs font-semibold ${isNight ? 'text-slate-200' : 'text-slate-800'}`}>Noise Reduction Filter</span>
-                  <p className={`text-[11px] mt-0.5 ${isNight ? 'text-slate-400' : 'text-slate-500'}`}>Exclude unverified version findings and out-of-scope notices</p>
+                  <p className={`text-[11px] ${isNight ? 'text-slate-400' : 'text-slate-500'}`}>Exclude unverified and out-of-scope notices</p>
                 </div>
                 <button
                   type="button"
@@ -521,242 +488,11 @@ export default function ReportModal({ isOpen, onClose, scanId, scan: propScan })
                   }`} />
                 </button>
               </div>
-              </>
-              )}
             </>
-          ) : (
-            /* Live Text Editor Tab */
-            <div className="space-y-4">
-              <div className={`flex items-center gap-2 rounded-xl border p-3 text-xs ${
-                isNight
-                  ? 'border-cyan-500/20 bg-cyan-500/5 text-cyan-300'
-                  : 'border-cyan-200 bg-cyan-50/80 text-cyan-800'
-              }`}>
-                <Edit3 size={15} className="shrink-0" />
-                <span>You can edit the report title, executive summary, and recommendations before downloading the PDF.</span>
-              </div>
-
-              {/* Report Output Filename & Identification */}
-              <div className={`rounded-xl border p-3.5 space-y-3 transition-colors ${
-                isNight ? 'border-slate-800 bg-slate-950/70' : 'border-slate-200 bg-slate-50/70 shadow-xs'
-              }`}>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <FileDown size={14} className={isNight ? 'text-cyan-400' : 'text-cyan-600'} />
-                    <span className={`text-xs font-bold ${isNight ? 'text-slate-200' : 'text-slate-800'}`}>Report Download Filename</span>
-                  </div>
-                  <span className={`text-[10px] font-mono px-2 py-0.5 rounded border ${
-                    isNight
-                      ? 'text-cyan-400/80 bg-cyan-950/40 border-cyan-800/40'
-                      : 'text-cyan-700 bg-cyan-100/70 border-cyan-200'
-                  }`}>
-                    (scanner-target-full/simplify-date)
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className={`text-[11px] font-semibold block mb-1 ${isNight ? 'text-slate-400' : 'text-slate-600'}`}>
-                      Scanner Name
-                    </label>
-                    <input
-                      type="text"
-                      value={scannerName}
-                      onChange={(e) => setScannerName(e.target.value)}
-                      placeholder="e.g. sentinelai, nuclei, nmap"
-                      className={`w-full rounded-lg border px-3 py-1.5 text-xs font-mono focus:outline-none transition-colors ${
-                        isNight
-                          ? 'border-slate-700 bg-slate-900 text-slate-100 focus:border-cyan-400'
-                          : 'border-slate-300 bg-white text-slate-900 focus:border-cyan-600 focus:ring-1 focus:ring-cyan-500/30'
-                      }`}
-                    />
-                  </div>
-
-                  <div>
-                    <label className={`text-[11px] font-semibold block mb-1 ${isNight ? 'text-slate-400' : 'text-slate-600'}`}>
-                      Target Name
-                    </label>
-                    <input
-                      type="text"
-                      value={targetName}
-                      onChange={(e) => setTargetName(e.target.value)}
-                      placeholder="e.g. example.com, 192.168.1.1"
-                      className={`w-full rounded-lg border px-3 py-1.5 text-xs font-mono focus:outline-none transition-colors ${
-                        isNight
-                          ? 'border-slate-700 bg-slate-900 text-slate-100 focus:border-cyan-400'
-                          : 'border-slate-300 bg-white text-slate-900 focus:border-cyan-600 focus:ring-1 focus:ring-cyan-500/30'
-                      }`}
-                    />
-                  </div>
-                </div>
-
-                {/* Live Filename Preview Banner */}
-                <div className={`flex items-center gap-2 pt-2 border-t text-xs ${
-                  isNight ? 'border-slate-800/80' : 'border-slate-200'
-                }`}>
-                  <span className={`text-[11px] shrink-0 font-medium ${isNight ? 'text-slate-400' : 'text-slate-500'}`}>Download file:</span>
-                  <span className={`font-mono font-bold px-2.5 py-1 rounded-md border truncate max-w-full ${
-                    isNight
-                      ? 'text-cyan-300 bg-cyan-950/60 border-cyan-500/30'
-                      : 'text-cyan-800 bg-cyan-50 border-cyan-200 shadow-xs'
-                  }`}>
-                    {computedFilename}
-                  </span>
-                </div>
-              </div>
-
-              {reportType === 'simple' ? (
-                <div className={`rounded-xl border p-4 text-xs space-y-2 ${
-                  isNight
-                    ? 'border-accent/30 bg-accent/5 text-slate-300'
-                    : 'border-purple-200 bg-purple-50/80 text-purple-900'
-                }`}>
-                  <div className={`flex items-center gap-2 font-bold ${isNight ? 'text-accent' : 'text-purple-700'}`}>
-                    <Sparkles size={14} /> Simplified Mode Active
-                  </div>
-                  <p className={`leading-relaxed ${isNight ? 'text-slate-400' : 'text-slate-600'}`}>
-                    The simplified report is fully auto-generated from your scan results. It filters out noise and shows only actionable findings with plain-language fix cards. No manual editing needed — just download.
-                  </p>
-                </div>
-              ) : (
-                <>
-              {/* Custom Report Title */}
-              <div className="space-y-1.5">
-                <label className={`text-xs font-bold uppercase tracking-wider ${isNight ? 'text-slate-300' : 'text-slate-700'}`}>Custom Report Title</label>
-                <input
-                  type="text"
-                  value={customTitle}
-                  onChange={(e) => setCustomTitle(e.target.value)}
-                  placeholder="e.g. Executive Penetration Testing & Vulnerability Assessment Report"
-                  className={`w-full rounded-xl border px-3.5 py-2.5 text-xs focus:outline-none transition-colors ${
-                    isNight
-                      ? 'border-slate-700 bg-slate-950 text-slate-100 placeholder-slate-500 focus:border-cyan-400'
-                      : 'border-slate-300 bg-white text-slate-900 placeholder-slate-400 focus:border-cyan-600 focus:ring-1 focus:ring-cyan-500/30'
-                  }`}
-                />
-              </div>
-
-              {/* Target / Scope Notes */}
-              <div className="space-y-1.5">
-                <label className={`text-xs font-bold uppercase tracking-wider ${isNight ? 'text-slate-300' : 'text-slate-700'}`}>Assessment Scope Notes</label>
-                <input
-                  type="text"
-                  value={customScope}
-                  onChange={(e) => setCustomScope(e.target.value)}
-                  className={`w-full rounded-xl border px-3.5 py-2.5 text-xs focus:outline-none transition-colors ${
-                    isNight
-                      ? 'border-slate-700 bg-slate-950 text-slate-100 placeholder-slate-500 focus:border-cyan-400'
-                      : 'border-slate-300 bg-white text-slate-900 placeholder-slate-400 focus:border-cyan-600 focus:ring-1 focus:ring-cyan-500/30'
-                  }`}
-                />
-              </div>
-
-              {/* Executive Summary */}
-              <div className="space-y-1.5">
-                <label className={`text-xs font-bold uppercase tracking-wider ${isNight ? 'text-slate-300' : 'text-slate-700'}`}>Executive Summary Text</label>
-                <textarea
-                  rows={3}
-                  value={customSummary}
-                  onChange={(e) => setCustomSummary(e.target.value)}
-                  className={`w-full rounded-xl border p-3 text-xs focus:outline-none transition-colors ${
-                    isNight
-                      ? 'border-slate-700 bg-slate-950 text-slate-100 focus:border-cyan-400'
-                      : 'border-slate-300 bg-white text-slate-900 focus:border-cyan-600 focus:ring-1 focus:ring-cyan-500/30'
-                  }`}
-                />
-              </div>
-
-              {/* Conclusion & Recommendations */}
-              <div className="space-y-1.5">
-                <label className={`text-xs font-bold uppercase tracking-wider ${isNight ? 'text-slate-300' : 'text-slate-700'}`}>Conclusion & Remediation Notes</label>
-                <textarea
-                  rows={3}
-                  value={customConclusion}
-                  onChange={(e) => setCustomConclusion(e.target.value)}
-                  className={`w-full rounded-xl border p-3 text-xs focus:outline-none transition-colors ${
-                    isNight
-                      ? 'border-slate-700 bg-slate-950 text-slate-100 focus:border-cyan-400'
-                      : 'border-slate-300 bg-white text-slate-900 focus:border-cyan-600 focus:ring-1 focus:ring-cyan-500/30'
-                  }`}
-                />
-              </div>
-              </>
-              )}
-
-              {/* Live Formatted PDF Card Preview */}
-              <div className={`space-y-2 border-t pt-4 ${isNight ? 'border-slate-800' : 'border-slate-200'}`}>
-                <div className={`text-xs font-bold uppercase tracking-wider flex items-center justify-between ${
-                  isNight ? 'text-slate-400' : 'text-slate-600'
-                }`}>
-                  <span className="flex items-center gap-1.5">
-                    <Sparkles size={13} className={isNight ? 'text-accent' : 'text-purple-600'} /> Live PDF Cover & Summary Preview
-                  </span>
-                  <span className={`font-mono text-[10px] truncate max-w-[260px] ${
-                    isNight ? 'text-cyan-400' : 'text-cyan-700 font-semibold'
-                  }`}>
-                    {computedFilename}
-                  </span>
-                </div>
-                <div className={`rounded-2xl border p-5 space-y-3 font-sans text-left transition-colors ${
-                  isNight
-                    ? 'border-slate-700 bg-slate-950 shadow-inner'
-                    : 'border-slate-200 bg-slate-50/70 shadow-xs'
-                }`}>
-                  <div className={`border-b pb-3 ${isNight ? 'border-slate-800' : 'border-slate-200'}`}>
-                    <span className={`text-[10px] uppercase font-bold tracking-widest ${
-                      isNight ? 'text-accent' : 'text-purple-700'
-                    }`}>
-                      {reportType === 'simple' ? 'SIMPLIFIED REPORT PREVIEW' : 'FULL TECHNICAL REPORT PREVIEW'}
-                    </span>
-                    <h3 className={`text-sm font-extrabold mt-1 ${isNight ? 'text-white' : 'text-slate-900'}`}>
-                      {reportType === 'simple' ? 'Simplified Security Assessment Summary' : (customTitle.trim() || 'Full Vulnerability Assessment & Penetration Test')}
-                    </h3>
-                    <p className={`text-[11px] mt-0.5 ${isNight ? 'text-slate-400' : 'text-slate-500'}`}>
-                      Scope: {reportType === 'simple' ? 'Auto-detected from scan' : (customScope || 'Default Scan Target')}
-                    </p>
-                  </div>
-                  {reportType === 'simple' ? (
-                    <div className="space-y-1.5">
-                      <span className={`text-[11px] font-bold uppercase tracking-wider ${
-                        isNight ? 'text-emerald-400' : 'text-emerald-700'
-                      }`}>Action Items Preview</span>
-                      <p className={`text-xs leading-relaxed italic p-3 rounded-xl border ${
-                        isNight
-                          ? 'text-slate-300 bg-slate-900/60 border-white/5'
-                          : 'text-slate-700 bg-white border-slate-200 shadow-xs'
-                      }`}>
-                        Auto-generated fix cards will appear here based on scan findings. Only critical, high, and medium issues are shown — noise is filtered out automatically.
-                      </p>
-                    </div>
-                  ) : (
-                    <>
-                  <div className="space-y-1.5">
-                    <span className={`text-[11px] font-bold uppercase tracking-wider ${
-                      isNight ? 'text-cyan-400' : 'text-cyan-700'
-                    }`}>Executive Summary</span>
-                    <p className={`text-xs leading-relaxed italic p-3 rounded-xl border ${
-                      isNight
-                        ? 'text-slate-300 bg-slate-900/60 border-white/5'
-                        : 'text-slate-700 bg-white border-slate-200 shadow-xs'
-                    }`}>
-                      "{customSummary}"
-                    </p>
-                  </div>
-                  <div className="space-y-1">
-                    <span className={`text-[11px] font-bold uppercase tracking-wider ${
-                      isNight ? 'text-emerald-400' : 'text-emerald-700'
-                    }`}>Conclusion</span>
-                    <p className={`text-[11px] ${isNight ? 'text-slate-400' : 'text-slate-600'}`}>{customConclusion}</p>
-                  </div>
-                    </>
-                  )}
-                </div>
-              </div>
-            </div>
           )}
         </div>
 
-        {/* Footer Actions — Sticky & Always Accessible */}
+        {/* Footer Actions */}
         <div className={`flex items-center justify-between border-t p-4 shrink-0 transition-colors ${
           isNight
             ? 'border-slate-800 bg-ink-950/90 backdrop-blur-md'
@@ -764,58 +500,41 @@ export default function ReportModal({ isOpen, onClose, scanId, scan: propScan })
         }`}>
           <button
             type="button"
-            onClick={() => setActiveTab(activeTab === 'settings' ? 'preview' : 'settings')}
-            className={`flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-semibold transition-colors ${
+            onClick={onClose}
+            disabled={loading}
+            className={`rounded-xl px-4 py-2.5 text-xs font-semibold transition-colors ${
               isNight
-                ? 'text-cyan-400 hover:bg-cyan-500/10'
-                : 'text-cyan-700 hover:bg-cyan-100 hover:text-cyan-900'
+                ? 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
+                : 'text-slate-600 hover:bg-slate-200/80 hover:text-slate-900'
             }`}
           >
-            {activeTab === 'settings' ? (
-              <> <Eye size={14} /> Preview & Edit Text </>
-            ) : (
-              <> <Sliders size={14} /> Back to Filters </>
-            )}
+            Cancel
           </button>
 
-          <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={loading}
-              className={`rounded-xl px-4 py-2.5 text-xs font-semibold transition-colors ${
-                isNight
-                  ? 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
-                  : 'text-slate-600 hover:bg-slate-200/80 hover:text-slate-900'
-              }`}
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              onClick={handleDownload}
-              disabled={loading}
-              className={`flex items-center gap-2 rounded-xl px-5 py-2.5 text-xs font-bold disabled:opacity-50 transition-all ${
-                isNight
-                  ? 'bg-accent text-slate-950 hover:bg-accent/90 shadow-glow'
-                  : 'bg-purple-600 text-white hover:bg-purple-700 shadow-sm active:scale-95'
-              }`}
-            >
-              {loading ? (
-                <>
-                  <div className={`h-4 w-4 animate-spin rounded-full border-2 border-t-transparent ${
-                    isNight ? 'border-slate-950' : 'border-white'
-                  }`} />
-                  Generating PDF...
-                </>
-              ) : (
-                <>
-                  <FileDown size={16} />
-                  Download PDF ({reportType === 'simple' ? 'Simplified' : 'Full'})
-                </>
-              )}
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={handleDownload}
+            disabled={loading}
+            className={`flex items-center gap-2 rounded-xl px-5 py-2.5 text-xs font-bold disabled:opacity-50 transition-all ${
+              isNight
+                ? 'bg-accent text-slate-950 hover:bg-accent/90 shadow-glow'
+                : 'bg-purple-600 text-white hover:bg-purple-700 shadow-sm active:scale-95'
+            }`}
+          >
+            {loading ? (
+              <>
+                <div className={`h-4 w-4 animate-spin rounded-full border-2 border-t-transparent ${
+                  isNight ? 'border-slate-950' : 'border-white'
+                }`} />
+                Generating PDF...
+              </>
+            ) : (
+              <>
+                <FileDown size={16} />
+                Download PDF ({reportType === 'simple' ? 'Simplified' : 'Full'})
+              </>
+            )}
+          </button>
         </div>
 
       </div>
