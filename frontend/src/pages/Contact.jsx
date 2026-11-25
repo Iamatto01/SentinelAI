@@ -49,29 +49,31 @@ const CHANNELS = [
 export default function Contact() {
   const [form, setForm] = useState({ name: '', email: '', type: 'inquiry', message: '' })
   const [status, setStatus] = useState('idle') // idle | sending | sent | error
+  const [errorMsg, setErrorMsg] = useState('')
 
   const update = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }))
 
   const submit = async (e) => {
     e.preventDefault()
     setStatus('sending')
+    setErrorMsg('')
     try {
-      // Route through the existing scan-request notification endpoint when available;
-      // fall back to a mailto handoff so the inquiry is never silently dropped.
-      const res = await fetch('/api/scans/request', {
+      const res = await fetch('/api/contact', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          email: form.email,
           name: form.name,
-          subject: `[Contact Portal] ${form.type}`,
+          email: form.email,
+          type: form.type,
           message: form.message,
         }),
       })
-      if (!res.ok) throw new Error('request failed')
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error || 'Could not submit inquiry right now.')
       setStatus('sent')
       setForm({ name: '', email: '', type: 'inquiry', message: '' })
-    } catch {
+    } catch (err) {
+      setErrorMsg(err.message || 'Could not submit right now — please email us directly instead.')
       setStatus('error')
     }
   }
@@ -190,7 +192,7 @@ export default function Contact() {
 
                 {status === 'error' && (
                   <p className="text-xs text-rose-400 flex items-center gap-1.5">
-                    <ShieldAlert size={13} /> Could not submit right now — please email us directly instead.
+                    <ShieldAlert size={13} /> {errorMsg || 'Could not submit right now — please email us directly instead.'}
                   </p>
                 )}
 

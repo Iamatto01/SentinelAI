@@ -10,8 +10,9 @@ function useCountUp(end, duration = 900) {
   const [display, setDisplay] = useState(0)
   const rafRef = useRef(null)
   const startRef = useRef(null)
-  const numEnd = typeof end === 'number' ? end : parseInt(end, 10)
-  const isNumeric = !isNaN(numEnd)
+  const isPureNumeric = typeof end === 'number' || /^\s*\d+\s*$/.test(String(end ?? ''))
+  const numEnd = isPureNumeric ? Number(end) : NaN
+  const isNumeric = Number.isFinite(numEnd)
 
   useEffect(() => {
     if (!isNumeric || numEnd === 0) { setDisplay(end); return }

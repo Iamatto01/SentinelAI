@@ -10,6 +10,18 @@ import * as db from './db.js'
 
 const TRAPPED_IPS = new Map() // ip -> { count, lastSeen, userAgent }
 
+/**
+ * Resolve the client IP via Express `req.ip` (which respects `app.set('trust proxy', 1)`),
+ * falling back to `req.socket.remoteAddress`. Never trusts raw X-Forwarded-For headers.
+ */
+export function getClientIp(req) {
+  return req?.ip || req?.socket?.remoteAddress || 'unknown'
+}
+
+export function resetTrappedIps() {
+  TRAPPED_IPS.clear()
+}
+
 export function isIpTrapped(ip) {
   if (!ip) return false
   const entry = TRAPPED_IPS.get(ip)
@@ -27,7 +39,7 @@ export function setupHoneypot(app) {
   ]
 
   const handleTrap = (req, res, decoy) => {
-    const ip = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.socket.remoteAddress || 'unknown'
+    const ip = getClientIp(req)
     const ua = req.headers['user-agent'] || 'unknown'
     const now = new Date().toISOString()
 
@@ -74,7 +86,7 @@ export function setupHoneypot(app) {
 
   // Middleware: block severely flagged trapped IPs from normal API endpoints
   app.use((req, res, next) => {
-    const ip = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.socket.remoteAddress || 'unknown'
+    const ip = getClientIp(req)
     if (isIpTrapped(ip)) {
       return res.status(429).json({
         error: 'Too Many Requests',

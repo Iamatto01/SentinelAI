@@ -96,40 +96,64 @@ export default function Monitoring() {
             </div>
           )}
           {monitors.map((m) => (
-            <button key={m.id} onClick={() => view(m.id)}
+            <div key={m.id}
               className={`card p-4 w-full text-left transition-colors ${selected === m.id ? 'border-accent/50' : 'hover:border-ink-500'}`}>
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="font-semibold text-slate-100 truncate">{m.name}</p>
-                  <p className="text-xs text-slate-500 font-mono truncate">{m.target}</p>
-                </div>
-                <div className="flex items-center gap-2">
-                  {m.status === 'running' && (
-                    <span className="flex items-center gap-1 text-[11px] text-accent font-semibold animate-pulse">
-                      <Loader2 size={12} className="animate-spin" /> running
+              <button
+                type="button"
+                onClick={() => view(m.id)}
+                className="w-full text-left cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-accent rounded"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="font-semibold text-slate-100 truncate">{m.name}</p>
+                    <p className="text-xs text-slate-500 font-mono truncate">{m.target}</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {m.status === 'running' && (
+                      <span className="flex items-center gap-1 text-[11px] text-accent font-semibold animate-pulse">
+                        <Loader2 size={12} className="animate-spin" /> running
+                      </span>
+                    )}
+                    <span className={`chip border text-[10px] ${m.enabled ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30' : 'bg-ink-700 text-slate-500 border-ink-600'}`}>
+                      {m.enabled ? 'active' : 'paused'}
                     </span>
-                  )}
-                  <span className={`chip border text-[10px] ${m.enabled ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30' : 'bg-ink-700 text-slate-500 border-ink-600'}`}>
-                    {m.enabled ? 'active' : 'paused'}
-                  </span>
+                  </div>
                 </div>
-              </div>
+              </button>
               <div className="mt-3 flex items-center justify-between text-[11px] text-slate-500">
                 <span>every {m.interval_min}m · risk {(m.last_risk ?? 0).toFixed(1)}</span>
-                <span className="flex gap-1">
-                  <span onClick={(e) => { e.stopPropagation(); runNow(m.id) }} className="p-1 rounded hover:bg-ink-700 text-accent hover:text-accent/80" title="Run Scan Now">
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => runNow(m.id)}
+                    className="p-1 rounded hover:bg-ink-700 text-accent hover:text-accent/80 cursor-pointer"
+                    aria-label={`Run Scan Now for ${m.name}`}
+                    title="Run Scan Now"
+                  >
                     {triggering[m.id] ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
-                  </span>
-                  <span onClick={(e) => { e.stopPropagation(); toggle(m) }} className="p-1 rounded hover:bg-ink-700 text-slate-400 hover:text-slate-200" title={m.enabled ? 'Disable' : 'Enable'}>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => toggle(m)}
+                    className="p-1 rounded hover:bg-ink-700 text-slate-400 hover:text-slate-200 cursor-pointer"
+                    aria-label={m.enabled ? `Disable ${m.name}` : `Enable ${m.name}`}
+                    title={m.enabled ? 'Disable' : 'Enable'}
+                  >
                     <Power size={14} />
-                  </span>
-                  <span onClick={(e) => { e.stopPropagation(); remove(m.id) }} className="p-1 rounded hover:bg-ink-700 text-slate-500 hover:text-sev-critical" title="Delete">
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => remove(m.id)}
+                    className="p-1 rounded hover:bg-ink-700 text-slate-500 hover:text-sev-critical cursor-pointer"
+                    aria-label={`Delete ${m.name}`}
+                    title="Delete"
+                  >
                     <Trash2 size={14} />
-                  </span>
-                </span>
+                  </button>
+                </div>
               </div>
               {m.last_run && <p className="mt-1 text-[10px] text-slate-600">last run {new Date(m.last_run).toLocaleString()} · {m.last_status || '—'}</p>}
-            </button>
+            </div>
           ))}
         </div>
 

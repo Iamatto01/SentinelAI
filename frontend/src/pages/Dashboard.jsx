@@ -25,7 +25,8 @@ export default function Dashboard() {
   const { user } = useAuth()
   const isClient = user?.role === 'client'
   const { isNight } = useTheme()
-  const { data: sysInfo } = useQuery('kaliSysInfo', () => api.kaliSystemInfo().catch(() => null), [], 30_000, !isClient)
+  const { data: sysInfo } = useQuery('kaliSysInfo', () => (isClient ? Promise.resolve(null) : api.kaliSystemInfo().catch(() => null)), [isClient], 30_000)
+  const { data: engineStatus } = useQuery('platformStatus', () => api.status().catch(() => null), [], 60_000)
   const { data, loading, error } = useQuery('dashboard', () => api.dashboard(), [], 30_000)
   const { data: subData } = useQuery('billingSub', () => api.billingSubscription().catch(() => null), [], 30_000)
 
@@ -37,6 +38,13 @@ export default function Dashboard() {
   const highCount = data?.severity?.high || 0
   const activeScan = (data?.recentScans || []).find(s => s.status === 'running') || data?.recentScans?.[0]
   const activeScanUrl = activeScan?.id ? `/app/scans/${activeScan.id}` : '/app/scans'
+  const toolsAvailable = engineStatus?.engine?.toolsAvailable ?? null
+  const totalTools = engineStatus?.engine?.totalTools ?? null
+  const readinessPct = totalTools ? Math.round(((toolsAvailable || 0) / totalTools) * 100) : null
+  const lastActivityDate = activeScan?.created_at
+    ? new Date(activeScan.created_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+    : 'Live Telemetry'
+  const hostUptimeHours = sysInfo?.uptimeSec != null ? `${Math.floor(sysInfo.uptimeSec / 3600)}h up` : null
   const sevData = SEV_CONFIG
     .map(c => ({
       name: c.label,
@@ -67,7 +75,7 @@ export default function Dashboard() {
             <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold tracking-wider border ${
               isNight ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400' : 'border-emerald-300 bg-emerald-50 text-emerald-700'
             }`}>
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> Latest Update: 04 Nov 2026
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> {activeScan?.created_at ? `Last Activity: ${lastActivityDate}` : 'Live Mesh Online'}
             </span>
           </div>
           <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight">
@@ -156,10 +164,10 @@ export default function Dashboard() {
               to="/app/kali-control"
               icon={Terminal}
               label="Kali Toolchain Health"
-              value="25 / 25"
+              value={totalTools ? `${toolsAvailable} / ${totalTools}` : '150+'}
               tone="emerald"
-              trend="100% Ready"
-              sub="Nmap • Nuclei • Nikto • SQLmap • Zap"
+              trend={readinessPct != null ? `${readinessPct}% Ready` : 'Online'}
+              sub="Nmap • Nuclei • Nikto • SQLmap • Dalfox"
             />
           )}
         </div>
@@ -487,19 +495,19 @@ export default function Dashboard() {
                     <span className={`font-bold text-[11px] px-2 py-0.5 rounded-full border transition-colors ${
                       isNight ? 'text-white bg-white/10 border-white/20' : 'text-slate-900 bg-slate-200/90 border-slate-300'
                     }`}>
-                      25 Active Tools
+                      {toolsAvailable != null ? `${toolsAvailable} Active Tools` : '150+ Tools Ready'}
                     </span>
                   </div>
                   <div className={`flex items-center justify-between p-3 rounded-2xl border transition-colors ${
                     isNight ? 'bg-white/[0.02] border-white/5' : 'bg-slate-50 border-slate-200'
                   }`}>
                     <span className={`flex items-center gap-2 font-medium ${isNight ? 'text-slate-300' : 'text-slate-700'}`}>
-                      <Clock size={15} className="text-amber-500 shrink-0" /> Server Build & Update
+                      <Clock size={15} className="text-amber-500 shrink-0" /> Node Status &amp; Agents
                     </span>
                     <span className={`font-bold text-[11px] px-2 py-0.5 rounded-full border ${
                       isNight ? 'text-amber-300 bg-amber-500/15 border-amber-500/30' : 'text-amber-700 bg-amber-50 border-amber-200'
                     }`}>
-                      04 Nov 2026 (Live v2.0)
+                      {data?.agentsCount || 53} Agents{hostUptimeHours ? ` • ${hostUptimeHours}` : ' • Live'}
                     </span>
                   </div>
                 </div>

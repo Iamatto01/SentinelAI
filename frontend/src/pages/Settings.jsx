@@ -10,6 +10,35 @@ import { useAuth } from '../lib/AuthContext.jsx'
 import { useTheme } from '../lib/ThemeContext.jsx'
 import AdminSubscriptionManager from '../components/AdminSubscriptionManager.jsx'
 
+const PUBLIC_SETTINGS_TABS = new Set(['general', 'alerts', 'telegram', 'discord', 'feedback'])
+const ADMIN_SETTINGS_TABS = new Set(['subscriptions', 'ai'])
+
+export function resolveSettingsTab(search = '', hash = '', isAdmin = false) {
+  const params = new URLSearchParams(search)
+  const tabParam = params.get('tab')
+  if (tabParam) {
+    if (PUBLIC_SETTINGS_TABS.has(tabParam)) return tabParam
+    if (isAdmin && ADMIN_SETTINGS_TABS.has(tabParam)) return tabParam
+    return 'general'
+  }
+  if (hash === '#subscriptions' && isAdmin) {
+    return 'subscriptions'
+  }
+  return 'general'
+}
+
+export function validatePasswordComplexity(pass) {
+  if (!pass || typeof pass !== 'string') return 'Please enter a new password.'
+  if (pass.length < 8) return 'New password must be at least 8 characters long.'
+  if (!/[a-z]/.test(pass)) return 'New password must contain at least one lowercase letter.'
+  if (!/[A-Z]/.test(pass)) return 'New password must contain at least one uppercase letter.'
+  if (!/[0-9]/.test(pass)) return 'New password must contain at least one digit.'
+  if (!/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?~`]/.test(pass)) {
+    return 'New password must contain at least one special character (!@#$%^&*...).'
+  }
+  return null
+}
+
 export default function Settings() {
   const { user, setUser } = useAuth()
   const { theme, setTheme, blur, setBlur, opacity, setOpacity, isStatic, setIsStatic, randomizeNow, wallpapers, activeWallpaper } = useTheme()
@@ -30,12 +59,19 @@ export default function Settings() {
   const isAdmin = user?.role === 'admin'
   const isClient = user?.role === 'client'
 
-  const [activeTab, setActiveTab] = useState('general') // 'general' | 'subscriptions' | 'ai' | 'alerts'
+  const [activeTab, setActiveTab] = useState(() =>
+    resolveSettingsTab(window.location.search, window.location.hash, isAdmin)
+  ) // 'general' | 'subscriptions' | 'ai' | 'alerts' | 'telegram' | 'discord' | 'feedback'
 
   const [apiKeys, setApiKeys] = useState({ 
     groq: '', groqModel: 'llama-3.3-70b-versatile', 
     openrouter: '', openrouterModel: 'inclusionai/ling-3.0-flash:free',
     bandelbanget: '', bandelbangetModel: 'deepseek-v4-pro'
+  })
+  const [providerKeyMeta, setProviderKeyMeta] = useState({
+    groq: { hasKey: false, keyPreview: '' },
+    openrouter: { hasKey: false, keyPreview: '' },
+    bandelbanget: { hasKey: false, keyPreview: '' },
   })
   const [testResults, setTestResults] = useState({})
   const [notifs, setNotifs] = useState({ scanFinish: true, criticalAlert: true, dnd: false })
@@ -96,20 +132,26 @@ export default function Settings() {
         const groq = p.find(x => x.id === 'groq') || {}
         const opr = p.find(x => x.id === 'openrouter') || {}
         const ban = p.find(x => x.id === 'bandelbanget') || {}
-        setApiKeys({
-          groq: groq.key || '', groqModel: groq.model || 'llama-3.3-70b-versatile',
-          openrouter: opr.key || '', openrouterModel: opr.model || 'inclusionai/ling-3.0-flash:free',
-          bandelbanget: ban.key || '', bandelbangetModel: ban.model || 'deepseek-v4-pro'
+        setProviderKeyMeta({
+          groq: { hasKey: Boolean(groq.hasKey), keyPreview: groq.keyPreview || '' },
+          openrouter: { hasKey: Boolean(opr.hasKey), keyPreview: opr.keyPreview || '' },
+          bandelbanget: { hasKey: Boolean(ban.hasKey), keyPreview: ban.keyPreview || '' },
         })
+        setApiKeys(prev => ({
+          ...prev,
+          groq: '',
+          groqModel: groq.model || prev.groqModel,
+          openrouter: '',
+          openrouterModel: opr.model || prev.openrouterModel,
+          bandelbanget: '',
+          bandelbangetModel: ban.model || prev.bandelbangetModel,
+        }))
       }).catch(() => {})
     }
 
     const params = new URLSearchParams(window.location.search)
-    const tabParam = params.get('tab')
-    if (tabParam && ['general', 'subscriptions', 'ai', 'alerts'].includes(tabParam)) {
-      setActiveTab(tabParam)
-    } else if (window.location.hash === '#subscriptions' && isAdmin) {
-      setActiveTab('subscriptions')
+    if (params.has('tab') || window.location.hash === '#subscriptions') {
+      setActiveTab(resolveSettingsTab(window.location.search, window.location.hash, isAdmin))
     }
   }, [isAdmin])
 
@@ -195,12 +237,9 @@ export default function Settings() {
       setPwErr('Please enter your current password.')
       return
     }
-    if (!pw.newPassword) {
-      setPwErr('Please enter a new password.')
-      return
-    }
-    if (pw.newPassword.length < 4) {
-      setPwErr('New password must be at least 4 characters long.')
+    const complexityErr = validatePasswordComplexity(pw.newPassword)
+    if (complexityErr) {
+      setPwErr(complexityErr)
       return
     }
     if (pw.newPassword !== pw.confirm) {
@@ -223,7 +262,29 @@ export default function Settings() {
     e.preventDefault(); 
     setMsg(''); setErr('')
     try {
-      await api.saveAiSettings(apiKeys)
+      // Never submit empty key fields — backend preserves configured server secrets
+      const payload = {
+        groqModel: apiKeys.groqModel?.trim(),
+        openrouterModel: apiKeys.openrouterModel?.trim(),
+        bandelbangetModel: apiKeys.bandelbangetModel?.trim(),
+        ...(apiKeys.groq?.trim() ? { groq: apiKeys.groq.trim() } : {}),
+        ...(apiKeys.openrouter?.trim() ? { openrouter: apiKeys.openrouter.trim() } : {}),
+        ...(apiKeys.bandelbanget?.trim() ? { bandelbanget: apiKeys.bandelbanget.trim() } : {}),
+      }
+      await api.saveAiSettings(payload)
+      setApiKeys(prev => ({ ...prev, groq: '', openrouter: '', bandelbanget: '' }))
+      const refreshed = await api.aiProviders().catch(() => null)
+      if (refreshed?.providers) {
+        const p = refreshed.providers
+        const groq = p.find(x => x.id === 'groq') || {}
+        const opr = p.find(x => x.id === 'openrouter') || {}
+        const ban = p.find(x => x.id === 'bandelbanget') || {}
+        setProviderKeyMeta({
+          groq: { hasKey: Boolean(groq.hasKey), keyPreview: groq.keyPreview || '' },
+          openrouter: { hasKey: Boolean(opr.hasKey), keyPreview: opr.keyPreview || '' },
+          bandelbanget: { hasKey: Boolean(ban.hasKey), keyPreview: ban.keyPreview || '' },
+        })
+      }
       setMsg('AI Settings updated successfully.')
     } catch(err) {
       setErr(err.message)
@@ -231,10 +292,13 @@ export default function Settings() {
   }
 
   async function testProvider(provider, key, model) {
-    if (!key) return setTestResults(prev => ({ ...prev, [provider]: { error: 'Please enter a key first' } }))
+    const cleanKey = key?.trim() || ''
+    if (!cleanKey && !providerKeyMeta[provider]?.hasKey) {
+      return setTestResults(prev => ({ ...prev, [provider]: { error: 'Please enter a key first' } }))
+    }
     setTestResults(prev => ({ ...prev, [provider]: { loading: true } }))
     try {
-      const res = await api.testAiProvider(provider, key, model)
+      const res = await api.testAiProvider(provider, cleanKey || undefined, model)
       if (res.success) {
         setTestResults(prev => ({ ...prev, [provider]: { success: true, reply: res.reply, loading: false } }))
       } else {
@@ -261,6 +325,7 @@ export default function Settings() {
       <div className="flex flex-wrap items-center gap-2 border-b border-white/10 pb-4">
         <button
           type="button"
+          aria-pressed={activeTab === 'general'}
           onClick={() => setActiveTab('general')}
           className={`text-xs font-bold px-4 py-2.5 rounded-xl transition-all flex items-center gap-2 cursor-pointer ${
             activeTab === 'general'
@@ -274,6 +339,7 @@ export default function Settings() {
         {isAdmin && (
           <button
             type="button"
+            aria-pressed={activeTab === 'subscriptions'}
             onClick={() => setActiveTab('subscriptions')}
             className={`text-xs font-bold px-4 py-2.5 rounded-xl transition-all flex items-center gap-2 cursor-pointer ${
               activeTab === 'subscriptions'
@@ -291,6 +357,7 @@ export default function Settings() {
         {isAdmin && (
           <button
             type="button"
+            aria-pressed={activeTab === 'ai'}
             onClick={() => setActiveTab('ai')}
             className={`text-xs font-bold px-4 py-2.5 rounded-xl transition-all flex items-center gap-2 cursor-pointer ${
               activeTab === 'ai'
@@ -304,6 +371,7 @@ export default function Settings() {
 
         <button
           type="button"
+          aria-pressed={activeTab === 'telegram'}
           onClick={() => setActiveTab('telegram')}
           className={`text-xs font-bold px-4 py-2.5 rounded-xl transition-all flex items-center gap-2 cursor-pointer ${
             activeTab === 'telegram'
@@ -319,6 +387,7 @@ export default function Settings() {
 
         <button
           type="button"
+          aria-pressed={activeTab === 'discord'}
           onClick={() => setActiveTab('discord')}
           className={`text-xs font-bold px-4 py-2.5 rounded-xl transition-all flex items-center gap-2 cursor-pointer ${
             activeTab === 'discord'
@@ -334,6 +403,7 @@ export default function Settings() {
 
         <button
           type="button"
+          aria-pressed={activeTab === 'feedback'}
           onClick={() => setActiveTab('feedback')}
           className={`text-xs font-bold px-4 py-2.5 rounded-xl transition-all flex items-center gap-2 cursor-pointer ${
             activeTab === 'feedback'
@@ -539,7 +609,7 @@ export default function Settings() {
                 </div>
 
                 {profileErr && (
-                  <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs font-semibold flex items-center gap-2 animate-in fade-in">
+                  <div role="alert" className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs font-semibold flex items-center gap-2 animate-in fade-in">
                     <AlertCircle size={15} className="shrink-0 text-rose-400" />
                     <span>{profileErr}</span>
                   </div>
@@ -572,7 +642,7 @@ export default function Settings() {
             </form>
 
             {/* Security Credentials Form */}
-            <form onSubmit={savePassword} className="card p-6 space-y-5 hover:border-purple-400/40 transition-all duration-300 flex flex-col justify-between">
+            <form onSubmit={savePassword} noValidate className="card p-6 space-y-5 hover:border-purple-400/40 transition-all duration-300 flex flex-col justify-between">
               <div className="space-y-5">
                 <div className="flex items-center justify-between border-b border-white/10 pb-3">
                   <h3 className="flex items-center gap-2 text-base font-bold text-white">
@@ -584,7 +654,7 @@ export default function Settings() {
                 </div>
 
                 {pwErr && (
-                  <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs font-semibold flex items-center gap-2 animate-in fade-in">
+                  <div role="alert" className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs font-semibold flex items-center gap-2 animate-in fade-in">
                     <AlertCircle size={15} className="shrink-0 text-rose-400" />
                     <span>{pwErr}</span>
                   </div>
@@ -600,9 +670,10 @@ export default function Settings() {
                 <div className="space-y-4">
                   {/* Current Password */}
                   <div>
-                    <label className="label">Current Password</label>
+                    <label htmlFor="pw-current" className="label">Current Password</label>
                     <div className="relative flex items-center">
                       <input
+                        id="pw-current"
                         type={pwShow.current ? 'text' : 'password'}
                         className="input pr-10"
                         value={pw.currentPassword}
@@ -624,11 +695,12 @@ export default function Settings() {
                   {/* New Password */}
                   <div>
                     <div className="flex items-center justify-between">
-                      <label className="label">New Password</label>
-                      <span className="text-[10px] text-slate-400 font-mono">Min 4 characters</span>
+                      <label htmlFor="pw-new" className="label">New Password</label>
+                      <span className="text-[10px] text-slate-400 font-mono">Min 8 chars · A-z, 0-9, !@#</span>
                     </div>
                     <div className="relative flex items-center">
                       <input
+                        id="pw-new"
                         type={pwShow.next ? 'text' : 'password'}
                         className="input pr-10"
                         value={pw.newPassword}
@@ -645,12 +717,15 @@ export default function Settings() {
                         {pwShow.next ? <EyeOff size={15} /> : <Eye size={15} />}
                       </button>
                     </div>
+                    <p className="text-[11px] text-slate-400 mt-1.5">
+                      Use 8+ characters with uppercase &amp; lowercase letters, a number, and a special symbol (!@#$%^&amp;*...).
+                    </p>
                   </div>
 
                   {/* Confirm Password */}
                   <div>
                     <div className="flex items-center justify-between">
-                      <label className="label">Confirm New Password</label>
+                      <label htmlFor="pw-confirm" className="label">Confirm New Password</label>
                       {pw.confirm && (
                         <span className={`text-[10px] font-bold ${
                           pw.newPassword === pw.confirm ? 'text-emerald-400' : 'text-rose-400'
@@ -661,6 +736,7 @@ export default function Settings() {
                     </div>
                     <div className="relative flex items-center">
                       <input
+                        id="pw-confirm"
                         type={pwShow.confirm ? 'text' : 'password'}
                         className="input pr-10"
                         value={pw.confirm}
@@ -705,15 +781,46 @@ export default function Settings() {
               <p className="text-xs text-slate-400 mt-1">Configure specialist AI LLM providers.</p>
             </div>
             <div className="space-y-5">
+              {/* Bandelbanget */}
+              <div className="space-y-2 p-4 bg-slate-900/60 rounded-xl border border-white/10">
+                <div className="flex items-center justify-between mb-1">
+                  <div className="flex items-center gap-2">
+                    <h4 className="text-xs font-bold text-white">Bandelbanget AI (DeepSeek V4)</h4>
+                    {providerKeyMeta.bandelbanget?.hasKey && (
+                      <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+                        Configured ({providerKeyMeta.bandelbanget.keyPreview || 'set'})
+                      </span>
+                    )}
+                  </div>
+                  <button type="button" onClick={() => testProvider('bandelbanget', apiKeys.bandelbanget, apiKeys.bandelbangetModel)} className="btn-ghost text-xs py-1 px-2.5">
+                    {testResults.bandelbanget?.loading ? <Loader2 size={12} className="animate-spin text-cyan-400" /> : 'Test Model'}
+                  </button>
+                </div>
+                <div>
+                  <label className="text-[10px] text-slate-400 uppercase font-bold">API Key</label>
+                  <input type="password" className="input text-xs" placeholder={providerKeyMeta.bandelbanget?.hasKey ? 'Leave blank to keep existing key, or paste new key' : 'sk-...'} value={apiKeys.bandelbanget} onChange={(e) => setApiKeys({...apiKeys, bandelbanget: e.target.value})} />
+                </div>
+                <div><label className="text-[10px] text-slate-400 uppercase font-bold">Model</label><input type="text" className="input text-xs" value={apiKeys.bandelbangetModel} onChange={(e) => setApiKeys({...apiKeys, bandelbangetModel: e.target.value})} /></div>
+                {testResults.bandelbanget?.success && <p className="text-xs text-emerald-400 mt-2 p-2 bg-emerald-500/10 rounded-xl border border-emerald-500/20">{testResults.bandelbanget.reply}</p>}
+                {testResults.bandelbanget?.error && <p className="text-xs text-rose-400 mt-2 p-2 bg-rose-500/10 rounded-xl border border-rose-500/20">{testResults.bandelbanget.error}</p>}
+              </div>
+
               {/* Groq */}
               <div className="space-y-2 p-4 bg-slate-900/60 rounded-xl border border-white/10">
                 <div className="flex items-center justify-between mb-1">
-                  <h4 className="text-xs font-bold text-white">Groq Cloud AI</h4>
+                  <div className="flex items-center gap-2">
+                    <h4 className="text-xs font-bold text-white">Groq Cloud AI</h4>
+                    {providerKeyMeta.groq?.hasKey && (
+                      <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+                        Configured ({providerKeyMeta.groq.keyPreview || 'set'})
+                      </span>
+                    )}
+                  </div>
                   <button type="button" onClick={() => testProvider('groq', apiKeys.groq, apiKeys.groqModel)} className="btn-ghost text-xs py-1 px-2.5">
                     {testResults.groq?.loading ? <Loader2 size={12} className="animate-spin text-cyan-400" /> : 'Test Model'}
                   </button>
                 </div>
-                <div><label className="text-[10px] text-slate-400 uppercase font-bold">API Key</label><input type="password" className="input text-xs" placeholder="gsk_..." value={apiKeys.groq} onChange={(e) => setApiKeys({...apiKeys, groq: e.target.value})} /></div>
+                <div><label className="text-[10px] text-slate-400 uppercase font-bold">API Key</label><input type="password" className="input text-xs" placeholder={providerKeyMeta.groq?.hasKey ? 'Leave blank to keep existing key, or paste new key' : 'gsk_...'} value={apiKeys.groq} onChange={(e) => setApiKeys({...apiKeys, groq: e.target.value})} /></div>
                 <div><label className="text-[10px] text-slate-400 uppercase font-bold">Model</label><input type="text" className="input text-xs" value={apiKeys.groqModel} onChange={(e) => setApiKeys({...apiKeys, groqModel: e.target.value})} /></div>
                 {testResults.groq?.success && <p className="text-xs text-emerald-400 mt-2 p-2 bg-emerald-500/10 rounded-xl border border-emerald-500/20">{testResults.groq.reply}</p>}
                 {testResults.groq?.error && <p className="text-xs text-rose-400 mt-2 p-2 bg-rose-500/10 rounded-xl border border-rose-500/20">{testResults.groq.error}</p>}
@@ -722,12 +829,19 @@ export default function Settings() {
               {/* OpenRouter */}
               <div className="space-y-2 p-4 bg-slate-900/60 rounded-xl border border-white/10">
                 <div className="flex items-center justify-between mb-1">
-                  <h4 className="text-xs font-bold text-white">OpenRouter AI</h4>
+                  <div className="flex items-center gap-2">
+                    <h4 className="text-xs font-bold text-white">OpenRouter AI</h4>
+                    {providerKeyMeta.openrouter?.hasKey && (
+                      <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+                        Configured ({providerKeyMeta.openrouter.keyPreview || 'set'})
+                      </span>
+                    )}
+                  </div>
                   <button type="button" onClick={() => testProvider('openrouter', apiKeys.openrouter, apiKeys.openrouterModel)} className="btn-ghost text-xs py-1 px-2.5">
                     {testResults.openrouter?.loading ? <Loader2 size={12} className="animate-spin text-cyan-400" /> : 'Test Model'}
                   </button>
                 </div>
-                <div><label className="text-[10px] text-slate-400 uppercase font-bold">API Key</label><input type="password" className="input text-xs" placeholder="sk-or-v1-..." value={apiKeys.openrouter} onChange={(e) => setApiKeys({...apiKeys, openrouter: e.target.value})} /></div>
+                <div><label className="text-[10px] text-slate-400 uppercase font-bold">API Key</label><input type="password" className="input text-xs" placeholder={providerKeyMeta.openrouter?.hasKey ? 'Leave blank to keep existing key, or paste new key' : 'sk-or-v1-...'} value={apiKeys.openrouter} onChange={(e) => setApiKeys({...apiKeys, openrouter: e.target.value})} /></div>
                 <div><label className="text-[10px] text-slate-400 uppercase font-bold">Model</label><input type="text" className="input text-xs" value={apiKeys.openrouterModel} onChange={(e) => setApiKeys({...apiKeys, openrouterModel: e.target.value})} /></div>
                 {testResults.openrouter?.success && <p className="text-xs text-emerald-400 mt-2 p-2 bg-emerald-500/10 rounded-xl border border-emerald-500/20">{testResults.openrouter.reply}</p>}
                 {testResults.openrouter?.error && <p className="text-xs text-rose-400 mt-2 p-2 bg-rose-500/10 rounded-xl border border-rose-500/20">{testResults.openrouter.error}</p>}
@@ -986,8 +1100,8 @@ export default function Settings() {
             )}
 
             {feedbackErr && (
-              <div className="p-3.5 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs font-semibold flex items-center gap-2">
-                <CheckCircle2 size={16} className="text-rose-400 shrink-0" />
+              <div role="alert" className="p-3.5 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs font-semibold flex items-center gap-2">
+                <AlertCircle size={16} className="text-rose-400 shrink-0" />
                 <span>{feedbackErr}</span>
               </div>
             )}

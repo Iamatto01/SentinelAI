@@ -59,8 +59,8 @@ export default function ScrollProgressHUD() {
         style={{ scaleX: scaleY }}
       />
 
-      {/* Floating Vertical Scrollytelling HUD on Desktop */}
-      <div className="fixed right-4 sm:right-6 top-1/2 -translate-y-1/2 z-40 hidden lg:flex flex-col items-end gap-3 pointer-events-auto select-none">
+      {/* Floating Vertical Scrollytelling HUD on wide Desktop viewports (>=1536px to never overlap max-w-7xl content) */}
+      <div className="fixed right-4 sm:right-6 top-1/2 -translate-y-1/2 z-40 hidden 2xl:flex flex-col items-end gap-3 pointer-events-auto select-none">
         <div className="relative flex flex-col items-end py-2">
           {/* Track Line */}
           <div className={`absolute right-[5px] top-0 bottom-0 w-[1px] transition-colors duration-300 ${

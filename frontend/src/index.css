@@ -542,6 +542,13 @@ body.day-mode [class*="text-amber-"]:not(.terminal *) {
   color: #b45309 !important;
 }
 
+body.day-mode .text-orange-200,
+body.day-mode .text-orange-300,
+body.day-mode .text-orange-400,
+body.day-mode [class*="text-orange-"]:not(.terminal *) {
+  color: #c2410c !important;
+}
+
 body.day-mode .text-rose-400,
 body.day-mode .text-red-400,
 body.day-mode [class*="text-rose-"]:not(.terminal *),

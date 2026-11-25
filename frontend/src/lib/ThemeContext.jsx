@@ -40,9 +40,10 @@ export function ThemeProvider({ children }) {
   // Resolved active wallpaper image
   const [activeWallpaper, setActiveWallpaper] = useState('/wallpapers/circuittree.jpg')
 
-  // Sync night/day class on body
+  // Sync dark/night/day-mode classes consistently across <html> and <body>
   useEffect(() => {
     const isDark = config.isNight !== false
+    document.documentElement.classList.toggle('dark', isDark)
     document.body.classList.toggle('night', isDark)
     document.body.classList.toggle('day-mode', !isDark)
     localStorage.setItem('theme', isDark ? 'dark' : 'day')

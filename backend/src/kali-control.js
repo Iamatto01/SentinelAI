@@ -1,38 +1,330 @@
 import fs from 'node:fs'
 import os from 'node:os'
+import path from 'node:path'
 import { spawn } from 'node:child_process'
 import { llm } from './ai/llm-client.js'
 import { config } from './config.js'
 
-/** Execute a command with timeout and environment extras */
-async function runCmd(cmd, timeoutMs = 30000) {
-  return new Promise((resolve) => {
-    const extra = [
-      '/usr/local/bin', '/usr/local/sbin', '/usr/bin', '/bin',
-      '/root/go/bin', '/root/.local/bin',
-      '/home/kali/go/bin', '/home/kali/.local/bin',
-      process.env.HOME ? `${process.env.HOME}/go/bin` : null,
-      process.env.HOME ? `${process.env.HOME}/.local/bin` : null,
-    ].filter(Boolean).join(':')
+let spawnImpl = spawn
 
-    const env = {
-      ...process.env,
-      PATH: `${process.env.PATH || ''}:${extra}`,
-      TERM: 'xterm-256color',
-      COLUMNS: '120',
-      LINES: '40',
+/** Test hook to intercept process spawning cleanly without hitting live OS tools. */
+export function __setSpawnForTest(fn) {
+  spawnImpl = typeof fn === 'function' ? fn : spawn
+}
+
+export const ALLOWED_COMMANDS = Object.freeze([
+  'nmap', 'nikto', 'nuclei', 'gobuster', 'feroxbuster', 'sqlmap', 'ffuf',
+  'dirsearch', 'wafw00f', 'subfinder', 'amass', 'masscan', 'sslscan', 'whatweb',
+  'wpscan', 'hydra', 'msfconsole', 'msfrpcd', 'httpx', 'katana', 'dalfox', 'arjun',
+  'whois', 'dig', 'nslookup', 'host', 'traceroute', 'tracert', 'ping', 'curl', 'wget',
+  'python3', 'python', 'ruby', 'perl', 'go', 'node',
+  'netstat', 'ss', 'ps', 'top', 'htop', 'free', 'df', 'du', 'ls', 'cat', 'head', 'tail',
+  'grep', 'find', 'locate', 'which', 'whereis', 'file', 'stat', 'strings', 'xxd', 'hexdump',
+  'awk', 'sed', 'sort', 'uniq', 'wc', 'cut', 'tr', 'tee', 'tar', 'gzip', 'zip', 'unzip',
+  'ifconfig', 'ip', 'iwconfig', 'rfkill', 'arp', 'route', 'tcpdump', 'tshark',
+  'systemctl', 'journalctl', 'service', 'docker', 'uptime', 'uname', 'who', 'w', 'id', 'whoami',
+  'last', 'lastlog', 'crontab', 'date', 'vmstat', 'iostat', 'lsof', 'getent',
+  'passwd', 'chage', 'ufw', 'iptables', 'fail2ban-client',
+  'git', 'make', 'cmake', 'gcc', 'g++',
+  'pip', 'pip3', 'npm', 'yarn', 'gem', 'cpan',
+  'echo', 'true', 'false', 'env', 'printenv', 'pwd',
+  'ssh', 'scp', 'rsync', 'nc', 'ncat', 'socat',
+  'base64', 'openssl', 'gpg',
+  'snmpwalk', 'snmpget', 'enum4linux', 'smbclient', 'smbmap', 'rpcclient',
+  'aircrack-ng', 'airodump-ng', 'aireplay-ng', 'reaver', 'wash', 'kismet',
+  'searchsploit', 'exploitdb',
+])
+
+const ALLOWED_COMMAND_SET = new Set(ALLOWED_COMMANDS)
+const TRUSTED_BIN_DIRS = new Set(['/bin', '/sbin', '/usr/bin', '/usr/sbin', '/usr/local/bin', '/usr/local/sbin'])
+const INTERACTIVE_TOOLS = new Set(['nano', 'vim', 'vi', 'less', 'more'])
+const SHELL_METACHAR_RE = /[;&|`><\r\n\0]|\$\(|\$\{/
+
+const INTERPRETER_FLAG_VALIDATORS = {
+  python: validatePythonArgs,
+  python3: validatePythonArgs,
+  node: validateNodeArgs,
+  ruby: validateRubyArgs,
+  perl: validatePerlArgs,
+  find: validateFindArgs,
+  nmap: validateNmapArgs,
+  tar: validateTarArgs,
+  git: validateGitArgs,
+  awk: validateAwkArgs,
+  env: validateEnvArgs,
+}
+
+function validatePythonArgs(args) {
+  for (const arg of args) {
+    if (arg === '-' || arg === '--command' || arg.startsWith('--command=') || arg === '--interactive' || /^-[^-]*[ci]/.test(arg)) {
+      throw new Error(`Disallowed interpreter flag for python: ${arg}`)
     }
-    const proc = spawn(cmd, { shell: true, stdio: ['ignore', 'pipe', 'pipe'], env, detached: true })
+  }
+}
+
+function validateNodeArgs(args) {
+  const blockedExact = new Set([
+    '-', '--eval', '--print', '--require', '--import', '--loader', '--experimental-loader', '--interactive',
+  ])
+  const blockedPrefix = ['--eval=', '--print=', '--require=', '--import=', '--loader=', '--experimental-loader=']
+  for (const arg of args) {
+    if (blockedExact.has(arg) || blockedPrefix.some((p) => arg.startsWith(p)) || /^-[^-]*[epri]/.test(arg)) {
+      throw new Error(`Disallowed interpreter flag for node: ${arg}`)
+    }
+  }
+}
+
+function validateRubyArgs(args) {
+  for (const arg of args) {
+    if (arg === '-' || arg === '--eval' || arg.startsWith('--eval=') || arg === '--require' || arg.startsWith('--require=') || /^-[^-]*[er]/.test(arg)) {
+      throw new Error(`Disallowed interpreter flag for ruby: ${arg}`)
+    }
+  }
+}
+
+function validatePerlArgs(args) {
+  for (const arg of args) {
+    if (arg === '-' || /^-[^-]*[eEMi]/.test(arg)) {
+      throw new Error(`Disallowed interpreter flag for perl: ${arg}`)
+    }
+  }
+}
+
+function validateFindArgs(args) {
+  const blocked = new Set(['-exec', '-execdir', '-ok', '-okdir'])
+  for (const arg of args) {
+    if (blocked.has(arg)) {
+      throw new Error(`Disallowed execution flag for find: ${arg}`)
+    }
+  }
+}
+
+function validateNmapArgs(args) {
+  for (const arg of args) {
+    if (arg === '--interactive') {
+      throw new Error('Interactive nmap mode is not supported')
+    }
+  }
+}
+
+function validateTarArgs(args) {
+  const blockedPrefix = ['--to-command', '--checkpoint-action', '--use-compress-program']
+  for (const arg of args) {
+    if (arg === '-I' || blockedPrefix.some((p) => arg === p || arg.startsWith(`${p}=`))) {
+      throw new Error(`Disallowed execution flag for tar: ${arg}`)
+    }
+  }
+}
+
+function validateGitArgs(args) {
+  const blockedPrefix = ['--upload-pack', '--receive-pack', '--exec', '--exec-path']
+  for (const arg of args) {
+    if (arg === '-c' || arg.startsWith('-c') || blockedPrefix.some((p) => arg === p || arg.startsWith(`${p}=`))) {
+      throw new Error(`Disallowed execution/config flag for git: ${arg}`)
+    }
+  }
+}
+
+function validateAwkArgs(args) {
+  for (const arg of args) {
+    if (/system\s*\(|\|&|\bgetline\b/i.test(arg)) {
+      throw new Error('Disallowed command execution construct in awk')
+    }
+  }
+}
+
+function validateEnvArgs(args) {
+  let expectFlagVal = false
+  for (const arg of args) {
+    if (expectFlagVal) {
+      expectFlagVal = false
+      continue
+    }
+    if (arg === '-u' || arg === '--unset') {
+      expectFlagVal = true
+      continue
+    }
+    if (!arg.startsWith('-')) {
+      throw new Error('Executing arbitrary commands via env is not permitted')
+    }
+  }
+}
+
+/** Tokenize a command string safely into argv tokens without shell expansion. */
+export function tokenizeCommand(command) {
+  if (!command || typeof command !== 'string') {
+    throw new Error('Command is required')
+  }
+  const trimmed = command.trim()
+  if (!trimmed) {
+    throw new Error('Command is required')
+  }
+  if (SHELL_METACHAR_RE.test(trimmed)) {
+    throw new Error('Shell metacharacters (;, &, |, backticks, $(), redirects, newlines) are not allowed')
+  }
+
+  const tokens = []
+  let current = ''
+  let quote = null
+  let tokenStarted = false
+
+  for (let i = 0; i < trimmed.length; i++) {
+    const ch = trimmed[i]
+    if (quote === "'") {
+      if (ch === "'") {
+        quote = null
+      } else {
+        current += ch
+      }
+      tokenStarted = true
+      continue
+    }
+    if (quote === '"') {
+      if (ch === '"') {
+        quote = null
+      } else if (ch === '\\' && i + 1 < trimmed.length && (trimmed[i + 1] === '"' || trimmed[i + 1] === '\\')) {
+        current += trimmed[++i]
+      } else {
+        current += ch
+      }
+      tokenStarted = true
+      continue
+    }
+    if (/\s/.test(ch)) {
+      if (tokenStarted) {
+        tokens.push(current)
+        current = ''
+        tokenStarted = false
+      }
+      continue
+    }
+    if (ch === "'" || ch === '"') {
+      quote = ch
+      tokenStarted = true
+      continue
+    }
+    if (ch === '\\' && i + 1 < trimmed.length) {
+      current += trimmed[++i]
+      tokenStarted = true
+      continue
+    }
+    current += ch
+    tokenStarted = true
+  }
+
+  if (quote !== null) {
+    throw new Error('Unclosed quote in command')
+  }
+  if (tokenStarted) {
+    tokens.push(current)
+  }
+  if (tokens.length === 0) {
+    throw new Error('Command is required')
+  }
+  return tokens
+}
+
+/** Validate and parse a user command into safe `{ bin, execTarget, args, maxLines }`. */
+export function parseAndValidateCommand(command) {
+  const [rawBin, ...args] = tokenizeCommand(command)
+
+  if (rawBin.includes('..') || rawBin.includes('\\')) {
+    throw new Error(`Invalid command path: ${rawBin}`)
+  }
+
+  let bin = rawBin
+  let execTarget = rawBin
+  if (rawBin.includes('/')) {
+    const dir = path.posix.dirname(rawBin)
+    bin = path.posix.basename(rawBin)
+    if (!TRUSTED_BIN_DIRS.has(dir)) {
+      throw new Error(`Untrusted binary directory: ${dir}`)
+    }
+  }
+
+  if (INTERACTIVE_TOOLS.has(bin)) {
+    throw new Error(`Interactive editor/pager (${bin}) is not supported in web terminal. Use 'cat', 'head -n 50', or 'tail -n 50' to view files.`)
+  }
+  if (!ALLOWED_COMMAND_SET.has(bin)) {
+    throw new Error(`Command not allowed: ${bin}. Use the AI suggest feature or request a tool addition.`)
+  }
+
+  const validator = INTERPRETER_FLAG_VALIDATORS[bin]
+  if (validator) validator(args)
+
+  if (bin === 'htop') {
+    return { bin, execTarget: 'top', args: ['-b', '-n', '1'], maxLines: 35 }
+  }
+  if (bin === 'top' && !args.includes('-b')) {
+    return { bin, execTarget: 'top', args: ['-b', '-n', '1'], maxLines: 35 }
+  }
+
+  return { bin, execTarget, args, maxLines: null }
+}
+
+/** Build a shell-free sudo invocation passing password over stdin (`sudo -S -p ''`). */
+export function buildSudoInvocation(cmdArgs, password = config.kaliSudoPassword) {
+  if (!Array.isArray(cmdArgs) || cmdArgs.length === 0) {
+    throw new Error('sudo command arguments are required')
+  }
+  if (password) {
+    return {
+      bin: 'sudo',
+      args: ['-S', '-p', '', ...cmdArgs],
+      stdinData: `${password}\n`,
+    }
+  }
+  return {
+    bin: 'sudo',
+    args: [...cmdArgs],
+    stdinData: null,
+  }
+}
+
+function buildExecEnv() {
+  const extra = [
+    '/usr/local/bin', '/usr/local/sbin', '/usr/bin', '/bin',
+    '/root/go/bin', '/root/.local/bin',
+    '/home/kali/go/bin', '/home/kali/.local/bin',
+    process.env.HOME ? `${process.env.HOME}/go/bin` : null,
+    process.env.HOME ? `${process.env.HOME}/.local/bin` : null,
+  ].filter(Boolean).join(':')
+
+  return {
+    ...process.env,
+    PATH: `${process.env.PATH || ''}:${extra}`,
+    TERM: 'xterm-256color',
+    COLUMNS: '120',
+    LINES: '40',
+  }
+}
+
+/** Execute a binary directly with argument array and shell: false. */
+async function runBinary(bin, args = [], { timeoutMs = 30000, stdinData = null } = {}) {
+  return new Promise((resolve) => {
+    const proc = spawnImpl(bin, args, {
+      shell: false,
+      stdio: [stdinData !== null ? 'pipe' : 'ignore', 'pipe', 'pipe'],
+      env: buildExecEnv(),
+      detached: process.platform !== 'win32',
+    })
+
     let stdout = ''
     let stderr = ''
 
     const timer = setTimeout(() => {
-      try { process.kill(-proc.pid, 'SIGKILL') } catch { proc.kill('SIGKILL') }
+      try { process.kill(-proc.pid, 'SIGKILL') } catch { try { proc.kill('SIGKILL') } catch { /* ignore */ } }
       resolve({ success: false, stdout, stderr, error: `Command timed out after ${timeoutMs / 1000}s`, code: 124 })
     }, timeoutMs)
 
-    proc.stdout.on('data', (d) => { stdout += d.toString() })
-    proc.stderr.on('data', (d) => { stderr += d.toString() })
+    if (stdinData !== null && proc.stdin) {
+      proc.stdin.on('error', () => { /* ignore EPIPE if child exits early */ })
+      proc.stdin.write(stdinData)
+      proc.stdin.end()
+    }
+
+    proc.stdout?.on('data', (d) => { stdout += d.toString() })
+    proc.stderr?.on('data', (d) => { stderr += d.toString() })
 
     proc.on('close', (code) => {
       clearTimeout(timer)
@@ -52,9 +344,15 @@ async function runCmd(cmd, timeoutMs = 30000) {
   })
 }
 
-/** Check if a binary exists in PATH */
+async function runSudoCommand(cmdArgs, options = {}) {
+  const { bin, args, stdinData } = buildSudoInvocation(cmdArgs)
+  return runBinary(bin, args, { ...options, stdinData })
+}
+
+/** Check if a binary exists in PATH without invoking a shell */
 async function checkBin(bin) {
-  const res = await runCmd(`command -v ${bin}`, 3000)
+  if (!/^[A-Za-z0-9._+-]+$/.test(bin)) return null
+  const res = await runBinary('which', [bin], { timeoutMs: 3000 })
   return res.success ? res.stdout.split('\n')[0].trim() : null
 }
 
@@ -64,19 +362,17 @@ async function checkService(name, port) {
     let active = false
     let details = 'stopped'
 
-    // Check systemctl first if on linux
     if (process.platform === 'linux') {
-      const res = await runCmd(`systemctl is-active ${name} 2>/dev/null`, 3000)
+      const res = await runBinary('systemctl', ['is-active', name], { timeoutMs: 3000 })
       if (res.stdout.trim() === 'active') {
         active = true
         details = 'active (systemd)'
       }
     }
 
-    // Check port if specified
     if (port) {
-      const portRes = await runCmd(`ss -tlnp 2>/dev/null | grep -E ':${port} '`, 3000)
-      if (portRes.success && portRes.stdout) {
+      const portRes = await runBinary('ss', ['-tlnp'], { timeoutMs: 3000 })
+      if (portRes.success && portRes.stdout.split(/\r?\n/).some((line) => line.includes(`:${port} `))) {
         active = true
         details = `listening on port ${port}`
       }
@@ -102,7 +398,6 @@ export async function getSystemInfo() {
   const usedMem = totalMem - freeMem
   const memUsagePercent = Math.round((usedMem / totalMem) * 100)
 
-  // Collect network IPs
   const interfaces = os.networkInterfaces()
   const networkIps = []
   for (const [iface, addrs] of Object.entries(interfaces)) {
@@ -113,7 +408,6 @@ export async function getSystemInfo() {
     }
   }
 
-  // Helper to format disk units (e.g. 47G -> 47 GB, 500M -> 500 MB)
   const formatDiskUnit = (val) => {
     if (!val || typeof val !== 'string') return val || '0 GB'
     if (/\s*(GB|MB|TB|KB)$/i.test(val)) return val
@@ -124,13 +418,13 @@ export async function getSystemInfo() {
       .replace(/([0-9.]+)K$/i, '$1 KB')
   }
 
-  // Disk usage via df -h
   let disk = { total: 'N/A', used: 'N/A', free: 'N/A', percent: 'N/A' }
   try {
     const checkPath = (config.outputDir && fs.existsSync(config.outputDir)) ? config.outputDir : '/'
-    const dfRes = await runCmd(`df -h "${checkPath}" | tail -n 1`, 3000)
-    if (dfRes.success && dfRes.stdout) {
-      const parts = dfRes.stdout.split(/\s+/)
+    const dfRes = await runBinary('df', ['-h', checkPath], { timeoutMs: 3000 })
+    const lastLine = dfRes.stdout.split(/\r?\n/).filter(Boolean).pop()
+    if (dfRes.success && lastLine) {
+      const parts = lastLine.split(/\s+/)
       if (parts.length >= 5) {
         disk = {
           total: formatDiskUnit(parts[1]),
@@ -143,9 +437,8 @@ export async function getSystemInfo() {
         }
       }
     }
-  } catch { }
+  } catch { /* ignore */ }
 
-  // Check key services
   const services = {
     sentinelai: await checkService('sentinelai', 5000),
     msfrpcd: await checkService('msfrpcd', 55553),
@@ -177,59 +470,19 @@ export async function getSystemInfo() {
   }
 }
 
-/** Execute a command from web console */
+/** Execute an allowlisted command from web console without shell interpretation */
 export async function executeCommand(command, timeout = 30000) {
-  if (!command || typeof command !== 'string') {
-    throw new Error('Command is required')
+  const { execTarget, args, maxLines } = parseAndValidateCommand(command)
+  const result = await runBinary(execTarget, args, { timeoutMs: timeout })
+  if (maxLines && result.stdout) {
+    result.stdout = result.stdout.split(/\r?\n/).slice(0, maxLines).join('\n')
   }
-
-  // Allowlist: only safe read-only/recon/system-status commands
-  const allowed = [
-    'nmap', 'nikto', 'nuclei', 'gobuster', 'feroxbuster', 'sqlmap', 'ffuf',
-    'dirsearch', 'wafw00f', 'subfinder', 'amass', 'masscan', 'sslscan', 'whatweb',
-    'wpscan', 'hydra', 'msfconsole', 'msfrpcd', 'httpx', 'katana', 'dalfox', 'arjun',
-    'whois', 'dig', 'nslookup', 'host', 'traceroute', 'tracert', 'ping', 'curl', 'wget',
-    'python3', 'python', 'ruby', 'perl', 'go', 'node',
-    'netstat', 'ss', 'ps', 'top', 'htop', 'free', 'df', 'du', 'ls', 'cat', 'head', 'tail',
-    'grep', 'find', 'locate', 'which', 'whereis', 'file', 'stat', 'strings', 'xxd', 'hexdump',
-    'awk', 'sed', 'sort', 'uniq', 'wc', 'cut', 'tr', 'tee', 'tar', 'gzip', 'zip', 'unzip',
-    'ifconfig', 'ip', 'iwconfig', 'rfkill', 'arp', 'route', 'tcpdump', 'tshark',
-    'systemctl', 'journalctl', 'service', 'docker', 'uptime', 'uname', 'who', 'w', 'id',
-    'last', 'lastlog', 'crontab', 'date', 'vmstat', 'iostat', 'lsof', 'getent',
-    'passwd', 'chage', 'ufw', 'iptables', 'fail2ban-client',
-    'git', 'make', 'cmake', 'gcc', 'g++',
-    'pip', 'pip3', 'npm', 'yarn', 'gem', 'cpan',
-    'echo', 'true', 'false', 'env', 'printenv', 'pwd',
-    'ssh', 'scp', 'rsync', 'nc', 'ncat', 'socat',
-    'base64', 'openssl', 'gpg',
-    'snmpwalk', 'snmpget', 'enum4linux', 'smbclient', 'smbmap', 'rpcclient',
-    'aircrack-ng', 'airodump-ng', 'aireplay-ng', 'reaver', 'wash', 'kismet',
-    'searchsploit', 'exploitdb',
-  ]
-  const firstWord = command.trim().split(/\s+/)[0]
-  const bin = firstWord.replace(/^.*\//, '') // strip path prefix
-  if (!allowed.includes(bin)) {
-    throw new Error(`Command not allowed: ${bin}. Use the AI suggest feature or request a tool addition.`)
-  }
-
-  // Translate interactive commands to non-interactive batch mode
-  let finalCmd = command.trim()
-  if (bin === 'htop') {
-    finalCmd = 'COLUMNS=120 top -b -n 1 | head -n 35'
-  } else if (bin === 'top' && !finalCmd.includes('-b')) {
-    finalCmd = `COLUMNS=120 top -b -n 1 | head -n 35`
-  } else if (['nano', 'vim', 'vi', 'less', 'more'].includes(bin)) {
-    throw new Error(`Interactive editor/pager (${bin}) is not supported in web terminal. Use 'cat', 'head -n 50', or 'tail -n 50' to view files.`)
-  }
-
-  const result = await runCmd(finalCmd, timeout)
   return result
 }
 
 /**
- * AI Chatbox: translate a natural-language request into a single Kali shell
- * command. Returns { command, explanation, risk } for the operator to review
- * and approve before execution via /api/kali/exec.
+ * AI Chatbox: translate a natural-language request into a single Kali command
+ * aligned with executeCommand()'s allowlist. Returns { command, explanation, risk }.
  */
 export async function suggestKaliCommand(message, history = []) {
   if (!message || typeof message !== 'string' || !message.trim()) {
@@ -239,21 +492,21 @@ export async function suggestKaliCommand(message, history = []) {
     throw new Error('No AI provider configured — set an API key in Settings')
   }
 
-  const ctx = history.slice(-6).map(h => `${h.role}: ${h.content}`).join('\n')
+  const ctx = history.slice(-6).map((h) => `${h.role}: ${h.content}`).join('\n')
   const prompt = `${ctx ? ctx + '\n' : ''}user: ${message}
 
-You are the command planner for a Kali Linux pentest box. Convert the user's natural-language request into ONE ready-to-run shell command.
+You are the command planner for a Kali Linux pentest box. Convert the user's natural-language request into ONE ready-to-run command from the allowed console allowlist.
 
 Rules:
-1. Output a SINGLE command (or a short one-line pipeline). No multi-line scripts, no interactive commands (no nano/vim/top/less), no commands requiring TTY input.
-2. Prefer read-only/diagnostic commands (df, free, ss, ps, ip, ls, cat, tail, systemctl status, journalctl, docker ps, nmap -sV without exploitation flags).
-3. If the request is destructive (rm, mkfs, dd, shutdown, service restart), still provide the command but set risk to "high".
-4. Add sensible limits to verbose output: pipe through head/tail (e.g. "tail -n 20", "head -n 50") where appropriate.
-5. If the request is impossible as one command or not security/host-related, set command to "" and explain why.
+1. Output a SINGLE command using only an allowed binary (${ALLOWED_COMMANDS.slice(0, 60).join(', ')}, etc.). NO shell pipelines (|), NO command chaining (;, &&, ||), NO subshells ($(), backticks), NO redirects (>, <), NO multi-line scripts, NO interactive commands (nano, vim, top, less), and NO package managers (apt, apt-get, dpkg) or destructive system binaries (rm, mkfs, dd, shutdown).
+2. Prefer read-only/diagnostic commands (df, free, ss, ps, ip, ls, cat, tail, head, systemctl status, journalctl, docker ps, nmap -sV without exploitation flags).
+3. For disruptive/privileged allowed commands (such as systemctl restart, ufw, iptables), still provide the single allowed command and set risk to "high".
+4. Use built-in output-limiting flags (e.g. "tail -n 20", "head -n 50", "journalctl -n 50 --no-pager") instead of shell pipes.
+5. If the request requires blocked tools, shell piping/chaining, or is not security/host-related, set command to "" and explain why.
 
 Respond ONLY with JSON:
 {
-  "command": "the exact shell command to run",
+  "command": "the exact command to run",
   "explanation": "one short sentence explaining what this command does",
   "risk": "low" | "medium" | "high"
 }`
@@ -267,9 +520,8 @@ Respond ONLY with JSON:
     timeoutMs: 45000,
   })
 
-  // Reasoning models may emit thinking/prose before (or instead of) the JSON — clean aggressively
   const cleaned = String(raw)
-    .replace(/<think>[\s\S]*?<\/think>/gi, '') // strip reasoning blocks
+    .replace(/<think>[\s\S]*?<\/think>/gi, '')
     .replace(/^```(json)?/i, '')
     .replace(/```/g, '')
     .trim()
@@ -278,7 +530,6 @@ Respond ONLY with JSON:
   try {
     parsed = JSON.parse(cleaned)
   } catch {
-    // Scan for a JSON object anywhere in the response (greedy first, then flat objects)
     const candidates = []
     const greedy = cleaned.match(/\{[\s\S]*\}/)
     if (greedy) candidates.push(greedy[0])
@@ -290,10 +541,15 @@ Respond ONLY with JSON:
       } catch { /* try next candidate */ }
     }
     if (!parsed) {
-      // Last resort: look for a line that actually looks like a shell command
-      const cmdLine = cleaned.split('\n').map((l) => l.trim()).find((l) => l
-        && !/[.?!]$/.test(l)
-        && /^(apt|apt-get|dpkg|df|free|ss|ps|ip|ifconfig|ls|cat|tail|head|systemctl|journalctl|service|docker|nmap|who|w|uname|uptime|du|id|last|netstat|crontab|grep|find|which|curl|wget|echo|date|vmstat|iostat|lsof|getent|passwd|chage|ufw|iptables|fail2ban-client)\b/.test(l))
+      const cmdLine = cleaned.split('\n').map((l) => l.trim()).find((l) => {
+        if (!l || /[.?!]$/.test(l)) return false
+        try {
+          parseAndValidateCommand(l)
+          return true
+        } catch {
+          return false
+        }
+      })
       if (cmdLine) {
         parsed = { command: cmdLine, explanation: 'Parsed from AI free-text response', risk: 'medium' }
       } else {
@@ -305,6 +561,12 @@ Respond ONLY with JSON:
   const command = String(parsed.command || '').trim()
   if (!command) {
     throw new Error(parsed.explanation || 'AI declined to produce a command for this request')
+  }
+
+  try {
+    parseAndValidateCommand(command)
+  } catch (err) {
+    throw new Error(`AI suggested a command not permitted by console policy: ${err.message}`)
   }
 
   return {
@@ -326,29 +588,25 @@ export async function manageService(service, action) {
     throw new Error(`Invalid action. Allowed: ${allowedActions.join(', ')}`)
   }
 
-  // Prefer passwordless sudo (NOPASSWD in sudoers). Falls back to config.kaliSudoPassword.
-  const sudo = config.kaliSudoPassword ? `echo ${config.kaliSudoPassword} | sudo -S` : 'sudo'
-  let cmd = `${sudo} systemctl ${action} ${service}`
-
-  // msfrpcd is owned by sentinelai.service (the only unit allowed to own port
-  // 55553). Addressing it through systemd keeps a single supervisor for the
-  // port. The retired form killed the unit's process with `pkill -f msfrpcd`
-  // and spawned an untracked `nohup` copy -- systemd then no longer knew what
-  // owned 55553, and the next `systemctl restart` collided with the orphan.
-  // See defect N-06 in AGENTS.md and resources/ARCHIVED-second-supervisor.md.
-  if (service === 'msfrpcd') {
-    if (action === 'status') {
-      cmd = `systemctl is-active sentinelai; ss -lntp 2>/dev/null | grep -F ':55553' || echo 'port 55553 not listening'`
-    } else {
-      cmd = `${sudo} systemctl ${action} sentinelai`
+  if (service === 'msfrpcd' && action === 'status') {
+    const sysRes = await runBinary('systemctl', ['is-active', 'sentinelai'], { timeoutMs: 15000 })
+    const ssRes = await runBinary('ss', ['-lntp'], { timeoutMs: 15000 })
+    const portMatches = ssRes.stdout.split(/\r?\n/).filter((line) => line.includes(':55553'))
+    const portOut = portMatches.length ? portMatches.join('\n') : 'port 55553 not listening'
+    return {
+      success: sysRes.success || portMatches.length > 0,
+      code: sysRes.code,
+      stdout: [sysRes.stdout, portOut].filter(Boolean).join('\n'),
+      stderr: sysRes.stderr,
+      error: null,
     }
   }
 
-  const result = await runCmd(cmd, 15000)
-  return result
+  const targetUnit = service === 'msfrpcd' ? 'sentinelai' : service
+  return runSudoCommand(['systemctl', action, targetUnit], { timeoutMs: 15000 })
 }
 
-/** Audit all 22 Pentest Tools */
+/** Audit all 20 Pentest Tools */
 export async function auditTools() {
   const tools = [
     { name: 'nmap', category: 'Recon & Port Scan', desc: 'Network mapper & port scanner' },
@@ -375,11 +633,11 @@ export async function auditTools() {
 
   const audited = []
   for (const t of tools) {
-    const path = await checkBin(t.name)
+    const binPath = await checkBin(t.name)
     audited.push({
       ...t,
-      installed: Boolean(path),
-      path: path || null,
+      installed: Boolean(binPath),
+      path: binPath || null,
     })
   }
 
@@ -392,24 +650,40 @@ export async function auditTools() {
   }
 }
 
+/** Run tool installation steps sequentially without shell interpolation */
+export async function runToolsInstallSteps() {
+  await runSudoCommand(['apt', 'update', '-y'], { timeoutMs: 120000 })
+  await runSudoCommand([
+    'apt', 'install', '-y',
+    'nmap', 'nikto', 'nuclei', 'gobuster', 'feroxbuster', 'sqlmap', 'ffuf',
+    'dirsearch', 'wafw00f', 'subfinder', 'amass', 'masscan', 'sslscan',
+    'whatweb', 'wpscan', 'hydra', 'avahi-daemon', 'avahi-utils', 'libnss-mdns',
+    'python3-pip', 'httpx-toolkit',
+  ], { timeoutMs: 300000 })
+
+  await runBinary('pip3', ['install', 'arjun', '--break-system-packages'], { timeoutMs: 120000 })
+  await runBinary('go', ['install', 'github.com/projectdiscovery/katana/cmd/katana@latest'], { timeoutMs: 120000 })
+  await runBinary('go', ['install', 'github.com/hahwul/dalfox/v2@latest'], { timeoutMs: 120000 })
+
+  const goBinDir = path.join(os.homedir(), 'go', 'bin')
+  for (const tool of ['katana', 'dalfox']) {
+    const src = path.join(goBinDir, tool)
+    if (fs.existsSync(src)) {
+      await runSudoCommand(['cp', src, `/usr/local/bin/${tool}`], { timeoutMs: 15000 })
+    }
+  }
+
+  const httpxToolkit = await checkBin('httpx-toolkit')
+  if (httpxToolkit) {
+    await runSudoCommand(['ln', '-sf', httpxToolkit, '/usr/local/bin/httpx'], { timeoutMs: 15000 })
+  }
+}
+
 /** Trigger background installation/update of all tools */
 export function triggerToolsInstall() {
-  // Prefer passwordless sudo (NOPASSWD in sudoers). Falls back to config.kaliSudoPassword.
-  const sudo = config.kaliSudoPassword ? `echo ${config.kaliSudoPassword} | sudo -S` : 'sudo'
-  const installCmd = `
-    ${sudo} apt update -y && \
-    ${sudo} apt install -y nmap nikto nuclei gobuster feroxbuster sqlmap ffuf dirsearch wafw00f subfinder amass masscan sslscan whatweb wpscan hydra avahi-daemon avahi-utils libnss-mdns python3-pip httpx-toolkit && \
-    (pip3 install arjun --break-system-packages 2>/dev/null || true) && \
-    (go install github.com/projectdiscovery/katana/cmd/katana@latest 2>/dev/null || true) && \
-    (go install github.com/hahwul/dalfox/v2@latest 2>/dev/null || true) && \
-    ([ -f ~/go/bin/katana ] && ${sudo} cp ~/go/bin/katana /usr/local/bin/katana 2>/dev/null || true) && \
-    ([ -f ~/go/bin/dalfox ] && ${sudo} cp ~/go/bin/dalfox /usr/local/bin/dalfox 2>/dev/null || true) && \
-    (if command -v httpx-toolkit >/dev/null 2>&1; then ${sudo} ln -sf "$(which httpx-toolkit)" /usr/local/bin/httpx 2>/dev/null || true; fi)
-  `
-
   setImmediate(async () => {
     try {
-      await runCmd(installCmd, 300000)
+      await runToolsInstallSteps()
     } catch (e) {
       console.error('[kali-control] Tools install error:', e.message)
     }

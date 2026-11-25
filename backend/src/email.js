@@ -19,31 +19,25 @@ function escapeHtml(value) {
     .replace(/'/g, '&#39;')
 }
 
-export async function sendScanRequestNotification({ clientUser, project, target, scanType, notes }) {
-  const recipient = process.env.NOTIFICATION_EMAIL || DEFAULT_NOTIFY_EMAIL
-
+function createMailTransporter() {
   const smtpHost = process.env.SMTP_HOST || 'smtp.gmail.com'
   const smtpPort = Number(process.env.SMTP_PORT || 587)
   const smtpUser = process.env.SMTP_USER || ''
   const smtpPass = process.env.SMTP_PASS || ''
+  const transporter = (smtpUser && smtpPass)
+    ? nodemailer.createTransport({
+        host: smtpHost,
+        port: smtpPort,
+        secure: smtpPort === 465,
+        auth: { user: smtpUser, pass: smtpPass },
+      })
+    : nodemailer.createTransport({ jsonTransport: true })
+  return { transporter, smtpUser }
+}
 
-  let transporter
-  if (smtpUser && smtpPass) {
-    transporter = nodemailer.createTransport({
-      host: smtpHost,
-      port: smtpPort,
-      secure: smtpPort === 465,
-      auth: {
-        user: smtpUser,
-        pass: smtpPass,
-      },
-    })
-  } else {
-    // Fallback transporter (JSON transport for dev/testing when SMTP env vars are not set)
-    transporter = nodemailer.createTransport({
-      jsonTransport: true,
-    })
-  }
+export async function sendScanRequestNotification({ clientUser, project, target, scanType, notes }) {
+  const recipient = process.env.NOTIFICATION_EMAIL || DEFAULT_NOTIFY_EMAIL
+  const { transporter, smtpUser } = createMailTransporter()
 
   const clientName = clientUser?.username || clientUser?.email || 'Client'
   const clientEmail = clientUser?.email || 'Not provided'
@@ -495,6 +489,65 @@ export async function sendConsultationBookingNotification({ consultation, user }
     return { success: true, recipient, messageId: info.messageId }
   } catch (err) {
     console.error(`[email] Consultation delivery error:`, err.message)
+    return { success: false, recipient, error: err.message }
+  }
+}
+
+/**
+ * Send Public Contact Inquiry to operator notification inbox
+ */
+export async function sendContactInquiryNotification({ name, email, type = 'inquiry', message }) {
+  const recipient = process.env.NOTIFICATION_EMAIL || DEFAULT_NOTIFY_EMAIL
+  const { transporter, smtpUser } = createMailTransporter()
+  const safeName = String(name || '').replace(/[\r\n\0]+/g, ' ').trim().slice(0, 120)
+  const safeEmail = String(email || '').replace(/[\r\n\0]+/g, '').trim().slice(0, 200)
+  const safeType = String(type || 'inquiry').replace(/[\r\n\0]+/g, ' ').trim().slice(0, 60)
+  const safeMessage = String(message || '').slice(0, 5000)
+
+  const subject = `[SentinelAI Contact] [${safeType}] Inquiry from ${safeName}`
+  const htmlContent = `
+    <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 600px; margin: 0 auto; background-color: #09090b; color: #f4f4f5; border: 1px solid rgba(255,255,255,0.15); border-radius: 12px; padding: 24px;">
+      <div style="border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 16px; margin-bottom: 20px;">
+        <h2 style="color: #00f2fe; margin: 0; font-size: 20px;">SentinelAI — Public Contact Inquiry</h2>
+      </div>
+      <table style="width: 100%; border-collapse: collapse; background-color: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 8px; overflow: hidden; margin-bottom: 20px;">
+        <tbody>
+          <tr>
+            <td style="padding: 12px 16px; border-bottom: 1px solid rgba(255,255,255,0.08); color: #71717a; font-size: 13px; font-weight: 600; width: 130px;">Name</td>
+            <td style="padding: 12px 16px; border-bottom: 1px solid rgba(255,255,255,0.08); color: #ffffff; font-size: 14px;">${escapeHtml(safeName)}</td>
+          </tr>
+          <tr>
+            <td style="padding: 12px 16px; border-bottom: 1px solid rgba(255,255,255,0.08); color: #71717a; font-size: 13px; font-weight: 600;">Email</td>
+            <td style="padding: 12px 16px; border-bottom: 1px solid rgba(255,255,255,0.08); color: #00f2fe; font-size: 14px;">${escapeHtml(safeEmail)}</td>
+          </tr>
+          <tr>
+            <td style="padding: 12px 16px; border-bottom: 1px solid rgba(255,255,255,0.08); color: #71717a; font-size: 13px; font-weight: 600;">Inquiry Type</td>
+            <td style="padding: 12px 16px; border-bottom: 1px solid rgba(255,255,255,0.08); color: #e2e8f0; font-size: 14px;">${escapeHtml(safeType)}</td>
+          </tr>
+          <tr>
+            <td style="padding: 12px 16px; color: #71717a; font-size: 13px; font-weight: 600; vertical-align: top;">Message</td>
+            <td style="padding: 12px 16px; color: #ffffff; font-size: 14px; line-height: 1.6; white-space: pre-wrap;">${escapeHtml(safeMessage)}</td>
+          </tr>
+        </tbody>
+      </table>
+      <div style="border-top: 1px solid rgba(255,255,255,0.1); padding-top: 14px; font-size: 12px; color: #71717a; text-align: center;">
+        Sent via SentinelAI Contact Portal &bull; ${new Date().toUTCString()}
+      </div>
+    </div>
+  `
+
+  try {
+    const info = await transporter.sendMail({
+      from: `"SentinelAI Contact Portal" <${smtpUser || 'no-reply@sentinelai.studio'}>`,
+      replyTo: safeEmail || undefined,
+      to: recipient,
+      subject,
+      html: htmlContent,
+    })
+    console.log(`[email] Contact inquiry delivered to ${recipient}:`, info.messageId || JSON.stringify(info))
+    return { success: true, recipient, messageId: info.messageId }
+  } catch (err) {
+    console.error(`[email] Contact inquiry delivery error:`, err.message)
     return { success: false, recipient, error: err.message }
   }
 }

@@ -16,6 +16,57 @@ const __dirname = path.dirname(__filename)
 
 let db
 
+export function verifySqliteBackup(backupPath, sourceDb = null, { expectedTables = 41 } = {}) {
+  if (!backupPath || !fs.existsSync(backupPath)) {
+    return { ok: false, reason: 'backup_file_missing', integrity: null, tableCount: 0 }
+  }
+  let probe = null
+  try {
+    probe = new Database(backupPath, { readonly: true, fileMustExist: true })
+    const integrity = probe.pragma('integrity_check', { simple: true })
+    const backupAllTables = probe.prepare(`SELECT name FROM sqlite_master WHERE type='table'`).pluck().all()
+    const tableCount = backupAllTables.length
+
+    let sourceTables = []
+    if (sourceDb) {
+      sourceTables = sourceDb.prepare(`SELECT name FROM sqlite_master WHERE type='table'`).pluck().all()
+    }
+    const minExpected = Math.max(1, sourceTables.length ? sourceTables.length : expectedTables)
+
+    if (integrity !== 'ok' || tableCount < minExpected) {
+      return {
+        ok: false,
+        integrity,
+        tableCount,
+        expectedTables: minExpected,
+        reason: integrity !== 'ok' ? `integrity_check_failed:${integrity}` : `insufficient_tables:${tableCount}<${minExpected}`,
+      }
+    }
+
+    // Restore-test parity check across every shared user table (skip internal sqlite_* tables)
+    if (sourceDb) {
+      const backupSet = new Set(backupAllTables)
+      for (const tbl of sourceTables) {
+        if (!/^[A-Za-z0-9_]+$/.test(tbl) || tbl.startsWith('sqlite_')) continue
+        if (!backupSet.has(tbl)) {
+          return { ok: false, integrity, tableCount, expectedTables: minExpected, reason: `missing_table:${tbl}` }
+        }
+        const srcRows = sourceDb.prepare(`SELECT COUNT(*) FROM "${tbl}"`).pluck().get()
+        const bakRows = probe.prepare(`SELECT COUNT(*) FROM "${tbl}"`).pluck().get()
+        if (bakRows !== srcRows) {
+          return { ok: false, integrity, tableCount, expectedTables: minExpected, reason: `row_mismatch:${tbl}:${bakRows}!=${srcRows}` }
+        }
+      }
+    }
+
+    return { ok: true, integrity, tableCount, expectedTables: minExpected, reason: null }
+  } catch (err) {
+    return { ok: false, integrity: null, tableCount: 0, reason: err.message }
+  } finally {
+    try { probe?.close() } catch { /* ignore */ }
+  }
+}
+
 export async function backupDatabase() {
   try {
     const backupDir = path.join(config.outputDir, 'backups')
@@ -25,10 +76,21 @@ export async function backupDatabase() {
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
     const targetPath = path.join(backupDir, `fyp2_backup_${timestamp}.db`)
     const latestPath = path.join(backupDir, `fyp2_latest_backup.db`)
+    const latestTmp = `${latestPath}.tmp-${process.pid}`
 
     const activeDb = getDb()
     await activeDb.backup(targetPath)
-    try { fs.copyFileSync(targetPath, latestPath) } catch {}
+
+    // AGENTS.md §3: integrity_check + table count + shared-table row parity
+    const check = verifySqliteBackup(targetPath, activeDb)
+    if (!check.ok) {
+      try { if (fs.existsSync(targetPath)) fs.unlinkSync(targetPath) } catch { /* ignore */ }
+      console.error(`[db] Backup rejected (${check.reason})`)
+      return { success: false, error: `Backup verification failed: ${check.reason}` }
+    }
+
+    fs.copyFileSync(targetPath, latestTmp)
+    fs.renameSync(latestTmp, latestPath)
 
     // Retain up to 50 historical snapshots
     const files = fs.readdirSync(backupDir)
@@ -41,11 +103,11 @@ export async function backupDatabase() {
         try { fs.unlinkSync(oldFile.path) } catch {}
       }
     }
-    return { success: true, backupFile: targetPath }
+    return { success: true, backupFile: targetPath, integrity: check.integrity, tables: check.tableCount }
   } catch (err) {
     console.error('Backup database failed:', err)
+    return { success: false, error: err.message }
   }
-  return { success: false }
 }
 
 export function getDb() {
@@ -535,11 +597,7 @@ function migrate(d) {
     const stmt = d.prepare(`
       INSERT INTO plans (id, name, description, price_monthly, price_yearly, currency, scan_quota, max_repos, features, is_popular, is_open, is_custom, badge, sort_order, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(id) DO UPDATE SET
-        price_monthly = excluded.price_monthly,
-        price_yearly = excluded.price_yearly,
-        currency = excluded.currency,
-        updated_at = excluded.updated_at
+      ON CONFLICT(id) DO NOTHING
     `)
     for (const p of defaultPlans) {
       stmt.run(...p)

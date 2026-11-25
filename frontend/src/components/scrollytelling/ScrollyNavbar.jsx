@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import {
   Menu, X, ArrowUpRight, ShieldCheck, Terminal, Bot, Database,
@@ -29,6 +29,7 @@ export default function ScrollyNavbar() {
   const [scrolled, setScrolled] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
   const [dropdownOpen, setDropdownOpen] = useState(false)
+  const dropdownRef = useRef(null)
   const location = useLocation()
 
   useEffect(() => {
@@ -38,6 +39,24 @@ export default function ScrollyNavbar() {
     window.addEventListener('scroll', handleScroll, { passive: true })
     return () => window.removeEventListener('scroll', handleScroll)
   }, [])
+
+  useEffect(() => {
+    if (!dropdownOpen) return
+    const onKeyDown = (e) => {
+      if (e.key === 'Escape') setDropdownOpen(false)
+    }
+    const onMouseDown = (e) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
+        setDropdownOpen(false)
+      }
+    }
+    document.addEventListener('keydown', onKeyDown)
+    document.addEventListener('mousedown', onMouseDown)
+    return () => {
+      document.removeEventListener('keydown', onKeyDown)
+      document.removeEventListener('mousedown', onMouseDown)
+    }
+  }, [dropdownOpen])
 
   const handleAnchorClick = (e, href) => {
     e.preventDefault()
@@ -95,7 +114,7 @@ export default function ScrollyNavbar() {
                 key={link.href}
                 href={link.href}
                 onClick={(e) => handleAnchorClick(e, link.href)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-mono font-medium transition-colors ${
+                className={`px-3 py-1.5 rounded-lg text-xs font-mono font-medium whitespace-nowrap shrink-0 transition-colors ${
                   isNight
                     ? 'text-neutral-400 hover:text-white hover:bg-white/5'
                     : 'text-zinc-600 hover:text-black hover:bg-zinc-100'
@@ -106,12 +125,13 @@ export default function ScrollyNavbar() {
             ))}
 
             {/* More Platform Pages Dropdown */}
-            <div className="relative">
+            <div className="relative" ref={dropdownRef}>
               <button
                 type="button"
-                onClick={() => setDropdownOpen(!dropdownOpen)}
-                onBlur={() => setTimeout(() => setDropdownOpen(false), 200)}
-                className={`px-2.5 py-1.5 rounded-lg text-xs font-mono font-medium transition-colors flex items-center gap-1 cursor-pointer ${
+                aria-expanded={dropdownOpen}
+                aria-haspopup="menu"
+                onClick={() => setDropdownOpen((o) => !o)}
+                className={`px-2.5 py-1.5 rounded-lg text-xs font-mono font-medium whitespace-nowrap shrink-0 transition-colors flex items-center gap-1 cursor-pointer ${
                   isNight
                     ? 'text-neutral-400 hover:text-white hover:bg-white/5'
                     : 'text-zinc-600 hover:text-black hover:bg-zinc-100'

@@ -1,4 +1,43 @@
 import * as db from './db.js'
+import { enrichCveWithPocindex, getCveDetail } from './integrations/pocindex.js'
+
+/** Attach local pocindex intelligence without mutating NVD or CVSS v4 scores. */
+function attachPocindex(entry) {
+  if (!entry || entry.error || !entry.id) return entry
+  try {
+    const intel = enrichCveWithPocindex(entry.id)
+    return intel ? { ...entry, pocindex: intel } : entry
+  } catch {
+    return entry
+  }
+}
+
+function buildLocalPocindexCveResponse(cveId) {
+  try {
+    const detail = getCveDetail(cveId)
+    if (!detail) return null
+    return {
+      id: detail.cveId,
+      published: detail.published,
+      lastModified: detail.modified,
+      description: detail.description || detail.title || '(no description)',
+      cvss: detail.upstreamCvss?.score != null ? {
+        score: detail.upstreamCvss.score,
+        severity: detail.upstreamCvss.severity,
+        vector: detail.cvssEntries?.[0]?.vector || null,
+        version: detail.cvssEntries?.[0]?.version || null,
+      } : null,
+      severity: detail.upstreamCvss?.severity || detail.nuclei?.severity?.toUpperCase() || null,
+      weaknesses: detail.nuclei?.cwe ? [detail.nuclei.cwe] : [],
+      references: (detail.advisories || []).map(a => a.url).filter(Boolean).slice(0, 12),
+      applicableRanges: null,
+      source: 'pocindex-local',
+      pocindex: enrichCveWithPocindex(detail.cveId),
+    }
+  } catch {
+    return null
+  }
+}
 
 /**
  * CVE lookup via the NIST NVD API v2, cached in SQLite (cve_cache) for 24h.
@@ -209,7 +248,7 @@ export async function getCve(id) {
 
   const cached = db.get(`SELECT data, fetched_at FROM cve_cache WHERE id = ?`, cveId)
   if (cached && Date.now() - new Date(cached.fetched_at).getTime() < TTL_MS) {
-    try { return { ...JSON.parse(cached.data), cached: true } } catch { /* fall through */ }
+    try { return attachPocindex({ ...JSON.parse(cached.data), cached: true }) } catch { /* fall through */ }
   }
 
   try {
@@ -220,20 +259,20 @@ export async function getCve(id) {
       signal: ctrl.signal,
     })
     clearTimeout(t)
-    if (res.status === 404) return { error: 'CVE not found' }
-    if (!res.ok) return { error: `NVD HTTP ${res.status}` }
+    if (res.status === 404) return buildLocalPocindexCveResponse(cveId) || { error: 'CVE not found' }
+    if (!res.ok) return buildLocalPocindexCveResponse(cveId) || { error: `NVD HTTP ${res.status}` }
     const json = await res.json()
     const cve = json.vulnerabilities?.[0]?.cve
-    if (!cve) return { error: 'CVE not found' }
+    if (!cve) return buildLocalPocindexCveResponse(cveId) || { error: 'CVE not found' }
     const parsed = parseNvd(cve)
     db.run(
       `INSERT INTO cve_cache (id, data, fetched_at) VALUES (?,?,?)
        ON CONFLICT(id) DO UPDATE SET data = excluded.data, fetched_at = excluded.fetched_at`,
       cveId, JSON.stringify(parsed), new Date().toISOString()
     )
-    return parsed
+    return attachPocindex(parsed)
   } catch (e) {
-    return { error: e.name === 'AbortError' ? 'NVD request timed out' : e.message }
+    return buildLocalPocindexCveResponse(cveId) || { error: e.name === 'AbortError' ? 'NVD request timed out' : e.message }
   }
 }
 
@@ -343,7 +382,13 @@ export async function findVersionVulnerabilities(product, version) {
       // negatives are retried on a short window and positives keep the full TTL.
       const isNegative = !Array.isArray(parsed.results) || parsed.results.length === 0
       const age = Date.now() - new Date(cached.fetched_at).getTime()
-      if (!isNegative || age < NEGATIVE_TTL_MS) return { ...parsed, cached: true }
+      if (!isNegative || age < NEGATIVE_TTL_MS) {
+        return {
+          ...parsed,
+          cached: true,
+          results: Array.isArray(parsed.results) ? parsed.results.map(attachPocindex) : parsed.results,
+        }
+      }
     } catch { /* refresh */ }
   }
 
@@ -427,7 +472,10 @@ export async function findVersionVulnerabilities(product, version) {
     `INSERT INTO cve_cache (id, data, fetched_at) VALUES (?,?,?) ON CONFLICT(id) DO UPDATE SET data = excluded.data, fetched_at = excluded.fetched_at`,
     key, JSON.stringify(output), new Date().toISOString(),
   )
-  return output
+  return {
+    ...output,
+    results: scored.map(attachPocindex),
+  }
 }
 
 export default { getCve, findVersionVulnerabilities, compareVersions }

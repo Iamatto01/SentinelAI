@@ -9,6 +9,17 @@ import { computeRiskScore, riskRatingFromScore } from './pipeline.js'
 import { calculateCvss4, defaultVectorForFinding, evaluateFindingCvss } from './cvss4.js'
 import { extractVersions } from './version-audit.js'
 import { findVersionVulnerabilities } from './cve.js'
+import { enrichCveWithPocindex } from './integrations/pocindex.js'
+
+function formatPocIntelTags(intel) {
+  if (!intel) return ''
+  const tags = []
+  if (intel.kev) tags.push('CISA KEV')
+  if (intel.epss?.score != null) tags.push(`EPSS ${(intel.epss.score * 100).toFixed(1)}%`)
+  if (intel.nuclei?.available) tags.push('Nuclei')
+  if (intel.sourceCount > 0) tags.push(`${intel.sourceCount} PoC${intel.sourceCount === 1 ? '' : 's'}`)
+  return tags.join(' | ')
+}
 import {
   VERIFY_STATUS,
   classifyFinding,
@@ -1522,13 +1533,17 @@ export function buildTechStackFingerprint(findings = []) {
     knownCves: [...r.knownCves]
       .sort((a, b) => (Number(b.score) || 0) - (Number(a.score) || 0))
       .slice(0, 6)
-      .map(c => ({
-        id: String(c.id || ''),
-        score: c.score != null ? Number(c.score) : null,
-        severity: c.severity ? String(c.severity) : null,
-        description: c.description ? String(c.description) : null,
-        cwe: Array.isArray(c.cwe) ? c.cwe.join(', ') : (c.cwe ? String(c.cwe) : null),
-      })),
+      .map(c => {
+        const id = String(c.id || '')
+        return {
+          id,
+          score: c.score != null ? Number(c.score) : null,
+          severity: c.severity ? String(c.severity) : null,
+          description: c.description ? String(c.description) : null,
+          cwe: Array.isArray(c.cwe) ? c.cwe.join(', ') : (c.cwe ? String(c.cwe) : null),
+          pocindex: c.pocindex || (id ? enrichCveWithPocindex(id, { maxPocs: 3 }) : null),
+        }
+      }),
     cveSource: r.cveSource,
     references: r.references.slice(0, 3),
     eolDate: r.eolDate,
@@ -3218,8 +3233,9 @@ function renderTechInventory(doc, { techStack }) {
     doc.moveDown(0.3)
     for (const a of stack.advisories.slice(0, 12)) {
       ensureSpace(doc, 30)
+      const intelTag = formatPocIntelTags(a.pocindex)
       doc.fontSize(8).font('Helvetica-Bold').fillColor(BRAND.primary)
-        .text(`${a.id}${a.score != null ? `  CVSS ${a.score}` : ''}`, x, doc.y, { continued: true, width: w })
+        .text(`${a.id}${a.score != null ? `  CVSS ${a.score}` : ''}${intelTag ? `  [${intelTag}]` : ''}`, x, doc.y, { continued: true, width: w })
       doc.font('Helvetica').fillColor(BRAND.textBody)
         .text(`  ${sanitizePdfText(a.description || '').slice(0, 200)}`, { width: w })
       doc.moveDown(0.25)
@@ -3593,6 +3609,15 @@ function renderDetailedFindings(doc, { vulnerabilities, isWhitebox }) {
         doc.fontSize(8).font('Helvetica').fillColor(BRAND.textMuted)
           .text(`Detected by: ${String(v.module).slice(0, 120)}`, x, doc.y, { width: w })
         doc.moveDown(0.35)
+      }
+      if (v.cveId) {
+        const intel = enrichCveWithPocindex(v.cveId, { maxPocs: 3 })
+        const tags = formatPocIntelTags(intel)
+        if (tags) {
+          doc.fontSize(8).font('Helvetica-Bold').fillColor('#B91C1C')
+            .text(`Threat Intel (${v.cveId}): ${tags}`, x, doc.y, { width: w })
+          doc.moveDown(0.35)
+        }
       }
 
       // Description Block
@@ -4162,6 +4187,7 @@ async function refreshUncorrelatedComponents(techStack, deadlineMs) {
         severity: c.cvss?.severity || null,
         description: (c.description || '').slice(0, 300),
         cwe: Array.isArray(c.weaknesses) ? c.weaknesses.slice(0, 3).join(', ') : null,
+        pocindex: c.pocindex || enrichCveWithPocindex(c.id, { maxPocs: 3 }),
       }))
       row.lookupStatus = cves.length ? 'match' : 'empty'
       row.verifiedAtProvider = true
@@ -5086,7 +5112,13 @@ async function renderSimplifiedPdf({ file, reportTitle, scans = [], project = nu
       if (stack.advisories.length) {
         doc.fontSize(7).font('Helvetica').fillColor('#94A3B8')
           .text(
-            `Advisories: ${stack.advisories.slice(0, 6).map(a => `${a.id}${a.score != null ? ` (${a.score})` : ''}`).join(', ')}${stack.advisories.length > 6 ? ', ...' : ''}`,
+            `Advisories: ${stack.advisories.slice(0, 6).map(a => {
+              const parts = []
+              if (a.score != null) parts.push(a.score)
+              if (a.pocindex?.kev) parts.push('KEV')
+              if (a.pocindex?.epss?.score != null) parts.push(`EPSS ${(a.pocindex.epss.score * 100).toFixed(0)}%`)
+              return `${a.id}${parts.length ? ` (${parts.join(', ')})` : ''}`
+            }).join(', ')}${stack.advisories.length > 6 ? ', ...' : ''}`,
             leftX + 16, ry + 1, { width: w - 32, ellipsis: true },
           )
       } else if (stack.lookupFailures > 0) {

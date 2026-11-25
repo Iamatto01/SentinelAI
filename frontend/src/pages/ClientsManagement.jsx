@@ -4,7 +4,7 @@ import {
   Users, Shield, Search, RefreshCw, AlertCircle, CheckCircle2,
   Calendar, Layers, Edit3, X, Loader2, Sparkles, Filter, Check, TrendingUp,
   FolderOpen, FolderPlus, Play, FileText, Download, ExternalLink, Globe, FileCode2,
-  Zap, Clock, ArrowRight, ShieldAlert
+  Zap, Clock, ArrowRight, ShieldAlert, Upload, Code2, Trash2, ChevronUp
 } from 'lucide-react'
 import { api } from '../lib/api.js'
 
@@ -44,6 +44,18 @@ export default function ClientsManagement() {
   const [runScanDeductQuota, setRunScanDeductQuota] = useState(true)
   const [runScanModules, setRunScanModules] = useState(BLACKBOX_MODULES)
   const [runScanVerify, setRunScanVerify] = useState(true)
+  const [runScanAuthAcknowledged, setRunScanAuthAcknowledged] = useState(false)
+  const [wbSourceMode, setWbSourceMode] = useState('upload') // 'upload' | 'paste' | 'folder'
+  const [wbFiles, setWbFiles] = useState([])
+  const [wbFilename, setWbFilename] = useState('app.js')
+  const [wbLanguage, setWbLanguage] = useState('javascript')
+  const [wbCode, setWbCode] = useState('')
+  const [wbFolders, setWbFolders] = useState([])
+  const [wbBrowseDirs, setWbBrowseDirs] = useState([])
+  const [wbBrowseRoots, setWbBrowseRoots] = useState([])
+  const [wbBrowseParent, setWbBrowseParent] = useState(null)
+  const [wbBrowseCurrent, setWbBrowseCurrent] = useState(null)
+  const [wbBrowseLoading, setWbBrowseLoading] = useState(false)
   const [runScanBusy, setRunScanBusy] = useState(false)
 
   const [saving, setSaving] = useState(false)
@@ -129,12 +141,67 @@ export default function ClientsManagement() {
     }
   }
 
+  const loadWbRoots = async (targetPath) => {
+    setWbBrowseLoading(true)
+    try {
+      const data = await api.browseFilesystem(targetPath)
+      setWbBrowseRoots(data.roots || [])
+      setWbBrowseDirs(data.directories || [])
+      setWbBrowseParent(data.parent || null)
+      setWbBrowseCurrent(data.current || null)
+    } catch (err) {
+      setError(err.message || 'Failed to browse server directories')
+    } finally {
+      setWbBrowseLoading(false)
+    }
+  }
+
+  const handleWhiteboxFileSelect = async (e) => {
+    const picked = Array.from(e.target.files || [])
+    if (!picked.length) return
+    const skipDirs = /(^|\/)(node_modules|\.git|dist|build|__pycache__|\.next|venv|\.venv)\//i
+    const skipExt = /\.(png|jpe?g|gif|webp|ico|pdf|zip|tar|gz|db|sqlite|woff2?|ttf|exe|bin)$/i
+    const collected = []
+    for (const file of picked) {
+      const rel = (file.webkitRelativePath || file.name || '').replace(/\\/g, '/')
+      if (!rel || skipDirs.test(rel) || skipExt.test(rel) || file.size > 1_000_000) continue
+      try {
+        const text = await file.text()
+        if (text.includes('\0')) continue
+        collected.push({ path: rel, content: text })
+      } catch { /* skip unreadable file */ }
+      if (collected.length >= 200) break
+    }
+    e.target.value = ''
+    if (!collected.length) {
+      setError('No readable source files found in selection (binary files and >1MB assets are skipped).')
+      return
+    }
+    setError('')
+    setWbFiles(collected)
+  }
+
   // Help Run Scan on behalf of Client
   const handleLaunchClientScan = async (e) => {
     e.preventDefault()
     if (!folderClient) return
-    if (runScanMode === 'blackbox' && !runScanTarget.trim()) {
-      setError('Please enter a target URL / domain for the assessment')
+    if (runScanMode === 'blackbox') {
+      if (!runScanTarget.trim()) {
+        setError('Please enter a target URL / domain for the assessment')
+        return
+      }
+      if (!runScanAuthAcknowledged) {
+        setError('Please confirm written authorization before launching a blackbox assessment')
+        return
+      }
+    } else if (wbSourceMode === 'upload' && wbFiles.length === 0) {
+      setError('Please upload at least one source file or project folder for whitebox analysis')
+      return
+    } else if (wbSourceMode === 'paste' && !wbCode.trim()) {
+      setError('Please paste source code to audit')
+      return
+    } else if (wbSourceMode === 'folder' && wbFolders.length === 0) {
+      setError('Please select at least one server folder to audit')
       return
     }
 
@@ -154,16 +221,31 @@ export default function ClientsManagement() {
           objective: 'offensive',
           depth: 'offensive',
           verify: runScanVerify,
+          authorizationAcknowledged: runScanAuthAcknowledged,
+        })
+      } else if (wbSourceMode === 'folder') {
+        res = await api.startWhiteboxFolder({
+          folders: wbFolders.map((dir) => ({ dir, prefix: dir.split(/[\\/]/).pop() || dir })),
+          projectId: runScanProjectId || null,
+          targetUserId: folderClient.id,
+          deductQuota: runScanDeductQuota,
+          language: wbLanguage,
+          focus: 'security',
+          verify: runScanVerify,
+          depth: 'standard',
         })
       } else {
+        const filesToScan = wbSourceMode === 'upload'
+          ? wbFiles
+          : [{ path: wbFilename.trim() || 'snippet.js', content: wbCode }]
         res = await api.startScan({
           mode: 'whitebox',
           target: runScanTarget.trim() || `audit-${folderClient.username}`,
           projectId: runScanProjectId || null,
           targetUserId: folderClient.id,
           deductQuota: runScanDeductQuota,
-          files: [{ path: 'app.js', content: '// Source audit placeholder\nconsole.log("Client Codebase Audit");' }],
-          language: 'javascript',
+          files: filesToScan,
+          language: wbLanguage,
           focus: 'security',
           verify: runScanVerify,
           depth: 'offensive',
@@ -172,6 +254,9 @@ export default function ClientsManagement() {
 
       setSuccess(`🚀 Scan successfully launched for ${folderClient.username}! (Scan ID: ${res.scan.id})`)
       setRunScanTarget('')
+      setWbFiles([])
+      setWbCode('')
+      setWbFolders([])
       setFolderTab('scans')
       await reloadCurrentFolder()
       await loadData()
@@ -928,17 +1013,159 @@ export default function ClientsManagement() {
                       {/* Target Input */}
                       <div>
                         <label className="text-xs font-bold text-slate-200 block mb-1">
-                          {runScanMode === 'blackbox' ? 'Target URL / Hostname *' : 'Codebase Label / Target *'}
+                          {runScanMode === 'blackbox' ? 'Target URL / Hostname *' : 'Codebase Label / Target'}
                         </label>
                         <input
                           type="text"
                           className="input text-xs w-full"
-                          placeholder={runScanMode === 'blackbox' ? 'https://target-client.com or 192.168.1.50' : 'e.g. client-repo-production'}
+                          placeholder={runScanMode === 'blackbox' ? 'https://target-client.com or 192.168.1.50' : 'e.g. client-repo-production (optional label)'}
                           value={runScanTarget}
                           onChange={(e) => setRunScanTarget(e.target.value)}
-                          required
+                          required={runScanMode === 'blackbox'}
                         />
                       </div>
+
+                      {/* Real Whitebox Code / File / Folder Input */}
+                      {runScanMode === 'whitebox' && (
+                        <div className="p-4 rounded-2xl bg-slate-900/90 border border-cyan-500/20 space-y-3">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-xs font-bold text-slate-200">Whitebox Source Input *</span>
+                            <select
+                              className="input text-[11px] !py-1 !px-2 w-auto"
+                              value={wbLanguage}
+                              onChange={(e) => setWbLanguage(e.target.value)}
+                            >
+                              {['javascript', 'typescript', 'python', 'php', 'java', 'go', 'ruby', 'bash', 'sql'].map((lang) => (
+                                <option key={lang} value={lang}>{lang}</option>
+                              ))}
+                            </select>
+                          </div>
+
+                          <div className="flex gap-1.5 p-1 rounded-xl bg-slate-950 border border-white/10">
+                            {[
+                              { id: 'upload', label: 'Upload Files', icon: Upload },
+                              { id: 'paste', label: 'Paste Source', icon: Code2 },
+                              { id: 'folder', label: 'Server Folder', icon: FolderOpen },
+                            ].map((m) => {
+                              const Icon = m.icon
+                              return (
+                                <button
+                                  key={m.id}
+                                  type="button"
+                                  onClick={() => {
+                                    setWbSourceMode(m.id)
+                                    if (m.id === 'folder' && wbBrowseRoots.length === 0 && wbBrowseDirs.length === 0) {
+                                      loadWbRoots()
+                                    }
+                                  }}
+                                  className={`flex-1 py-1.5 px-2 rounded-lg text-[11px] font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                                    wbSourceMode === m.id ? 'bg-cyan-500 text-slate-950' : 'text-slate-400 hover:text-white'
+                                  }`}
+                                >
+                                  <Icon size={12} /> {m.label}
+                                </button>
+                              )
+                            })}
+                          </div>
+
+                          {wbSourceMode === 'upload' && (
+                            <div className="space-y-2">
+                              <div className="flex flex-wrap gap-2">
+                                <label className="btn-secondary text-xs !py-1.5 !px-3 cursor-pointer">
+                                  <Upload size={13} /> Select Files
+                                  <input type="file" multiple className="hidden" onChange={handleWhiteboxFileSelect} />
+                                </label>
+                                <label className="btn-ghost text-xs !py-1.5 !px-3 border border-white/10 cursor-pointer">
+                                  <FolderOpen size={13} /> Select Local Folder
+                                  <input type="file" multiple webkitdirectory="" className="hidden" onChange={handleWhiteboxFileSelect} />
+                                </label>
+                                {wbFiles.length > 0 && (
+                                  <button type="button" onClick={() => setWbFiles([])} className="text-[11px] text-rose-400 hover:underline ml-auto cursor-pointer">
+                                    Clear ({wbFiles.length})
+                                  </button>
+                                )}
+                              </div>
+                              {wbFiles.length === 0 ? (
+                                <p className="text-[11px] text-slate-400">Upload source files or pick a local project folder for SAST + AI review.</p>
+                              ) : (
+                                <div className="max-h-28 overflow-y-auto space-y-1 p-2 rounded-xl bg-slate-950/70 border border-white/10 text-[11px] font-mono text-cyan-300">
+                                  {wbFiles.slice(0, 20).map((f) => (
+                                    <div key={f.path} className="flex justify-between gap-2 truncate">
+                                      <span className="truncate">{f.path}</span>
+                                      <span className="text-slate-500 shrink-0">{(f.content.length / 1024).toFixed(1)} KB</span>
+                                    </div>
+                                  ))}
+                                  {wbFiles.length > 20 && <div className="text-slate-400">+{wbFiles.length - 20} more files queued</div>}
+                                </div>
+                              )}
+                            </div>
+                          )}
+
+                          {wbSourceMode === 'paste' && (
+                            <div className="space-y-2">
+                              <input
+                                type="text"
+                                className="input text-xs font-mono"
+                                placeholder="Filename (e.g. routes/auth.js)"
+                                value={wbFilename}
+                                onChange={(e) => setWbFilename(e.target.value)}
+                              />
+                              <textarea
+                                className="input text-xs font-mono h-32 w-full"
+                                placeholder="// Paste client source code here for AST & vulnerability analysis..."
+                                value={wbCode}
+                                onChange={(e) => setWbCode(e.target.value)}
+                              />
+                            </div>
+                          )}
+
+                          {wbSourceMode === 'folder' && (
+                            <div className="space-y-2">
+                              {wbFolders.length > 0 && (
+                                <div className="space-y-1 max-h-24 overflow-y-auto">
+                                  {wbFolders.map((dir) => (
+                                    <div key={dir} className="flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-slate-950 border border-white/10 text-[11px] font-mono text-cyan-300">
+                                      <span className="truncate">{dir}</span>
+                                      <button type="button" onClick={() => setWbFolders(wbFolders.filter(x => x !== dir))} className="text-rose-400 hover:text-rose-300 cursor-pointer">
+                                        <Trash2 size={12} />
+                                      </button>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                              <div className="p-2.5 rounded-xl bg-slate-950/70 border border-white/10 space-y-1.5">
+                                <div className="flex items-center justify-between text-[11px]">
+                                  <span className="text-slate-400 font-mono truncate">{wbBrowseCurrent || 'Select allowed server root'}</span>
+                                  {wbBrowseParent && (
+                                    <button type="button" onClick={() => loadWbRoots(wbBrowseParent)} className="text-cyan-400 hover:underline flex items-center gap-0.5 cursor-pointer shrink-0">
+                                      <ChevronUp size={12} /> Up
+                                    </button>
+                                  )}
+                                </div>
+                                <div className="max-h-28 overflow-y-auto space-y-1 text-[11px] font-mono">
+                                  {wbBrowseLoading ? (
+                                    <div className="text-slate-400 py-2 flex items-center gap-1.5"><Loader2 size={12} className="animate-spin" /> Loading directories...</div>
+                                  ) : (wbBrowseCurrent ? wbBrowseDirs : wbBrowseRoots).map((d) => (
+                                    <div key={d.path} className="flex items-center justify-between px-1.5 py-1 rounded hover:bg-white/5">
+                                      <button type="button" onClick={() => loadWbRoots(d.path)} className="text-left text-slate-300 hover:text-cyan-300 truncate flex items-center gap-1.5 cursor-pointer">
+                                        <FolderOpen size={12} className="text-cyan-400 shrink-0" />
+                                        <span>{d.name}</span>
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => !wbFolders.includes(d.path) && setWbFolders([...wbFolders, d.path])}
+                                        className="btn-secondary !py-0.5 !px-2 text-[10px] cursor-pointer"
+                                      >
+                                        + Add
+                                      </button>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
 
                       {/* QUOTA CHOICE: Pakai Quota Client VS Free Admin Audit */}
                       <div className="p-4 rounded-2xl bg-slate-900/90 border border-white/10 space-y-2">
@@ -1014,6 +1241,19 @@ export default function ClientsManagement() {
                             ))}
                           </div>
                         </div>
+                      )}
+
+                      {/* Authorization Confirmation (required for blackbox scans) */}
+                      {runScanMode === 'blackbox' && (
+                        <label className="flex items-start gap-2 text-xs text-slate-300 cursor-pointer p-3 rounded-xl bg-amber-950/20 border border-amber-500/30">
+                          <input
+                            type="checkbox"
+                            checked={runScanAuthAcknowledged}
+                            onChange={(e) => setRunScanAuthAcknowledged(e.target.checked)}
+                            className="mt-0.5 rounded border-white/20 text-emerald-500 focus:ring-0"
+                          />
+                          <span>I confirm written authorization has been obtained from {folderClient.username} for external blackbox scanning.</span>
+                        </label>
                       )}
 
                       {/* AI Verification Checkbox */}

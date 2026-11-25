@@ -15,6 +15,33 @@
  */
 
 import { findVersionVulnerabilities, normalizeMoodleVersion } from './cve.js'
+import { enrichCveWithPocindex } from './integrations/pocindex.js'
+
+function safeEnrichKnownCve(c) {
+  try {
+    const intel = c?.pocindex || (c?.id ? enrichCveWithPocindex(c.id, { maxPocs: 4 }) : null)
+    if (!intel) return null
+    return {
+      kev: intel.kev,
+      epss: intel.epss,
+      nuclei: intel.nuclei ? { available: true, severity: intel.nuclei.severity, templates: (intel.nuclei.templates || []).slice(0, 3) } : null,
+      topStars: intel.topStars || 0,
+      pocCount: intel.pocCount || 0,
+      sourceCount: intel.sourceCount || 0,
+      hasPoc: Boolean(intel.hasPoc),
+      counts: intel.counts,
+      pocs: {
+        github: (intel.pocs?.github || []).slice(0, 4),
+        edb: (intel.pocs?.edb || []).slice(0, 3),
+        nuclei: (intel.pocs?.nuclei || []).slice(0, 3),
+        msf: (intel.pocs?.msf || []).slice(0, 3),
+        vulhub: (intel.pocs?.vulhub || []).slice(0, 3),
+      },
+    }
+  } catch {
+    return null
+  }
+}
 
 // ── Product signature catalogue ──────────────────────────────────────────────
 // Each entry: how to recognise the product, and how to pull its version out.
@@ -358,26 +385,33 @@ export function buildVersionFinding(detected, correlation) {
   const { cves = [], critical = 0, high = 0, medium = 0, total = 0, cpeTargets = [], outOfRangeCount = 0 } = correlation || {}
   const severity = severityFromCves({ critical, high, medium, total })
   const top = cves[0]
-  const cveList = cves.slice(0, 10).map(c => ({
-    id: c.id,
-    score: c.cvss?.score,
-    severity: c.cvss?.severity || c.severity,
-    // The advisory's own vector lets the scoring authority borrow a real
-    // Critical vector for a component whose template is only a default.
-    vector: c.cvss?.vector || null,
-    vectorVersion: c.cvss?.version || null,
-    description: (c.description || '').slice(0, 300),
-    cwe: (c.weaknesses || []).filter(w => /^CWE-/.test(w)).slice(0, 3),
-    references: (c.references || []).slice(0, 5),
-    range: c.applicableRanges?.[0]
-      ? [
-          c.applicableRanges[0].startIncluding ? `>= ${c.applicableRanges[0].startIncluding}` : '',
-          c.applicableRanges[0].startExcluding ? `> ${c.applicableRanges[0].startExcluding}` : '',
-          c.applicableRanges[0].endIncluding ? `<= ${c.applicableRanges[0].endIncluding}` : '',
-          c.applicableRanges[0].endExcluding ? `< ${c.applicableRanges[0].endExcluding}` : '',
-        ].filter(Boolean).join(' ')
-      : null,
-  }))
+  const cveList = cves.slice(0, 10).map(c => {
+    const pocindex = safeEnrichKnownCve(c)
+    return {
+      id: c.id,
+      score: c.cvss?.score,
+      severity: c.cvss?.severity || c.severity,
+      // The advisory's own vector lets the scoring authority borrow a real
+      // Critical vector for a component whose template is only a default.
+      vector: c.cvss?.vector || null,
+      vectorVersion: c.cvss?.version || null,
+      description: (c.description || '').slice(0, 300),
+      cwe: (c.weaknesses || []).filter(w => /^CWE-/.test(w)).slice(0, 3),
+      references: (c.references || []).slice(0, 5),
+      ...(pocindex ? { pocindex } : {}),
+      range: c.applicableRanges?.[0]
+        ? [
+            c.applicableRanges[0].startIncluding ? `>= ${c.applicableRanges[0].startIncluding}` : '',
+            c.applicableRanges[0].startExcluding ? `> ${c.applicableRanges[0].startExcluding}` : '',
+            c.applicableRanges[0].endIncluding ? `<= ${c.applicableRanges[0].endIncluding}` : '',
+            c.applicableRanges[0].endExcluding ? `< ${c.applicableRanges[0].endExcluding}` : '',
+          ].filter(Boolean).join(' ')
+        : null,
+    }
+  })
+
+  const kevCount = cveList.filter(c => c.pocindex?.kev).length
+  const pocAvailableCount = cveList.filter(c => c.pocindex?.hasPoc).length
 
   const sevBreakdown = [
     critical ? `${critical} critical` : '',
@@ -418,6 +452,8 @@ export function buildVersionFinding(detected, correlation) {
       criticalCount: critical,
       highCount: high,
       mediumCount: medium,
+      kevCount,
+      pocAvailableCount,
       knownCves: cveList,
       nvdQuery: `cpe:2.3:a:${(cpeTargets[0] || product).replace(/^\*:/, '')}`,
       cpeTargets,

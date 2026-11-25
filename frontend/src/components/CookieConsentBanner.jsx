@@ -42,15 +42,16 @@ export default function CookieConsentBanner() {
   return (
     <AnimatePresence>
       {isVisible && (
-        <motion.aside
-          role="dialog"
-          aria-label="Cookie and storage preferences"
-          initial={{ opacity: 0, y: 50, scale: 0.96 }}
-          animate={{ opacity: 1, y: 0, scale: 1 }}
-          exit={{ opacity: 0, y: 30, scale: 0.95 }}
-          transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
-          className="fixed bottom-2 sm:bottom-4 inset-x-2 sm:inset-x-auto sm:left-1/2 sm:-translate-x-1/2 sm:max-w-2xl sm:w-full z-50 pointer-events-auto"
-        >
+        <div className="fixed bottom-20 lg:bottom-4 inset-x-0 px-3 flex justify-center z-50 pointer-events-none">
+          <motion.aside
+            role="dialog"
+            aria-label="Cookie and storage preferences"
+            initial={{ opacity: 0, y: 50, scale: 0.96 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 30, scale: 0.95 }}
+            transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
+            className="w-full max-w-2xl pointer-events-auto"
+          >
           <div
             className={`px-3 py-1.5 sm:px-4 sm:py-2 rounded-xl sm:rounded-2xl border shadow-xl backdrop-blur-2xl transition-colors duration-300 ${
               isNight
@@ -128,7 +129,8 @@ export default function CookieConsentBanner() {
               </div>
             </div>
           </div>
-        </motion.aside>
+          </motion.aside>
+        </div>
       )}
     </AnimatePresence>
   )

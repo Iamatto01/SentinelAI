@@ -17,10 +17,11 @@ import * as kaliControl from './kali-control.js'
 import { UnifiedPipeline, computeRiskScore } from './pipeline.js'
 import { getOwaspToolMapList, blackboxModulesForCategories, whiteboxPassesForCategories } from './owasp-tools.js'
 import { getAllScripts, getScript, createScript, updateScript, deleteScript, runCustomScript } from './custom-scripts.js'
-import { payloadsRag, skillsRag } from './integrations/index.js'
+import { payloadsRag, skillsRag, pocindex, pocindexSync } from './integrations/index.js'
 import { nativeToolsStatus } from './integrations/native-tools.js'
 import { agentRegistry } from './ai/agent-registry.js'
 import { aiEngine } from './ai/ai-engine.js'
+import { applyAiEnvUpdates } from './ai/env-settings.js'
 import { generateReport, buildReportFilename } from './report.js'
 import { getCve, findVersionVulnerabilities } from './cve.js'
 import { calculateCvss4, severityFromCvss4Score } from './cvss4.js'
@@ -32,7 +33,7 @@ import { ExploitOrchestrator } from './exploits/orchestrator.js'
 import { matchExploits, classifyRisk } from './exploits/registry.js'
 import { msfClient } from './exploits/msf-client.js'
 import * as oob from './exploits/oob.js'
-import { sendScanRequestNotification, sendAnonymousFeedbackNotification, sendConsultationBookingNotification } from './email.js'
+import { sendScanRequestNotification, sendAnonymousFeedbackNotification, sendConsultationBookingNotification, sendContactInquiryNotification } from './email.js'
 import { GitHubClient, parseGitHubWebhook } from './integrations/github.js'
 import {
   PLANS,
@@ -97,7 +98,7 @@ app.use((req, res, next) => {
   res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()')
   res.setHeader('Cross-Origin-Opener-Policy', 'same-origin')
   res.setHeader('Cross-Origin-Resource-Policy', 'same-origin')
-  res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline' https:; style-src 'self' 'unsafe-inline' https:; img-src 'self' data: https: blob:; font-src 'self' https: data:; connect-src 'self' https: wss: ws:; frame-ancestors 'none';")
+  res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: https: blob:; font-src 'self' https://fonts.gstatic.com data:; connect-src 'self' https: wss: ws:; object-src 'none'; base-uri 'self'; frame-ancestors 'none';")
   next()
 })
 app.use(authMiddleware)
@@ -137,20 +138,29 @@ db.getDb()
 const armedMonitors = monitors.bootstrap(pipeline)
 if (armedMonitors) console.log(`[bootstrap] ${armedMonitors} monitor(s) re-armed`)
 
-// Mark scans interrupted by server restart as failed (do NOT auto-resume).
+try {
+  const pocBoot = pocindexSync.bootstrap({
+    notifier: (matches) => channelGateway.notifyThreatIntelAlerts(matches),
+  })
+  if (pocBoot) console.log('[bootstrap] PoC Index ETag auto-sync armed (1h fast / 12h full)')
+} catch (e) {
+  console.warn('[bootstrap] PoC Index auto-sync skipped:', e.message)
+}
+
+// Mark scans interrupted by server restart as 'interrupted' (do NOT auto-resume).
 // Auto-resume corrupts state: pipeline holds in-memory per-scan state (collected URLs,
-// progress, pause/stop control flags) that is lost on restart. Re-running from scratch with
-// the same scanId duplicates findings and confuses the UI. Instead, mark as 'interrupted'
-// with a clear log entry so the user can manually re-launch.
+// progress, pause/stop control flags) that is lost on restart. Marking as 'interrupted'
+// with a clear log entry lets the operator explicitly resume from saved scan_configs
+// (where pipeline.ingestFinding deduplicates findings via fingerprint).
 try {
   const interruptedScans = db.all(`SELECT * FROM scans WHERE status IN ('running','paused','queued')`)
   if (interruptedScans.length > 0) {
-    console.log(`[bootstrap] Found ${interruptedScans.length} interrupted scan(s). Marking as failed (manual restart required)...`)
+    console.log(`[bootstrap] Found ${interruptedScans.length} interrupted scan(s). Marking as interrupted (manual resume available)...`)
     const ts = new Date().toISOString()
     for (const scan of interruptedScans) {
-      db.run(`UPDATE scans SET status = 'failed', finished_at = ? WHERE id = ?`, ts, scan.id)
+      db.run(`UPDATE scans SET status = 'interrupted', finished_at = NULL WHERE id = ?`, scan.id)
       db.run(`INSERT INTO logs (scan_id, level, message, ts) VALUES (?,?,?,?)`,
-        scan.id, 'warn', '⏸ Scan interrupted by server restart. Please start a new scan — state was not preserved.', ts)
+        scan.id, 'warn', '⏸ Scan interrupted by server restart. Click Resume Scan to restart safely without duplicating findings.', ts)
     }
   }
 } catch (e) { console.warn('[bootstrap] Interrupted scan recovery notice:', e.message) }
@@ -351,6 +361,7 @@ app.get('/api/status', requireAuth, async (req, res) => {
     res.json({
       engine,
       rag,
+      pocindex: pocindex.getPocindexStatus(),
       exploitation: {
         engine: 'native',
         metasploit: msf.available ? 'online' : 'offline',
@@ -409,6 +420,41 @@ const FEEDBACK_CATEGORIES = new Set([
   'UI & UX Improvement',
 ])
 const FEEDBACK_MAX_LENGTH = 5000
+const CONTACT_INQUIRY_TYPES = new Set([
+  'inquiry',
+  'demo',
+  'feature',
+  'consultation',
+  'vulnerability',
+])
+
+function prepareScanOwnershipAndQuota(req, res, { targetUserId = null, deductQuota = true } = {}) {
+  let scanOwner = req.user
+  if (req.user?.role === 'admin' && targetUserId) {
+    const clientUser = db.get(`SELECT id, username, email, role FROM users WHERE id = ?`, targetUserId)
+    if (!clientUser) {
+      res.status(404).json({ error: 'Target client account not found' })
+      return null
+    }
+    scanOwner = clientUser
+    if (deductQuota !== false) {
+      try {
+        consumeScanQuota(clientUser.id)
+      } catch (quotaErr) {
+        res.status(402).json({ error: quotaErr.message, upgradeRequired: true })
+        return null
+      }
+    }
+  } else if (req.user?.role !== 'admin') {
+    try {
+      consumeScanQuota(req.user.id)
+    } catch (quotaErr) {
+      res.status(402).json({ error: quotaErr.message, upgradeRequired: true })
+      return null
+    }
+  }
+  return scanOwner
+}
 
 app.post('/api/auth/login', loginLimiter, (req, res) => {
   const { username, password } = req.body || {}
@@ -1128,6 +1174,51 @@ app.post('/api/scans/request', requireAuth, async (req, res) => {
   }
 })
 
+// Public Contact Portal Inquiry (rate-limited, unauthenticated)
+app.post('/api/contact', feedbackLimiter, async (req, res) => {
+  try {
+    const { name, email, type = 'inquiry', message } = req.body || {}
+    const cleanName = typeof name === 'string' ? name.replace(/[\r\n\0]+/g, ' ').trim() : ''
+    const cleanEmail = typeof email === 'string' ? email.trim() : ''
+    const cleanMsg = typeof message === 'string' ? message.trim() : ''
+    const cleanType = CONTACT_INQUIRY_TYPES.has(type) ? type : 'inquiry'
+
+    if (!cleanName || cleanName.length > 120) {
+      return res.status(400).json({ error: 'Please provide your name (1-120 characters)' })
+    }
+    if (!cleanEmail || !EMAIL_REGEX.test(cleanEmail) || cleanEmail.length > 200) {
+      return res.status(400).json({ error: 'Please provide a valid email address' })
+    }
+    if (!cleanMsg) {
+      return res.status(400).json({ error: 'Inquiry message is required' })
+    }
+    if (cleanMsg.length > FEEDBACK_MAX_LENGTH) {
+      return res.status(413).json({ error: `Inquiry message must be ${FEEDBACK_MAX_LENGTH} characters or fewer` })
+    }
+
+    const emailResult = await sendContactInquiryNotification({
+      name: cleanName,
+      email: cleanEmail,
+      type: cleanType,
+      message: cleanMsg,
+    })
+
+    audit('public', 'contact:inquiry', `Type: ${cleanType}`)
+
+    if (!emailResult.success) {
+      return res.status(502).json({ error: 'Unable to deliver inquiry right now — please email us directly.' })
+    }
+
+    return res.json({
+      success: true,
+      message: 'Your inquiry has been received! We will respond within one business day.',
+    })
+  } catch (err) {
+    console.error('[contact] error:', err)
+    return res.status(500).json({ error: 'Failed to submit inquiry' })
+  }
+})
+
 // Anonymous Community Feedback & Bug Reports
 app.post('/api/feedback', feedbackLimiter, async (req, res) => {
   try {
@@ -1174,6 +1265,7 @@ app.post('/api/scans', requireAuth, async (req, res) => {
     template = 'standard', modules = [], objective = 'comprehensive', maxTools = 6,
     files = [], language = '', focus = '', verify = true, depth = 'standard',
     owaspCategories = [], authorizationAcknowledged = false,
+    targetUserId = null, deductQuota = true,
   } = req.body || {}
 
   if (mode === 'blackbox' && !target) return res.status(400).json({ error: 'target required for blackbox' })
@@ -1191,22 +1283,15 @@ app.post('/api/scans', requireAuth, async (req, res) => {
     return res.status(400).json({ error: 'You must confirm that you have written authorization from the target owner before launching a scan.' })
   }
 
-  // Quota enforcement — applies to ALL scan launches (manual, whitebox-folder),
-  // not just GitHub-triggered ones. Admins are exempt.
-  if (req.user?.role !== 'admin') {
-    try {
-      consumeScanQuota(req.user.id)
-    } catch (quotaErr) {
-      return res.status(402).json({ error: quotaErr.message, upgradeRequired: true })
-    }
-  }
+  const scanOwner = prepareScanOwnershipAndQuota(req, res, { targetUserId, deductQuota })
+  if (!scanOwner) return
 
   const id = `scan_${randomUUID()}`
   const now = new Date().toISOString()
   db.run(`INSERT INTO scans (id, project_id, target, target_type, mode, status, template, modules, progress, created_at, started_at, user_id, client)
           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     id, projectId, target || '(whitebox)', targetType, mode, 'running', template,
-    JSON.stringify(modules), 0, now, now, req.user?.id || null, req.user?.username || req.user?.email || null)
+    JSON.stringify(modules), 0, now, now, scanOwner?.id || null, scanOwner?.username || scanOwner?.email || null)
   const scan = db.get(`SELECT * FROM scans WHERE id = ?`, id)
   audit(req.user.username, 'scan:start', `${mode} → ${target || 'codebase'}`)
   saveScanConfig(id, { target, targetType, mode, template, modules, objective, maxTools, files, language, focus, verify, depth, owaspCategories })
@@ -1404,7 +1489,7 @@ app.post('/api/scans/:id/retry-failed', requireAuth, requireStaff, async (req, r
  * Browse server filesystem for whitebox folder selection.
  * Returns directories only, within allowed roots.
  */
-app.get('/api/filesystem/browse', requireAuth, async (req, res) => {
+app.get('/api/filesystem/browse', requireAuth, requireStaff, async (req, res) => {
   const pathMod = await import('node:path')
   const osMod = await import('node:os')
   const roots = (config.whiteboxRoots || [process.cwd(), osMod.default.homedir()]).map(r => pathMod.default.resolve(r))
@@ -1450,7 +1535,7 @@ app.get('/api/filesystem/browse', requireAuth, async (req, res) => {
   })
 })
 
-app.post('/api/scans/whitebox-folder', requireAuth, async (req, res) => {
+app.post('/api/scans/whitebox-folder', requireAuth, requireStaff, async (req, res) => {
   const {
     folders = [], projectId = null, targetUserId: targetClientId = null, deductQuota = true,
     language = '', focus = '', verify = true, dynamicTarget = '', dynamicModules = [],
@@ -1467,16 +1552,7 @@ app.post('/api/scans/whitebox-folder', requireAuth, async (req, res) => {
     }
   }
 
-  // Quota enforcement — whitebox-folder scans count against scan quota unless free mode is active
-  if (req.user?.role !== 'admin') {
-    try {
-      consumeScanQuota(req.user.id)
-    } catch (quotaErr) {
-      return res.status(402).json({ error: quotaErr.message, upgradeRequired: true })
-    }
-  }
-
-  // Security: only allow folders under whitelisted roots
+  // Validate folders under whitelisted roots before quota deduction so invalid paths never bill quota
   const pathMod = await import('node:path')
   const osMod = await import('node:os')
   const roots = (config.whiteboxRoots || [process.cwd(), osMod.default.homedir()]).map(r => pathMod.default.resolve(r))
@@ -1501,13 +1577,16 @@ app.post('/api/scans/whitebox-folder', requireAuth, async (req, res) => {
   })
   if (!files.length) return res.status(400).json({ error: 'no source files collected', stats })
 
+  const scanOwner = prepareScanOwnershipAndQuota(req, res, { targetUserId: targetClientId, deductQuota })
+  if (!scanOwner) return
+
   const id = `scan_${randomUUID()}`
   const now = new Date().toISOString()
   const targetLabel = normalized.map(f => f.prefix).join(' + ')
   db.run(`INSERT INTO scans (id, project_id, target, target_type, mode, status, template, modules, progress, created_at, started_at, user_id, client)
           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     id, projectId, targetLabel, 'code', 'whitebox', 'running', 'folder',
-    JSON.stringify(['folder-walker']), 0, now, now, req.user?.id || null, req.user?.username || req.user?.email || null)
+    JSON.stringify(['folder-walker']), 0, now, now, scanOwner?.id || null, scanOwner?.username || scanOwner?.email || null)
   const scan = db.get(`SELECT * FROM scans WHERE id = ?`, id)
   audit(req.user.username, 'scan:start', `whitebox-folder → ${targetLabel} (${files.length} files)`)
   saveScanConfig(id, {
@@ -1565,12 +1644,95 @@ app.post('/api/scans/:id/pause', requireAuth, requireScanAccess, (req, res) => {
   res.json({ ok: true, status: 'paused' })
 })
 
-app.post('/api/scans/:id/resume', requireAuth, requireScanAccess, (req, res) => {
-  pipeline.resumeScan(req.params.id)
-  db.run(`UPDATE scans SET status = 'running' WHERE id = ?`, req.params.id)
-  pipeline.log(req.params.id, 'info', '▶ Scan resumed by user')
-  audit(req.user.username, 'scan:resume', req.params.id)
-  res.json({ ok: true, status: 'running' })
+app.post('/api/scans/:id/resume', requireAuth, requireScanAccess, async (req, res) => {
+  const scan = db.get(`SELECT * FROM scans WHERE id = ?`, req.params.id)
+  if (!scan) return res.status(404).json({ error: 'Scan not found' })
+
+  // 1. Active in-memory paused scan: unpause the live worker loop directly
+  if (scan.status === 'paused' && pipeline.control.has(scan.id)) {
+    pipeline.resumeScan(scan.id)
+    db.run(`UPDATE scans SET status = 'running', finished_at = NULL WHERE id = ?`, scan.id)
+    pipeline.log(scan.id, 'info', '▶ Scan resumed by user')
+    audit(req.user.username, 'scan:resume', scan.id)
+    return res.json({ ok: true, status: 'running', resumedMode: 'unpaused' })
+  }
+
+  // 2. Interrupted (or orphaned paused) scan after server restart: safely re-launch
+  // in-place from saved scan_configs; pipeline.ingestFinding deduplicates findings by fingerprint.
+  if (scan.status !== 'interrupted' && scan.status !== 'paused') {
+    return res.status(400).json({ error: `Cannot resume scan with status '${scan.status}'. Use Run Again instead.` })
+  }
+
+  let cfg = {}
+  try { cfg = JSON.parse(db.get(`SELECT config FROM scan_configs WHERE scan_id = ?`, scan.id)?.config || '{}') } catch { }
+
+  const mode = cfg.mode || scan.mode || 'blackbox'
+  const modules = Array.isArray(cfg.modules) ? cfg.modules : (() => { try { return JSON.parse(scan.modules || '[]') } catch { return [] } })()
+  const owaspCategories = Array.isArray(cfg.owaspCategories) ? cfg.owaspCategories : []
+  const effectiveModules = owaspCategories.length ? blackboxModulesForCategories(owaspCategories) : modules
+  const whiteboxPasses = owaspCategories.length ? whiteboxPassesForCategories(owaspCategories) : null
+  const baseOpts = {
+    modules: effectiveModules,
+    objective: cfg.objective || 'comprehensive',
+    maxTools: cfg.maxTools || 6,
+    verify: cfg.verify !== false,
+    depth: cfg.depth || 'standard',
+    language: cfg.language || '',
+    focus: cfg.focus || '',
+    owaspCategories,
+  }
+
+  let whiteboxFiles = null
+  if (mode === 'whitebox' || mode === 'hybrid') {
+    if (Array.isArray(cfg.files) && cfg.files.length) {
+      whiteboxFiles = cfg.files
+    } else if (Array.isArray(cfg.folders) && cfg.folders.length) {
+      try {
+        const { files, stats } = walkProjects(cfg.folders, {
+          maxFiles: Math.min(Number(cfg.maxFiles) || 300, 1000),
+          maxBytes: Math.min(Number(cfg.maxBytes) || 10_000_000, 50_000_000),
+        })
+        if (files.length) {
+          whiteboxFiles = files
+        } else {
+          return res.status(400).json({ error: 'Cannot resume interrupted scan: original folders no longer contain scannable files', stats })
+        }
+      } catch (e) {
+        return res.status(400).json({ error: `Cannot resume interrupted scan: cannot re-walk folders (${e.message})` })
+      }
+    } else {
+      return res.status(400).json({ error: 'Cannot resume interrupted whitebox scan: original source files/folders were not stored. Please start a new scan.' })
+    }
+  }
+
+  db.run(`UPDATE scans SET status = 'running', progress = 0, finished_at = NULL WHERE id = ?`, scan.id)
+  const freshScan = db.get(`SELECT * FROM scans WHERE id = ?`, scan.id)
+  pipeline.log(scan.id, 'info', '▶ Resuming interrupted scan from saved configuration (existing findings will be deduplicated)...')
+  audit(req.user.username, 'scan:resume', `${scan.id} (interrupted-relaunch)`)
+
+  setImmediate(async () => {
+    try {
+      if (mode === 'whitebox' || mode === 'hybrid') {
+        if (mode === 'hybrid') pipeline.deferFinish(freshScan.id)
+        await pipeline.runWhitebox(freshScan, { ...baseOpts, files: whiteboxFiles, whiteboxPasses })
+      }
+      if (mode === 'hybrid') {
+        pipeline.releaseDeferredFinish(freshScan.id)
+        await pipeline.runBlackbox({ ...freshScan, target: cfg.dynamicTarget || freshScan.target, target_type: 'url', mode: 'blackbox' }, {
+          ...baseOpts,
+          modules: Array.isArray(cfg.dynamicModules) && cfg.dynamicModules.length ? cfg.dynamicModules : effectiveModules,
+        })
+      } else if (mode === 'blackbox') {
+        await pipeline.runBlackbox(freshScan, baseOpts)
+      }
+    } catch (e) {
+      if (e.message === 'SCAN_STOPPED') return
+      pipeline.log(scan.id, 'error', `Resume pipeline error: ${e.message}`)
+      pipeline.finish(scan.id, 'failed')
+    }
+  })
+
+  res.json({ ok: true, status: 'running', resumedMode: 'restarted' })
 })
 
 // ── Findings ─────────────────────────────────────────────────────────────────
@@ -1634,8 +1796,15 @@ function recalculateScanRisk(scanId) {
 
 const FINDING_STATUSES = ['open', 'confirmed', 'in-progress', 'fixed', 'accepted', 'false-positive']
 app.put('/api/findings/:id/status', requireAuth, requireStaff, (req, res) => {
-  const status = FINDING_STATUSES.includes(req.body.status) ? req.body.status : 'open'
-  db.run(`UPDATE findings SET status = ? WHERE id = ?`, status, req.params.id)
+  const { status } = req.body || {}
+  if (status !== undefined && !FINDING_STATUSES.includes(status)) {
+    return res.status(400).json({ error: `status must be one of: ${FINDING_STATUSES.join(', ')}` })
+  }
+  const existing = db.get(`SELECT id, scan_id FROM findings WHERE id = ?`, req.params.id)
+  if (!existing) return res.status(404).json({ error: 'Finding not found' })
+  const nextStatus = status || 'open'
+  db.run(`UPDATE findings SET status = ? WHERE id = ?`, nextStatus, req.params.id)
+  audit(req.user.username, 'finding:status', `${req.params.id} → ${nextStatus}`)
   res.json(db.get(`SELECT * FROM findings WHERE id = ?`, req.params.id))
 })
 
@@ -1857,35 +2026,29 @@ app.post('/api/agents/chat', requireAuth, async (req, res) => {
 
 app.post('/api/settings/ai', requireAuth, (req, res) => {
   if (req.user.role !== 'admin') return res.status(403).json({ error: 'Forbidden' })
-  const { groq, groqModel, openrouter, openrouterModel, bandelbanget, bandelbangetModel } = req.body
+  const { groq, groqModel, openrouter, openrouterModel, bandelbanget, bandelbangetModel } = req.body || {}
   const envPath = new URL('../../.env', import.meta.url).pathname.replace(/^\/([A-Z]:)/, '$1')
   
-  let content = fs.existsSync(envPath) ? fs.readFileSync(envPath, 'utf8') : ''
-  const updateEnv = (key, val) => {
-    if (val === undefined) return
-    const safeVal = String(val).replace(/[\r\n\0]/g, '').trim()
-    const regex = new RegExp(`^\\s*${key}\\s*=.*$`, 'm')
-    if (regex.test(content)) content = content.replace(regex, () => `${key}="${safeVal}"`)
-    else content += `\n${key}="${safeVal}"`
-    process.env[key] = safeVal
-  }
-  
-  updateEnv('GROQ_API_KEY', groq)
-  updateEnv('GROQ_MODEL', groqModel)
-  updateEnv('OPENROUTER_API_KEY', openrouter)
-  updateEnv('OPENROUTER_MODEL', openrouterModel)
-  updateEnv('BANDELBANGET_API_KEY', bandelbanget)
-  updateEnv('BANDELBANGET_MODEL', bandelbangetModel)
+  const existingEnv = fs.existsSync(envPath) ? fs.readFileSync(envPath, 'utf8') : ''
+  const nextEnv = applyAiEnvUpdates(existingEnv, {
+    GROQ_API_KEY: groq,
+    GROQ_MODEL: groqModel,
+    OPENROUTER_API_KEY: openrouter,
+    OPENROUTER_MODEL: openrouterModel,
+    BANDELBANGET_API_KEY: bandelbanget,
+    BANDELBANGET_MODEL: bandelbangetModel,
+  }, process.env)
 
-  fs.writeFileSync(envPath, content.trim() + '\n')
+  fs.writeFileSync(envPath, nextEnv, 'utf8')
   
-  // Hot-reload config
-  config.ai.groq.key = process.env.GROQ_API_KEY || ''
-  config.ai.groq.model = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile'
-  config.ai.openrouter.key = process.env.OPENROUTER_API_KEY || ''
-  config.ai.openrouter.model = process.env.OPENROUTER_MODEL || 'openrouter/free'
-  config.ai.bandelbanget.key = process.env.BANDELBANGET_API_KEY || ''
-  config.ai.bandelbanget.model = process.env.BANDELBANGET_MODEL || 'deepseek-v4-pro'
+  // Hot-reload config cleanly without clobbering existing keys
+  config.ai.groq.key = process.env.GROQ_API_KEY || config.ai.groq.key || ''
+  config.ai.groq.model = process.env.GROQ_MODEL || config.ai.groq.model || 'llama-3.3-70b-versatile'
+  config.ai.openrouter.key = process.env.OPENROUTER_API_KEY || config.ai.openrouter.key || ''
+  config.ai.openrouter.model = process.env.OPENROUTER_MODEL || config.ai.openrouter.model || 'openrouter/free'
+  config.ai.bandelbanget.key = process.env.BANDELBANGET_API_KEY || config.ai.bandelbanget.key || ''
+  config.ai.bandelbanget.keys = [config.ai.bandelbanget.key, config.ai.bandelbanget.backupKey].filter(Boolean)
+  config.ai.bandelbanget.model = process.env.BANDELBANGET_MODEL || config.ai.bandelbanget.model || 'deepseek-v4-pro'
 
   // Update llm client instance manually
   aiEngine.llm.groq = config.ai.groq
@@ -1988,7 +2151,7 @@ app.get('/api/payloads/search', requireAuth, (req, res) => {
 
 // ── Skills RAG (cybersecurity playbooks) ─────────────────────────────────────
 app.get('/api/skills/status', requireAuth, (req, res) => res.json(skillsRag.skillsIndexStatus()))
-app.post('/api/skills/reindex', requireAuth, (req, res) => {
+app.post('/api/skills/reindex', requireAuth, requireRole('admin'), (req, res) => {
   const r = skillsRag.buildSkillsIndex()
   const cat = skillsRag.writeSkillsCatalog()
   audit(req.user.username, 'skills:reindex', `${r.indexed} skills`)
@@ -1996,6 +2159,49 @@ app.post('/api/skills/reindex', requireAuth, (req, res) => {
 })
 app.get('/api/skills/search', requireAuth, (req, res) => {
   res.json(skillsRag.retrieveSkills(req.query.q || '', { limit: Number(req.query.limit) || 2, includeBody: req.query.body === 'true' }))
+})
+
+// ── PoC Index & Threat Intelligence ──────────────────────────────────────────
+app.get('/api/pocindex/status', requireAuth, (req, res) => {
+  res.json(pocindexSync.getSyncStatus())
+})
+app.get('/api/pocindex/stats', requireAuth, async (req, res) => {
+  try {
+    res.json(await pocindex.getPocindexStats())
+  } catch (e) {
+    res.status(500).json({ error: e.message })
+  }
+})
+app.get('/api/pocindex/trending', requireAuth, async (req, res) => {
+  try {
+    res.json(await pocindex.getTrending())
+  } catch (e) {
+    res.status(502).json({ error: e.message })
+  }
+})
+app.get('/api/pocindex/search', requireAuth, (req, res) => {
+  const { q = '', severity, kev, hasPoc, source, year, minEpss, sort, page, limit } = req.query
+  res.json(pocindex.searchCves(String(q), { severity, kev, hasPoc, source, year, minEpss, sort, page, limit }))
+})
+app.get('/api/pocindex/cve/:id', requireAuth, (req, res) => {
+  const detail = pocindex.getCveDetail(req.params.id)
+  if (!detail) return res.status(404).json({ error: 'CVE not found in local PoC index' })
+  res.json(detail)
+})
+app.post('/api/pocindex/sync', requireRole('admin'), async (req, res) => {
+  const force = req.body?.force === true || req.query.force === 'true'
+  const full = req.body?.full !== false && req.query.full !== 'false'
+  const status = pocindexSync.getSyncStatus()
+  if (status.syncing) {
+    return res.status(202).json({ ok: true, started: false, syncing: true, message: 'Sync already in progress' })
+  }
+  audit(req.user.username, 'pocindex:sync', `force=${force}, full=${full}`)
+  if (req.body?.wait === true) {
+    const result = await pocindexSync.syncNow({ force, full })
+    return res.status(result.ok ? 200 : 502).json(result)
+  }
+  pocindexSync.syncNow({ force, full }).catch(() => {})
+  res.status(202).json({ ok: true, started: true, syncing: true, mode: full ? 'full' : 'fast' })
 })
 
 // ── Kali Linux Remote Control ────────────────────────────────────────────────
@@ -3287,6 +3493,7 @@ io.on('connection', (socket) => {
 })
 
 const PORT = config.port
+const HOST = process.env.HOST?.trim() || undefined
 server.on('error', (err) => {
   if (err?.code === 'EADDRINUSE') {
     console.error(`[FYP2] Port ${PORT} is already in use. Please terminate the existing server process before restarting.`)
@@ -3298,8 +3505,8 @@ server.on('clientError', (err, socket) => {
   if (err?.code === 'ECONNRESET' || !socket.writable) return
   socket.end('HTTP/1.1 400 Bad Request\r\n\r\n')
 })
-server.listen(PORT, async () => {
-  console.log(`\n[FYP2] Unified Pentest Platform backend listening on http://localhost:${PORT}`)
+const onServerListen = async () => {
+  console.log(`\n[FYP2] Unified Pentest Platform backend listening on http://${HOST || 'localhost'}:${PORT}`)
   console.log(`[FYP2] Native scanner engine: direct subprocess execution (hexstrike removed)`)
   console.log(`[FYP2] Agents: ${agentRegistry.list().length} | RAG docs: ${payloadsRag.payloadsIndexStatus().docs}`)
 
@@ -3335,7 +3542,9 @@ server.listen(PORT, async () => {
   } catch (e) {
     console.warn(`[FYP2] Channel gateway failed to start: ${e.message}`)
   }
-})
+}
+if (HOST) server.listen(PORT, HOST, onServerListen)
+else server.listen(PORT, onServerListen)
 
 let shuttingDown = false
 async function shutdown(signal) {
@@ -3343,6 +3552,7 @@ async function shutdown(signal) {
   shuttingDown = true
   console.log(`\n[FYP2] ${signal} received — shutting down`)
   try { await oob.stopOob() } catch (e) { console.warn(`[FYP2] OOB stop failed: ${e.message}`) }
+  try { pocindexSync.stop() } catch { /* best effort */ }
   try { await msfClient.logout() } catch { /* best effort */ }
   try { channelGateway.stop?.() } catch { /* best effort */ }
   server.close(() => process.exit(0))

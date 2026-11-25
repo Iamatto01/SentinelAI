@@ -62,17 +62,17 @@ const TOOL_CATEGORIES = [
 
 // ── 53 AI Agent Personas Matrix ──────────────────────────────────────────────
 const DEFAULT_AGENT_PERSONAS = [
-  'Web Hunter', 'Database Attacker', 'Code Auditor', 'BizLogic Hunter', 'Cloud Security',
-  'LLM Red Team', 'API Security', 'Network Attacker', 'Credential Tester', 'Crypto Analyzer',
-  'Reverse Engineer', 'Malware Analyst', 'Forensics Analyst', 'Mobile Pentester', 'IoT Pentester',
-  'Wireless Pentester', 'SCADA Attacker', 'Container Breakout', 'Lateral Movement', 'C2 Operator',
-  'Evasion Specialist', 'Payload Crafter', 'Phishing Operator', 'OSINT Collector', 'Vuln Scanner',
-  'Exploit Guide', 'Exploit Chainer', 'Privesc Advisor', 'Threat Modeler', 'Risk Scorer',
-  'Detection Engineer', 'Compliance Mapper', 'Report Generator', 'Engagement Planner', 'Social Engineer',
-  'Data Exfiltrator', 'Persistence Planner', 'Traffic Analyzer', 'Stig Analyst', 'Password Auditor',
-  'Attack Planner', 'Swarm Orchestrator', 'Poc Validator', 'Bug Bounty', 'CTF Solver',
-  'CICD Red Team', 'Recon Advisor', 'Opsec Anonymizer', 'AI Recon', 'Scope Guard',
-  'Ad Attacker', 'Whitebox Fuzzer', 'Exploit Dev Whitebox', 'Debugger Analyst'
+  'Ad Attacker', 'Ai Recon', 'Api Security', 'Attack Planner', 'Bizlogic Hunter',
+  'Bug Bounty', 'C2 Operator', 'Cicd Redteam', 'Cloud Security', 'Code Auditor',
+  'Compliance Mapper', 'Container Breakout', 'Credential Tester', 'Crypto Analyzer', 'Ctf Solver',
+  'Data Exfiltrator', 'Database Attacker', 'Debugger Analyst', 'Detection Engineer', 'Engagement Planner',
+  'Evasion Specialist', 'Exploit Chainer', 'Exploit Dev Whitebox', 'Exploit Guide', 'Forensics Analyst',
+  'Iot Pentester', 'Lateral Movement', 'Llm Redteam', 'Malware Analyst', 'Mobile Pentester',
+  'Network Attacker', 'Opsec Anonymizer', 'Osint Collector', 'Password Auditor', 'Payload Crafter',
+  'Persistence Planner', 'Phishing Operator', 'Poc Validator', 'Privesc Advisor', 'Recon Advisor',
+  'Report Generator', 'Reverse Engineer', 'Risk Scorer', 'Scada Attacker', 'Social Engineer',
+  'Stig Analyst', 'Swarm Orchestrator', 'Threat Modeler', 'Traffic Analyzer', 'Vuln Scanner',
+  'Web Hunter', 'Whitebox Fuzzer', 'Wireless Pentester',
 ]
 
 export default function Tools() {
@@ -272,7 +272,7 @@ export default function Tools() {
           <ShieldCheck className="mx-auto text-cyan-400" size={36} />
           <h2 className="text-2xl sm:text-3xl font-bold text-white">Put the Arsenal to Work</h2>
           <p className="text-slate-400 text-xs sm:text-sm max-w-xl mx-auto leading-relaxed">
-            Launch your first autonomous assessment and watch {totalTools}+ tools chain themselves against your target.
+            Launch your first autonomous assessment and watch {totalTools} featured modules across 150+ Kali tools chain themselves against your target.
           </p>
           <div className="flex justify-center gap-4">
             <Link to="/login?mode=register&plan=trial" className="btn-concept-12">

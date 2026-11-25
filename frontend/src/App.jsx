@@ -33,6 +33,7 @@ import ClientsManagement from './pages/ClientsManagement.jsx'
 import KaliControl from './pages/KaliControl.jsx'
 import Consultants from './pages/Consultants.jsx'
 import CustomScripts from './pages/CustomScripts.jsx'
+import PocIndex from './pages/PocIndex.jsx'
 import NotFound from './pages/NotFound.jsx'
 
 class ErrorBoundary extends React.Component {
@@ -127,6 +128,7 @@ export default function App() {
           <Route path="/billing" element={<Navigate to="/app/billing" replace />} />
           <Route path="/consultants" element={<Navigate to="/app/consultants" replace />} />
           <Route path="/kali-control" element={<Navigate to="/app/kali-control" replace />} />
+          <Route path="/poc-index" element={<Navigate to="/app/poc-index" replace />} />
           <Route path="/settings" element={<Navigate to="/app/settings" replace />} />
 
           {/* Main Protected Application */}
@@ -147,6 +149,7 @@ export default function App() {
             <Route path="custom-scripts" element={<CustomScripts />} />
             <Route path="exploits" element={<Exploits />} />
             <Route path="exploits/:id" element={<ExploitCampaign />} />
+            <Route path="poc-index" element={<PocIndex />} />
             <Route path="settings" element={<Settings />} />
             <Route path="*" element={<NotFound />} />
           </Route>

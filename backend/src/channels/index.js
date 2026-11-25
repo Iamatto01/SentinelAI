@@ -4,6 +4,7 @@ import { telegramBot } from './telegram.js'
 import { discordBot } from './discord.js'
 import { randomUUID } from 'node:crypto'
 import { llm } from '../ai/llm-client.js'
+import { buildCveIntelContext } from '../ai/ai-engine.js'
 import { nativeToolsStatus } from '../integrations/native-tools.js'
 import { EXPLOIT_REGISTRY, matchExploits } from '../exploits/registry.js'
 import { consumeScanQuota } from '../billing.js'
@@ -79,6 +80,70 @@ class ChannelGateway {
   }
 
   /**
+   * Send proactive Telegram & Discord threat-intel alerts when newly indexed
+   * CISA KEV entries or public PoCs match historical scan findings.
+   */
+  async notifyThreatIntelAlerts(matches = []) {
+    if (!Array.isArray(matches) || !matches.length) return
+    try {
+      const pairings = db.all(
+        `SELECT p.platform, p.chat_id, p.user_id, p.username, u.role
+         FROM telegram_pairings p
+         LEFT JOIN users u ON p.user_id = u.id
+         WHERE p.status = 'approved'`
+      )
+      if (!pairings || !pairings.length) return
+
+      for (const p of pairings) {
+        const scoped = p.role === 'admin'
+          ? matches
+          : matches.filter(m =>
+              (m.userId && p.user_id && m.userId === p.user_id) ||
+              (m.client && p.username && m.client.toLowerCase() === p.username.toLowerCase())
+            )
+        if (!scoped.length) continue
+
+        const top = scoped.slice(0, 6)
+        const more = scoped.length - top.length
+        const kevCount = scoped.filter(m => m.kind === 'kev').length
+
+        if (p.platform === 'telegram') {
+          const lines = top.map((m) => {
+            const tag = m.kind === 'kev' ? '🔥 CISA KEV' : `💣 ${m.sourceCount} PoC`
+            const epss = m.epssScore != null ? ` · EPSS ${(m.epssScore * 100).toFixed(1)}%` : ''
+            return `• \`${m.cveId}\` [${tag}${epss}] — \`${m.target || 'Unknown'}\``
+          }).join('\n')
+          const text =
+            `🚨 *Amaran Threat Intel Baharu (PoC Index)*\n\n` +
+            `${scoped.length} CVE pada penemuan aktif kini mempunyai bukti eksploitasi${kevCount ? ` (*${kevCount} CISA KEV*)` : ''}:\n` +
+            `${lines}${more > 0 ? `\n_...dan ${more} lagi padanan_` : ''}\n\n` +
+            `🔗 Semak di Portal: https://sentinelai.studio/app/findings`
+          telegramBot.sendTo(p.chat_id, text, {}).catch(() => {})
+        } else if (p.platform === 'discord') {
+          const fields = top.map((m) => ({
+            name: `${m.cveId} (${m.kind === 'kev' ? 'CISA KEV' : `${m.sourceCount} PoCs`})`,
+            value: `Target: \`${m.target || 'Unknown'}\`${m.epssScore != null ? ` · EPSS **${(m.epssScore * 100).toFixed(1)}%**` : ''}`,
+            inline: false,
+          }))
+          const embed = {
+            title: `🚨 Amaran Threat Intel — ${scoped.length} Padanan Baharu`,
+            color: kevCount > 0 ? 0xf43f5e : 0xf59e0b,
+            fields: [
+              ...fields,
+              { name: 'Portal', value: '[Buka Findings & PoC Index](https://sentinelai.studio/app/findings)', inline: false },
+            ],
+            footer: { text: 'SentinelAI PoC Index Continuous Monitor' },
+            timestamp: new Date().toISOString(),
+          }
+          discordBot.sendTo(p.chat_id, '', { embed }).catch(() => {})
+        }
+      }
+    } catch (e) {
+      console.warn(`[Channels] Failed to notify threat-intel matches: ${e.message}`)
+    }
+  }
+
+  /**
    * Relay scan completion alerts directly to paired Telegram and Discord users!
    */
   async notifyScanCompleted(scan, counts = {}, riskScore = 0) {
@@ -146,8 +211,9 @@ class ChannelGateway {
     if (platform === 'discord') discordBot.sendTyping(chatId)
 
     try {
+      const pocIntel = buildCveIntelContext(query)
       const answer = await llm.analyze(query, {
-        system: COPILOT_SYSTEM_PROMPT,
+        system: COPILOT_SYSTEM_PROMPT + pocIntel,
         maxTokens: 1200,
         useFast: true,
       })

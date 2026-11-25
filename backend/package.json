@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "node --env-file=../.env src/index.js",
     "start": "node --env-file=../.env src/index.js",
-    "test": "node src/report-contract.test.js && node src/catch-all.test.js && node src/report-helpers.test.js && node src/tool-coverage.test.js && node src/version-audit.test.js && node src/pillars-2-4.test.js && node covtest.mjs && node src/cvss4.test.js && node src/auth.test.js && node src/billing.test.js && node src/channels-and-scans.test.js",
+    "test": "node src/report-contract.test.js && node src/catch-all.test.js && node src/report-helpers.test.js && node src/tool-coverage.test.js && node src/version-audit.test.js && node src/pillars-2-4.test.js && node covtest.mjs && node src/cvss4.test.js && node src/auth.test.js && node src/billing.test.js && node src/channels-and-scans.test.js && node src/pocindex.test.js && node src/settings-ai.test.js && node src/high-audit.test.js && node src/medium-security.test.js",
     "test:e2e": "node scripts/test-all-features.mjs",
     "benchmark": "node scripts/load-test.mjs",
     "index:payloads": "node --env-file=../.env scripts/index-payloads.js"

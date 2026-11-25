@@ -804,18 +804,22 @@ export default function Billing() {
 
                 {/* QR Display Container */}
                 <div className="px-5 pb-5 flex flex-col items-center justify-center space-y-3">
-                  {/* Real Cropped DuitNow QR Card Display */}
-                  <div className="p-1 bg-white rounded-2xl shadow-xl border-2 border-pink-500/40 flex flex-col items-center justify-center relative max-w-[260px]">
+                  {/* Dynamic DuitNow QR Display (Custom Upload -> Generated Payload -> Card Fallback) */}
+                  <div className="p-2 bg-white rounded-2xl shadow-xl border-2 border-pink-500/40 flex flex-col items-center justify-center relative max-w-[260px]">
                     <img
-                      src={customDuitNowQr || '/duitnow-card.png'}
+                      src={customDuitNowQr || duitnowQrUrl || '/duitnow-card.png'}
                       alt="DuitNow / ShopeePay QR Code"
                       className="w-full h-auto rounded-xl object-contain"
                     />
-                    {customDuitNowQr && (
+                    {customDuitNowQr ? (
                       <span className="mt-1 px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-700 text-[10px] font-bold">
                         Custom QR Aktif
                       </span>
-                    )}
+                    ) : duitnowQrUrl ? (
+                      <span className="mt-1 px-2 py-0.5 rounded-full bg-pink-500/15 text-pink-700 text-[10px] font-bold font-mono">
+                        RM {calculateTotalDue().toFixed(2)} · {duitnowRef}
+                      </span>
+                    ) : null}
                   </div>
 
                   {/* Upload Custom QR / ShopeePay QR Button */}
@@ -954,9 +958,13 @@ export default function Billing() {
                       <div className="p-2 bg-white rounded-xl inline-block shadow-md">
                         <img src={stripeQrUrl} alt="Stripe Mobile QR" className="w-36 h-36 object-contain rounded-lg" />
                       </div>
-                      <div className="text-[11px] text-cyan-300 font-semibold flex items-center justify-center gap-1.5">
-                        <Smartphone size={13} /> Scan with your phone camera to pay with Apple / Google Pay
-                        <Smartphone size={13} /> Scan dengan kamera biasa telefon anda untuk buka Apple Pay / Google Pay / Kad
+                      <div className="text-[11px] text-cyan-300 font-semibold flex flex-col items-center justify-center gap-0.5">
+                        <span className="flex items-center gap-1.5">
+                          <Smartphone size={13} /> Scan with your phone camera to pay with Apple / Google Pay
+                        </span>
+                        <span className="text-[10px] text-slate-400 font-normal">
+                          Imbas dengan kamera telefon untuk buka Apple Pay / Google Pay / Kad
+                        </span>
                       </div>
                     </div>
                   )}

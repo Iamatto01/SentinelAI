@@ -5,7 +5,7 @@ import {
   Hexagon, Activity, Settings as SettingsIcon, Crosshair, Menu, X,
   ChevronLeft, ChevronRight, Search, Bell, Sparkles, GitBranch, CreditCard,
   Users, AlertTriangle, UserCheck, Briefcase, Award, ArrowRight, Lock, CheckCircle2, Zap, Terminal,
-  Sun, Moon, FileCode
+  Sun, Moon, FileCode, Flame
 } from 'lucide-react'
 import { useAuth } from '../lib/AuthContext.jsx'
 import { api } from '../lib/api.js'
@@ -72,6 +72,7 @@ export default function Shell() {
         },
         { to: '/app/findings', label: 'Findings', icon: Bug },
         { to: '/app/exploits', label: 'Exploit Lab', icon: Crosshair },
+        { to: '/app/poc-index', label: 'PoC Index', icon: Flame },
       ]
     },
     {
@@ -449,8 +450,6 @@ export default function Shell() {
         {/* Desktop Top Header Bar (Vision UI Style) */}
         <header className="hidden lg:flex items-center justify-between px-6 pt-5 pb-2">
           <div className="flex items-center gap-2 text-xs font-semibold px-3 py-1.5 rounded-xl bg-slate-900/80 border border-white/15 text-slate-200 shadow-md backdrop-blur-md">
-            <span className="text-slate-300 font-medium">Console</span>
-            <span className="text-slate-500 font-bold">/</span>
             <span className="text-white font-extrabold tracking-wide">
               {currentNav.label}
             </span>

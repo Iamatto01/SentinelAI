@@ -1,5 +1,13 @@
 import { config } from '../config.js'
 
+/** Show only prefix + last 4 chars of an API key (AGENTS.md §4). */
+export function maskApiKey(key) {
+  const k = String(key || '').trim()
+  if (!k) return ''
+  if (k.length <= 10) return '••••' + k.slice(-2)
+  return `${k.slice(0, 6)}…${k.slice(-4)}`
+}
+
 /**
  * Unified LLM client with multi-provider fallback order:
  *  1. OpenRouter (primary, if OPENROUTER_API_KEY configured)
@@ -75,6 +83,8 @@ export class LLMClient {
           role: p.role,
           model: p.model,
           baseUrl: p.baseUrl,
+          hasKey: false,
+          keyPreview: '',
           online: false,
           status: 'OFFLINE',
           reason: 'No API Key configured',
@@ -85,6 +95,8 @@ export class LLMClient {
         this.healthCache.set(p.id, { ok: probed.online, reason: probed.reason, at: Date.now() })
         return {
           id: p.id, name: p.name, role: p.role, model: p.model, baseUrl: p.baseUrl,
+          hasKey: true,
+          keyPreview: maskApiKey(p.key),
           online: probed.online,
           status: probed.online ? 'ONLINE' : 'OFFLINE',
           statusCode: probed.statusCode ?? null,
@@ -94,6 +106,8 @@ export class LLMClient {
         this.healthCache.set(p.id, { ok: false, reason: e.message, at: Date.now() })
         return {
           id: p.id, name: p.name, role: p.role, model: p.model, baseUrl: p.baseUrl,
+          hasKey: true,
+          keyPreview: maskApiKey(p.key),
           online: false,
           status: 'OFFLINE',
           statusCode: null,

@@ -25,6 +25,8 @@ export default function ScanDetail() {
   const [logs, setLogs] = useState([])
   const [progress, setProgress] = useState(0)
   const [err, setErr] = useState('')
+  const [actionErr, setActionErr] = useState('')
+  const [resuming, setResuming] = useState(false)
   const [selected, setSelected] = useState(null)
   const [showReportModal, setShowReportModal] = useState(false)
   const [showMapping, setShowMapping] = useState(false)
@@ -142,9 +144,38 @@ export default function ScanDetail() {
     if (termRef.current) termRef.current.scrollTop = termRef.current.scrollHeight
   }, [logs])
 
-  async function stop() { await api.stopScan(id); setScan((s) => ({ ...s, status: 'stopped' })) }
-  async function pause() { await api.pauseScan(id); setScan((s) => ({ ...s, status: 'paused' })) }
-  async function resume() { await api.resumeScan(id); setScan((s) => ({ ...s, status: 'running' })) }
+  async function stop() {
+    setActionErr('')
+    try {
+      await api.stopScan(id)
+      setScan((s) => (s ? { ...s, status: 'stopped' } : s))
+    } catch (e) {
+      setActionErr(e.message || 'Failed to stop scan')
+    }
+  }
+  async function pause() {
+    setActionErr('')
+    try {
+      await api.pauseScan(id)
+      setScan((s) => (s ? { ...s, status: 'paused' } : s))
+    } catch (e) {
+      setActionErr(e.message || 'Failed to pause scan')
+    }
+  }
+  async function resume() {
+    setActionErr('')
+    setResuming(true)
+    try {
+      const wasInterrupted = scan?.status === 'interrupted'
+      const res = await api.resumeScan(id)
+      setScan((s) => (s ? { ...s, status: 'running' } : s))
+      if (wasInterrupted || res?.resumedMode === 'restarted') setProgress(0)
+    } catch (e) {
+      setActionErr(e.message || 'Failed to resume scan')
+    } finally {
+      setResuming(false)
+    }
+  }
 
   const [retrying, setRetrying] = useState(false)
   async function retryFailed() {
@@ -246,8 +277,9 @@ export default function ScanDetail() {
             </button>
           )}
           {(paused || scan.status === 'interrupted') && (
-            <button onClick={resume} className="btn-primary text-xs shadow-glow">
-              <Play size={14} /> Resume Scan
+            <button onClick={resume} disabled={resuming} className="btn-primary text-xs shadow-glow">
+              {resuming ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
+              {resuming ? 'Resuming...' : 'Resume Scan'}
             </button>
           )}
           {(running || paused) && (
@@ -316,6 +348,26 @@ export default function ScanDetail() {
           )}
         </div>
       </div>
+
+      {/* Interrupted / Action Error Notices */}
+      {scan.status === 'interrupted' && (
+        <div className={`p-4 rounded-xl border text-xs flex items-center justify-between gap-3 ${
+          isNight ? 'bg-amber-950/30 border-amber-500/30 text-amber-200' : 'bg-amber-50 border-amber-300 text-amber-900'
+        }`}>
+          <span>
+            This scan was interrupted by a server restart. Click <strong>Resume Scan</strong> to restart safely from its saved configuration (existing findings will be deduplicated).
+          </span>
+        </div>
+      )}
+
+      {actionErr && (
+        <div className={`p-4 rounded-xl border text-xs flex items-center justify-between gap-3 ${
+          isNight ? 'bg-rose-950/30 border-rose-500/30 text-rose-200' : 'bg-rose-50 border-rose-300 text-rose-900'
+        }`}>
+          <span>{actionErr}</span>
+          <button type="button" onClick={() => setActionErr('')} className="font-bold underline shrink-0">Dismiss</button>
+        </div>
+      )}
 
       {/* Audio Briefing Transcript Box */}
       {audioState.text && (

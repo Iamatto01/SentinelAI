@@ -6,6 +6,17 @@
 import { randomUUID } from 'node:crypto'
 import * as db from './db.js'
 
+function numOr(val, fallback) {
+  if (val === null || val === undefined || val === '') return fallback
+  const n = Number(val)
+  return Number.isFinite(n) ? n : fallback
+}
+
+function currencySymbol(currency) {
+  const c = String(currency || 'MYR').trim().toUpperCase()
+  return c === 'MYR' ? 'RM' : c
+}
+
 /**
  * Format plan row from database into a consistent JS object
  */
@@ -22,15 +33,15 @@ export function formatPlanRow(row) {
     id: row.id,
     name: row.name,
     description: row.description || '',
-    priceMonthly: Number(row.price_monthly) || 0,
-    priceYearly: Number(row.price_yearly) || 0,
-    price_monthly: Number(row.price_monthly) || 0,
-    price_yearly: Number(row.price_yearly) || 0,
-    currency: row.currency || 'USD',
-    scanQuota: Number(row.scan_quota) || 10,
-    scan_quota: Number(row.scan_quota) || 10,
-    maxRepos: Number(row.max_repos) || 1,
-    max_repos: Number(row.max_repos) || 1,
+    priceMonthly: numOr(row.price_monthly, 0),
+    priceYearly: numOr(row.price_yearly, 0),
+    price_monthly: numOr(row.price_monthly, 0),
+    price_yearly: numOr(row.price_yearly, 0),
+    currency: row.currency || 'MYR',
+    scanQuota: numOr(row.scan_quota, 10),
+    scan_quota: numOr(row.scan_quota, 10),
+    maxRepos: numOr(row.max_repos, 1),
+    max_repos: numOr(row.max_repos, 1),
     features,
     popular: Boolean(row.is_popular),
     is_popular: Boolean(row.is_popular),
@@ -39,8 +50,8 @@ export function formatPlanRow(row) {
     isCustom: Boolean(row.is_custom),
     is_custom: Boolean(row.is_custom),
     badge: row.badge || '',
-    sortOrder: Number(row.sort_order) || 0,
-    sort_order: Number(row.sort_order) || 0,
+    sortOrder: numOr(row.sort_order, 0),
+    sort_order: numOr(row.sort_order, 0),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   }
@@ -431,13 +442,14 @@ export function validatePromoCode(code, planId, billingInterval = 'monthly') {
     }
   }
 
+  const cLabel = currencySymbol(plan.currency)
   const originalPrice = billingInterval === 'yearly' ? plan.priceYearly : plan.priceMonthly
   if (promo.minPurchaseAmount > 0 && originalPrice < promo.minPurchaseAmount) {
-    throw new Error(`Minimum purchase of $${promo.minPurchaseAmount} is required for code '${promo.code}'`)
+    throw new Error(`Minimum purchase of ${cLabel} ${promo.minPurchaseAmount} is required for code '${promo.code}'`)
   }
 
   let discountAmount = 0
-  if (promo.discountType === 'percentage') {
+  if (promo.discountType === 'percentage' || promo.discountType === 'percent') {
     discountAmount = Math.round((originalPrice * (promo.discountValue / 100)) * 100) / 100
   } else {
     discountAmount = Math.min(originalPrice, promo.discountValue)
@@ -453,7 +465,10 @@ export function validatePromoCode(code, planId, billingInterval = 'monthly') {
     discountAmount,
     originalPrice,
     finalPrice,
-    formattedDiscount: promo.discountType === 'percentage' ? `${promo.discountValue}% OFF` : `$${promo.discountValue} OFF`,
+    currency: plan.currency || 'MYR',
+    formattedDiscount: (promo.discountType === 'percentage' || promo.discountType === 'percent')
+      ? `${promo.discountValue}% OFF`
+      : `${cLabel} ${promo.discountValue} OFF`,
     note: promo.note || '',
   }
 }
@@ -570,17 +585,16 @@ export function activateSubscription({ userId, planId, amount, provider = 'strip
 
   let discountAmount = 0
   let appliedPromo = null
-  if (promoCode) {
+  if (promoCode && promoCode.trim()) {
     try {
       const val = validatePromoCode(promoCode, planId, interval)
       if (val.valid) {
         discountAmount = val.discountAmount
         appliedPromo = val.code
-        // Increment redemption counter in database
-        db.run(`UPDATE promo_codes SET used_count = used_count + 1, updated_at = ? WHERE UPPER(code) = UPPER(?)`, new Date().toISOString(), appliedPromo)
       }
     } catch (e) {
-      console.warn('[billing] promo validation warning on checkout:', e.message)
+      if (provider !== 'stripe') throw e
+      console.warn('[billing] promo validation warning on post-payment fulfillment:', e.message)
     }
   }
 
@@ -590,34 +604,50 @@ export function activateSubscription({ userId, planId, amount, provider = 'strip
   const basePrice = interval === 'yearly' ? plan.priceYearly : plan.priceMonthly
   const finalPaidAmount = amount !== undefined ? amount : Math.max(0, basePrice - discountAmount)
 
-  // Update or insert subscription
-  const existing = db.get(`SELECT id FROM subscriptions WHERE user_id = ?`, userId)
-  if (existing) {
-    db.run(
-      `UPDATE subscriptions 
-       SET plan_id = ?, plan_name = ?, status = 'active', scan_quota_total = ?, scan_quota_used = 0, current_period_end = ?, updated_at = ?
-       WHERE user_id = ?`,
-      plan.id, plan.name, plan.scanQuota, periodEnd, now, userId
-    )
-  } else {
-    const subId = `sub_${randomUUID().slice(0, 12)}`
-    db.run(
-      `INSERT INTO subscriptions (id, user_id, plan_id, plan_name, status, scan_quota_total, scan_quota_used, current_period_end, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, ?)`,
-      subId, userId, plan.id, plan.name, 'active', plan.scanQuota, periodEnd, now, now
-    )
-  }
+  const applyTx = db.transaction(() => {
+    if (appliedPromo) {
+      const upd = db.run(
+        `UPDATE promo_codes
+         SET used_count = used_count + 1, updated_at = ?
+         WHERE UPPER(code) = UPPER(?) AND (max_uses <= 0 OR used_count < max_uses)`,
+        now,
+        appliedPromo
+      )
+      if (!upd.changes && provider !== 'stripe') {
+        throw new Error(`Promo code '${appliedPromo}' has reached its maximum redemption limit`)
+      }
+    }
 
-  // Record transaction in database only if actual payment occurred for a paid plan
-  if (plan.id !== 'trial' && finalPaidAmount > 0 && provider !== 'system') {
-    const txId = `tx_${randomUUID().slice(0, 12)}`
-    db.run(
-      `INSERT INTO payment_transactions (id, user_id, amount, currency, status, provider, reference_id, plan_id, discount_amount, promo_code, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      txId, userId, finalPaidAmount, plan.currency, 'completed', provider, referenceId || `ref_${Date.now()}`, plan.id, discountAmount, appliedPromo, now
-    )
-  }
+    // Update or insert subscription
+    const existing = db.get(`SELECT id FROM subscriptions WHERE user_id = ?`, userId)
+    if (existing) {
+      db.run(
+        `UPDATE subscriptions 
+         SET plan_id = ?, plan_name = ?, status = 'active', scan_quota_total = ?, scan_quota_used = 0, current_period_end = ?, updated_at = ?
+         WHERE user_id = ?`,
+        plan.id, plan.name, plan.scanQuota, periodEnd, now, userId
+      )
+    } else {
+      const subId = `sub_${randomUUID().slice(0, 12)}`
+      db.run(
+        `INSERT INTO subscriptions (id, user_id, plan_id, plan_name, status, scan_quota_total, scan_quota_used, current_period_end, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, ?)`,
+        subId, userId, plan.id, plan.name, 'active', plan.scanQuota, periodEnd, now, now
+      )
+    }
 
+    // Record transaction in database for all non-trial plan activations (including 100%-discounted RM 0 redemptions)
+    if (plan.id !== 'trial' && finalPaidAmount >= 0 && provider !== 'system') {
+      const txId = `tx_${randomUUID().slice(0, 12)}`
+      db.run(
+        `INSERT INTO payment_transactions (id, user_id, amount, currency, status, provider, reference_id, plan_id, discount_amount, promo_code, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        txId, userId, finalPaidAmount, plan.currency, 'completed', provider, referenceId || `ref_${Date.now()}`, plan.id, discountAmount, appliedPromo || promoCode || null, now
+      )
+    }
+  })
+
+  applyTx()
   return getUserSubscription(userId)
 }
 

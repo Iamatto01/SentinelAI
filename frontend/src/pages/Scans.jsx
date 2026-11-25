@@ -539,7 +539,6 @@ export default function Scans() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-extrabold text-white tracking-tight">Security Assessments</h1>
-          <p className="text-xs text-slate-400">Blackbox REST & Whitebox Code Review Jobs organized by Folder</p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5">
@@ -582,17 +581,26 @@ export default function Scans() {
 
         <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
           {viewMode === 'folder' && (
-            <div className="flex items-center gap-2 mr-2">
+            <div className="flex items-center gap-1.5 mr-1">
               <button
+                type="button"
                 onClick={expandAllFolders}
-                className="text-[11px] font-semibold text-slate-400 hover:text-cyan-300 transition-colors px-1.5 py-1"
+                className={`px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all cursor-pointer ${
+                  isNight
+                    ? 'bg-[#111111] border-white/15 text-slate-200 hover:border-cyan-400/50 hover:text-cyan-300'
+                    : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300 hover:bg-slate-50 shadow-sm'
+                }`}
               >
                 Expand All
               </button>
-              <span className="text-slate-600 text-xs">•</span>
               <button
+                type="button"
                 onClick={collapseAllFolders}
-                className="text-[11px] font-semibold text-slate-400 hover:text-cyan-300 transition-colors px-1.5 py-1"
+                className={`px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all cursor-pointer ${
+                  isNight
+                    ? 'bg-[#111111] border-white/15 text-slate-200 hover:border-cyan-400/50 hover:text-cyan-300'
+                    : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300 hover:bg-slate-50 shadow-sm'
+                }`}
               >
                 Collapse All
               </button>

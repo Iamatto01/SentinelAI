@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react'
-import { X, Loader2, ShieldAlert, BookOpen, StickyNote, Send, ExternalLink, Trash2, Bot, Sparkles, AlertTriangle, Target, Wrench, Crosshair, Bug, Play, Pause, Square, ChevronRight, CheckCircle, XCircle, Clock, Copy, Check, Terminal, ShieldCheck } from 'lucide-react'
+import { createPortal } from 'react-dom'
+import { X, Loader2, ShieldAlert, BookOpen, StickyNote, Send, ExternalLink, Trash2, Bot, Sparkles, AlertTriangle, Target, Wrench, Crosshair, Bug, Play, Pause, Square, ChevronRight, CheckCircle, XCircle, Clock, Copy, Check, Terminal, ShieldCheck, Star, Flame, Package, GitPullRequest, Search } from 'lucide-react'
 import { prettifyTitle } from '../lib/formatters.js'
 import { api } from '../lib/api.js'
 import { useAi } from '../lib/AiContext.jsx'
@@ -272,6 +273,7 @@ export default function FindingDetailDrawer({ finding, onClose, onStatusChange, 
   const [noteText, setNoteText] = useState('')
   const [cve, setCve] = useState(null)
   const [cveBusy, setCveBusy] = useState(false)
+  const [localPocIntel, setLocalPocIntel] = useState(null)
   const [status, setStatus] = useState(finding?.status || 'open')
 
   // Local input state
@@ -299,16 +301,48 @@ export default function FindingDetailDrawer({ finding, onClose, onStatusChange, 
   const [verifyError, setVerifyError] = useState('')
   const [verifyAuthAck, setVerifyAuthAck] = useState(true)
 
+  // ── Pillar 3: Supply Chain OSV, Dependency Patch Plan & GitHub Security PR ──
+  const [osvEcosystem, setOsvEcosystem] = useState('npm')
+  const [osvName, setOsvName] = useState('')
+  const [osvVersion, setOsvVersion] = useState('')
+  const [osvResult, setOsvResult] = useState(null)
+  const [osvLoading, setOsvLoading] = useState(false)
+  const [osvError, setOsvError] = useState('')
+
+  const [patchManifest, setPatchManifest] = useState('')
+  const [patchIncludeLockfile, setPatchIncludeLockfile] = useState(true)
+  const [patchPlan, setPatchPlan] = useState(null)
+  const [patchLoading, setPatchLoading] = useState(false)
+  const [patchError, setPatchError] = useState('')
+
+  const [prRepo, setPrRepo] = useState('')
+  const [prBranch, setPrBranch] = useState('main')
+  const [prPackage, setPrPackage] = useState('')
+  const [prVersion, setPrVersion] = useState('')
+  const [prTitle, setPrTitle] = useState('')
+  const [prBody, setPrBody] = useState('')
+  const [prResult, setPrResult] = useState(null)
+  const [prLoading, setPrLoading] = useState(false)
+  const [prError, setPrError] = useState('')
+
+  const extractedCveIds = [...new Set(
+    [finding?.cve_id, ...(String(`${finding?.title || ''} ${finding?.description || ''}`).match(/CVE-\d{4}-\d{4,}/gi) || [])]
+      .filter(Boolean)
+      .map((c) => String(c).toUpperCase().trim())
+  )]
+  const cveId = extractedCveIds[0] || null
+
   useEffect(() => {
     if (!finding) return
+    const ev = safeParse(finding.evidence, {})
+    const pkgName = String(ev?.package || ev?.product || '').trim()
+    const pkgVer = String(ev?.version || '').trim()
+    const ghTarget = String(finding.target || '').match(/^github:([^#\s]+)(?:#([^\s]+))?/i)
+
     setStatus(finding.status || 'open')
-    if (activeTabOverride) {
-      setTab(activeTabOverride)
-      setActiveTabOverride(null)
-    } else {
-      setTab('overview')
-    }
+    if (!activeTabOverride) setTab('overview')
     setCve(null)
+    setLocalPocIntel(null)
     setExploitCheck(null)
     setExploitCampaign(null)
     setExploitError('')
@@ -316,12 +350,67 @@ export default function FindingDetailDrawer({ finding, onClose, onStatusChange, 
     setWafError('')
     setVerifyResult(null)
     setVerifyError('')
+
+    setOsvEcosystem(String(ev?.ecosystem || 'npm'))
+    setOsvName(pkgName)
+    setOsvVersion(pkgVer)
+    setOsvResult(null)
+    setOsvError('')
+    setOsvLoading(false)
+
+    setPatchManifest(
+      ev?.packageJson
+        ? (typeof ev.packageJson === 'string' ? ev.packageJson : JSON.stringify(ev.packageJson, null, 2))
+        : (pkgName && pkgVer ? JSON.stringify({ dependencies: { [pkgName]: pkgVer } }, null, 2) : '')
+    )
+    setPatchPlan(null)
+    setPatchError('')
+    setPatchLoading(false)
+
+    setPrRepo(ghTarget?.[1] || '')
+    setPrBranch(ghTarget?.[2] || 'main')
+    setPrPackage(pkgName)
+    setPrVersion('')
+    setPrTitle('')
+    setPrBody('')
+    setPrResult(null)
+    setPrError('')
+    setPrLoading(false)
+
     setCustomPoc(safeParse(finding.poc, null))
     api.findingNotes(finding.id).then(setNotes).catch(() => setNotes([]))
 
     // Auto-check exploitability
     checkExploitability()
-  }, [finding, activeTabOverride])
+  }, [finding?.id])
+
+  useEffect(() => {
+    if (finding && activeTabOverride) {
+      setTab(activeTabOverride)
+      setActiveTabOverride(null)
+    }
+  }, [finding, activeTabOverride, setActiveTabOverride])
+
+  useEffect(() => {
+    if (finding && tab === 'cve' && cveId && !localPocIntel) {
+      api.pocindexCve(cveId).then(setLocalPocIntel).catch(() => {})
+    }
+  }, [finding, tab, cveId, localPocIntel])
+
+  // Auto-refresh campaign when it's running or awaiting approval (placed before early return to satisfy Rules of Hooks)
+  useEffect(() => {
+    if (!finding || !exploitCampaign?.campaign?.id) return
+    const status = exploitCampaign.campaign.status
+    if (['running', 'awaiting_approval', 'paused'].includes(status)) {
+      const interval = setInterval(async () => {
+        try {
+          const updated = await api.exploitCampaign(exploitCampaign.campaign.id)
+          setExploitCampaign(updated)
+        } catch { /* ignore */ }
+      }, 3000)
+      return () => clearInterval(interval)
+    }
+  }, [finding, exploitCampaign?.campaign?.id, exploitCampaign?.campaign?.status])
 
   if (!finding) return null
 
@@ -334,7 +423,6 @@ export default function FindingDetailDrawer({ finding, onClose, onStatusChange, 
   const verdictPct = verdict?.confidence != null
     ? Math.round((verdict.confidence > 1 ? verdict.confidence : verdict.confidence * 100))
     : null
-  const cveId = finding.cve_id || (finding.title.match(/CVE-\d{4}-\d{4,}/i)?.[0])
 
   async function loadCve() {
     if (!cveId) return
@@ -401,6 +489,88 @@ export default function FindingDetailDrawer({ finding, onClose, onStatusChange, 
       setVerifyError(e.message || 'Verifikasi gagal dijalankan')
     } finally {
       setVerifyLoading(false)
+    }
+  }
+
+  // ── Pillar 3: Supply Chain OSV, Patch Plan & Security PR Functions ──
+  async function handleQueryOsv(e) {
+    e?.preventDefault()
+    const name = osvName.trim()
+    const version = osvVersion.trim()
+    if (!name || !version) {
+      setOsvError('Package name and version are required for OSV lookup.')
+      return
+    }
+    setOsvLoading(true)
+    setOsvError('')
+    try {
+      const res = await api.queryOsv({ ecosystem: osvEcosystem, name, version })
+      setOsvResult(res)
+    } catch (err) {
+      setOsvError(err.message || 'OSV advisory query failed')
+    } finally {
+      setOsvLoading(false)
+    }
+  }
+
+  async function handleCreatePatchPlan() {
+    const content = patchManifest.trim()
+    if (!content) {
+      setPatchError('Paste a package.json manifest before generating a patch plan.')
+      return
+    }
+    try {
+      JSON.parse(content)
+    } catch (err) {
+      setPatchError(`package.json must be valid JSON: ${err.message}`)
+      return
+    }
+    setPatchLoading(true)
+    setPatchError('')
+    try {
+      const files = [{ path: 'package.json', content }]
+      if (patchIncludeLockfile) {
+        files.push({ path: 'package-lock.json', content: '{"lockfileVersion":3}' })
+      }
+      const res = await api.createDependencyPatchPlan(files)
+      setPatchPlan(res?.plan || res)
+    } catch (err) {
+      setPatchError(err.message || 'Failed to generate dependency patch plan')
+    } finally {
+      setPatchLoading(false)
+    }
+  }
+
+  async function handleCreateSecurityPr(e) {
+    e?.preventDefault()
+    const repoFullName = prRepo.trim()
+    const baseBranch = prBranch.trim() || 'main'
+    const pkg = prPackage.trim()
+    const to = prVersion.trim()
+    if (!/^[^/\s]+\/[^/\s]+$/.test(repoFullName)) {
+      setPrError('Repository must use owner/repository format (e.g. org/app).')
+      return
+    }
+    if (!pkg || !to) {
+      setPrError('Package name and target version are required.')
+      return
+    }
+    setPrLoading(true)
+    setPrError('')
+    try {
+      const payload = {
+        repoFullName,
+        baseBranch,
+        updates: [{ path: 'package.json', package: pkg, to }],
+      }
+      if (prTitle.trim()) payload.title = prTitle.trim()
+      if (prBody.trim()) payload.body = prBody.trim()
+      const res = await api.createSecurityPr(payload)
+      setPrResult(res)
+    } catch (err) {
+      setPrError(err.message || 'Failed to create GitHub security PR')
+    } finally {
+      setPrLoading(false)
     }
   }
 
@@ -542,24 +712,11 @@ export default function FindingDetailDrawer({ finding, onClose, onStatusChange, 
     }
   }
 
-  // Auto-refresh campaign when it's running or awaiting approval
-  useEffect(() => {
-    if (!exploitCampaign?.campaign?.id) return
-    const status = exploitCampaign.campaign.status
-    if (['running', 'awaiting_approval', 'paused'].includes(status)) {
-      const interval = setInterval(async () => {
-        try {
-          const updated = await api.exploitCampaign(exploitCampaign.campaign.id)
-          setExploitCampaign(updated)
-        } catch { /* ignore */ }
-      }, 3000)
-      return () => clearInterval(interval)
-    }
-  }, [exploitCampaign?.campaign?.id, exploitCampaign?.campaign?.status])
+  // Polling useEffect moved above early return to satisfy React Rules of Hooks
 
   const TABS = [
     { id: 'overview', label: 'Overview', icon: ShieldAlert },
-    { id: 'remediation', label: 'Virtual Patch (WAF)', icon: Wrench },
+    { id: 'remediation', label: 'Remediation & Patch', icon: Wrench },
     { id: 'cvss', label: 'CVSS 4.0', icon: ShieldCheck },
     { id: 'exploit', label: 'Exploit', icon: Crosshair },
     { id: 'ai', label: 'AI Chat', icon: Bot },
@@ -568,7 +725,7 @@ export default function FindingDetailDrawer({ finding, onClose, onStatusChange, 
     { id: 'notes', label: `Notes (${notes.length})`, icon: StickyNote },
   ]
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-[70] flex items-center justify-end p-0 sm:p-4 glass-overlay" onClick={onClose}>
       <div className="w-full max-w-xl max-h-[92vh] flex flex-col glass sm:rounded-3xl border border-white/15 shadow-2xl overflow-hidden" onClick={(e) => e.stopPropagation()}>
         <div className="sticky top-0 z-10 glass-deep border-b border-white/10 p-5 shrink-0">
@@ -592,10 +749,10 @@ export default function FindingDetailDrawer({ finding, onClose, onStatusChange, 
               {['open', 'confirmed', 'in-progress', 'fixed', 'accepted', 'false-positive'].map((s) => <option key={s} value={s}>{s}</option>)}
             </select>
           </div>
-          <div className="mt-4 flex gap-1 border-b border-ink-700 -mb-5">
+          <div className="mt-4 flex flex-wrap gap-1 border-b border-ink-700 -mb-5">
             {TABS.map(({ id, label, icon: Icon }) => (
               <button key={id} onClick={() => setTab(id)}
-                className={`flex items-center gap-1.5 px-3 py-2 text-xs font-medium border-b-2 transition-colors ${tab === id ? 'border-accent text-accent' : 'border-transparent text-slate-500 hover:text-slate-300'}`}>
+                className={`flex items-center gap-1.5 px-2.5 py-2 text-xs font-medium border-b-2 transition-colors whitespace-nowrap shrink-0 ${tab === id ? 'border-accent text-accent' : 'border-transparent text-slate-500 hover:text-slate-300'}`}>
                 <Icon size={13} /> {label}
               </button>
             ))}
@@ -950,6 +1107,260 @@ export default function FindingDetailDrawer({ finding, onClose, onStatusChange, 
                     </div>
                   </div>
                 )}
+              </div>
+
+              {/* Pillar 3: Supply Chain OSV, Dependency Patch Plan & GitHub Security PR */}
+              <div className="rounded-xl border border-purple-500/30 bg-purple-500/[0.04] p-4 space-y-4">
+                <div className="flex items-center gap-2">
+                  <div className="p-1.5 rounded-lg bg-purple-500/20 text-purple-400">
+                    <Package size={16} />
+                  </div>
+                  <div>
+                    <h3 className="text-xs font-bold uppercase tracking-wider text-purple-300">
+                      Supply Chain &amp; Dependency Remediation
+                    </h3>
+                    <p className="text-[11px] text-slate-400">
+                      Query OSV advisories, generate an npm patch plan, or open a manifest-only GitHub Security PR.
+                    </p>
+                  </div>
+                </div>
+
+                {/* 3A: OSV Advisory Lookup */}
+                <form onSubmit={handleQueryOsv} className="space-y-2.5 pt-1 border-t border-white/10">
+                  <div className="flex items-center justify-between gap-2 pt-2">
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-slate-300">
+                      1. OSV Vulnerability Lookup
+                    </span>
+                    <button
+                      type="submit"
+                      disabled={osvLoading}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold transition disabled:opacity-50"
+                    >
+                      {osvLoading ? <Loader2 size={13} className="animate-spin" /> : <Search size={13} />}
+                      Query OSV
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                    <select
+                      aria-label="OSV Ecosystem"
+                      value={osvEcosystem}
+                      onChange={(e) => setOsvEcosystem(e.target.value)}
+                      className="input py-1.5 px-2.5 text-xs"
+                    >
+                      {['npm', 'PyPI', 'Maven', 'Go', 'crates.io', 'RubyGems', 'Packagist', 'NuGet'].map((eco) => (
+                        <option key={eco} value={eco}>{eco}</option>
+                      ))}
+                    </select>
+                    <input
+                      aria-label="OSV Package Name"
+                      value={osvName}
+                      onChange={(e) => setOsvName(e.target.value)}
+                      placeholder="Package (e.g. lodash)"
+                      className="input py-1.5 px-2.5 text-xs font-mono"
+                    />
+                    <input
+                      aria-label="OSV Package Version"
+                      value={osvVersion}
+                      onChange={(e) => setOsvVersion(e.target.value)}
+                      placeholder="Version (e.g. 4.17.20)"
+                      className="input py-1.5 px-2.5 text-xs font-mono"
+                    />
+                  </div>
+                  {osvError && (
+                    <p className="text-xs text-red-400 bg-red-500/10 border border-red-500/20 p-2.5 rounded-lg">{osvError}</p>
+                  )}
+                  {osvResult && (
+                    <div className="rounded-lg border border-white/10 bg-black/40 p-3 space-y-2">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="font-mono text-slate-200 font-bold">
+                          {osvResult.ecosystem}:{osvResult.name}@{osvResult.version}
+                        </span>
+                        <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${
+                          osvResult.vulnerabilities?.length
+                            ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
+                            : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                        }`}>
+                          {osvResult.vulnerabilities?.length || 0} advisory(ies)
+                        </span>
+                      </div>
+                      {!osvResult.vulnerabilities?.length ? (
+                        <p className="text-[11px] text-emerald-300">No known OSV vulnerabilities matched this exact version.</p>
+                      ) : (
+                        <div className="space-y-2 max-h-48 overflow-y-auto">
+                          {osvResult.vulnerabilities.map((v) => (
+                            <div key={v.id} className="rounded border border-white/10 bg-white/[0.03] p-2.5 space-y-1">
+                              <div className="flex flex-wrap items-center gap-1.5">
+                                <span className="text-xs font-mono font-bold text-purple-300">{v.id}</span>
+                                {v.aliases?.slice(0, 3).map((a) => (
+                                  <span key={a} className="text-[10px] px-1.5 py-0.5 rounded bg-white/10 text-slate-300 font-mono">{a}</span>
+                                ))}
+                              </div>
+                              {v.summary && <p className="text-[11px] text-slate-300 leading-relaxed">{v.summary}</p>}
+                              {v.references?.[0] && (
+                                <a href={v.references[0]} target="_blank" rel="noreferrer" className="text-[10px] text-cyan-300 hover:underline break-all block">
+                                  {v.references[0]}
+                                </a>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </form>
+
+                {/* 3B: Dependency Patch Plan */}
+                <div className="space-y-2.5 pt-2 border-t border-white/10">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-slate-300">
+                      2. Dependency Patch Plan (package.json)
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleCreatePatchPlan}
+                      disabled={patchLoading}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold transition disabled:opacity-50"
+                    >
+                      {patchLoading ? <Loader2 size={13} className="animate-spin" /> : <Wrench size={13} />}
+                      Generate Patch Plan
+                    </button>
+                  </div>
+                  <textarea
+                    aria-label="package.json manifest"
+                    rows={3}
+                    value={patchManifest}
+                    onChange={(e) => setPatchManifest(e.target.value)}
+                    placeholder={'{\n  "dependencies": {\n    "lodash": "4.17.20"\n  }\n}'}
+                    className="input w-full text-xs font-mono py-2 px-2.5"
+                  />
+                  <label className="flex items-center gap-2 text-[11px] text-slate-400 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={patchIncludeLockfile}
+                      onChange={(e) => setPatchIncludeLockfile(e.target.checked)}
+                      className="rounded border-slate-700 text-purple-500 focus:ring-purple-500"
+                    />
+                    Include lockfile parity reminder (package-lock.json)
+                  </label>
+                  {patchError && (
+                    <p className="text-xs text-red-400 bg-red-500/10 border border-red-500/20 p-2.5 rounded-lg">{patchError}</p>
+                  )}
+                  {patchPlan && (
+                    <div className="rounded-lg border border-white/10 bg-black/40 p-3 space-y-2">
+                      <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                        <span className="font-mono text-slate-200 font-bold">
+                          {patchPlan.manifestPath || 'package.json'} · {patchPlan.packages?.length || 0} checked
+                        </span>
+                        <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${
+                          patchPlan.actions?.length
+                            ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                            : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                        }`}>
+                          {patchPlan.actions?.length || 0} upgrade action(s)
+                        </span>
+                      </div>
+                      {patchPlan.message && <p className="text-[11px] text-slate-400">{patchPlan.message}</p>}
+                      {patchPlan.actions?.length > 0 && (
+                        <div className="space-y-1.5 max-h-44 overflow-y-auto">
+                          {patchPlan.actions.map((act, idx) => (
+                            <div key={`${act.package}-${idx}`} className="rounded border border-white/10 bg-white/[0.03] p-2 text-[11px] flex flex-wrap items-center justify-between gap-2">
+                              <div className="space-y-0.5 min-w-0">
+                                <p className="font-mono font-bold text-amber-300">
+                                  {act.package} ({act.from}) → {act.command}
+                                </p>
+                                {act.reason && <p className="text-slate-400 break-all">Advisories: {act.reason}</p>}
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => setPrPackage(act.package)}
+                                className="text-[10px] px-2 py-1 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30 hover:bg-purple-500/30 shrink-0"
+                              >
+                                Use in PR
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {patchPlan.safety && (
+                        <p className="text-[10px] text-slate-400 italic">{patchPlan.safety}</p>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* 3C: GitHub Security PR */}
+                <form onSubmit={handleCreateSecurityPr} className="space-y-2.5 pt-2 border-t border-white/10">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-slate-300">
+                      3. GitHub Security Pull Request
+                    </span>
+                    <button
+                      type="submit"
+                      disabled={prLoading}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold transition disabled:opacity-50"
+                    >
+                      {prLoading ? <Loader2 size={13} className="animate-spin" /> : <GitPullRequest size={13} />}
+                      Create Security PR
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <input
+                      aria-label="GitHub Repository"
+                      value={prRepo}
+                      onChange={(e) => setPrRepo(e.target.value)}
+                      placeholder="owner/repo"
+                      className="input py-1.5 px-2.5 text-xs font-mono"
+                    />
+                    <input
+                      aria-label="Base Branch"
+                      value={prBranch}
+                      onChange={(e) => setPrBranch(e.target.value)}
+                      placeholder="Base branch (e.g. main)"
+                      className="input py-1.5 px-2.5 text-xs font-mono"
+                    />
+                    <input
+                      aria-label="PR Package Name"
+                      value={prPackage}
+                      onChange={(e) => setPrPackage(e.target.value)}
+                      placeholder="npm package (e.g. lodash)"
+                      className="input py-1.5 px-2.5 text-xs font-mono"
+                    />
+                    <input
+                      aria-label="PR Target Version"
+                      value={prVersion}
+                      onChange={(e) => setPrVersion(e.target.value)}
+                      placeholder="Target version (e.g. ^4.17.21)"
+                      className="input py-1.5 px-2.5 text-xs font-mono"
+                    />
+                  </div>
+                  <input
+                    aria-label="PR Title"
+                    value={prTitle}
+                    onChange={(e) => setPrTitle(e.target.value)}
+                    placeholder="PR title (optional)"
+                    className="input w-full py-1.5 px-2.5 text-xs"
+                  />
+                  {prError && (
+                    <p className="text-xs text-red-400 bg-red-500/10 border border-red-500/20 p-2.5 rounded-lg">{prError}</p>
+                  )}
+                  {prResult && (
+                    <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 space-y-1 text-xs">
+                      <p className="font-bold text-emerald-300 flex items-center gap-1.5">
+                        <CheckCircle size={13} /> Security PR created on branch <span className="font-mono">{prResult.branch}</span>
+                      </p>
+                      {prResult.pullRequest?.html_url && (
+                        <a
+                          href={prResult.pullRequest.html_url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-cyan-300 hover:underline flex items-center gap-1 break-all"
+                        >
+                          <ExternalLink size={12} /> {prResult.pullRequest.html_url}
+                        </a>
+                      )}
+                    </div>
+                  )}
+                </form>
               </div>
 
               {/* Standard Remediation Advice Card */}
@@ -1468,7 +1879,7 @@ export default function FindingDetailDrawer({ finding, onClose, onStatusChange, 
                         }}
                       >
                         <div className="flex items-center justify-between gap-2">
-                          <div className="flex items-center gap-2">
+                          <div className="flex flex-wrap items-center gap-1.5">
                             <span className="text-xs font-bold text-accent font-mono">{c.id}</span>
                             {c.score != null && (
                               <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${
@@ -1478,6 +1889,31 @@ export default function FindingDetailDrawer({ finding, onClose, onStatusChange, 
                                 'bg-green-500/20 text-green-400'
                               }`}>
                                 CVSS {c.score}
+                              </span>
+                            )}
+                            {c.pocindex?.kev && (
+                              <span className="text-[10px] px-2 py-0.5 rounded-full font-extrabold bg-red-500/25 text-red-200 border border-red-400/40">
+                                CISA KEV
+                              </span>
+                            )}
+                            {c.pocindex?.epss?.score != null && (
+                              <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-orange-500/15 text-orange-300 border border-orange-400/30">
+                                EPSS {(c.pocindex.epss.score * 100).toFixed(1)}%
+                              </span>
+                            )}
+                            {c.pocindex?.nuclei?.available && (
+                              <span className="text-[10px] px-2 py-0.5 rounded-full font-semibold bg-cyan-500/15 text-cyan-300 border border-cyan-500/30">
+                                Nuclei
+                              </span>
+                            )}
+                            {c.pocindex?.sourceCount > 0 && (
+                              <span className="text-[10px] px-2 py-0.5 rounded-full font-semibold bg-purple-500/15 text-purple-300 border border-purple-400/30">
+                                {c.pocindex.sourceCount} PoC{c.pocindex.sourceCount === 1 ? '' : 's'}
+                              </span>
+                            )}
+                            {c.pocindex?.topStars > 0 && (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-400/30 inline-flex items-center gap-0.5">
+                                <Star size={9} className="fill-amber-400 text-amber-400" /> {c.pocindex.topStars}
                               </span>
                             )}
                           </div>
@@ -1495,27 +1931,115 @@ export default function FindingDetailDrawer({ finding, onClose, onStatusChange, 
               {/* Primary CVE lookup */}
               {!cveId && !evidence.knownCves?.length && <p className="text-sm text-slate-500">No CVE associated with this finding.</p>}
               {cveId && (
-                <>
+                <div className="flex flex-wrap items-center gap-2">
                   <button onClick={loadCve} disabled={cveBusy} className="btn-ghost">
-                    {cveBusy ? <Loader2 size={15} className="animate-spin" /> : <ExternalLink size={15} />} Lookup {cveId} (NVD)
+                    {cveBusy ? <Loader2 size={15} className="animate-spin" /> : <ExternalLink size={15} />} Lookup {cveId} (NVD + PoC Index)
                   </button>
-                </>
+                  <button type="button" onClick={() => setTab('remediation')} className="btn-ghost text-xs">
+                    <Package size={14} /> OSV &amp; Dependency Patch &rarr;
+                  </button>
+                </div>
+              )}
+
+              {/* Instant local PoC Index panel (even before live NVD fetch) */}
+              {localPocIntel && !cve && (
+                <div className="space-y-3 mt-3 rounded-xl border border-rose-500/25 bg-rose-500/[0.04] p-4">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Flame size={14} className="text-rose-400" />
+                    <span className="text-xs font-bold text-white font-mono">{localPocIntel.cveId} — Local PoC Index</span>
+                    {localPocIntel.kev && (
+                      <span className="text-[10px] px-2 py-0.5 rounded-full font-extrabold bg-red-500/25 text-red-200 border border-red-400/40">
+                        CISA KEV · {localPocIntel.kev.added}
+                      </span>
+                    )}
+                    {localPocIntel.epss?.score != null && (
+                      <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-orange-500/20 text-orange-300 border border-orange-400/30">
+                        EPSS {(localPocIntel.epss.score * 100).toFixed(2)}% (P{Math.round((localPocIntel.epss.percentile || 0) * 100)})
+                      </span>
+                    )}
+                    {localPocIntel.nuclei?.available && (
+                      <span className="text-[10px] px-2 py-0.5 rounded-full font-semibold bg-cyan-500/20 text-cyan-300 border border-cyan-400/30">
+                        Nuclei Template
+                      </span>
+                    )}
+                  </div>
+                  {localPocIntel.description && <p className="text-xs text-slate-300 leading-relaxed">{localPocIntel.description}</p>}
+                  {localPocIntel.pocs?.github?.length > 0 && (
+                    <div className="space-y-1">
+                      <p className="text-[10px] uppercase tracking-wider font-bold text-slate-400">Top GitHub PoCs</p>
+                      {localPocIntel.pocs.github.slice(0, 5).map((g) => (
+                        <a key={g.url} href={g.url} target="_blank" rel="noreferrer" className="flex items-center justify-between text-xs text-cyan-300 hover:underline">
+                          <span className="truncate">{g.repo || g.url}</span>
+                          {g.stars > 0 && <span className="text-amber-300 shrink-0 ml-2">★ {g.stars}</span>}
+                        </a>
+                      ))}
+                    </div>
+                  )}
+                  {['edb', 'msf', 'nuclei', 'vulhub'].map((k) => localPocIntel.pocs?.[k]?.length > 0 && (
+                    <div key={k} className="space-y-1">
+                      <p className="text-[10px] uppercase tracking-wider font-bold text-slate-400">{k.toUpperCase()} References</p>
+                      {localPocIntel.pocs[k].slice(0, 4).map((u) => (
+                        <a key={u} href={u} target="_blank" rel="noreferrer" className="block text-xs text-accent hover:underline break-all">{u}</a>
+                      ))}
+                    </div>
+                  ))}
+                </div>
               )}
 
               {/* CVE detail view (loaded on click or primary lookup) */}
               {cve && (
                 cve.error ? <p className="text-sm text-sev-critical">{cve.error}</p> : (
                   <div className="space-y-3 mt-3 rounded-xl border border-accent/20 bg-accent/[0.03] p-4">
-                    <div className="flex items-center gap-3">
+                    <div className="flex flex-wrap items-center gap-2">
                       <h3 className="text-base font-bold text-slate-100">{cve.id}</h3>
                       {cve.cvss?.score != null && <SeverityBadge severity={(cve.severity || '').toLowerCase()} />}
                       {cve.cvss?.score != null && <span className="text-sm text-slate-300">{cve.cvss.score}/10</span>}
+                      {cve.pocindex?.kev && (
+                        <span className="text-[10px] px-2 py-0.5 rounded-full font-extrabold bg-red-500/25 text-red-200 border border-red-400/40">
+                          CISA KEV · {cve.pocindex.kev.added}
+                        </span>
+                      )}
+                      {cve.pocindex?.epss?.score != null && (
+                        <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-orange-500/20 text-orange-300 border border-orange-400/30">
+                          EPSS {(cve.pocindex.epss.score * 100).toFixed(2)}% (P{Math.round((cve.pocindex.epss.percentile || 0) * 100)})
+                        </span>
+                      )}
+                      {cve.pocindex?.nuclei?.available && (
+                        <span className="text-[10px] px-2 py-0.5 rounded-full font-semibold bg-cyan-500/20 text-cyan-300 border border-cyan-400/30">
+                          Nuclei
+                        </span>
+                      )}
                       {cve.cached && <span className="text-[10px] text-slate-600">(cached)</span>}
                       <button onClick={() => setCve(null)} className="ml-auto text-slate-500 hover:text-slate-300 text-xs">✕ Close</button>
                     </div>
                     <p className="text-sm text-slate-300 whitespace-pre-wrap">{cve.description}</p>
                     {cve.cvss?.vector && <p className="text-xs font-mono text-slate-500">{cve.cvss.vector}</p>}
                     {cve.weaknesses?.length > 0 && <div className="flex flex-wrap gap-1.5">{cve.weaknesses.map((w) => <span key={w} className="chip bg-ink-700 text-slate-300 border border-ink-600 text-[11px]">{w}</span>)}</div>}
+                    {cve.pocindex?.hasPoc && (
+                      <div className="rounded-lg border border-white/10 bg-black/25 p-3 space-y-2">
+                        <p className="text-[10px] font-bold uppercase tracking-wider text-rose-300">
+                          Verified Public Exploits &amp; PoCs ({cve.pocindex.sourceCount})
+                        </p>
+                        {cve.pocindex.pocs?.github?.length > 0 && (
+                          <div className="space-y-1">
+                            {cve.pocindex.pocs.github.slice(0, 6).map((g) => (
+                              <a key={g.url} href={g.url} target="_blank" rel="noreferrer" className="flex items-center justify-between text-xs text-cyan-300 hover:underline">
+                                <span className="truncate">{g.repo || g.url}</span>
+                                {g.stars > 0 && <span className="text-amber-300 shrink-0 ml-2">★ {g.stars}</span>}
+                              </a>
+                            ))}
+                          </div>
+                        )}
+                        {['edb', 'msf', 'nuclei', 'vulhub'].map((k) => cve.pocindex.pocs?.[k]?.length > 0 && (
+                          <div key={k} className="space-y-0.5 pt-1 border-t border-white/5">
+                            <span className="text-[10px] font-bold text-slate-400 uppercase">{k}</span>
+                            {cve.pocindex.pocs[k].slice(0, 4).map((u) => (
+                              <a key={u} href={u} target="_blank" rel="noreferrer" className="block text-xs text-accent hover:underline break-all">{u}</a>
+                            ))}
+                          </div>
+                        ))}
+                      </div>
+                    )}
                     {cve.references?.length > 0 && (
                       <div><p className="label">References</p>
                         <ul className="space-y-1">{cve.references.map((r) => <li key={r}><a href={r} target="_blank" rel="noreferrer" className="text-xs text-accent hover:underline break-all">{r}</a></li>)}</ul></div>
@@ -1560,6 +2084,7 @@ export default function FindingDetailDrawer({ finding, onClose, onStatusChange, 
           )}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   )
 }

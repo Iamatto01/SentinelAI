@@ -159,6 +159,20 @@ export const api = {
 
   cve: (id) => apiFetch(`/api/cve/${encodeURIComponent(id)}`),
 
+  // ── PoC Index & Threat Intelligence ──
+  pocindexStatus: () => apiFetch('/api/pocindex/status'),
+  pocindexStats: () => apiFetch('/api/pocindex/stats'),
+  pocindexTrending: () => apiFetch('/api/pocindex/trending'),
+  pocindexSearch: (params = {}) => {
+    const qs = new URLSearchParams()
+    for (const [k, v] of Object.entries(params)) {
+      if (v !== undefined && v !== null && v !== '' && v !== false) qs.set(k, String(v))
+    }
+    return apiFetch(`/api/pocindex/search?${qs.toString()}`)
+  },
+  pocindexCve: (id) => apiFetch(`/api/pocindex/cve/${encodeURIComponent(id)}`),
+  pocindexSync: (opts = {}) => apiFetch('/api/pocindex/sync', { method: 'POST', body: opts }),
+
   // ── Virtual Patching & Closed-Loop Verification (Pillars 2-4) ──
   getFindingWafRules: (findingId) => apiFetch(`/api/findings/${findingId}/waf-rules`, { method: 'POST' }),
   verifyFinding: (findingId, authorizationAcknowledged = true) => apiFetch(`/api/findings/${findingId}/verify`, { method: 'POST', body: { authorizationAcknowledged } }),

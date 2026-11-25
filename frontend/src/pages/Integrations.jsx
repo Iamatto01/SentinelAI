@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react'
-import { Loader2, RefreshCw, Cpu, Database, Bot, Sparkles, CheckCircle2, XCircle, Search, X, Shield, ExternalLink, Send, ShieldCheck, Unlink, Play, AlertTriangle } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import { Loader2, RefreshCw, Cpu, Database, Bot, Sparkles, CheckCircle2, XCircle, Search, X, Shield, ExternalLink, Send, ShieldCheck, Unlink, Play, AlertTriangle, Flame } from 'lucide-react'
 import { api } from '../lib/api.js'
 
 function StatusDot({ ok }) {
@@ -14,6 +15,8 @@ export default function Integrations() {
   const [aiData, setAiData] = useState(null)
   const [err, setErr] = useState('')
   const [reindexing, setReindexing] = useState(false)
+  const [pocStatus, setPocStatus] = useState(null)
+  const [syncingPoc, setSyncingPoc] = useState(false)
   const [checkingAi, setCheckingAi] = useState(false)
   const [testingProvider, setTestingProvider] = useState(null)
   const [testResults, setTestResults] = useState({})
@@ -55,6 +58,7 @@ export default function Integrations() {
   const load = () => {
     api.telegramPairing().then(setTeleStatus).catch(() => {})
     api.status().then(setStatus).catch((e) => setErr(e.message))
+    api.pocindexStatus().then(setPocStatus).catch(() => {})
     api.agents().then((a) => setAgents(a || [])).catch(() => {})
     loadAiProviders()
   }
@@ -107,6 +111,17 @@ export default function Integrations() {
     setReindexing(true)
     try { await api.reindexPayloads(); load() } catch (e) { setErr(e.message) }
     setReindexing(false)
+  }
+
+  async function syncPocindex() {
+    setSyncingPoc(true)
+    try {
+      await api.pocindexSync({ full: true })
+      api.pocindexStatus().then(setPocStatus).catch(() => {})
+    } catch (e) {
+      setErr(e.message)
+    }
+    setSyncingPoc(false)
   }
 
   if (!status) return <div className="flex justify-center py-20"><Loader2 className="animate-spin text-accent" size={28} /></div>
@@ -183,6 +198,46 @@ export default function Integrations() {
           <button onClick={reindex} disabled={reindexing} className="btn-ghost mt-4 w-full justify-center">
             <RefreshCw size={15} className={reindexing ? 'animate-spin' : ''} /> {reindexing ? 'Reindexing…' : 'Rebuild index'}
           </button>
+        </div>
+
+        {/* PoC Index Threat Intelligence */}
+        <div className="card p-5">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="flex items-center gap-2 font-semibold text-slate-100">
+              <Flame size={18} className="text-rose-400" /> PoC Index Threat Intel
+            </h3>
+            <StatusDot ok={Boolean(pocStatus?.dbReady || status.pocindex?.ready)} />
+          </div>
+          <dl className="space-y-2 text-sm">
+            <div className="flex justify-between">
+              <dt className="text-slate-500">Status</dt>
+              <dd className={pocStatus?.syncing ? 'text-amber-400 font-semibold' : (pocStatus?.dbReady || status.pocindex?.ready) ? 'text-emerald-400 font-semibold' : 'text-slate-400 font-semibold'}>
+                {pocStatus?.syncing ? 'SYNCING' : (pocStatus?.dbReady || status.pocindex?.ready) ? 'READY' : 'PENDING'}
+              </dd>
+            </div>
+            <div className="flex justify-between">
+              <dt className="text-slate-500">Indexed CVEs</dt>
+              <dd className="text-slate-300 font-mono">{(pocStatus?.indexedCves ?? status.pocindex?.indexedCves ?? 0).toLocaleString()}</dd>
+            </div>
+            <div className="flex justify-between">
+              <dt className="text-slate-500">CISA KEV entries</dt>
+              <dd className="text-rose-300 font-mono">{(pocStatus?.kevCount ?? status.pocindex?.kevCount ?? 0).toLocaleString()}</dd>
+            </div>
+            <div className="flex justify-between">
+              <dt className="text-slate-500">Last updated</dt>
+              <dd className="text-slate-400 text-xs">
+                {pocStatus?.lastSuccessAt ? new Date(pocStatus.lastSuccessAt).toLocaleString() : '—'}
+              </dd>
+            </div>
+          </dl>
+          <div className="mt-4 flex gap-2">
+            <button onClick={syncPocindex} disabled={syncingPoc || pocStatus?.syncing} className="btn-ghost flex-1 justify-center text-xs">
+              <RefreshCw size={14} className={syncingPoc || pocStatus?.syncing ? 'animate-spin' : ''} /> {syncingPoc || pocStatus?.syncing ? 'Syncing…' : 'Sync Now'}
+            </button>
+            <Link to="/app/poc-index" className="btn-ghost text-xs px-3 text-cyan-300 border-cyan-400/30">
+              Explorer →
+            </Link>
+          </div>
         </div>
 
         {/* Metasploit RPC */}

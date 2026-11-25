@@ -5,7 +5,7 @@
 
 import Stripe from 'stripe'
 import config from './config.js'
-import { getPlan, activateSubscription, getUserSubscription } from './billing.js'
+import { getPlan, validatePromoCode, activateSubscription, getUserSubscription } from './billing.js'
 import * as db from './db.js'
 
 let stripeInstance = null
@@ -50,28 +50,13 @@ export async function createStripeCheckoutSession({
     amount = plan.priceMonthly || 3.0
   }
 
-  // Check discount promo code if provided
+  // Validate discount promo code strictly using shared billing validator
   let discountAmount = 0
   let appliedPromo = ''
   if (promoCode && promoCode.trim()) {
-    const promo = db.get(
-      `SELECT * FROM promo_codes WHERE code = ? AND is_active = 1`,
-      promoCode.trim().toUpperCase()
-    )
-    if (promo) {
-      if (promo.expires_at && new Date(promo.expires_at) < new Date()) {
-        // Expired promo, ignore
-      } else if (promo.max_uses && (promo.used_count || 0) >= promo.max_uses) {
-        // Max uses reached, ignore
-      } else {
-        appliedPromo = promo.code
-        if (promo.discount_type === 'percentage' || promo.discount_type === 'percent') {
-          discountAmount = (amount * Number(promo.discount_value)) / 100
-        } else {
-          discountAmount = Number(promo.discount_value)
-        }
-      }
-    }
+    const promoCheck = validatePromoCode(promoCode, planId, billingInterval)
+    discountAmount = promoCheck.discountAmount
+    appliedPromo = promoCheck.code
   }
 
   const finalAmount = Math.max(1.0, amount - discountAmount) // Stripe MYR minimum amount is RM 1.00

@@ -338,7 +338,6 @@ export default function NewScanModal({ onClose, onStarted, initialProjectId = ''
             </div>
             <div>
               <h2 className="text-base sm:text-lg font-extrabold text-white tracking-tight">New Security Assessment</h2>
-              <p className="text-[11px] text-slate-400 font-medium">Configure automated DAST Blackbox or SAST Whitebox vulnerability audit</p>
             </div>
           </div>
           <button type="button" onClick={onClose} className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition-colors cursor-pointer" title="Close modal"><X size={18} /></button>
@@ -376,42 +375,9 @@ export default function NewScanModal({ onClose, onStarted, initialProjectId = ''
             </button>
           </div>
 
-          {/* Client & Project Assignment Block */}
+          {/* Project Folder Block */}
           <div className="p-4 rounded-2xl bg-slate-950/75 border border-white/10 space-y-3">
-            <div className="flex items-center justify-between">
-              <label className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
-                <User size={14} className="text-cyan-400" /> Assign to Client & Project Folder
-              </label>
-              {targetClientId && (
-                <span className="text-[10px] text-cyan-300 font-mono">
-                  Client: {selectedClientObj?.username || targetClientId}
-                </span>
-              )}
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {/* Client Selection (For Admins) */}
-              {clients.length > 0 && (
-                <div>
-                  <label className="text-[11px] font-semibold text-slate-400 block mb-1">Target Client Account</label>
-                  <select
-                    className="input text-xs w-full"
-                    value={targetClientId}
-                    onChange={(e) => {
-                      setTargetClientId(e.target.value)
-                      setProjectId('')
-                    }}
-                  >
-                    <option value="">-- Personal / No Client Assignment --</option>
-                    {clients.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        👤 {c.username} ({c.email || c.plan_name || 'Client'})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
-
+            <div>
               {/* Project Selection */}
               <div>
                 <div className="flex items-center justify-between mb-1">

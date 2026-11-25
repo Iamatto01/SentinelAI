@@ -44,6 +44,13 @@ function parseMsfUrl() {
   }
 }
 
+const resolvedOutputDir = resolveDir(
+  process.env.OUTPUT_DIR,
+  fs.existsSync('/home/kali/server/database')
+    ? '/home/kali/server/database'
+    : (fs.existsSync('/home/kali/server/SentinelAI_Data') ? '/home/kali/server/SentinelAI_Data' : path.join(PROJECT_ROOT, 'output')),
+)
+
 export const config = {
   port: Number(process.env.PORT || 5000),
   clientOrigin: process.env.CLIENT_ORIGIN || 'http://localhost:5173,https://sentinelai.studio',
@@ -103,8 +110,17 @@ export const config = {
     dir: resolveDir(process.env.SKILLS_DIR, path.join(PROJECT_ROOT, 'knowledge', 'skills')),
   },
 
-  outputDir: resolveDir(process.env.OUTPUT_DIR, fs.existsSync('/home/kali/server/database') ? '/home/kali/server/database' : (fs.existsSync('/home/kali/server/SentinelAI_Data') ? '/home/kali/server/SentinelAI_Data' : path.join(PROJECT_ROOT, 'output'))),
+  outputDir: resolvedOutputDir,
   dbPath: resolveDir(process.env.DB_PATH, fs.existsSync('/home/kali/server/database/fyp2.db') ? '/home/kali/server/database/fyp2.db' : (fs.existsSync('/home/kali/server/SentinelAI_Data/fyp2.db') ? '/home/kali/server/SentinelAI_Data/fyp2.db' : path.join(PROJECT_ROOT, 'output', 'fyp2.db'))),
+
+  pocindex: {
+    enabled: (process.env.POCINDEX_ENABLED || 'true').trim() !== 'false',
+    autoSync: (process.env.POCINDEX_AUTO_SYNC || 'true').trim() !== 'false',
+    baseUrl: (process.env.POCINDEX_BASE_URL || 'https://pocindex.io').trim().replace(/\/+$/, ''),
+    dbPath: resolveDir(process.env.POCINDEX_DB_PATH, path.join(resolvedOutputDir, 'pocindex.db')),
+    fastIntervalMs: Number(process.env.POCINDEX_FAST_INTERVAL_MS || 60 * 60 * 1000),
+    fullIntervalMs: Number(process.env.POCINDEX_FULL_INTERVAL_MS || 12 * 60 * 60 * 1000),
+  },
 
   scan: {
     moduleTimeoutMs: Number(process.env.MODULE_TIMEOUT_MS || 600000),
